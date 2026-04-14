@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session Builder v6</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;900&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--deep:#0a5540;--dark:#083d2f;--ch:#231f20;--bright:#2db24c;--bg:#F3F5F4;--mu:#93998F;--tx:#1C2420;--tl:#6B756A;--bd:#E2E6E3;--am:#D4A017;--rd:#C93B3B}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
+
+.top{background:var(--ch);height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:100}
+.top b{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:1.1rem;color:rgba(255,255,255,.85)}
+.top nav{display:flex;gap:2px}.top nav button{background:none;border:none;color:rgba(255,255,255,.35);font-family:'Barlow',sans-serif;font-weight:500;font-size:.76rem;padding:5px 12px;border-radius:5px;cursor:pointer}.top nav button.on{color:rgba(255,255,255,.9);background:rgba(255,255,255,.08)}
+.hdr{background:white;border-bottom:1px solid var(--bd);padding:10px 24px;display:flex;align-items:center;justify-content:space-between}
+.hdr-back{color:var(--tl);font-size:.78rem;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px}.hdr-back:hover{color:var(--deep)}
+.hdr-mid{text-align:center}.hdr-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.98rem;color:var(--ch)}.hdr-s{font-size:.7rem;color:var(--tl)}
+.hdr-save{font-size:.74rem;font-weight:600;padding:6px 14px;border-radius:6px;border:none;background:var(--deep);color:white;cursor:pointer}
+
+.lay{display:flex;height:calc(100vh - 48px - 50px);overflow:hidden}
+.main{flex:1;overflow-y:auto;padding:12px 20px 80px}
+
+/* Section - removed, titles now per-exercise */
+
+/* Exercise card - TH style */
+.ex{background:white;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+.ex.g-top{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom:none;border-color:var(--bright)}
+.ex.g-bot{border-top-left-radius:0;border-top-right-radius:0;border-top:2px dashed var(--bright);border-color:var(--bright)}
+.ex.g-top .seq,.ex.g-bot .seq{background:var(--bright);color:var(--ch)}
+
+/* Per-exercise title bar */
+.ex-title-bar{display:flex;align-items:center;gap:6px;padding:5px 14px;background:var(--bg);border-bottom:1px solid var(--bd);min-height:28px}
+.ex-title-bar.empty{padding:0;min-height:0;border-bottom:none}
+.ex-title-select{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.76rem;color:var(--deep);background:none;border:none;cursor:pointer;padding:0;border-bottom:1px dashed rgba(10,85,64,.25)}
+.ex-title-select:hover{border-bottom-color:var(--deep)}
+.ex-title-dd{display:none;position:absolute;top:100%;left:0;background:white;border:1px solid var(--bd);border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.1);z-index:20;padding:4px 0;min-width:180px}
+.ex-title-dd.open{display:block}
+.ex-title-dd-item{padding:5px 12px;font-size:.74rem;cursor:pointer;color:var(--tx)}.ex-title-dd-item:hover{background:var(--bg);color:var(--deep)}
+.ex-title-add{font-size:.66rem;color:var(--mu);cursor:pointer;font-weight:500;font-family:'Barlow',sans-serif;border:none;background:none;padding:0}
+.ex-title-add:hover{color:var(--deep)}
+.ex-title-x{font-size:.58rem;color:var(--rd);cursor:pointer;border:none;background:none;padding:1px 3px;border-radius:3px;margin-left:2px}
+.ex-title-x:hover{color:var(--rd);background:rgba(201,59,59,.08)}
+.ex-title-dup{display:none}
+
+.ex-inner{display:grid;grid-template-columns:1fr 1fr}
+.ex-L{padding:12px 14px;border-right:1px solid var(--bd);display:flex;flex-direction:column;gap:6px}
+.ex-R{padding:12px 14px;display:flex;flex-direction:column}
+
+.ex-head{display:flex;align-items:center;gap:8px}
+.seq{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:.82rem;color:white;background:var(--ch);width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ex-nm{font-weight:600;font-size:.86rem;color:var(--ch);flex:1;cursor:pointer;background:none;border:none;text-align:left;font-family:'Barlow',sans-serif;padding:0}
+.ex-nm:hover{color:var(--deep)}.ex-nm.blank{color:var(--mu);font-weight:400;font-style:italic}
+.ex-del{background:none;border:none;color:var(--bd);cursor:pointer;padding:2px;flex-shrink:0}.ex-del:hover{color:var(--rd)}
+
+.il{font-size:.64rem;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.ib{width:100%;border:1px solid var(--bd);border-radius:5px;padding:4px 7px;font-family:'Barlow',sans-serif;font-size:.74rem;color:var(--tx);outline:none;resize:none;min-height:32px;background:var(--bg);line-height:1.4}
+.ib:focus{border-color:var(--deep);background:white}.ib::placeholder{color:var(--mu)}
+
+/* Small video thumbnail */
+.vt{width:100%;max-width:120px;aspect-ratio:16/10;background:linear-gradient(135deg,#1a2a22,#2a3a32);border-radius:4px;overflow:hidden;position:relative;cursor:pointer;border:1px solid var(--bd);margin-top:auto}
+.vt:hover{border-color:var(--deep)}
+.vt-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+.vt-play svg{opacity:.4}
+.vt:hover .vt-play svg{opacity:.7}
+.vt-name{position:absolute;bottom:0;left:0;right:0;padding:2px 5px;background:rgba(0,0,0,.6);font-size:.56rem;color:rgba(255,255,255,.75);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Right: TrainHeroic style prescription table */
+.rx-sum{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.92rem;color:var(--ch);margin-bottom:6px}
+.rx-tbl{width:100%;border-collapse:collapse;margin-bottom:4px}
+.rx-tbl thead th{font-size:.64rem;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;padding:3px 6px;text-align:left;border-bottom:1px solid var(--bd)}
+.rx-tbl thead th:first-child{width:32px;text-align:center}
+.rx-tbl tbody td{padding:3px 4px}
+.rx-tbl .sn{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.78rem;color:var(--mu);text-align:center;width:32px}
+.ri{width:100%;height:28px;border:1px solid var(--bd);border-radius:4px;text-align:center;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.84rem;color:var(--ch);outline:none;background:var(--bg)}
+.ri:focus{border-color:var(--deep);background:white}
+.oi{width:100%;height:28px;border:1px solid var(--bd);border-radius:4px;padding:0 5px;font-family:'Barlow',sans-serif;font-size:.72rem;color:var(--tx);outline:none;background:var(--bg)}
+.oi:focus{border-color:var(--deep);background:white}.oi::placeholder{color:var(--bd)}
+
+.rx-ctrl{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:4px}
+.rx-cb{width:22px;height:22px;border-radius:50%;border:1px solid var(--bd);background:white;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--mu);font-size:.7rem}.rx-cb:hover{border-color:var(--deep);color:var(--deep)}
+.rx-cl{font-size:.68rem;color:var(--mu)}
+.rx-last{margin-top:auto;padding-top:6px;border-top:1px solid var(--bd)}
+.rx-lt{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:.72rem;color:var(--ch);text-transform:uppercase;letter-spacing:.04em}
+.rx-ld{font-size:.72rem;color:var(--tl)}
+
+/* ── Action bar between exercises (always visible) ── */
+.actions{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 0;margin:2px 0}
+.act-btn{font-family:'Barlow',sans-serif;font-size:.68rem;font-weight:600;color:var(--mu);cursor:pointer;padding:3px 10px;border-radius:4px;border:1px solid transparent;background:none;transition:all .12s;display:flex;align-items:center;gap:3px}
+.act-btn:hover{color:var(--deep);border-color:var(--bd);background:white}
+.act-btn.ss-btn{color:var(--bright)}
+.act-btn.ss-btn:hover{background:rgba(45,178,76,.06);border-color:var(--bright)}
+.act-btn.ug-btn{color:var(--rd)}
+.act-btn.ug-btn:hover{background:rgba(201,59,59,.04);border-color:var(--rd)}
+.act-dot{width:3px;height:3px;border-radius:50%;background:var(--bd)}
+
+/* Add exercise at bottom */
+.add-btn{display:flex;align-items:center;justify-content:center;gap:5px;padding:10px;margin-top:8px;border:1px dashed var(--bd);border-radius:8px;cursor:pointer;color:var(--mu);font-size:.76rem;font-weight:500;background:white}
+.add-btn:hover{border-color:var(--deep);color:var(--deep)}
+
+/* ═══ RIGHT PANEL ═══ */
+.rp{width:340px;background:white;border-left:1px solid var(--bd);display:flex;flex-direction:column;flex-shrink:0}
+.rp-tabs{display:flex;border-bottom:1px solid var(--bd);flex-shrink:0}
+.rp-tab{flex:1;padding:9px;text-align:center;font-family:'Barlow',sans-serif;font-weight:600;font-size:.72rem;color:var(--mu);cursor:pointer;border:none;border-bottom:2px solid transparent;background:none}
+.rp-tab:hover{color:var(--deep)}.rp-tab.on{color:var(--deep);border-bottom-color:var(--bright)}
+.rp-c{flex:1;overflow-y:auto;display:none}.rp-c.on{display:block}
+.sb{background:rgba(45,178,76,.06);border-bottom:1px solid rgba(45,178,76,.12);padding:7px 16px;font-size:.72rem;color:var(--deep);font-weight:500;display:none;align-items:center;justify-content:space-between;flex-shrink:0}
+.sb.on{display:flex}
+.sb-x{background:none;border:none;color:var(--tl);font-size:.68rem;cursor:pointer;padding:2px 6px;border-radius:3px;font-family:'Barlow',sans-serif}.sb-x:hover{color:var(--rd)}
+
+.nb{padding:12px 16px}
+.fl{margin-bottom:14px}.fl-t{font-weight:600;font-size:.68rem;color:var(--rd);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}.fl-i{background:rgba(214,64,69,.04);border-left:2px solid var(--rd);padding:6px 10px;border-radius:0 5px 5px 0;font-size:.72rem;margin-bottom:4px;line-height:1.4}
+.ne{border-bottom:1px solid var(--bd);padding:10px 0}.ne:last-child{border-bottom:none}.ne-d{font-size:.66rem;color:var(--mu);font-weight:500;margin-bottom:2px}.ne-t{font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 5px;border-radius:3px;display:inline-block;margin-bottom:4px}.ne-t.ini{background:rgba(45,178,76,.08);color:var(--deep)}.ne-t.prg{background:rgba(212,160,23,.1);color:#9A7A0E}.ne-x{font-size:.72rem;line-height:1.5}
+
+.rb{padding:12px 16px}.rc{background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer}.rc:hover{border-color:var(--deep)}.rc-t{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.82rem;color:var(--ch)}.rc-d{font-size:.66rem;color:var(--tl);margin-top:2px}.rc-tg{display:flex;gap:3px;margin-top:5px}.rc-tg span{font-size:.58rem;font-weight:600;padding:2px 5px;border-radius:4px;background:rgba(45,178,76,.08);color:var(--deep)}
+
+.lb{display:flex;flex-direction:column;height:100%}
+.ls{padding:10px 16px;border-bottom:1px solid var(--bd);flex-shrink:0}
+.ls input{width:100%;padding:7px 12px 7px 30px;border:1px solid var(--bd);border-radius:6px;font-family:'Barlow',sans-serif;font-size:.76rem;outline:none;background:var(--bg) url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2393998F' stroke-width='2' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") 9px center no-repeat}
+.ls input:focus{border-color:var(--deep);background-color:white}
+.lf{padding:8px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;display:flex;gap:3px;overflow-x:auto}
+.fc{white-space:nowrap;padding:4px 10px;border-radius:12px;border:1px solid var(--bd);background:white;font-size:.66rem;font-weight:500;color:var(--tl);cursor:pointer}.fc:hover{border-color:var(--deep);color:var(--deep)}.fc.on{background:var(--ch);color:white;border-color:var(--ch)}
+.ltg{padding:6px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;display:flex;gap:3px;flex-wrap:wrap}
+.tc{padding:2px 8px;border-radius:10px;border:1px solid var(--bd);font-size:.62rem;font-weight:500;color:var(--tl);cursor:pointer;background:white}.tc:hover{border-color:var(--am);color:var(--am)}.tc.on{background:var(--am);color:white;border-color:var(--am)}
+.ll{flex:1;overflow-y:auto}
+.le{padding:8px 16px;display:flex;align-items:center;gap:10px;cursor:pointer;border-bottom:1px solid rgba(0,0,0,.03)}.le:hover{background:rgba(10,85,64,.02)}
+.le-i{flex:1}.le-n{font-weight:600;font-size:.76rem;color:var(--ch)}.le-m{font-size:.64rem;color:var(--tl);display:flex;gap:6px;margin-top:1px}.le-tg{font-size:.56rem;font-weight:600;padding:1px 5px;border-radius:6px;background:rgba(212,160,23,.1);color:#9A7A0E}.le-v{font-size:.56rem;color:var(--bright);font-weight:500}
+.le-a{background:var(--ch);color:white;border:none;border-radius:5px;padding:4px 10px;font-family:'Barlow',sans-serif;font-weight:600;font-size:.66rem;cursor:pointer;flex-shrink:0}.le-a:hover{background:var(--deep)}
+.ln{padding:10px 16px;border-top:1px solid var(--bd);flex-shrink:0}.ln div{padding:8px;border:1px dashed var(--bd);border-radius:6px;color:var(--tl);font-size:.72rem;font-weight:500;cursor:pointer;text-align:center}.ln div:hover{border-color:var(--deep);color:var(--deep)}
+
+@media(max-width:900px){.rp{width:300px}}
+</style>
+</head>
+<body>
+
+<div class="top"><b>Client Platform</b><nav><button>Dashboard</button><button class="on">Clients</button><button>Schedule</button><button>Library</button></nav></div>
+<div class="hdr"><div class="hdr-back"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>Calendar</div><div class="hdr-mid"><div class="hdr-t">Isaac Fong — Tue 14 Apr</div><div class="hdr-s">Day A</div></div><button class="hdr-save">Save</button></div>
+
+<div class="lay">
+<div class="main" id="M">
+
+<!-- Ex 1: Adductor Scorpions -->
+<div class="ex" data-i="0" data-title="Mobility">
+<div class="ex-title-bar" style="position:relative"><span class="ex-title-select" onclick="exTitleDD(this)">Mobility</span><div class="ex-title-dd"></div><button class="ex-title-x" onclick="clearTitle(this)">✕</button></div>
+<div class="ex-inner">
+<div class="ex-L">
+  <div class="ex-head"><div class="seq">A1</div><button class="ex-nm" onclick="swapEx(this)">Adductor Scorpions</button><button class="ex-del" onclick="delEx(this)">✕</button></div>
+  <div><div class="il">Instructions</div><textarea class="ib" placeholder="Coaching cues...">Stay tight. Attack each rep!</textarea></div>
+  <div class="vt"><div class="vt-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="white" opacity=".5"><polygon points="6 3 20 12 6 21"/></svg></div><div class="vt-name">Adductor Scorpions</div></div>
+</div>
+<div class="ex-R">
+  <div class="rx-sum">2 × 10</div>
+  <table class="rx-tbl"><thead><tr><th>Sets</th><th>Reps</th><th>Optional</th></tr></thead><tbody>
+  <tr><td class="sn">1</td><td><input class="ri" value="10"></td><td><input class="oi" placeholder=""></td></tr>
+  <tr><td class="sn">2</td><td><input class="ri" value="10"></td><td><input class="oi" placeholder=""></td></tr>
+  </tbody></table>
+  <div class="rx-ctrl"><button class="rx-cb">−</button><span class="rx-cl">Sets</span><button class="rx-cb">+</button></div>
+  <div class="rx-last"><div class="rx-lt">Last</div><div class="rx-ld">2 × 10 reps</div></div>
+</div>
+</div></div>
+
+<!-- Actions between 1 & 2 -->
+<div class="actions" data-between="0-1">
+  <button class="act-btn ss-btn" onclick="doSS(this)">Superset</button>
+  <span class="act-dot"></span>
+  <button class="act-btn" onclick="addEx()">+ Add Exercise</button>
+</div>
+
+<!-- Ex 2: Supine Leg Lifts -->
+<div class="ex" data-i="1" data-title="Mobility">
+<div class="ex-title-bar ex-title-dup" style="position:relative"><span class="ex-title-select" onclick="exTitleDD(this)">Mobility</span><div class="ex-title-dd"></div><button class="ex-title-x" onclick="clearTitle(this)">✕</button></div>
+<div class="ex-inner">
+<div class="ex-L">
+  <div class="ex-head"><div class="seq">B1</div><button class="ex-nm" onclick="swapEx(this)">Supine Leg Lifts w IR/ER</button><button class="ex-del" onclick="delEx(this)">✕</button></div>
+  <div><div class="il">Instructions</div><textarea class="ib" placeholder="Coaching cues...">8 each side</textarea></div>
+  <div class="vt"><div class="vt-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="white" opacity=".5"><polygon points="6 3 20 12 6 21"/></svg></div><div class="vt-name">Supine Leg Lifts</div></div>
+</div>
+<div class="ex-R">
+  <div class="rx-sum">2 × 16</div>
+  <table class="rx-tbl"><thead><tr><th>Sets</th><th>Reps</th><th>Optional</th></tr></thead><tbody>
+  <tr><td class="sn">1</td><td><input class="ri" value="16"></td><td><input class="oi" placeholder=""></td></tr>
+  <tr><td class="sn">2</td><td><input class="ri" value="16"></td><td><input class="oi" placeholder=""></td></tr>
+  </tbody></table>
+  <div class="rx-ctrl"><button class="rx-cb">−</button><span class="rx-cl">Sets</span><button class="rx-cb">+</button></div>
+  <div class="rx-last"><div class="rx-lt">Last</div><div class="rx-ld">2 × 16 reps</div></div>
+</div>
+</div></div>
+
+<!-- Actions between 2 & 3 -->
+<div class="actions" data-between="1-2">
+  <button class="act-btn ss-btn" onclick="doSS(this)">Superset</button>
+  <span class="act-dot"></span>
+  <button class="act-btn" onclick="addEx()">+ Add Exercise</button>
+</div>
+
+<!-- Ex 3: Barbell Back Squat -->
+<div class="ex" data-i="2" data-title="Strength">
+<div class="ex-title-bar" style="position:relative"><span class="ex-title-select" onclick="exTitleDD(this)">Strength</span><div class="ex-title-dd"></div><button class="ex-title-x" onclick="clearTitle(this)">✕</button></div>
+<div class="ex-inner">
+<div class="ex-L">
+  <div class="ex-head"><div class="seq">C1</div><button class="ex-nm" onclick="swapEx(this)">Barbell Back Squat</button><button class="ex-del" onclick="delEx(this)">✕</button></div>
+  <div><div class="il">Instructions</div><textarea class="ib" placeholder="Coaching cues...">Brace hard. Controlled descent, drive up.</textarea></div>
+  <div class="vt"><div class="vt-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="white" opacity=".5"><polygon points="6 3 20 12 6 21"/></svg></div><div class="vt-name">Barbell Back Squat</div></div>
+</div>
+<div class="ex-R">
+  <div class="rx-sum">4 × 6</div>
+  <table class="rx-tbl"><thead><tr><th>Sets</th><th>Reps</th><th>Optional</th></tr></thead><tbody>
+  <tr><td class="sn">1</td><td><input class="ri" value="6"></td><td><input class="oi" value="80kg"></td></tr>
+  <tr><td class="sn">2</td><td><input class="ri" value="6"></td><td><input class="oi" value="80kg"></td></tr>
+  <tr><td class="sn">3</td><td><input class="ri" value="6"></td><td><input class="oi" value="85kg"></td></tr>
+  <tr><td class="sn">4</td><td><input class="ri" value="6"></td><td><input class="oi" value="85kg"></td></tr>
+  </tbody></table>
+  <div class="rx-ctrl"><button class="rx-cb">−</button><span class="rx-cl">Sets</span><button class="rx-cb">+</button></div>
+  <div class="rx-last"><div class="rx-lt">Last</div><div class="rx-ld">4 × 6 @ 75-80kg</div></div>
+</div>
+</div></div>
+
+<!-- Actions between 3 & 4 -->
+<div class="actions" data-between="2-3">
+  <button class="act-btn ss-btn" onclick="doSS(this)">Superset</button>
+  <span class="act-dot"></span>
+  <button class="act-btn" onclick="addEx()">+ Add Exercise</button>
+</div>
+
+<!-- Ex 4: Copenhagen Adductor -->
+<div class="ex" data-i="3" data-title="Strength">
+<div class="ex-title-bar ex-title-dup" style="position:relative"><span class="ex-title-select" onclick="exTitleDD(this)">Strength</span><div class="ex-title-dd"></div><button class="ex-title-x" onclick="clearTitle(this)">✕</button></div>
+<div class="ex-inner">
+<div class="ex-L">
+  <div class="ex-head"><div class="seq">D1</div><button class="ex-nm" onclick="swapEx(this)">Copenhagen Adductor</button><button class="ex-del" onclick="delEx(this)">✕</button></div>
+  <div><div class="il">Instructions</div><textarea class="ib" placeholder="Coaching cues...">Key for groin rehab. Control throughout.</textarea></div>
+</div>
+<div class="ex-R">
+  <div class="rx-sum">3 × 8</div>
+  <table class="rx-tbl"><thead><tr><th>Sets</th><th>Reps</th><th>Optional</th></tr></thead><tbody>
+  <tr><td class="sn">1</td><td><input class="ri" value="8"></td><td><input class="oi" value="e/s"></td></tr>
+  <tr><td class="sn">2</td><td><input class="ri" value="8"></td><td><input class="oi" value="e/s"></td></tr>
+  <tr><td class="sn">3</td><td><input class="ri" value="8"></td><td><input class="oi" value="e/s"></td></tr>
+  </tbody></table>
+  <div class="rx-ctrl"><button class="rx-cb">−</button><span class="rx-cl">Sets</span><button class="rx-cb">+</button></div>
+  <div class="rx-last"><div class="rx-lt">Last</div><div class="rx-ld">3 × 8 e/s BW</div></div>
+</div>
+</div></div>
+
+<div class="add-btn" onclick="addEx()">+ Add exercise</div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="rp">
+<div class="rp-tabs">
+  <button class="rp-tab on" id="tN" onclick="sp('n')">Notes</button>
+  <button class="rp-tab" id="tR" onclick="sp('r')">Reports</button>
+  <button class="rp-tab" id="tL" onclick="sp('l')">Library</button>
+</div>
+<div class="sb" id="swb"><span>Replacing: <strong id="swn">—</strong></span><button class="sb-x" onclick="cx()">Cancel</button></div>
+
+<div class="rp-c on" id="pN"><div class="nb"><div class="fl"><div class="fl-t">Flags</div><div class="fl-i">L groin adductor strain — Feb 2026. Cleared for progressive loading.</div><div class="fl-i">R ankle ATFL recon — 2023. No current issues.</div></div><div class="ne"><div class="ne-d">10 Apr 2026</div><div class="ne-t prg">Progress</div><div class="ne-x">ADD:ABD 0.82 (target >0.85). Copenhagen progressing. NordBord 8% asymmetry, down from 14%.</div></div><div class="ne"><div class="ne-d">12 Jan 2026</div><div class="ne-t ini">Initial</div><div class="ne-x">24yo CM. L groin Grade II (Nov 25). R ankle ATFL recon 2023. RTT, strength ratios, hamstring asymmetry.</div></div></div></div>
+
+<div class="rp-c" id="pR"><div class="rb"><div class="rc"><div class="rc-t">Performance Report — Apr 2026</div><div class="rc-d">10 Apr 2026</div><div class="rc-tg"><span>ForceDecks</span><span>NordBord</span><span>ForceFrame</span></div></div><div class="rc"><div class="rc-t">Performance Report — Jan 2026</div><div class="rc-d">14 Jan 2026</div><div class="rc-tg"><span>ForceDecks</span><span>NordBord</span><span>ForceFrame</span></div></div></div></div>
+
+<div class="rp-c" id="pL"><div class="lb"><div class="ls"><input id="lsi" type="text" placeholder="Search exercises..." oninput="fe(this.value)"></div><div class="lf"><div class="fc on" onclick="sf(this)">All</div><div class="fc" onclick="sf(this)">Push</div><div class="fc" onclick="sf(this)">Pull</div><div class="fc" onclick="sf(this)">Squat</div><div class="fc" onclick="sf(this)">Hinge</div><div class="fc" onclick="sf(this)">Core</div><div class="fc" onclick="sf(this)">Iso</div></div><div class="ltg"><div class="tc" onclick="this.classList.toggle('on')">DGR</div><div class="tc" onclick="this.classList.toggle('on')">PRI</div><div class="tc" onclick="this.classList.toggle('on')">Plyo</div><div class="tc" onclick="this.classList.toggle('on')">Rehab</div><div class="tc" onclick="this.classList.toggle('on')">Prehab</div></div>
+<div class="ll">
+<div class="le" onclick="se('Barbell Back Squat')"><div class="le-i"><div class="le-n">Barbell Back Squat</div><div class="le-m"><span>Squat</span><span>4×6</span><span class="le-v">Video</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Romanian Deadlift')"><div class="le-i"><div class="le-n">Romanian Deadlift</div><div class="le-m"><span>Hinge</span><span>3×10</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Bulgarian Split Squat')"><div class="le-i"><div class="le-n">Bulgarian Split Squat</div><div class="le-m"><span>Squat</span><span>3×8</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Bench Press')"><div class="le-i"><div class="le-n">Bench Press</div><div class="le-m"><span>Push</span><span>4×6</span><span class="le-v">Video</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Nordic Hamstring Curl')"><div class="le-i"><div class="le-n">Nordic Hamstring Curl</div><div class="le-m"><span>Hinge</span><span>3×5</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Copenhagen Adductor')"><div class="le-i"><div class="le-n">Copenhagen Adductor</div><div class="le-m"><span>Iso</span><span class="le-tg">Rehab</span><span>3×8</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Adductor Scorpions')"><div class="le-i"><div class="le-n">Adductor Scorpions</div><div class="le-m"><span>Core</span><span class="le-tg">DGR</span><span>2×10</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Face Pull')"><div class="le-i"><div class="le-n">Face Pull</div><div class="le-m"><span>Pull</span><span class="le-tg">Prehab</span><span>3×15</span></div></div><button class="le-a">Add</button></div>
+<div class="le" onclick="se('Pogo Jumps')"><div class="le-i"><div class="le-n">Pogo Jumps</div><div class="le-m"><span>Squat</span><span class="le-tg">Plyo</span><span>3×10</span></div></div><button class="le-a">Add</button></div>
+</div>
+<div class="ln"><div>+ Create New Exercise</div></div></div></div>
+</div>
+</div>
+
+<script>
+let swt=null;const ABC='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const secOpts=['Mobility','Movement Restoration','Plyometrics','Power','Strength','Hypertrophy','Conditioning','On-Field Conditioning','Technique Work','Recovery'];
+
+function sp(p){
+  document.querySelectorAll('.rp-c').forEach(c=>c.classList.remove('on'));
+  document.querySelectorAll('.rp-tab').forEach(t=>t.classList.remove('on'));
+  if(p==='n'){document.getElementById('pN').classList.add('on');document.getElementById('tN').classList.add('on');document.getElementById('swb').classList.remove('on');swt=null}
+  else if(p==='r'){document.getElementById('pR').classList.add('on');document.getElementById('tR').classList.add('on')}
+  else if(p==='l'){document.getElementById('pL').classList.add('on');document.getElementById('tL').classList.add('on');setTimeout(()=>document.getElementById('lsi').focus(),50)}
+}
+function swapEx(btn){swt=btn;btn.dataset.orig=btn.textContent;btn.textContent='Select exercise...';btn.classList.add('blank');document.getElementById('swn').textContent=btn.dataset.orig;document.getElementById('swb').classList.add('on');sp('l')}
+function addEx(){swt=null;document.getElementById('swb').classList.remove('on');sp('l')}
+function cx(){if(swt){swt.textContent=swt.dataset.orig;swt.classList.remove('blank')}swt=null;document.getElementById('swb').classList.remove('on');sp('n')}
+function se(name){if(swt){swt.textContent=name;swt.classList.remove('blank')}swt=null;document.getElementById('swb').classList.remove('on');sp('n')}
+
+function delEx(btn){const card=btn.closest('.ex');const next=card.nextElementSibling;const prev=card.previousElementSibling;if(next&&next.classList.contains('actions'))next.remove();else if(prev&&prev.classList.contains('actions'))prev.remove();card.remove();reseq()}
+
+function doSS(btn){
+  const bar=btn.closest('.actions');
+  const isOn=bar.dataset.grouped==='true';
+  let prev=bar.previousElementSibling;while(prev&&!prev.classList.contains('ex'))prev=prev.previousElementSibling;
+  let next=bar.nextElementSibling;while(next&&!next.classList.contains('ex'))next=next.nextElementSibling;
+  if(isOn){
+    bar.dataset.grouped='false';
+    btn.textContent='Superset';btn.classList.remove('ug-btn');btn.classList.add('ss-btn');
+    if(prev)prev.classList.remove('g-top');
+    if(next)next.classList.remove('g-bot');
+  }else{
+    bar.dataset.grouped='true';
+    btn.textContent='Ungroup';btn.classList.remove('ss-btn');btn.classList.add('ug-btn');
+    if(prev)prev.classList.add('g-top');
+    if(next){
+      next.classList.add('g-bot');
+      // Auto-clear the second exercise's title
+      next.dataset.title='';
+      const titleBar=next.querySelector('.ex-title-bar');
+      if(titleBar)titleBar.classList.add('empty');
+    }
+  }
+  reseq();refreshTitles();
+}
+
+function reseq(){
+  const all=[...document.querySelectorAll('#M > .ex, #M > .actions')];
+  let letter=0,num=1;
+  all.forEach((el,i)=>{
+    if(!el.classList.contains('ex'))return;
+    const s=el.querySelector('.seq');
+    s.textContent=ABC[letter]+num;
+    const nxt=all[i+1];
+    if(nxt&&nxt.classList.contains('actions')&&nxt.dataset.grouped==='true'){
+      num++;s.style.background='var(--bright)';s.style.color='var(--ch)';
+    }else{
+      const prv=all[i-1];
+      if(prv&&prv.classList.contains('actions')&&prv.dataset.grouped==='true'){
+        s.style.background='var(--bright)';s.style.color='var(--ch)';
+      }else{s.style.background='var(--ch)';s.style.color='white'}
+      letter++;num=1;
+    }
+  });
+}
+
+function exTitleDD(nameEl){
+  const dd=nameEl.nextElementSibling;
+  if(dd.classList.contains('open')){dd.classList.remove('open');return}
+  document.querySelectorAll('.ex-title-dd.open').forEach(d=>d.classList.remove('open'));
+  const opts=['Mobility','Movement Restoration','Plyometrics','Power','Strength','Hypertrophy','Conditioning','On-Field Conditioning','Technique Work','Recovery'];
+  dd.innerHTML=opts.map(o=>'<div class="ex-title-dd-item" onclick="pickExTitle(this,\''+o+'\')">'+o+'</div>').join('');
+  dd.classList.add('open');
+}
+function pickExTitle(item,val){
+  const card=item.closest('.ex');
+  card.dataset.title=val;
+  const bar=card.querySelector('.ex-title-bar');
+  bar.querySelector('.ex-title-select').textContent=val;
+  bar.classList.remove('empty','ex-title-dup');
+  bar.style.display='';
+  card.querySelector('.ex-title-dd').classList.remove('open');
+  refreshTitles();
+}
+function clearTitle(btn){
+  const card=btn.closest('.ex');
+  card.dataset.title='';
+  const bar=card.querySelector('.ex-title-bar');
+  bar.classList.add('empty');
+  refreshTitles();
+}
+function addTitleToEx(btn){
+  const card=btn.closest('.ex');
+  const bar=card.querySelector('.ex-title-bar');
+  bar.classList.remove('empty');
+  bar.querySelector('.ex-title-select').textContent='Select...';
+  exTitleDD(bar.querySelector('.ex-title-select'));
+}
+function refreshTitles(){
+  const cards=[...document.querySelectorAll('#M > .ex')];
+  let lastTitle='';
+  cards.forEach(card=>{
+    const t=card.dataset.title||'';
+    const bar=card.querySelector('.ex-title-bar');
+    if(!t){bar.classList.add('empty');bar.style.display='none';return}
+    if(t===lastTitle){
+      bar.classList.add('ex-title-dup');
+      bar.style.display='none';
+    }else{
+      bar.classList.remove('ex-title-dup');
+      bar.style.display='';
+    }
+    lastTitle=t;
+  });
+}
+
+function sf(el){document.querySelectorAll('.fc').forEach(c=>c.classList.remove('on'));el.classList.add('on')}
+function fe(q){q=q.toLowerCase();document.querySelectorAll('.le').forEach(e=>{e.style.display=e.querySelector('.le-n').textContent.toLowerCase().includes(q)?'flex':'none'})}
+document.addEventListener('click',e=>{if(!e.target.closest('.ex-title-bar'))document.querySelectorAll('.ex-title-dd.open').forEach(d=>d.classList.remove('open'))});
+
+reseq();
+refreshTitles();
+</script>
+</body>
+</html>

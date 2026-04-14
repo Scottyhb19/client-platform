@@ -1,0 +1,37 @@
+// Re-export Prisma-generated types for use across the app.
+// This file serves as the central type export point.
+// Add custom types (non-Prisma) below as the app grows.
+
+export type {
+  Practice,
+  User,
+  UserRole,
+  Client,
+  ClientCategory,
+  Exercise,
+  MovementPattern,
+  ExerciseTag,
+  SectionTitle,
+  ProgramTemplate,
+  TemplateDayGroup,
+  TemplateExercise,
+  Program,
+  ProgramStatus,
+  ProgramType,
+  ProgramDayGroup,
+  ProgramExercise,
+  SessionLog,
+  ExerciseLog,
+  SetLog,
+  ClinicalNote,
+  NoteType,
+  AvailabilitySlot,
+  Booking,
+  BookingStatus,
+  Communication,
+  CommunicationType,
+  CommunicationStatus,
+  Report,
+  AuditLog,
+  PracticeSetting,
+} from "@/generated/prisma/client";

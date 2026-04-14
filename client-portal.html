@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Client Portal — Prototype v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;900&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--deep:#0a5540;--dark:#083d2f;--charcoal:#231f20;--bright:#2db24c;--light-bg:#F0F4F2;--muted:#7A8178;--text:#1C2420;--text-light:#637062;--border:#E2E8E4;--amber:#E8A317;--red:#D64045}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Barlow',sans-serif;background:var(--light-bg);color:var(--text);line-height:1.5;-webkit-font-smoothing:antialiased;max-width:430px;margin:0 auto;min-height:100vh;position:relative;overflow-x:hidden}
+.screen{display:none;min-height:100vh}.screen.active{display:flex;flex-direction:column}
+
+.home-header{background:var(--charcoal);padding:24px 20px 20px;color:white}
+.home-greeting{font-size:.82rem;color:rgba(255,255,255,.45);margin-bottom:2px}
+.home-name{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.5rem;color:white}
+.week-strip{background:white;border-bottom:1px solid var(--border);padding:14px 12px 12px}
+.week-strip-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;padding:0 4px}
+.week-strip-label{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.92rem;color:var(--charcoal)}
+.week-strip-arrows{display:flex;gap:6px}
+.week-arrow{background:none;border:1px solid var(--border);width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-light)}
+.week-days{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.week-day{display:flex;flex-direction:column;align-items:center;padding:8px 0;border-radius:12px;cursor:pointer;transition:all .12s;position:relative}
+.week-day.selected{background:rgba(10,85,64,.06)}
+.week-day-label{font-size:.64rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.week-day-num{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;color:var(--charcoal);width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+.week-day.today .week-day-num{background:var(--deep);color:white}
+.week-day.has-session::after{content:'';width:5px;height:5px;border-radius:50%;background:var(--bright);margin-top:4px}
+.week-day.rest .week-day-num{color:var(--border);font-weight:400}
+
+.session-card-area{flex:1;padding:16px 16px 100px}
+.session-card{background:white;border-radius:16px;border:1px solid var(--border);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.session-card-header{padding:16px 18px 12px;border-bottom:1px solid var(--border)}
+.session-card-day{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;color:var(--charcoal)}
+.session-card-date{font-size:.76rem;color:var(--text-light);margin-top:1px}
+.session-exercise-preview{padding:10px 18px}
+.preview-exercise{display:flex;align-items:baseline;gap:8px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.04)}
+.preview-exercise:last-child{border-bottom:none}
+.preview-seq{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.68rem;color:white;background:var(--deep);width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.preview-seq.ss{background:var(--bright);color:var(--charcoal)}.preview-seq.ts{background:var(--amber);color:var(--charcoal)}
+.preview-info{flex:1}.preview-name{font-weight:600;font-size:.8rem;color:var(--charcoal)}.preview-rx{font-size:.72rem;color:var(--text-light)}
+.begin-session-btn{display:block;width:calc(100% - 36px);margin:4px 18px 18px;padding:14px;background:var(--deep);color:white;border:none;border-radius:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;cursor:pointer}
+.begin-session-btn:hover{background:var(--dark)}
+.rest-card{background:white;border-radius:16px;border:1px solid var(--border);padding:40px 24px;text-align:center}
+.rest-card-title{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.1rem;color:var(--charcoal);margin-bottom:4px}
+.rest-card-text{font-size:.82rem;color:var(--text-light)}
+
+.bottom-nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:white;border-top:1px solid var(--border);display:flex;padding:8px 0 env(safe-area-inset-bottom,8px);z-index:50}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;cursor:pointer;color:var(--muted);font-size:.64rem;font-weight:500;border:none;background:none}
+.nav-item.active{color:var(--deep)}.nav-icon{width:22px;height:22px}
+
+/* IN-SESSION */
+.session-screen{background:var(--charcoal);color:white}
+.session-topbar{padding:16px 20px 12px;display:flex;align-items:center;justify-content:space-between}
+.session-back{background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-family:'Barlow',sans-serif;font-size:.82rem;font-weight:500;display:flex;align-items:center;gap:4px;padding:6px 10px;border-radius:6px}
+.session-back:hover{color:white;background:rgba(255,255,255,.08)}
+.session-progress-text{font-size:.76rem;color:rgba(255,255,255,.4);font-weight:500}
+.session-progress-bar{height:3px;background:rgba(255,255,255,.1);margin:0 20px;border-radius:2px;overflow:hidden}
+.session-progress-fill{height:100%;background:var(--bright);border-radius:2px;transition:width .3s ease}
+.exercise-display{flex:1;padding:20px 24px 16px;display:flex;flex-direction:column;overflow-y:auto}
+
+.group-label{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:6px;display:inline-block;margin-bottom:12px}
+.group-label.superset{background:rgba(45,178,76,.15);color:var(--bright)}
+.group-label.triset{background:rgba(232,163,23,.15);color:var(--amber)}
+
+.ex-block{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.06)}
+.ex-block:last-of-type{border-bottom:none;margin-bottom:8px}
+.ex-block-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px}
+.ex-block-info{flex:1}
+.ex-block-seq{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:.74rem;color:var(--bright);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px}
+.ex-block-name{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.35rem;color:white;line-height:1.1;margin-bottom:3px}
+.ex-block-note{font-size:.76rem;color:var(--bright);font-style:italic;margin-top:4px;line-height:1.3}
+
+.video-mini{width:48px;height:48px;border-radius:8px;overflow:hidden;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);cursor:pointer;flex-shrink:0;position:relative;margin-left:10px;margin-top:2px;transition:all .12s}
+.video-mini:hover{border-color:rgba(255,255,255,.25)}
+.video-mini-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25)}
+.video-mini-label{position:absolute;bottom:0;left:0;right:0;text-align:center;font-size:.48rem;font-weight:600;color:rgba(255,255,255,.7);background:rgba(0,0,0,.5);padding:1px 0}
+
+.video-expanded{display:none;margin:6px 0 8px;border-radius:10px;overflow:hidden;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.1)}
+.video-expanded.open{display:block}
+.video-expanded-inner{width:100%;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.3);cursor:pointer}
+.video-expanded-play{width:44px;height:44px;border-radius:50%;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.video-expanded-bar{padding:6px 12px;display:flex;align-items:center;justify-content:space-between}
+.video-expanded-text{font-size:.7rem;color:rgba(255,255,255,.4)}
+.video-expanded-close{font-size:.7rem;font-weight:600;color:var(--bright);cursor:pointer;background:none;border:none;padding:2px 8px;border-radius:4px}
+
+.set-rows{margin-top:4px}
+.set-row{display:grid;grid-template-columns:36px 1fr 1fr 44px;gap:6px;align-items:center;margin-bottom:8px}
+.set-label{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:.78rem;color:rgba(255,255,255,.35)}
+.set-input-group{display:flex;flex-direction:column;gap:1px}
+.set-input-label{font-size:.58rem;font-weight:500;color:rgba(255,255,255,.25);text-transform:uppercase;letter-spacing:.04em}
+.set-input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:7px;padding:8px 10px;color:white;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1rem;text-align:center;outline:none;width:100%}
+.set-input:focus{border-color:var(--bright);background:rgba(45,178,76,.08)}
+.set-input::placeholder{color:rgba(255,255,255,.18);font-weight:400}
+.set-check{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,.12);background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;color:transparent;justify-self:center}
+.set-check.done{background:var(--bright);border-color:var(--bright);color:var(--charcoal)}
+
+.group-footer{margin-top:8px;padding-top:14px;border-top:1px solid rgba(255,255,255,.06)}
+.rpe-label{font-size:.74rem;color:rgba(255,255,255,.4);font-weight:500;margin-bottom:4px}
+.rpe-slider-wrap{position:relative;padding:8px 0 20px}
+.rpe-slider{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:linear-gradient(90deg,var(--bright) 0%,var(--amber) 50%,var(--red) 100%);outline:none;opacity:.7;transition:opacity .15s}
+.rpe-slider:hover{opacity:1}
+.rpe-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:28px;height:28px;border-radius:50%;background:white;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.9)}
+.rpe-slider::-moz-range-thumb{width:28px;height:28px;border-radius:50%;background:white;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.9)}
+.rpe-value{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.4rem;color:var(--bright);text-align:center;margin-bottom:2px;min-height:1.6rem}
+.rpe-ticks{display:flex;justify-content:space-between;padding:0 2px;margin-top:4px}
+.rpe-tick{font-size:.6rem;color:rgba(255,255,255,.25);font-weight:500;font-family:'Barlow Condensed',sans-serif}
+.note-input{width:100%;margin-top:10px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 12px;color:white;font-family:'Barlow',sans-serif;font-size:.78rem;outline:none;resize:none;height:40px}
+.note-input:focus{border-color:var(--bright)}.note-input::placeholder{color:rgba(255,255,255,.18)}
+
+.session-nav{padding:14px 24px env(safe-area-inset-bottom,18px);display:flex;gap:10px}
+.session-nav-btn{flex:1;padding:13px;border-radius:12px;border:none;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1rem;cursor:pointer}
+.btn-prev{background:rgba(255,255,255,.08);color:rgba(255,255,255,.5)}.btn-prev:hover{background:rgba(255,255,255,.12);color:white}
+.btn-next{background:var(--bright);color:var(--charcoal)}.btn-next:hover{background:#25a040}
+
+.complete-screen{background:var(--charcoal);color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 32px}
+.complete-check{width:72px;height:72px;border-radius:50%;background:var(--bright);display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+.complete-title{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.8rem;color:white;margin-bottom:8px}
+.complete-subtitle{font-size:.88rem;color:rgba(255,255,255,.5);margin-bottom:32px;line-height:1.5}
+.complete-stats{display:flex;gap:24px;margin-bottom:36px}
+.stat-value{font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.6rem;color:var(--bright)}
+.stat-label{font-size:.72rem;color:rgba(255,255,255,.4);font-weight:500}
+.complete-btn{padding:14px 48px;background:var(--deep);color:white;border:none;border-radius:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:1.05rem;cursor:pointer}
+.complete-btn:hover{background:var(--dark)}
+</style>
+</head>
+<body>
+
+<div class="screen active" id="homeScreen">
+  <div class="home-header"><div class="home-greeting">Good morning</div><div class="home-name">Isaac</div></div>
+  <div class="week-strip">
+    <div class="week-strip-nav"><div class="week-strip-label">April 2026</div><div class="week-strip-arrows"><button class="week-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg></button><button class="week-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></button></div></div>
+    <div class="week-days">
+      <div class="week-day rest" onclick="selectDay(this,'rest')"><div class="week-day-label">Mon</div><div class="week-day-num">6</div></div>
+      <div class="week-day has-session" onclick="selectDay(this,'s')"><div class="week-day-label">Tue</div><div class="week-day-num">7</div></div>
+      <div class="week-day rest" onclick="selectDay(this,'rest')"><div class="week-day-label">Wed</div><div class="week-day-num">8</div></div>
+      <div class="week-day has-session" onclick="selectDay(this,'s')"><div class="week-day-label">Thu</div><div class="week-day-num">9</div></div>
+      <div class="week-day rest" onclick="selectDay(this,'rest')"><div class="week-day-label">Fri</div><div class="week-day-num">10</div></div>
+      <div class="week-day today has-session selected" onclick="selectDay(this,'s')"><div class="week-day-label">Sat</div><div class="week-day-num">11</div></div>
+      <div class="week-day rest" onclick="selectDay(this,'rest')"><div class="week-day-label">Sun</div><div class="week-day-num">12</div></div>
+    </div>
+  </div>
+  <div class="session-card-area" id="sessionCardArea">
+    <div class="session-card">
+      <div class="session-card-header"><div class="session-card-day">Day C — Full Body</div><div class="session-card-date">Saturday 11 April · 6 exercises</div></div>
+      <div class="session-exercise-preview">
+        <div class="preview-exercise"><div class="preview-seq">A1</div><div class="preview-info"><div class="preview-name">Trap Bar Deadlift</div><div class="preview-rx">4 × 5 · RPE 8</div></div></div>
+        <div class="preview-exercise"><div class="preview-seq ss">B1</div><div class="preview-info"><div class="preview-name">Pull Ups</div><div class="preview-rx">3 × max</div></div></div>
+        <div class="preview-exercise"><div class="preview-seq ss">B2</div><div class="preview-info"><div class="preview-name">Push Ups</div><div class="preview-rx">3 × 15</div></div></div>
+        <div class="preview-exercise"><div class="preview-seq ts">C1</div><div class="preview-info"><div class="preview-name">Side-Lying SLR</div><div class="preview-rx">3 × 15 e/s</div></div></div>
+        <div class="preview-exercise"><div class="preview-seq ts">C2</div><div class="preview-info"><div class="preview-name">Fwd Lean Calf Raise</div><div class="preview-rx">2 × 20</div></div></div>
+        <div class="preview-exercise"><div class="preview-seq ts">C3</div><div class="preview-info"><div class="preview-name">Soleus Slouch</div><div class="preview-rx">2 × 8</div></div></div>
+      </div>
+      <button class="begin-session-btn" onclick="beginSession()">Begin Session</button>
+    </div>
+  </div>
+  <div class="bottom-nav">
+    <button class="nav-item active"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Program</button>
+    <button class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Reports</button>
+    <button class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Bookings</button>
+  </div>
+</div>
+
+<div class="screen session-screen" id="sessionScreen">
+  <div class="session-topbar"><button class="session-back" onclick="exitSession()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>Exit</button><div class="session-progress-text" id="progressText">1 of 4</div></div>
+  <div class="session-progress-bar"><div class="session-progress-fill" id="progressFill" style="width:25%"></div></div>
+  <div class="exercise-display" id="exerciseDisplay"></div>
+  <div class="session-nav"><button class="session-nav-btn btn-prev" id="prevBtn" onclick="prevGroup()">Previous</button><button class="session-nav-btn btn-next" id="nextBtn" onclick="nextGroup()">Next</button></div>
+</div>
+
+<div class="screen session-screen" id="sessionRpeScreen">
+  <div class="session-topbar"><button class="session-back" onclick="showScreen('sessionScreen');renderGroup()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>Back</button><div class="session-progress-text">Almost done</div></div>
+  <div class="session-progress-bar"><div class="session-progress-fill" style="width:100%"></div></div>
+  <div class="exercise-display" style="align-items:center;justify-content:center;text-align:center;">
+    <div class="complete-check" style="margin-bottom:20px;"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#231f20" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-weight:900;font-size:1.6rem;color:white;margin-bottom:6px;">Great work, Isaac</div>
+    <div style="font-size:.84rem;color:rgba(255,255,255,.45);margin-bottom:32px;line-height:1.5;">All exercises complete. One last thing —<br>how did the session feel overall?</div>
+    <div style="width:100%;text-align:left;">
+      <div class="rpe-label" style="text-align:center;">Overall Session RPE</div>
+      <div class="rpe-value" id="sessionRpeVal">&nbsp;</div>
+      <div class="rpe-slider-wrap"><input type="range" class="rpe-slider" min="1" max="10" step="1" value="5" oninput="document.getElementById('sessionRpeVal').textContent=this.value"></div>
+      <div class="rpe-ticks"><span class="rpe-tick">1</span><span class="rpe-tick">2</span><span class="rpe-tick">3</span><span class="rpe-tick">4</span><span class="rpe-tick">5</span><span class="rpe-tick">6</span><span class="rpe-tick">7</span><span class="rpe-tick">8</span><span class="rpe-tick">9</span><span class="rpe-tick">10</span></div>
+    </div>
+    <div style="width:100%;margin-top:20px;">
+      <textarea class="note-input" placeholder="How are you feeling? (optional)" style="height:50px;"></textarea>
+    </div>
+  </div>
+  <div class="session-nav">
+    <button class="session-nav-btn btn-next" style="flex:1;" onclick="showScreen('completeScreen')">Finish Session</button>
+  </div>
+</div>
+
+<div class="screen complete-screen" id="completeScreen">
+  <div class="complete-check"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#231f20" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></div>
+  <div class="complete-title">Session complete</div>
+  <div class="complete-subtitle">Another one in the bank. Consistency wins.</div>
+  <div class="complete-stats"><div class="complete-stat"><div class="stat-value">6</div><div class="stat-label">Exercises</div></div><div class="complete-stat"><div class="stat-value">16</div><div class="stat-label">Sets</div></div><div class="complete-stat"><div class="stat-value">38m</div><div class="stat-label">Duration</div></div></div>
+  <button class="complete-btn" onclick="goHome()">Done</button>
+</div>
+
+<script>
+const groups=[
+  {type:'single',exercises:[{seq:'A1',name:'Trap Bar Deadlift',target:'4 × 5 · RPE 8 · 120s rest',sets:4,note:'',video:'https://youtube.com'}]},
+  {type:'superset',exercises:[{seq:'B1',name:'Pull Ups',target:'3 × max · 90s rest',sets:3,note:'',video:'https://youtube.com'},{seq:'B2',name:'Push Ups',target:'3 × 15 · Bodyweight',sets:3,note:'',video:'https://youtube.com'}]},
+  {type:'triset',exercises:[{seq:'C1',name:'Side-Lying SLR',target:'3 × 15 e/s',sets:3,note:'',video:'https://youtube.com'},{seq:'C2',name:'Fwd Lean Calf Raise',target:'2 × 20',sets:2,note:'',video:null},{seq:'C3',name:'Soleus Slouch',target:'2 × 8 · 2 × 8',sets:2,note:'',video:null}]},
+  {type:'single',exercises:[{seq:'D1',name:'Nordic Hamstring Curl',target:'3 × 5 · Bodyweight',sets:3,note:'Assisted with band if needed',video:'https://youtube.com'}]}
+];
+let cg=0;
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active')}
+function beginSession(){cg=0;renderGroup();showScreen('sessionScreen')}
+function exitSession(){showScreen('homeScreen')}
+function goHome(){showScreen('homeScreen')}
+function selectDay(el,type){document.querySelectorAll('.week-day').forEach(d=>d.classList.remove('selected'));el.classList.add('selected');const a=document.getElementById('sessionCardArea');if(type==='rest'){a.innerHTML='<div class="rest-card"><div class="rest-card-title">Rest day</div><div class="rest-card-text">No session scheduled. Recovery is part of the process.</div></div>'}else{location.reload()}}
+
+function renderGroup(){
+  const g=groups[cg],d=document.getElementById('exerciseDisplay');
+  document.getElementById('progressText').textContent=(cg+1)+' of '+groups.length;
+  document.getElementById('progressFill').style.width=((cg+1)/groups.length*100)+'%';
+  document.getElementById('prevBtn').style.visibility=cg===0?'hidden':'visible';
+  document.getElementById('nextBtn').textContent='Next';
+
+  let h='';
+  if(g.type==='superset')h+='<div class="group-label superset">Superset</div>';
+  else if(g.type==='triset')h+='<div class="group-label triset">Tri-set</div>';
+
+  g.exercises.forEach((ex,i)=>{
+    const vid='v'+cg+'-'+i;
+    const vm=ex.video?`<div class="video-mini" onclick="toggleVideo('${vid}',event)"><div class="video-mini-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="white"><polygon points="6 3 20 12 6 21"/></svg></div><div class="video-mini-label">Video</div></div>`:'';
+    const ve=ex.video?`<div class="video-expanded" id="${vid}"><div class="video-expanded-inner" onclick="window.open('${ex.video}','_blank')"><div class="video-expanded-play"><svg width="20" height="20" viewBox="0 0 24 24" fill="white"><polygon points="6 3 20 12 6 21"/></svg></div></div><div class="video-expanded-bar"><span class="video-expanded-text">Tap to play on YouTube</span><button class="video-expanded-close" onclick="toggleVideo('${vid}',event)">Close</button></div></div>`:'';
+    let sr='';
+    for(let s=0;s<ex.sets;s++){sr+=`<div class="set-row"><div class="set-label">Set ${s+1}</div><div class="set-input-group"><div class="set-input-label">Weight</div><input class="set-input" type="number" placeholder="—" inputmode="decimal"></div><div class="set-input-group"><div class="set-input-label">Reps</div><input class="set-input" type="number" placeholder="—" inputmode="numeric"></div><button class="set-check" onclick="this.classList.toggle('done')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg></button></div>`}
+    h+=`<div class="ex-block"><div class="ex-block-header"><div class="ex-block-info"><div class="ex-block-seq">${ex.seq}</div><div class="ex-block-name">${ex.name}</div>${ex.note?'<div class="ex-block-note">'+ex.note+'</div>':''}</div>${vm}</div>${ve}<div class="set-rows">${sr}</div></div>`;
+  });
+
+  h+=`<div class="group-footer"><div class="rpe-label">How hard was that? (RPE)</div><div class="rpe-value" id="rpeVal">&nbsp;</div><div class="rpe-slider-wrap"><input type="range" class="rpe-slider" min="1" max="10" step="1" value="5" oninput="updateRPE(this.value)"></div><div class="rpe-ticks"><span class="rpe-tick">1</span><span class="rpe-tick">2</span><span class="rpe-tick">3</span><span class="rpe-tick">4</span><span class="rpe-tick">5</span><span class="rpe-tick">6</span><span class="rpe-tick">7</span><span class="rpe-tick">8</span><span class="rpe-tick">9</span><span class="rpe-tick">10</span></div><textarea class="note-input" placeholder="Any notes? (optional)"></textarea></div>`;
+  d.innerHTML=h;d.scrollTop=0;
+}
+
+function nextGroup(){if(cg<groups.length-1){cg++;renderGroup()}else{showScreen('sessionRpeScreen')}}
+function prevGroup(){if(cg>0){cg--;renderGroup()}}
+function updateRPE(val){const el=document.getElementById('rpeVal');if(el)el.textContent=val}
+function toggleVideo(id,e){e.stopPropagation();document.getElementById(id).classList.toggle('open')}
+renderGroup();
+</script>
+</body>
+</html>

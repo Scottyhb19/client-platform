@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Program Calendar — Prototype v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;900&family=Barlow:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --deep: #0a5540;
+  --dark: #083d2f;
+  --charcoal: #231f20;
+  --slate: #35363a;
+  --bright: #2db24c;
+  --light-bg: #F0F4F2;
+  --muted: #7A8178;
+  --card-bg: #FFFFFF;
+  --text: #1C2420;
+  --text-light: #637062;
+  --border: #E2E8E4;
+  --amber: #E8A317;
+  --red: #D64045;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Barlow', sans-serif;
+  background: var(--light-bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ─── TOP BAR ─── */
+.topbar {
+  background: var(--charcoal);
+  padding: 0 28px; height: 52px;
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 100;
+}
+.topbar-brand {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 900; font-size: 1.2rem; color: white;
+  letter-spacing: 0.04em;
+}
+.topbar-nav { display: flex; gap: 4px; }
+.topbar-nav button {
+  background: none; border: none;
+  color: rgba(255,255,255,0.45);
+  font-family: 'Barlow', sans-serif;
+  font-weight: 500; font-size: 0.8rem;
+  padding: 6px 14px; border-radius: 6px;
+  cursor: pointer; transition: all 0.15s;
+}
+.topbar-nav button:hover { color: white; background: rgba(255,255,255,0.08); }
+.topbar-nav button.active { color: white; background: var(--deep); }
+
+/* ─── CLIENT HEADER ─── */
+.client-header {
+  background: white; border-bottom: 1px solid var(--border);
+  padding: 16px 28px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.client-info { display: flex; align-items: center; gap: 14px; }
+.client-avatar {
+  width: 40px; height: 40px;
+  background: linear-gradient(135deg, var(--deep), var(--bright));
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 1rem; color: white;
+}
+.client-name {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 1.3rem; color: var(--charcoal);
+}
+.client-meta {
+  font-size: 0.78rem; color: var(--text-light);
+  display: flex; gap: 14px; margin-top: 1px;
+}
+.client-meta span + span::before {
+  content: '·'; margin-right: 14px; color: var(--border);
+}
+.client-tabs { display: flex; gap: 4px; }
+.client-tabs button {
+  background: none; border: 1px solid var(--border);
+  font-family: 'Barlow', sans-serif; font-weight: 500;
+  font-size: 0.78rem; padding: 6px 14px; border-radius: 8px;
+  cursor: pointer; color: var(--text-light); transition: all 0.15s;
+}
+.client-tabs button:hover { border-color: var(--deep); color: var(--deep); }
+.client-tabs button.active { background: var(--deep); color: white; border-color: var(--deep); }
+
+/* ─── MAIN LAYOUT ─── */
+.main-layout {
+  display: flex;
+  height: calc(100vh - 52px - 73px);
+  overflow: hidden;
+}
+.calendar-area {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; transition: all 0.3s ease;
+}
+
+/* ─── PROGRAM TOOLBAR ─── */
+.program-toolbar {
+  padding: 12px 28px;
+  display: flex; align-items: center; justify-content: space-between;
+  background: white; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.program-left { display: flex; align-items: center; gap: 14px; }
+.program-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 1.05rem; color: var(--charcoal);
+}
+.program-tag {
+  background: rgba(45,178,76,0.12); color: var(--deep);
+  padding: 2px 10px; border-radius: 12px;
+  font-weight: 600; font-size: 0.7rem;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.program-actions { display: flex; gap: 6px; }
+.btn {
+  font-family: 'Barlow', sans-serif;
+  font-weight: 600; font-size: 0.76rem;
+  padding: 6px 12px; border-radius: 7px;
+  border: 1px solid var(--border);
+  background: white; color: var(--text);
+  cursor: pointer; transition: all 0.15s;
+}
+.btn:hover { border-color: var(--deep); color: var(--deep); }
+.btn-primary { background: var(--deep); color: white; border-color: var(--deep); }
+.btn-primary:hover { background: var(--dark); }
+.btn-notes .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--red); display: inline-block;
+  margin-left: 4px; vertical-align: middle;
+}
+
+/* ─── MONTH NAVIGATION ─── */
+.month-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 28px;
+  background: white; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.month-nav-center {
+  display: flex; align-items: center; gap: 16px;
+}
+.month-arrow {
+  background: none; border: 1px solid var(--border);
+  width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text-light);
+  transition: all 0.12s;
+}
+.month-arrow:hover { border-color: var(--deep); color: var(--deep); }
+.month-label {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 1.2rem; color: var(--charcoal);
+  min-width: 160px; text-align: center;
+}
+.month-today {
+  font-size: 0.74rem; font-weight: 500;
+  color: var(--deep); cursor: pointer;
+  padding: 4px 10px; border-radius: 6px;
+  border: 1px solid var(--border);
+  background: white; transition: all 0.12s;
+}
+.month-today:hover { background: var(--light-bg); }
+
+/* ─── DAY HEADERS (sticky) ─── */
+.day-headers {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  background: white; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.day-header-cell {
+  padding: 8px 0; text-align: center;
+  border-right: 1px solid var(--border);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600; font-size: 0.74rem;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.day-header-cell:last-child { border-right: none; }
+
+/* ─── CALENDAR SCROLL ─── */
+.calendar-scroll {
+  flex: 1; overflow-y: auto;
+}
+
+/* ─── WEEK ROW (collapsible calendar row) ─── */
+.week-row {
+  border-bottom: 1px solid var(--border);
+}
+
+.week-dates-bar {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  background: white;
+}
+.week-date-cell {
+  padding: 6px 10px;
+  border-right: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  cursor: pointer; transition: background 0.1s;
+  min-height: 36px;
+}
+.week-date-cell:last-child { border-right: none; }
+.week-date-cell:hover { background: #FAFBFA; }
+
+.date-number {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 0.92rem;
+  color: var(--charcoal);
+}
+.date-number.today {
+  background: var(--deep); color: white;
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.82rem;
+}
+.date-number.other-month { color: var(--border); font-weight: 400; }
+
+.day-session-badge {
+  font-size: 0.66rem; font-weight: 600;
+  color: var(--deep); background: rgba(45,178,76,0.1);
+  padding: 2px 7px; border-radius: 8px;
+  white-space: nowrap;
+}
+
+.day-chevron-small {
+  width: 12px; height: 12px; color: var(--muted);
+  transition: transform 0.2s; flex-shrink: 0;
+}
+
+/* ─── EXPANDED DAY CONTENT ─── */
+.week-expanded-content {
+  display: none;
+  background: #FAFCFB;
+}
+.week-row.expanded .week-expanded-content { display: block; }
+
+.expanded-days-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+}
+.day-column {
+  border-right: 1px solid var(--border);
+  min-height: 40px;
+}
+.day-column:last-child { border-right: none; }
+.day-column.rest { background: rgba(0,0,0,0.012); }
+
+.day-session-header {
+  padding: 6px 8px;
+  font-size: 0.7rem; font-weight: 600;
+  color: var(--deep);
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+  cursor: pointer; display: flex;
+  align-items: center; justify-content: space-between;
+  transition: background 0.1s;
+}
+.day-session-header:hover { background: rgba(10,85,64,0.03); }
+.day-session-count {
+  font-weight: 400; color: var(--text-light);
+  font-size: 0.68rem;
+}
+
+.day-content {
+  display: none; padding: 0 6px 8px;
+}
+.day-column.day-expanded .day-content { display: block; }
+.day-column.day-expanded .day-chevron-small { transform: rotate(90deg); }
+
+.day-rest-label {
+  text-align: center; padding: 12px 8px;
+  font-size: 0.72rem; color: var(--muted);
+  font-style: italic;
+}
+
+/* ─── EXERCISE LIST ─── */
+.exercise-list { display: flex; flex-direction: column; }
+
+.exercise-group { position: relative; margin-bottom: 4px; }
+.exercise-group:last-child { margin-bottom: 0; }
+
+.exercise-group.superset { padding-left: 12px; }
+.exercise-group.superset::before {
+  content: ''; position: absolute;
+  left: 3px; top: 6px; bottom: 6px;
+  width: 3px; border-radius: 2px;
+  background: var(--bright);
+}
+.exercise-group.triset::before { background: var(--amber); }
+
+.exercise-item {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+  transition: background 0.1s;
+}
+.exercise-item:last-child { border-bottom: none; }
+.exercise-item:hover { background: rgba(10,85,64,0.025); }
+
+.exercise-top { display: flex; align-items: baseline; gap: 5px; }
+.exercise-seq {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 0.68rem;
+  color: white; background: var(--deep);
+  width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; line-height: 1;
+}
+.exercise-group.superset .exercise-seq { background: var(--bright); color: var(--charcoal); }
+.exercise-group.triset .exercise-seq { background: var(--amber); color: var(--charcoal); }
+
+.exercise-name {
+  font-weight: 600; font-size: 0.76rem;
+  color: var(--charcoal); line-height: 1.3;
+}
+.exercise-rx {
+  font-size: 0.7rem; color: var(--text-light);
+  margin-top: 1px; padding-left: 25px;
+}
+.exercise-note {
+  font-size: 0.68rem; color: var(--deep);
+  margin-top: 1px; padding-left: 25px;
+  font-style: italic; line-height: 1.3;
+}
+
+.add-exercise {
+  padding: 5px 6px; text-align: center;
+  font-size: 0.68rem; color: var(--muted);
+  cursor: pointer; transition: all 0.12s;
+  border-top: 1px dashed var(--border); margin-top: 3px;
+}
+.add-exercise:hover { color: var(--deep); background: rgba(10,85,64,0.03); }
+
+/* ─── CLINICAL NOTES PANEL ─── */
+.notes-panel {
+  width: 0; background: white;
+  border-left: 1px solid var(--border);
+  overflow: hidden; transition: width 0.3s ease;
+  flex-shrink: 0;
+}
+.notes-panel.open { width: 340px; overflow-y: auto; }
+.notes-panel-header {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; background: white; z-index: 10;
+}
+.notes-panel-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 700; font-size: 0.95rem; color: var(--charcoal);
+}
+.notes-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--muted); font-size: 1.2rem;
+  padding: 2px 6px; border-radius: 4px; line-height: 1;
+}
+.notes-close:hover { background: var(--light-bg); color: var(--text); }
+.notes-body { padding: 14px 18px; }
+
+.flag-section { margin-bottom: 16px; }
+.flag-label {
+  font-weight: 600; font-size: 0.72rem;
+  color: var(--red); text-transform: uppercase;
+  letter-spacing: 0.04em; margin-bottom: 6px;
+}
+.flag-item {
+  background: rgba(214,64,69,0.05);
+  border-left: 3px solid var(--red);
+  padding: 7px 10px; border-radius: 0 6px 6px 0;
+  font-size: 0.76rem; color: var(--text);
+  margin-bottom: 5px; line-height: 1.4;
+}
+.note-entry { border-bottom: 1px solid var(--border); padding: 12px 0; }
+.note-entry:last-child { border-bottom: none; }
+.note-date { font-size: 0.7rem; color: var(--muted); font-weight: 500; margin-bottom: 3px; }
+.note-type {
+  font-size: 0.66rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 2px 6px; border-radius: 4px;
+  display: inline-block; margin-bottom: 5px;
+}
+.note-type.initial { background: rgba(45,178,76,0.1); color: var(--deep); }
+.note-type.progress { background: rgba(232,163,23,0.1); color: #B07A0E; }
+.note-text { font-size: 0.78rem; color: var(--text); line-height: 1.55; }
+
+.notes-tab {
+  position: fixed; right: 0; top: 50%;
+  transform: translateY(-50%);
+  writing-mode: vertical-rl;
+  background: var(--deep); color: white;
+  padding: 12px 7px; border-radius: 7px 0 0 7px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 600; font-size: 0.74rem;
+  cursor: pointer; z-index: 50;
+  letter-spacing: 0.04em; transition: all 0.15s;
+}
+.notes-tab:hover { background: var(--dark); padding-right: 10px; }
+.notes-tab.hidden { display: none; }
+.notes-tab .tab-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--red); display: inline-block; margin-bottom: 4px;
+}
+
+@media (max-width: 768px) {
+  .client-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .expanded-days-grid, .week-dates-bar, .day-headers { grid-template-columns: 1fr; }
+  .notes-panel.open { width: 100%; position: fixed; top: 52px; right: 0; bottom: 0; z-index: 90; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">Client Platform</div>
+  <div class="topbar-nav">
+    <button>Dashboard</button>
+    <button class="active">Clients</button>
+    <button>Schedule</button>
+    <button>Exercise Library</button>
+  </div>
+</div>
+
+<div class="client-header">
+  <div class="client-info">
+    <div class="client-avatar">IF</div>
+    <div>
+      <div class="client-name">Isaac Fong</div>
+      <div class="client-meta">
+        <span>Active</span>
+        <span>Central Midfielder</span>
+        <span>Age 24</span>
+        <span>Since 12 Jan 2026</span>
+      </div>
+    </div>
+  </div>
+  <div class="client-tabs">
+    <button>Profile</button>
+    <button class="active">Program</button>
+    <button>Reports</button>
+    <button>Bookings</button>
+    <button>Comms</button>
+  </div>
+</div>
+
+<div class="main-layout">
+  <div class="calendar-area">
+
+    <!-- Program Toolbar -->
+    <div class="program-toolbar">
+      <div class="program-left">
+        <div class="program-title">Gym Program</div>
+        <div class="program-tag">Active</div>
+      </div>
+      <div class="program-actions">
+        <button class="btn btn-notes" onclick="togglePanel()">Clinical Notes<span class="dot"></span></button>
+        <button class="btn">Copy Week</button>
+        <button class="btn">Repeat Specific</button>
+      </div>
+    </div>
+
+    <!-- Month Navigation -->
+    <div class="month-nav">
+      <div></div>
+      <div class="month-nav-center">
+        <button class="month-arrow" onclick="changeMonth(-1)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="month-label" id="monthLabel">April 2026</div>
+        <button class="month-arrow" onclick="changeMonth(1)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+      <button class="month-today" onclick="goToday()">Today</button>
+    </div>
+
+    <!-- Day Headers -->
+    <div class="day-headers">
+      <div class="day-header-cell">Mon</div>
+      <div class="day-header-cell">Tue</div>
+      <div class="day-header-cell">Wed</div>
+      <div class="day-header-cell">Thu</div>
+      <div class="day-header-cell">Fri</div>
+      <div class="day-header-cell">Sat</div>
+      <div class="day-header-cell">Sun</div>
+    </div>
+
+    <!-- Calendar Grid -->
+    <div class="calendar-scroll">
+
+      <!-- Row 1: 30 Mar – 5 Apr (partial prev month) -->
+      <div class="week-row" id="row1">
+        <div class="week-dates-bar">
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number other-month">30</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number other-month">31</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number">1</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number">2</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number">3</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number">4</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row1')"><span class="date-number">5</span></div>
+        </div>
+        <div class="week-expanded-content"></div>
+      </div>
+
+      <!-- Row 2: 6 – 12 Apr -->
+      <div class="week-row" id="row2">
+        <div class="week-dates-bar">
+          <div class="week-date-cell" onclick="toggleWeek('row2')"><span class="date-number">6</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row2')"><span class="date-number">7</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row2')"><span class="date-number">8</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row2')"><span class="date-number">9</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row2')"><span class="date-number">10</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row2')">
+            <span class="date-number today">11</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row2')"><span class="date-number">12</span></div>
+        </div>
+        <div class="week-expanded-content"></div>
+      </div>
+
+      <!-- Row 3: 13 – 19 Apr — HAS SESSIONS -->
+      <div class="week-row expanded" id="row3">
+        <div class="week-dates-bar">
+          <div class="week-date-cell" onclick="toggleWeek('row3')">
+            <span class="date-number">13</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row3')">
+            <span class="date-number">14</span>
+            <span class="day-session-badge">Day A</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row3')"><span class="date-number">15</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row3')">
+            <span class="date-number">16</span>
+            <span class="day-session-badge">Day B</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row3')"><span class="date-number">17</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row3')">
+            <span class="date-number">18</span>
+            <span class="day-session-badge">Day C</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row3')"><span class="date-number">19</span></div>
+        </div>
+        <div class="week-expanded-content">
+          <div class="expanded-days-grid">
+
+            <!-- Mon 13 — Rest -->
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+
+            <!-- Tue 14 — Day A Lower -->
+            <div class="day-column day-expanded" id="d3-tue">
+              <div class="day-session-header" onclick="toggleDay('d3-tue')">
+                Day A — Lower
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <span class="day-session-count">6 exercises</span>
+                  <svg class="day-chevron-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                </span>
+              </div>
+              <div class="day-content">
+                <div class="exercise-list">
+                  <div class="exercise-group superset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">A1</div><div class="exercise-name">Barbell Back Squat</div></div>
+                      <div class="exercise-rx">4 × 6 · RPE 7 · 90s rest</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">A2</div><div class="exercise-name">Adductor Scorpions</div></div>
+                      <div class="exercise-rx">2 × 10 each side</div>
+                      <div class="exercise-note">Mobility filler between squat sets</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">B1</div><div class="exercise-name">Romanian Deadlift</div></div>
+                      <div class="exercise-rx">3 × 10 · RPE 7 · 75s rest</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group superset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">C1</div><div class="exercise-name">Bulgarian Split Squat</div></div>
+                      <div class="exercise-rx">3 × 8 e/s · RPE 8</div>
+                      <div class="exercise-note">3s eccentric — control the descent</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">C2</div><div class="exercise-name">Copenhagen Adductor</div></div>
+                      <div class="exercise-rx">3 × 8 e/s · Bodyweight</div>
+                      <div class="exercise-note">Key for groin rehab — from VALD data</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group superset triset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">D1</div><div class="exercise-name">Nordic Hamstring Curl</div></div>
+                      <div class="exercise-rx">3 × 5 · Bodyweight</div>
+                      <div class="exercise-note">Assisted with band if needed</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">D2</div><div class="exercise-name">Calf Raise — Bent Knee</div></div>
+                      <div class="exercise-rx">2 × 8 · 2 × 8</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">D3</div><div class="exercise-name">Pogo Jumps</div></div>
+                      <div class="exercise-rx">3 × 10 · Bodyweight</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="add-exercise">+ Add exercise</div>
+              </div>
+            </div>
+
+            <!-- Wed 15 — Rest -->
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+
+            <!-- Thu 16 — Day B Upper -->
+            <div class="day-column day-expanded" id="d3-thu">
+              <div class="day-session-header" onclick="toggleDay('d3-thu')">
+                Day B — Upper
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <span class="day-session-count">5 exercises</span>
+                  <svg class="day-chevron-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                </span>
+              </div>
+              <div class="day-content">
+                <div class="exercise-list">
+                  <div class="exercise-group superset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">A1</div><div class="exercise-name">Bench Press</div></div>
+                      <div class="exercise-rx">4 × 6 · RPE 7 · 90s rest</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">A2</div><div class="exercise-name">Band Pull-Apart</div></div>
+                      <div class="exercise-rx">4 × 15 · Light</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group superset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">B1</div><div class="exercise-name">Bent Over Row</div></div>
+                      <div class="exercise-rx">4 × 8 · RPE 7</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">B2</div><div class="exercise-name">DB Shoulder Press</div></div>
+                      <div class="exercise-rx">3 × 10 · RPE 7</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">C1</div><div class="exercise-name">Face Pull</div></div>
+                      <div class="exercise-rx">3 × 15 · Light</div>
+                      <div class="exercise-note">External rotation emphasis — prehab</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="add-exercise">+ Add exercise</div>
+              </div>
+            </div>
+
+            <!-- Fri 17 — Rest -->
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+
+            <!-- Sat 18 — Day C Full Body (collapsed) -->
+            <div class="day-column" id="d3-sat">
+              <div class="day-session-header" onclick="toggleDay('d3-sat')">
+                Day C — Full Body
+                <span style="display:flex;align-items:center;gap:4px;">
+                  <span class="day-session-count">5 exercises</span>
+                  <svg class="day-chevron-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+                </span>
+              </div>
+              <div class="day-content">
+                <div class="exercise-list">
+                  <div class="exercise-group">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">A1</div><div class="exercise-name">Trap Bar Deadlift</div></div>
+                      <div class="exercise-rx">4 × 5 · RPE 8 · 120s rest</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group superset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">B1</div><div class="exercise-name">Pull Ups</div></div>
+                      <div class="exercise-rx">3 × max · 90s rest</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">B2</div><div class="exercise-name">Push Ups</div></div>
+                      <div class="exercise-rx">3 × 15 · Bodyweight</div>
+                    </div>
+                  </div>
+                  <div class="exercise-group superset triset">
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">C1</div><div class="exercise-name">Side-Lying SLR</div></div>
+                      <div class="exercise-rx">3 × 15 e/s</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">C2</div><div class="exercise-name">Fwd Lean Calf Raise</div></div>
+                      <div class="exercise-rx">2 × 20</div>
+                    </div>
+                    <div class="exercise-item">
+                      <div class="exercise-top"><div class="exercise-seq">C3</div><div class="exercise-name">Soleus Slouch</div></div>
+                      <div class="exercise-rx">2 × 8 · 2 × 8</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="add-exercise">+ Add exercise</div>
+              </div>
+            </div>
+
+            <!-- Sun 19 — Rest -->
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 4: 20 – 26 Apr — HAS SESSIONS (collapsed) -->
+      <div class="week-row" id="row4">
+        <div class="week-dates-bar">
+          <div class="week-date-cell" onclick="toggleWeek('row4')"><span class="date-number">20</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row4')">
+            <span class="date-number">21</span>
+            <span class="day-session-badge">Day A</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row4')"><span class="date-number">22</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row4')">
+            <span class="date-number">23</span>
+            <span class="day-session-badge">Day B</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row4')"><span class="date-number">24</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row4')">
+            <span class="date-number">25</span>
+            <span class="day-session-badge">Day C</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row4')"><span class="date-number">26</span></div>
+        </div>
+        <div class="week-expanded-content">
+          <div class="expanded-days-grid">
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+            <div class="day-column" id="d4-tue">
+              <div class="day-session-header" onclick="toggleDay('d4-tue')">Day A — Lower <span style="display:flex;align-items:center;gap:4px;"><span class="day-session-count">6 ex</span><svg class="day-chevron-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span></div>
+              <div class="day-content"><div style="padding:4px 6px;font-size:0.72rem;color:var(--text-light);">Same as previous week — load progressed +5%</div></div>
+            </div>
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+            <div class="day-column" id="d4-thu">
+              <div class="day-session-header" onclick="toggleDay('d4-thu')">Day B — Upper <span style="display:flex;align-items:center;gap:4px;"><span class="day-session-count">5 ex</span><svg class="day-chevron-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span></div>
+              <div class="day-content"><div style="padding:4px 6px;font-size:0.72rem;color:var(--text-light);">Same as previous week — load progressed +5%</div></div>
+            </div>
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+            <div class="day-column" id="d4-sat">
+              <div class="day-session-header" onclick="toggleDay('d4-sat')">Day C — Full Body <span style="display:flex;align-items:center;gap:4px;"><span class="day-session-count">5 ex</span><svg class="day-chevron-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></span></div>
+              <div class="day-content"><div style="padding:4px 6px;font-size:0.72rem;color:var(--text-light);">Same as previous week — load progressed +5%</div></div>
+            </div>
+            <div class="day-column rest"><div class="day-rest-label">Rest</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 5: 27 Apr – 3 May -->
+      <div class="week-row" id="row5">
+        <div class="week-dates-bar">
+          <div class="week-date-cell" onclick="toggleWeek('row5')"><span class="date-number">27</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row5')">
+            <span class="date-number">28</span>
+            <span class="day-session-badge">Day A</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row5')"><span class="date-number">29</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row5')">
+            <span class="date-number">30</span>
+            <span class="day-session-badge">Day B</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row5')"><span class="date-number other-month">1</span></div>
+          <div class="week-date-cell" onclick="toggleWeek('row5')">
+            <span class="date-number other-month">2</span>
+            <span class="day-session-badge">Day C</span>
+          </div>
+          <div class="week-date-cell" onclick="toggleWeek('row5')"><span class="date-number other-month">3</span></div>
+        </div>
+        <div class="week-expanded-content"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CLINICAL NOTES PANEL -->
+  <div class="notes-panel" id="notesPanel">
+    <div class="notes-panel-header">
+      <div class="notes-panel-title">Clinical Notes</div>
+      <button class="notes-close" onclick="togglePanel()">&times;</button>
+    </div>
+    <div class="notes-body">
+      <div class="flag-section">
+        <div class="flag-label">Active Flags</div>
+        <div class="flag-item">Groin adductor strain (L) — Feb 2026. Cleared for progressive loading. Monitor ADD:ABD ratio.</div>
+        <div class="flag-item">Previous R ankle lateral ligament reconstruction — 2023. No current issues.</div>
+      </div>
+      <div class="note-entry">
+        <div class="note-date">10 Apr 2026</div>
+        <div class="note-type progress">Progress note</div>
+        <div class="note-text">Groin improving significantly. VALD ForceFrame shows ADD:ABD now 0.82 (target >0.85). Copenhagen exercises progressing well. Cleared to increase training volume this mesocycle. Continue Nordic curls — NordBord data shows 8% bilateral asymmetry, down from 14% at initial assessment.</div>
+      </div>
+      <div class="note-entry">
+        <div class="note-date">12 Jan 2026</div>
+        <div class="note-type initial">Initial assessment</div>
+        <div class="note-text">24yo male, central midfielder. Referred via team physio following L groin adductor strain (Grade II, sustained Nov 2025). Previous R ankle ATFL reconstruction 2023 — fully rehabilitated, no ongoing issues. Current goals: return to full training, improve lower limb strength ratios, address bilateral hamstring asymmetry identified on NordBord testing.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes-tab" id="notesTab" onclick="togglePanel()">
+  <span class="tab-dot"></span>
+  Clinical Notes
+</div>
+
+<script>
+function toggleWeek(id) {
+  document.getElementById(id).classList.toggle('expanded');
+}
+function toggleDay(id) {
+  document.getElementById(id).classList.toggle('day-expanded');
+}
+function togglePanel() {
+  document.getElementById('notesPanel').classList.toggle('open');
+  document.getElementById('notesTab').classList.toggle('hidden');
+}
+
+let currentMonth = 3; // April (0-indexed)
+let currentYear = 2026;
+const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function changeMonth(dir) {
+  currentMonth += dir;
+  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+  document.getElementById('monthLabel').textContent = months[currentMonth] + ' ' + currentYear;
+}
+function goToday() {
+  currentMonth = 3;
+  currentYear = 2026;
+  document.getElementById('monthLabel').textContent = 'April 2026';
+}
+</script>
+
+</body>
+</html>

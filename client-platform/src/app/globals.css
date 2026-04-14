@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   Design Tokens — from Isaac_Fong_report.html brand identity
+   Typography: Barlow + Barlow Condensed (Google Fonts)
+   ============================================================================= */
+
+:root {
+  --color-primary: #0A5540;
+  --color-primary-dark: #083D2F;
+  --color-charcoal: #231F20;
+  --color-slate: #35363A;
+  --color-accent: #2DB24C;
+  --color-bg: #F0F4F2;
+  --color-card: #FFFFFF;
+  --color-border: #E2E8E4;
+  --color-amber: #E8A317;
+  --color-red: #D64045;
+
+  --background: var(--color-bg);
+  --foreground: var(--color-charcoal);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-accent: var(--color-accent);
+  --color-card: var(--color-card);
+  --color-border: var(--color-border);
+  --color-amber: var(--color-amber);
+  --color-red: var(--color-red);
+  --color-charcoal: var(--color-charcoal);
+  --color-slate: var(--color-slate);
+
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-body: "Barlow", sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body);
+}
