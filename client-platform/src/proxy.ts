@@ -33,7 +33,7 @@ const isPortalRoute = createRouteMatcher([
 ]);
 
 export const proxy = clerkMiddleware(async (auth, req) => {
-  const { userId, sessionClaims } = await auth();
+  const { userId } = await auth();
 
   // Allow public routes through
   if (isPublicRoute(req)) {
@@ -47,17 +47,17 @@ export const proxy = clerkMiddleware(async (auth, req) => {
     return NextResponse.redirect(signInUrl);
   }
 
-  const role = (sessionClaims?.metadata as { role?: string })?.role;
-
-  // Staff routes require staff role
-  if (isStaffRoute(req) && role !== "staff") {
-    return NextResponse.redirect(new URL("/program", req.url));
-  }
-
-  // Portal routes — clients only (staff can also access for testing)
-  if (isPortalRoute(req) && role !== "client" && role !== "staff") {
-    return NextResponse.redirect(new URL("/sign-in", req.url));
-  }
+  // Authenticated users can access everything for now.
+  // Role-based routing will be enforced once Clerk roles are configured.
+  // When that's ready, uncomment and configure session claims:
+  //
+  // const role = (sessionClaims?.metadata as { role?: string })?.role;
+  // if (isStaffRoute(req) && role !== "staff") {
+  //   return NextResponse.redirect(new URL("/program", req.url));
+  // }
+  // if (isPortalRoute(req) && role !== "client" && role !== "staff") {
+  //   return NextResponse.redirect(new URL("/sign-in", req.url));
+  // }
 
   return NextResponse.next();
 });

@@ -29,6 +29,7 @@ type ClientData = {
     type: string;
     status: string;
     days: Array<{
+      id: string;
       label: string;
       exercises: Array<{ exercise: { name: string } }>;
     }>;
@@ -248,10 +249,13 @@ function ProgramTab({ client }: { client: ClientData }) {
       </div>
       <div className="space-y-3">
         {activeProgram.days.map((day) => (
-          <div key={day.label}>
-            <h4 className="text-xs font-semibold text-[var(--color-primary)] mb-1">
+          <div key={day.id}>
+            <Link
+              href={`/programs/${activeProgram.id}/session/${day.id}`}
+              className="text-xs font-semibold text-[var(--color-primary)] mb-1 inline-block hover:underline"
+            >
               {day.label}
-            </h4>
+            </Link>
             <ul className="space-y-0.5 pl-3">
               {day.exercises.map((pe, i) => (
                 <li
