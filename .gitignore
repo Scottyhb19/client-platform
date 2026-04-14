@@ -2,6 +2,10 @@
 # clerk configuration (can include secrets)
 /.clerk/
 
+# Environment files with secrets
+env.local
+.env.local
+
 # Claude Code
 .claude/
 
