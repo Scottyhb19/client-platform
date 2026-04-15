@@ -316,26 +316,30 @@ export function SessionBuilder({ programId, dayId }: Props) {
   const toggleSuperset = useCallback(
     (topIndex: number) => {
       setExercises((prev) => {
-        const updated = [...prev];
-        const top = updated[topIndex];
-        const bottom = updated[topIndex + 1];
+        const top = prev[topIndex];
+        const bottom = prev[topIndex + 1];
         if (!top || !bottom) return prev;
 
-        if (
+        const alreadyGrouped =
           top.supersetGroup &&
-          top.supersetGroup === bottom.supersetGroup
-        ) {
-          // Ungroup
-          top.supersetGroup = null;
-          bottom.supersetGroup = null;
-        } else {
-          // Group: use existing group name or create new one
-          const group = top.supersetGroup ?? `ss-${tempId()}`;
-          top.supersetGroup = group;
-          bottom.supersetGroup = group;
-        }
+          top.supersetGroup === bottom.supersetGroup;
 
-        return updated;
+        if (alreadyGrouped) {
+          // Ungroup — create new objects (never mutate existing ones)
+          return prev.map((ex, i) =>
+            i === topIndex || i === topIndex + 1
+              ? { ...ex, supersetGroup: null }
+              : ex
+          );
+        } else {
+          // Group — reuse existing group or create a new one
+          const group = top.supersetGroup ?? `ss-${tempId()}`;
+          return prev.map((ex, i) =>
+            i === topIndex || i === topIndex + 1
+              ? { ...ex, supersetGroup: group }
+              : ex
+          );
+        }
       });
       markDirty();
     },
