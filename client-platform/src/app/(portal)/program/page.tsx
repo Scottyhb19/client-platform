@@ -1,23 +1,51 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
+
+interface ProgramExercise {
+  id: string;
+  exercise: { name: string };
+  sets: number | null;
+  reps: string | null;
+  supersetGroup: string | null;
+}
 
 interface ProgramDay {
   id: string;
   label: string;
-  exercises: {
-    id: string;
-    exercise: { name: string };
-    sets: number | null;
-    reps: string | null;
-    supersetGroup: string | null;
-  }[];
+  exercises: ProgramExercise[];
 }
 
 interface Program {
   id: string;
   name: string;
   days: ProgramDay[];
+}
+
+// Compute sequence labels that handle supersets (A1, A2, B1, etc.)
+function computeSequence(exercises: ProgramExercise[]): string[] {
+  const ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const labels: string[] = [];
+  let letter = 0;
+  let num = 1;
+
+  for (let i = 0; i < exercises.length; i++) {
+    labels.push(`${ABC[letter] ?? "Z"}${num}`);
+    const current = exercises[i];
+    const next = exercises[i + 1];
+    if (
+      current.supersetGroup &&
+      next?.supersetGroup &&
+      current.supersetGroup === next.supersetGroup
+    ) {
+      num++;
+    } else {
+      letter++;
+      num = 1;
+    }
+  }
+  return labels;
 }
 
 export default function PortalProgramPage() {
@@ -52,6 +80,8 @@ export default function PortalProgramPage() {
       </div>
     );
   }
+
+  const labels = selectedDay ? computeSequence(selectedDay.exercises) : [];
 
   return (
     <div className="pb-24">
@@ -108,7 +138,7 @@ export default function PortalProgramPage() {
                           : "bg-[var(--color-primary)] text-white"
                       }`}
                     >
-                      {String.fromCharCode(65 + i)}1
+                      {labels[i]}
                     </div>
                     <div className="flex-1">
                       <div className="font-semibold text-sm text-[var(--color-charcoal)]">
@@ -125,9 +155,12 @@ export default function PortalProgramPage() {
               })}
             </div>
 
-            <button className="block w-[calc(100%-36px)] mx-[18px] mb-4 py-3.5 bg-[var(--color-primary)] text-white border-none rounded-xl font-[family-name:var(--font-display)] font-bold text-base cursor-pointer hover:bg-[var(--color-primary-dark)] transition-colors">
+            <Link
+              href={`/program/session/${selectedDay.id}`}
+              className="block w-[calc(100%-36px)] mx-[18px] mb-4 py-3.5 bg-[var(--color-primary)] text-white text-center no-underline rounded-xl font-[family-name:var(--font-display)] font-bold text-base cursor-pointer hover:bg-[var(--color-primary-dark)] transition-colors"
+            >
               Begin Session
-            </button>
+            </Link>
           </div>
         </div>
       )}
