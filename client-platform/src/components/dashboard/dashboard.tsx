@@ -7,6 +7,7 @@ interface StatData {
   activeClients: number;
   todaySessions: number;
   unreviewed: number;
+  programsEnding: number;
 }
 
 interface AttentionItem {
@@ -32,6 +33,7 @@ export function Dashboard() {
     activeClients: 0,
     todaySessions: 0,
     unreviewed: 0,
+    programsEnding: 0,
   });
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -52,10 +54,46 @@ export function Dashboard() {
         const bookingsRes = await fetch(`/api/bookings?date=${today}`);
         const bookings = bookingsRes.ok ? await bookingsRes.json() : [];
 
+        // Count unreviewed injury flags from clinical notes
+        let unreviewedCount = 0;
+        for (const client of activeClients) {
+          try {
+            const notesRes = await fetch(`/api/notes?clientId=${client.id}`);
+            if (notesRes.ok) {
+              const notes = await notesRes.json();
+              unreviewedCount += notes.filter(
+                (n: { isInjuryFlag: boolean }) => n.isInjuryFlag
+              ).length;
+            }
+          } catch {
+            // Skip if notes fail for a client
+          }
+        }
+
+        // Count programs ending within 14 days
+        let endingCount = 0;
+        try {
+          const progsRes = await fetch("/api/programs");
+          if (progsRes.ok) {
+            const programs = await progsRes.json();
+            const twoWeeks = new Date();
+            twoWeeks.setDate(twoWeeks.getDate() + 14);
+            endingCount = programs.filter(
+              (p: { endDate: string | null; status: string }) =>
+                p.endDate &&
+                new Date(p.endDate) <= twoWeeks &&
+                p.status === "ACTIVE"
+            ).length;
+          }
+        } catch {
+          // Skip if programs fail
+        }
+
         setStats({
           activeClients: activeClients.length,
           todaySessions: bookings.length,
-          unreviewed: 0,
+          unreviewed: unreviewedCount,
+          programsEnding: endingCount,
         });
 
         // Build attention items from clients with injury flags
@@ -154,7 +192,12 @@ export function Dashboard() {
             sessions.length > 0 ? `Next at ${sessions[0].time}` : undefined
           }
         />
-        <StatCard value={0} label="Programs Ending" variant="warning" />
+        <StatCard
+          value={stats.programsEnding}
+          label="Programs Ending"
+          subtitle={stats.programsEnding > 0 ? "Within 14 days" : undefined}
+          variant={stats.programsEnding > 0 ? "warning" : undefined}
+        />
         <StatCard
           value={stats.unreviewed}
           label="Unreviewed Flags"
