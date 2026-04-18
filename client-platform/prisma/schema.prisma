@@ -497,16 +497,15 @@ enum BookingStatus {
 }
 
 model Booking {
-  id             String        @id @default(cuid())
-  clientId       String
-  practitionerId String
-  date           DateTime      // appointment date
-  startTime      String        // "10:00"
-  endTime        String        // "11:00"
-  status         BookingStatus @default(PENDING)
-  type           String?       // "In-Clinic", "Telehealth"
-  notes          String?       // pre-appointment notes
-  reminderSentAt DateTime?     // when the 24h reminder was sent
+  id              String        @id @default(cuid())
+  clientId        String
+  practitionerId  String
+  startTime       DateTime      // full UTC timestamp of appointment start
+  durationMinutes Int           // length of appointment in minutes
+  status          BookingStatus @default(PENDING)
+  type            String?       // "In-Clinic", "Telehealth"
+  notes           String?       // pre-appointment notes
+  reminderSentAt  DateTime?     // when the 24h reminder was sent
 
   cancelledAt    DateTime?
   cancelReason   String?
@@ -520,7 +519,7 @@ model Booking {
 
   @@index([clientId])
   @@index([practitionerId])
-  @@index([date])
+  @@index([startTime])
   @@index([status])
   @@index([deletedAt])
   @@map("bookings")

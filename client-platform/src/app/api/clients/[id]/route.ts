@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { toBookingDTO } from "@/lib/bookings";
 
 const PRACTICE_ID = "default-practice";
 
@@ -39,8 +40,11 @@ export async function GET(
       },
       bookings: {
         where: { deletedAt: null },
-        orderBy: { date: "desc" },
+        orderBy: { startTime: "desc" },
         take: 10,
+        include: {
+          client: { select: { firstName: true, lastName: true } },
+        },
       },
     },
   });
@@ -49,7 +53,10 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json(client);
+  return NextResponse.json({
+    ...client,
+    bookings: client.bookings.map((b) => toBookingDTO(b)),
+  });
 }
 
 // PATCH /api/clients/:id — update client
