@@ -85,26 +85,50 @@ export async function POST(req: NextRequest) {
     let startTime: Date;
     let durationMinutes: number;
 
-    if (body.durationMinutes && body.startTime) {
-      // Canonical shape
-      startTime = new Date(body.startTime);
-      durationMinutes = Number(body.durationMinutes);
-      if (Number.isNaN(startTime.getTime()) || !durationMinutes) {
+    const isHHMM =
+      typeof body.startTime === "string" && /^\d{2}:\d{2}$/.test(body.startTime);
+
+    if (body.date && isHHMM) {
+      // Schedule-modal shape: { date: "YYYY-MM-DD", startTime: "HH:MM" }
+      startTime = dateTimeInZone(body.date, body.startTime);
+      if (body.durationMinutes) {
+        durationMinutes = Number(body.durationMinutes);
+        if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+          return NextResponse.json(
+            { error: "durationMinutes must be a positive number" },
+            { status: 400 }
+          );
+        }
+      } else if (body.endTime) {
+        const endAt = dateTimeInZone(body.date, body.endTime);
+        durationMinutes = Math.round(
+          (endAt.getTime() - startTime.getTime()) / 60_000
+        );
+        if (durationMinutes <= 0) {
+          return NextResponse.json(
+            { error: "endTime must be after startTime" },
+            { status: 400 }
+          );
+        }
+      } else {
         return NextResponse.json(
-          { error: "Invalid startTime or durationMinutes" },
+          { error: "Provide durationMinutes or endTime" },
           { status: 400 }
         );
       }
-    } else if (body.date && body.startTime && body.endTime) {
-      // Legacy shape — compute duration from start/end HH:MM strings
-      startTime = dateTimeInZone(body.date, body.startTime);
-      const endAt = dateTimeInZone(body.date, body.endTime);
-      durationMinutes = Math.round(
-        (endAt.getTime() - startTime.getTime()) / 60_000
-      );
-      if (durationMinutes <= 0) {
+    } else if (body.startTime && body.durationMinutes) {
+      // Canonical ISO shape: { startTime: "2026-04-18T..." , durationMinutes }
+      startTime = new Date(body.startTime);
+      durationMinutes = Number(body.durationMinutes);
+      if (Number.isNaN(startTime.getTime())) {
         return NextResponse.json(
-          { error: "endTime must be after startTime" },
+          { error: "Invalid startTime — expected ISO or HH:MM with date" },
+          { status: 400 }
+        );
+      }
+      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+        return NextResponse.json(
+          { error: "durationMinutes must be a positive number" },
           { status: 400 }
         );
       }
@@ -112,7 +136,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Provide either { startTime: ISO, durationMinutes } or { date, startTime: HH:MM, endTime: HH:MM }",
+            "Provide either { date, startTime: HH:MM, durationMinutes } or { startTime: ISO, durationMinutes }",
         },
         { status: 400 }
       );
