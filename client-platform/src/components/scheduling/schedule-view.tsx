@@ -16,7 +16,7 @@ import {
 import { ScheduleToolbar } from "./schedule-toolbar";
 import { DateRolodex } from "./date-rolodex";
 import { DayHeaders } from "./day-headers";
-import { TimeGrid } from "./time-grid";
+import { TimeGrid, type ApptUpdatePatch } from "./time-grid";
 import { BookingModal, type BookingModalDraft } from "./booking-modal";
 import { ScheduleSettingsPanel } from "./schedule-settings-panel";
 
@@ -181,6 +181,43 @@ export function ScheduleView() {
     setRefreshToken((t) => t + 1);
   }, []);
 
+  const handleApptUpdate = useCallback(
+    async (bookingId: string, patch: ApptUpdatePatch) => {
+      // Optimistic update so the card jumps to the new slot immediately.
+      setBookings((prev) =>
+        prev.map((b) => {
+          if (b.id !== bookingId) return b;
+          const [hh, mm] = patch.startTime.split(":").map(Number);
+          const endMin = hh * 60 + mm + patch.durationMinutes;
+          const endHH = String(Math.floor(endMin / 60)).padStart(2, "0");
+          const endMM = String(endMin % 60).padStart(2, "0");
+          return {
+            ...b,
+            date: patch.date,
+            startTime: patch.startTime,
+            endTime: `${endHH}:${endMM}`,
+            durationMinutes: patch.durationMinutes,
+          };
+        })
+      );
+      try {
+        const res = await fetch(`/api/bookings/${bookingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) throw new Error("Failed to update booking");
+        // Re-sync with server in case the DB canonicalised the values.
+        setRefreshToken((t) => t + 1);
+      } catch (err) {
+        console.error(err);
+        // Revert optimistic change.
+        setRefreshToken((t) => t + 1);
+      }
+    },
+    []
+  );
+
   return (
     <div className="-m-8 bg-[var(--color-card)] border border-[var(--color-border)] rounded-none flex flex-col h-[calc(100vh-0px)]">
       <ScheduleToolbar
@@ -219,6 +256,7 @@ export function ScheduleView() {
           searchTerm={searchTerm.trim().toLowerCase()}
           settings={settings}
           onApptClick={handleApptClick}
+          onApptUpdate={handleApptUpdate}
           onDragCreate={handleDragCreate}
         />
       )}
