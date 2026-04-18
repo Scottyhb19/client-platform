@@ -12,3 +12,6 @@ env.local
 # OS
 .DS_Store
 Thumbs.db
+
+# Stray vitest/node_modules cache when commands are run from repo root
+/node_modules/

@@ -9,6 +9,9 @@ export const SCH_SLOT_PX = 12;
 export const SCH_TOTAL_MINUTES = (SCH_END_HOUR - SCH_START_HOUR) * 60;
 export const SCH_TOTAL_PX = (SCH_TOTAL_MINUTES / 15) * SCH_SLOT_PX;
 
+export const SCH_WORKING_HOURS_START = 6;
+export const SCH_WORKING_HOURS_END = 19;
+
 const DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const MONTH_SHORT = [
   "Jan",

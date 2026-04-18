@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import type { ScheduleBooking } from "@/types/schedule";
+import { useEffect, useRef, useState } from "react";
+import type { ScheduleBooking, ScheduleSettings } from "@/types/schedule";
 import {
   SCH_END_HOUR,
+  SCH_SLOT_PX,
   SCH_START_HOUR,
   SCH_TOTAL_PX,
   layoutDayBookings,
@@ -22,7 +23,9 @@ interface Props {
   today: Date;
   bookings: ScheduleBooking[];
   searchTerm: string;
+  settings: ScheduleSettings;
   onApptClick?: (booking: ScheduleBooking) => void;
+  onDragCreate?: (date: Date, startMin: number, durationMin: number) => void;
 }
 
 export function TimeGrid({
@@ -31,7 +34,9 @@ export function TimeGrid({
   today,
   bookings,
   searchTerm,
+  settings,
   onApptClick,
+  onDragCreate,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
@@ -106,7 +111,9 @@ export function TimeGrid({
               isToday={schSameDay(d, today)}
               bookings={bookings.filter((b) => b.date === schFmtDate(d))}
               searchTerm={searchTerm}
+              settings={settings}
               onApptClick={onApptClick}
+              onDragCreate={onDragCreate}
             />
           ))}
         </div>
@@ -120,27 +127,124 @@ interface DayColumnProps {
   isToday: boolean;
   bookings: ScheduleBooking[];
   searchTerm: string;
+  settings: ScheduleSettings;
   onApptClick?: (booking: ScheduleBooking) => void;
+  onDragCreate?: (date: Date, startMin: number, durationMin: number) => void;
+}
+
+// Snap a pixel offset to the nearest N-minute slot (in minutes since midnight).
+function pxToMin(y: number, granularity: number): number {
+  const minsSinceStart = Math.max(
+    0,
+    Math.round((y / SCH_SLOT_PX) * 15 / granularity) * granularity
+  );
+  return SCH_START_HOUR * 60 + minsSinceStart;
 }
 
 function DayColumn({
+  date,
   isToday,
   bookings,
   searchTerm,
+  settings,
   onApptClick,
+  onDragCreate,
 }: DayColumnProps) {
+  const colRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<{
+    startMin: number;
+    endMin: number;
+  } | null>(null);
+
   const hours = Array.from(
     { length: SCH_END_HOUR - SCH_START_HOUR },
     (_, i) => SCH_START_HOUR + i
   );
   const positioned = layoutDayBookings(bookings);
 
+  const workStartMin = schTimeToMin(settings.workingHoursStart);
+  const workEndMin = schTimeToMin(settings.workingHoursEnd);
+  const preWorkTop = 0;
+  const preWorkHeight = schMinToTop(workStartMin);
+  const postWorkTop = schMinToTop(workEndMin);
+  const postWorkHeight = SCH_TOTAL_PX - postWorkTop;
+
+  function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (!onDragCreate) return;
+    // Only start drag on background clicks — not on cards or their children.
+    const target = e.target as HTMLElement;
+    if (target.closest("button")) return;
+    if (!colRef.current) return;
+
+    const granularity = settings.slotGranularityMinutes;
+    const rect = colRef.current.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const startMin = pxToMin(y, granularity);
+
+    e.preventDefault();
+    setDrag({ startMin, endMin: startMin + granularity });
+
+    function onMove(ev: MouseEvent) {
+      if (!colRef.current) return;
+      const r = colRef.current.getBoundingClientRect();
+      const dy = ev.clientY - r.top;
+      const newMin = pxToMin(dy, granularity);
+      setDrag((prev) =>
+        prev
+          ? {
+              ...prev,
+              endMin: Math.max(newMin, prev.startMin + granularity),
+            }
+          : prev
+      );
+    }
+
+    function onUp() {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setDrag((prev) => {
+        if (prev && onDragCreate) {
+          const duration = prev.endMin - prev.startMin;
+          if (duration >= granularity) {
+            onDragCreate(date, prev.startMin, duration);
+          }
+        }
+        return null;
+      });
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  const dragTop = drag ? schMinToTop(drag.startMin) : 0;
+  const dragHeight = drag
+    ? ((drag.endMin - drag.startMin) / 15) * SCH_SLOT_PX - 1
+    : 0;
+
   return (
     <div
-      className={`sch-grid-body border-r border-[var(--color-border)] last:border-r-0 relative ${
+      ref={colRef}
+      onMouseDown={handleMouseDown}
+      className={`sch-grid-body border-r border-[var(--color-border)] last:border-r-0 relative select-none ${
         isToday ? "bg-[var(--color-accent)]/[0.015]" : "bg-[var(--color-card)]"
-      }`}
+      } ${onDragCreate ? "cursor-crosshair" : ""}`}
     >
+      {preWorkHeight > 0 && (
+        <div
+          className="absolute left-0 right-0 bg-[var(--color-bg)]/70 pointer-events-none z-0"
+          style={{ top: `${preWorkTop}px`, height: `${preWorkHeight}px` }}
+          aria-hidden="true"
+        />
+      )}
+      {postWorkHeight > 0 && (
+        <div
+          className="absolute left-0 right-0 bg-[var(--color-bg)]/70 pointer-events-none z-0"
+          style={{ top: `${postWorkTop}px`, height: `${postWorkHeight}px` }}
+          aria-hidden="true"
+        />
+      )}
+
       {hours.map((h) =>
         [0, 1, 2, 3].map((q) => {
           const isHour = q === 0;
@@ -176,6 +280,14 @@ function DayColumn({
           />
         );
       })}
+
+      {drag && (
+        <div
+          className="absolute left-[3px] right-[3px] rounded-md bg-[var(--color-accent)]/30 border-l-[3px] border-l-[var(--color-accent)] pointer-events-none z-[2]"
+          style={{ top: `${dragTop}px`, height: `${dragHeight}px` }}
+          aria-hidden="true"
+        />
+      )}
     </div>
   );
 }

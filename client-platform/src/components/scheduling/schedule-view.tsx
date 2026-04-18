@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   ScheduleBooking,
+  ScheduleSettings,
   ScheduleViewMode,
 } from "@/types/schedule";
 import {
@@ -16,6 +17,20 @@ import { ScheduleToolbar } from "./schedule-toolbar";
 import { DateRolodex } from "./date-rolodex";
 import { DayHeaders } from "./day-headers";
 import { TimeGrid } from "./time-grid";
+import { BookingModal, type BookingModalDraft } from "./booking-modal";
+import { ScheduleSettingsPanel } from "./schedule-settings-panel";
+
+const DEFAULT_SETTINGS: ScheduleSettings = {
+  workingHoursStart: "06:00",
+  workingHoursEnd: "19:00",
+  defaultDurationMinutes: 60,
+  slotGranularityMinutes: 15,
+};
+
+type ModalState =
+  | { open: false }
+  | { open: true; mode: "create"; draft: BookingModalDraft }
+  | { open: true; mode: "edit"; booking: ScheduleBooking };
 
 function anchorFor(focus: Date, view: ScheduleViewMode): Date {
   return view === 1 ? new Date(focus) : schStartOfWeek(focus);
@@ -44,6 +59,10 @@ export function ScheduleView() {
   const [searchTerm, setSearchTerm] = useState("");
   const [bookings, setBookings] = useState<ScheduleBooking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<ModalState>({ open: false });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<ScheduleSettings>(DEFAULT_SETTINGS);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const anchor = useMemo(() => anchorFor(focus, view), [focus, view]);
   const monthLabel = useMemo(() => monthLabelFor(anchor, view), [anchor, view]);
@@ -77,7 +96,7 @@ export function ScheduleView() {
     return () => {
       cancelled = true;
     };
-  }, [focus]);
+  }, [focus, refreshToken]);
 
   const datesWithAppts = useMemo(() => {
     const set = new Set<string>();
@@ -93,8 +112,73 @@ export function ScheduleView() {
     [view]
   );
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (modal.open) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const isTyping =
+        tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+      if (e.key === "/" && !isTyping) {
+        e.preventDefault();
+        const input = document.getElementById("sch-search");
+        (input as HTMLInputElement | null)?.focus();
+        return;
+      }
+      if (isTyping) return;
+
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        shift(-1);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        shift(1);
+      } else if (e.key === "t" || e.key === "T") {
+        e.preventDefault();
+        setFocus(new Date(today));
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shift, today, modal.open]);
+
   const handleApptClick = useCallback((booking: ScheduleBooking) => {
-    console.log("Appointment clicked:", booking);
+    setModal({ open: true, mode: "edit", booking });
+  }, []);
+
+  const handleNewBooking = useCallback(() => {
+    setModal({
+      open: true,
+      mode: "create",
+      draft: {
+        date: schFmtDate(focus),
+        startTime: settings.workingHoursStart,
+        durationMinutes: settings.defaultDurationMinutes,
+      },
+    });
+  }, [focus, settings]);
+
+  const handleDragCreate = useCallback(
+    (date: Date, startMin: number, durationMin: number) => {
+      const hh = String(Math.floor(startMin / 60)).padStart(2, "0");
+      const mm = String(startMin % 60).padStart(2, "0");
+      setModal({
+        open: true,
+        mode: "create",
+        draft: {
+          date: schFmtDate(date),
+          startTime: `${hh}:${mm}`,
+          durationMinutes: durationMin,
+        },
+      });
+    },
+    []
+  );
+
+  const handleModalSaved = useCallback(() => {
+    setModal({ open: false });
+    setRefreshToken((t) => t + 1);
   }, []);
 
   return (
@@ -108,8 +192,8 @@ export function ScheduleView() {
         onToday={() => setFocus(new Date(today))}
         onSearchChange={setSearchTerm}
         onViewChange={setView}
-        onOpenSettings={() => alert("Schedule settings \u2014 coming soon.")}
-        onNewBooking={() => alert("New booking \u2014 coming soon.")}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onNewBooking={handleNewBooking}
       />
       <DateRolodex
         focus={focus}
@@ -133,7 +217,35 @@ export function ScheduleView() {
           today={today}
           bookings={bookings}
           searchTerm={searchTerm.trim().toLowerCase()}
+          settings={settings}
           onApptClick={handleApptClick}
+          onDragCreate={handleDragCreate}
+        />
+      )}
+      {modal.open && modal.mode === "create" && (
+        <BookingModal
+          mode="create"
+          draft={modal.draft}
+          onClose={() => setModal({ open: false })}
+          onSaved={handleModalSaved}
+        />
+      )}
+      {modal.open && modal.mode === "edit" && (
+        <BookingModal
+          mode="edit"
+          booking={modal.booking}
+          onClose={() => setModal({ open: false })}
+          onSaved={handleModalSaved}
+        />
+      )}
+      {settingsOpen && (
+        <ScheduleSettingsPanel
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onSave={(next) => {
+            setSettings(next);
+            setSettingsOpen(false);
+          }}
         />
       )}
     </div>

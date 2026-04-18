@@ -5,8 +5,7 @@ import {
   dateTimeInZone,
   toBookingDTO,
 } from "@/lib/bookings";
-
-const PLACEHOLDER_USER = "placeholder-user";
+import { currentPractitionerId } from "@/lib/current-user";
 
 // GET /api/bookings — list bookings with filters
 // Query params:
@@ -119,10 +118,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const practitionerId = await currentPractitionerId();
+
     const booking = await prisma.booking.create({
       data: {
         clientId,
-        practitionerId: PLACEHOLDER_USER,
+        practitionerId,
         startTime,
         durationMinutes,
         type: type || null,
