@@ -1,0 +1,18 @@
+-- ============================================================================
+-- seed.sql — local development seed data
+-- ============================================================================
+-- Runs after `supabase db reset` completes. Populates a local Supabase with
+-- demo data for development. NEVER contains real PHI. NEVER contains real
+-- secrets (OAuth keys, production tokens, etc.).
+--
+-- Seed data for a new organization (movement patterns, section titles, etc.)
+-- is NOT added here — that happens in the bootstrap function
+-- `create_organization_with_owner` invoked during signup. See the migration
+-- that defines that function.
+--
+-- Keep this file small. If seed logic grows, split into
+-- `supabase/seed/<topic>.sql` files and source them from here.
+-- ============================================================================
+
+-- No demo data yet. Real development seed arrives once the signup flow
+-- is wired in Gate 4.

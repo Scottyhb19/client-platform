@@ -1,0 +1,72 @@
+# Supabase CLI config for Client Platform
+# See https://supabase.com/docs/guides/cli/config for full reference.
+
+project_id = "client-platform"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost:54321"
+
+# Local-only fake SMTP server for capturing auth emails during dev.
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://localhost:3000"]
+jwt_expiry = 3600                 # 1 hour access token — see /docs/auth.md §4.2
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+minimum_password_length = 12      # NIST 800-63B — length over character classes
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true     # Email change requires confirmation from both addresses
+enable_confirmations = true       # New signups must verify email before first login
+max_frequency = "1s"
+# OTP expiry and email templates customized on cloud project, not locally.
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+# Custom Access Token Hook — injects organization_id + user_role into every JWT.
+# See supabase/migrations/*_auth_helpers_and_jwt_hook.sql for the function.
+# NOTE: enabling the hook via this file only configures the LOCAL stack.
+# The cloud project requires enabling the hook in the dashboard:
+#   Dashboard → Authentication → Hooks → Custom Access Token
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/auth_hooks/custom_access_token"
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+inspector_port = 8083
