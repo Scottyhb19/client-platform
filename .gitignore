@@ -36,3 +36,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 *.log
+
+# Design bundle (downloaded reference, not tracked)
+.design-ref/

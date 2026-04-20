@@ -1,0 +1,160 @@
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { ChevronDown, MessageCircle, Settings } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+
+/**
+ * Top bar for the staff platform.
+ *
+ * Ports .design-ref/project/components/Primitives.jsx → TopBar. Nav items
+ * link to real routes via next/link; active state is derived from the current
+ * pathname (not local state) so it stays correct across server navigation.
+ *
+ * Settings is a top-right cog, not a nav item, to match the design.
+ */
+
+type NavItem =
+  | { kind: 'link'; key: string; label: string; href: string }
+  | { kind: 'dropdown'; key: string; label: string; href: string }
+
+// Order matches .design-ref Primitives.jsx TopBar `items` array.
+const NAV_ITEMS: NavItem[] = [
+  { kind: 'link', key: 'dashboard', label: 'Dashboard', href: '/dashboard' },
+  { kind: 'link', key: 'schedule', label: 'Schedule', href: '/schedule' },
+  { kind: 'link', key: 'clients', label: 'Clientele', href: '/clients' },
+  { kind: 'dropdown', key: 'contacts', label: 'Contacts', href: '/contacts' },
+  { kind: 'link', key: 'library', label: 'Exercise Library', href: '/library' },
+  { kind: 'link', key: 'analytics', label: 'Analytics', href: '/analytics' },
+]
+
+const CONTACT_GROUPS: Array<[string, string]> = [
+  ['gps', 'General Practitioners'],
+  ['surgeons', 'Surgeons'],
+  ['sports-doc', 'Sports Doctors'],
+  ['physios', 'Physiotherapists'],
+  ['chiros', 'Chiropractors'],
+  ['eps', 'Exercise Physiologists'],
+]
+
+interface TopBarProps {
+  userInitials: string
+  todayLabel: string
+  messageCount?: number
+}
+
+export function TopBar({ userInitials, todayLabel, messageCount = 0 }: TopBarProps) {
+  const pathname = usePathname()
+  const [contactsOpen, setContactsOpen] = useState(false)
+  const contactsRef = useRef<HTMLDivElement>(null)
+
+  // Close the dropdown on route change or outside click.
+  useEffect(() => {
+    setContactsOpen(false)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!contactsOpen) return
+    const onDocClick = (e: MouseEvent) => {
+      if (contactsRef.current && !contactsRef.current.contains(e.target as Node)) {
+        setContactsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [contactsOpen])
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/')
+  const isContactsActive = pathname === '/contacts' || pathname.startsWith('/contacts/')
+  const isSettingsActive = pathname === '/settings' || pathname.startsWith('/settings/')
+
+  return (
+    <div className="topbar">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+        <Link href="/dashboard" className="brand" style={{ textDecoration: 'none' }}>
+          Odyssey<span className="dot">.</span>
+        </Link>
+        <nav className="topnav">
+          {NAV_ITEMS.map((item) => {
+            if (item.kind === 'link') {
+              return (
+                <Link
+                  key={item.key}
+                  href={item.href}
+                  className={isActive(item.href) ? 'active' : ''}
+                >
+                  {item.label}
+                </Link>
+              )
+            }
+            // Contacts dropdown, rendered in-place to preserve nav order.
+            return (
+              <div
+                key={item.key}
+                ref={contactsRef}
+                style={{ position: 'relative' }}
+                onMouseEnter={() => setContactsOpen(true)}
+                onMouseLeave={() => setContactsOpen(false)}
+              >
+                <Link
+                  href={item.href}
+                  className={isContactsActive ? 'active' : ''}
+                  onClick={() => setContactsOpen(false)}
+                >
+                  {item.label}
+                  <ChevronDown size={12} aria-hidden />
+                </Link>
+                {contactsOpen && (
+                  <div className="topnav-menu" role="menu">
+                    <Link
+                      href="/contacts"
+                      className="topnav-menu__header"
+                      onClick={() => setContactsOpen(false)}
+                    >
+                      All contacts
+                    </Link>
+                    <div className="topnav-menu__divider" />
+                    {CONTACT_GROUPS.map(([slug, label]) => (
+                      <Link
+                        key={slug}
+                        href={`/contacts/${slug}`}
+                        className={`topnav-menu__item ${pathname === `/contacts/${slug}` ? 'active' : ''}`}
+                        onClick={() => setContactsOpen(false)}
+                      >
+                        {label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </nav>
+      </div>
+
+      <div className="topright">
+        <span className="today-pill">{todayLabel}</span>
+        <button type="button" className="bell" title="Messages" aria-label="Messages">
+          <MessageCircle size={16} aria-hidden />
+          {messageCount > 0 && <span className="count">{messageCount}</span>}
+        </button>
+        <Link
+          href="/settings"
+          className={`bell ${isSettingsActive ? 'active' : ''}`}
+          title="Settings"
+          aria-label="Settings"
+        >
+          <Settings size={16} aria-hidden />
+        </Link>
+        <span
+          className="avatar g"
+          style={{ width: 30, height: 30, fontSize: 30 * 0.38 }}
+          aria-label="Signed-in user"
+        >
+          {userInitials}
+        </span>
+      </div>
+    </div>
+  )
+}
