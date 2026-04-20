@@ -41,11 +41,11 @@ CREATE POLICY "deny direct insert organizations"
 CREATE POLICY "owner updates own org"
   ON organizations FOR UPDATE TO authenticated
   USING (
-    id = auth.user_organization_id()
-    AND auth.user_role() = 'owner'
+    id = public.user_organization_id()
+    AND public.user_role() = 'owner'
     AND deleted_at IS NULL
   )
-  WITH CHECK (id = auth.user_organization_id());
+  WITH CHECK (id = public.user_organization_id());
 
 CREATE POLICY "deny delete organizations"
   ON organizations FOR DELETE TO authenticated USING (false);
@@ -94,34 +94,34 @@ CREATE POLICY "select own or in-org memberships"
   USING (
     user_id = auth.uid()
     OR (
-      organization_id = auth.user_organization_id()
-      AND auth.user_role() IN ('owner', 'staff')
+      organization_id = public.user_organization_id()
+      AND public.user_role() IN ('owner', 'staff')
     )
   );
 
 CREATE POLICY "insert memberships in own org"
   ON user_organization_roles FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND (
-      auth.user_role() = 'owner'
-      OR (auth.user_role() = 'staff' AND role = 'client')
+      public.user_role() = 'owner'
+      OR (public.user_role() = 'staff' AND role = 'client')
     )
   );
 
 CREATE POLICY "owner updates memberships in own org"
   ON user_organization_roles FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() = 'owner'
+    organization_id = public.user_organization_id()
+    AND public.user_role() = 'owner'
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "owner deletes memberships in own org"
   ON user_organization_roles FOR DELETE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() = 'owner'
+    organization_id = public.user_organization_id()
+    AND public.user_role() = 'owner'
   );
 
 
@@ -137,28 +137,28 @@ ALTER TABLE clients ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "select clients in own org"
   ON clients FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner', 'staff')
-      OR (auth.user_role() = 'client' AND user_id = auth.uid())
+      public.user_role() IN ('owner', 'staff')
+      OR (public.user_role() = 'client' AND user_id = auth.uid())
     )
   );
 
 CREATE POLICY "staff insert clients in own org"
   ON clients FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff update clients in own org"
   ON clients FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete clients"
   ON clients FOR DELETE TO authenticated USING (false);
@@ -172,12 +172,12 @@ ALTER TABLE client_medical_history ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "select cmh in own org"
   ON client_medical_history FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner', 'staff')
+      public.user_role() IN ('owner', 'staff')
       OR (
-        auth.user_role() = 'client'
+        public.user_role() = 'client'
         AND client_id IN (
           SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL
         )
@@ -188,17 +188,17 @@ CREATE POLICY "select cmh in own org"
 CREATE POLICY "staff insert cmh in own org"
   ON client_medical_history FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff update cmh in own org"
   ON client_medical_history FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete cmh"
   ON client_medical_history FOR DELETE TO authenticated USING (false);
@@ -213,26 +213,26 @@ ALTER TABLE clinical_notes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select clinical_notes in own org"
   ON clinical_notes FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
-    AND auth.user_role() IN ('owner', 'staff')
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff insert clinical_notes in own org"
   ON clinical_notes FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
     AND author_user_id = auth.uid()
   );
 
 CREATE POLICY "staff update clinical_notes in own org"
   ON clinical_notes FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete clinical_notes"
   ON clinical_notes FOR DELETE TO authenticated USING (false);
@@ -246,25 +246,25 @@ ALTER TABLE assessment_templates ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select assessment_templates in own org"
   ON assessment_templates FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
-    AND auth.user_role() IN ('owner', 'staff')
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff insert assessment_templates in own org"
   ON assessment_templates FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff update assessment_templates in own org"
   ON assessment_templates FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete assessment_templates"
   ON assessment_templates FOR DELETE TO authenticated USING (false);
@@ -278,25 +278,25 @@ ALTER TABLE assessments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select assessments in own org"
   ON assessments FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
-    AND auth.user_role() IN ('owner', 'staff')
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff insert assessments in own org"
   ON assessments FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   );
 
 CREATE POLICY "staff update assessments in own org"
   ON assessments FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner', 'staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner', 'staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete assessments"
   ON assessments FOR DELETE TO authenticated USING (false);
@@ -316,127 +316,127 @@ CREATE POLICY "deny delete assessments"
 ALTER TABLE movement_patterns ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select movement_patterns in own org"
   ON movement_patterns FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert movement_patterns in own org"
   ON movement_patterns FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update movement_patterns in own org"
   ON movement_patterns FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete movement_patterns in own org"
   ON movement_patterns FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 -- section_titles
 ALTER TABLE section_titles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select section_titles in own org"
   ON section_titles FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert section_titles in own org"
   ON section_titles FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update section_titles in own org"
   ON section_titles FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete section_titles in own org"
   ON section_titles FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 -- client_categories
 ALTER TABLE client_categories ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select client_categories in own org"
   ON client_categories FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert client_categories in own org"
   ON client_categories FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update client_categories in own org"
   ON client_categories FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete client_categories in own org"
   ON client_categories FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 -- exercise_tags
 ALTER TABLE exercise_tags ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select exercise_tags in own org"
   ON exercise_tags FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert exercise_tags in own org"
   ON exercise_tags FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update exercise_tags in own org"
   ON exercise_tags FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete exercise_tags in own org"
   ON exercise_tags FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 -- exercise_metric_units
 ALTER TABLE exercise_metric_units ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select exercise_metric_units in own org"
   ON exercise_metric_units FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert exercise_metric_units in own org"
   ON exercise_metric_units FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update exercise_metric_units in own org"
   ON exercise_metric_units FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete exercise_metric_units in own org"
   ON exercise_metric_units FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 -- vald_device_types
 ALTER TABLE vald_device_types ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select vald_device_types in own org"
   ON vald_device_types FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert vald_device_types in own org"
   ON vald_device_types FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update vald_device_types in own org"
   ON vald_device_types FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete vald_device_types in own org"
   ON vald_device_types FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 
 -- ----------------------------------------------------------------------------
@@ -446,20 +446,20 @@ ALTER TABLE exercises ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "staff select exercises in own org"
   ON exercises FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 
 CREATE POLICY "staff insert exercises in own org"
   ON exercises FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 
 CREATE POLICY "staff update exercises in own org"
   ON exercises FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete exercises"
   ON exercises FOR DELETE TO authenticated USING (false);
@@ -473,11 +473,11 @@ ALTER TABLE exercise_tag_assignments ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select exercise_tag_assignments via parent"
   ON exercise_tag_assignments FOR SELECT TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM exercises e
        WHERE e.id = exercise_tag_assignments.exercise_id
-         AND e.organization_id = auth.user_organization_id()
+         AND e.organization_id = public.user_organization_id()
          AND e.deleted_at IS NULL
     )
   );
@@ -485,11 +485,11 @@ CREATE POLICY "staff select exercise_tag_assignments via parent"
 CREATE POLICY "staff insert exercise_tag_assignments via parent"
   ON exercise_tag_assignments FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM exercises e
        WHERE e.id = exercise_tag_assignments.exercise_id
-         AND e.organization_id = auth.user_organization_id()
+         AND e.organization_id = public.user_organization_id()
          AND e.deleted_at IS NULL
     )
   );
@@ -497,11 +497,11 @@ CREATE POLICY "staff insert exercise_tag_assignments via parent"
 CREATE POLICY "staff delete exercise_tag_assignments via parent"
   ON exercise_tag_assignments FOR DELETE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM exercises e
        WHERE e.id = exercise_tag_assignments.exercise_id
-         AND e.organization_id = auth.user_organization_id()
+         AND e.organization_id = public.user_organization_id()
     )
   );
 
@@ -521,18 +521,18 @@ CREATE POLICY "deny update exercise_tag_assignments"
 ALTER TABLE program_templates ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select program_templates in own org"
   ON program_templates FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert program_templates in own org"
   ON program_templates FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update program_templates in own org"
   ON program_templates FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "deny delete program_templates"
   ON program_templates FOR DELETE TO authenticated USING (false);
 
@@ -544,33 +544,33 @@ ALTER TABLE template_weeks ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select template_weeks via parent"
   ON template_weeks FOR SELECT TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND deleted_at IS NULL
     AND EXISTS (
       SELECT 1 FROM program_templates pt
        WHERE pt.id = template_weeks.template_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
          AND pt.deleted_at IS NULL
     )
   );
 CREATE POLICY "staff write template_weeks via parent"
   ON template_weeks FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM program_templates pt
        WHERE pt.id = template_weeks.template_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "staff update template_weeks via parent"
   ON template_weeks FOR UPDATE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM program_templates pt
        WHERE pt.id = template_weeks.template_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny delete template_weeks"
@@ -580,36 +580,36 @@ ALTER TABLE template_days ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select template_days via parent"
   ON template_days FOR SELECT TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND deleted_at IS NULL
     AND EXISTS (
       SELECT 1 FROM template_weeks tw
         JOIN program_templates pt ON pt.id = tw.template_id
        WHERE tw.id = template_days.template_week_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
          AND pt.deleted_at IS NULL
     )
   );
 CREATE POLICY "staff insert template_days via parent"
   ON template_days FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM template_weeks tw
         JOIN program_templates pt ON pt.id = tw.template_id
        WHERE tw.id = template_days.template_week_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "staff update template_days via parent"
   ON template_days FOR UPDATE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM template_weeks tw
         JOIN program_templates pt ON pt.id = tw.template_id
        WHERE tw.id = template_days.template_week_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny delete template_days"
@@ -619,39 +619,39 @@ ALTER TABLE template_exercises ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select template_exercises via parent"
   ON template_exercises FOR SELECT TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND deleted_at IS NULL
     AND EXISTS (
       SELECT 1 FROM template_days td
         JOIN template_weeks tw ON tw.id = td.template_week_id
         JOIN program_templates pt ON pt.id = tw.template_id
        WHERE td.id = template_exercises.template_day_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
          AND pt.deleted_at IS NULL
     )
   );
 CREATE POLICY "staff insert template_exercises via parent"
   ON template_exercises FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM template_days td
         JOIN template_weeks tw ON tw.id = td.template_week_id
         JOIN program_templates pt ON pt.id = tw.template_id
        WHERE td.id = template_exercises.template_day_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "staff update template_exercises via parent"
   ON template_exercises FOR UPDATE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM template_days td
         JOIN template_weeks tw ON tw.id = td.template_week_id
         JOIN program_templates pt ON pt.id = tw.template_id
        WHERE td.id = template_exercises.template_day_id
-         AND pt.organization_id = auth.user_organization_id()
+         AND pt.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny delete template_exercises"
@@ -666,12 +666,12 @@ ALTER TABLE programs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "select programs in own org"
   ON programs FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner','staff')
+      public.user_role() IN ('owner','staff')
       OR (
-        auth.user_role() = 'client'
+        public.user_role() = 'client'
         AND status IN ('active','archived')
         AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)
       )
@@ -681,17 +681,17 @@ CREATE POLICY "select programs in own org"
 CREATE POLICY "staff insert programs in own org"
   ON programs FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner','staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner','staff')
   );
 
 CREATE POLICY "staff update programs in own org"
   ON programs FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner','staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner','staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete programs"
   ON programs FOR DELETE TO authenticated USING (false);
@@ -708,12 +708,12 @@ CREATE POLICY "select program_weeks via parent program"
     AND EXISTS (
       SELECT 1 FROM programs p
        WHERE p.id = program_weeks.program_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
          AND p.deleted_at IS NULL
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND p.status IN ('active','archived')
              AND p.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)
            )
@@ -723,21 +723,21 @@ CREATE POLICY "select program_weeks via parent program"
 CREATE POLICY "staff insert program_weeks via parent program"
   ON program_weeks FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM programs p
        WHERE p.id = program_weeks.program_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "staff update program_weeks via parent program"
   ON program_weeks FOR UPDATE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM programs p
        WHERE p.id = program_weeks.program_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny delete program_weeks"
@@ -752,12 +752,12 @@ CREATE POLICY "select program_days via parent"
       SELECT 1 FROM program_weeks pw
         JOIN programs p ON p.id = pw.program_id
        WHERE pw.id = program_days.program_week_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
          AND p.deleted_at IS NULL
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND p.status IN ('active','archived')
              AND p.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)
            )
@@ -767,23 +767,23 @@ CREATE POLICY "select program_days via parent"
 CREATE POLICY "staff insert program_days via parent"
   ON program_days FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM program_weeks pw
         JOIN programs p ON p.id = pw.program_id
        WHERE pw.id = program_days.program_week_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "staff update program_days via parent"
   ON program_days FOR UPDATE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM program_weeks pw
         JOIN programs p ON p.id = pw.program_id
        WHERE pw.id = program_days.program_week_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny delete program_days"
@@ -799,12 +799,12 @@ CREATE POLICY "select program_exercises via parent"
         JOIN program_weeks pw ON pw.id = pd.program_week_id
         JOIN programs p ON p.id = pw.program_id
        WHERE pd.id = program_exercises.program_day_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
          AND p.deleted_at IS NULL
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND p.status IN ('active','archived')
              AND p.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)
            )
@@ -814,25 +814,25 @@ CREATE POLICY "select program_exercises via parent"
 CREATE POLICY "staff insert program_exercises via parent"
   ON program_exercises FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM program_days pd
         JOIN program_weeks pw ON pw.id = pd.program_week_id
         JOIN programs p ON p.id = pw.program_id
        WHERE pd.id = program_exercises.program_day_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "staff update program_exercises via parent"
   ON program_exercises FOR UPDATE TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM program_days pd
         JOIN program_weeks pw ON pw.id = pd.program_week_id
         JOIN programs p ON p.id = pw.program_id
        WHERE pd.id = program_exercises.program_day_id
-         AND p.organization_id = auth.user_organization_id()
+         AND p.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny delete program_exercises"
@@ -851,12 +851,12 @@ ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "select sessions in own org"
   ON sessions FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner','staff')
+      public.user_role() IN ('owner','staff')
       OR (
-        auth.user_role() = 'client'
+        public.user_role() = 'client'
         AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)
       )
     )
@@ -865,11 +865,11 @@ CREATE POLICY "select sessions in own org"
 CREATE POLICY "insert sessions"
   ON sessions FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND (
-      auth.user_role() IN ('owner','staff')
+      public.user_role() IN ('owner','staff')
       OR (
-        auth.user_role() = 'client'
+        public.user_role() = 'client'
         AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
       )
     )
@@ -878,18 +878,18 @@ CREATE POLICY "insert sessions"
 CREATE POLICY "update sessions"
   ON sessions FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner','staff')
+      public.user_role() IN ('owner','staff')
       OR (
-        auth.user_role() = 'client'
+        public.user_role() = 'client'
         AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
         AND completed_at IS NULL
       )
     )
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 CREATE POLICY "deny delete sessions"
   ON sessions FOR DELETE TO authenticated USING (false);
@@ -906,12 +906,12 @@ CREATE POLICY "select exercise_logs via session"
     AND EXISTS (
       SELECT 1 FROM sessions s
        WHERE s.id = exercise_logs.session_id
-         AND s.organization_id = auth.user_organization_id()
+         AND s.organization_id = public.user_organization_id()
          AND s.deleted_at IS NULL
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND s.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
            )
          )
@@ -923,11 +923,11 @@ CREATE POLICY "insert exercise_logs for allowed session"
     EXISTS (
       SELECT 1 FROM sessions s
        WHERE s.id = exercise_logs.session_id
-         AND s.organization_id = auth.user_organization_id()
+         AND s.organization_id = public.user_organization_id()
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND s.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
              AND s.completed_at IS NULL
            )
@@ -940,11 +940,11 @@ CREATE POLICY "update exercise_logs for allowed session"
     EXISTS (
       SELECT 1 FROM sessions s
        WHERE s.id = exercise_logs.session_id
-         AND s.organization_id = auth.user_organization_id()
+         AND s.organization_id = public.user_organization_id()
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND s.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
              AND s.completed_at IS NULL
            )
@@ -963,11 +963,11 @@ CREATE POLICY "select set_logs via parent"
       SELECT 1 FROM exercise_logs el
         JOIN sessions s ON s.id = el.session_id
        WHERE el.id = set_logs.exercise_log_id
-         AND s.organization_id = auth.user_organization_id()
+         AND s.organization_id = public.user_organization_id()
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND s.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
            )
          )
@@ -980,11 +980,11 @@ CREATE POLICY "insert set_logs via parent"
       SELECT 1 FROM exercise_logs el
         JOIN sessions s ON s.id = el.session_id
        WHERE el.id = set_logs.exercise_log_id
-         AND s.organization_id = auth.user_organization_id()
+         AND s.organization_id = public.user_organization_id()
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND s.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
              AND s.completed_at IS NULL
            )
@@ -998,11 +998,11 @@ CREATE POLICY "update set_logs via parent"
       SELECT 1 FROM exercise_logs el
         JOIN sessions s ON s.id = el.session_id
        WHERE el.id = set_logs.exercise_log_id
-         AND s.organization_id = auth.user_organization_id()
+         AND s.organization_id = public.user_organization_id()
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND s.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
              AND s.completed_at IS NULL
            )
@@ -1020,33 +1020,33 @@ CREATE POLICY "deny delete set_logs"
 ALTER TABLE availability_rules ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select availability_rules in own org"
   ON availability_rules FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert availability_rules in own org"
   ON availability_rules FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update availability_rules in own org"
   ON availability_rules FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete availability_rules in own org"
   ON availability_rules FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "select appointments in own org"
   ON appointments FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner','staff')
-      OR (auth.user_role() = 'client'
+      public.user_role() IN ('owner','staff')
+      OR (public.user_role() = 'client'
           AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid()))
     )
   );
@@ -1054,10 +1054,10 @@ CREATE POLICY "select appointments in own org"
 CREATE POLICY "insert appointments"
   ON appointments FOR INSERT TO authenticated
   WITH CHECK (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND (
-      auth.user_role() IN ('owner','staff')
-      OR (auth.user_role() = 'client'
+      public.user_role() IN ('owner','staff')
+      OR (public.user_role() = 'client'
           AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid()))
     )
   );
@@ -1065,10 +1065,10 @@ CREATE POLICY "insert appointments"
 CREATE POLICY "staff update appointments in own org"
   ON appointments FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() IN ('owner','staff')
+    organization_id = public.user_organization_id()
+    AND public.user_role() IN ('owner','staff')
   )
-  WITH CHECK (organization_id = auth.user_organization_id());
+  WITH CHECK (organization_id = public.user_organization_id());
 
 -- Client cancellation: narrow UPDATE allowing only status → cancelled on
 -- caller's own pending/confirmed appointment. Field-level lockdown
@@ -1076,14 +1076,14 @@ CREATE POLICY "staff update appointments in own org"
 CREATE POLICY "client cancels own appointment"
   ON appointments FOR UPDATE TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() = 'client'
+    organization_id = public.user_organization_id()
+    AND public.user_role() = 'client'
     AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
     AND status IN ('pending','confirmed')
     AND deleted_at IS NULL
   )
   WITH CHECK (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND status = 'cancelled'
     AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
   );
@@ -1095,7 +1095,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF auth.user_role() = 'client' THEN
+  IF public.user_role() = 'client' THEN
     IF NEW.start_at            IS DISTINCT FROM OLD.start_at
     OR NEW.end_at              IS DISTINCT FROM OLD.end_at
     OR NEW.appointment_type    IS DISTINCT FROM OLD.appointment_type
@@ -1126,11 +1126,11 @@ ALTER TABLE appointment_reminders ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select appointment_reminders via parent"
   ON appointment_reminders FOR SELECT TO authenticated
   USING (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM appointments a
        WHERE a.id = appointment_reminders.appointment_id
-         AND a.organization_id = auth.user_organization_id()
+         AND a.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny direct insert appointment_reminders"
@@ -1148,39 +1148,39 @@ CREATE POLICY "deny delete appointment_reminders"
 ALTER TABLE communication_templates ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select communication_templates in own org"
   ON communication_templates FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert communication_templates in own org"
   ON communication_templates FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update communication_templates in own org"
   ON communication_templates FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "staff delete communication_templates in own org"
   ON communication_templates FOR DELETE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'));
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'));
 
 ALTER TABLE communications ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select communications in own org"
   ON communications FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert communications in own org"
   ON communications FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff')
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff')
               AND sender_user_id = auth.uid());
 CREATE POLICY "staff update communications in own org"
   ON communications FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "deny delete communications"
   ON communications FOR DELETE TO authenticated USING (false);
 
@@ -1193,12 +1193,12 @@ ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "select reports in own org"
   ON reports FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
+    organization_id = public.user_organization_id()
     AND deleted_at IS NULL
     AND (
-      auth.user_role() IN ('owner','staff')
+      public.user_role() IN ('owner','staff')
       OR (
-        auth.user_role() = 'client'
+        public.user_role() = 'client'
         AND is_published = true
         AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
       )
@@ -1206,13 +1206,13 @@ CREATE POLICY "select reports in own org"
   );
 CREATE POLICY "staff insert reports in own org"
   ON reports FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff'));
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff update reports in own org"
   ON reports FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "deny delete reports"
   ON reports FOR DELETE TO authenticated USING (false);
 
@@ -1223,12 +1223,12 @@ CREATE POLICY "select report_versions via parent"
     EXISTS (
       SELECT 1 FROM reports r
        WHERE r.id = report_versions.report_id
-         AND r.organization_id = auth.user_organization_id()
+         AND r.organization_id = public.user_organization_id()
          AND r.deleted_at IS NULL
          AND (
-           auth.user_role() IN ('owner','staff')
+           public.user_role() IN ('owner','staff')
            OR (
-             auth.user_role() = 'client'
+             public.user_role() = 'client'
              AND r.is_published = true
              AND r.client_id IN (SELECT id FROM clients WHERE user_id = auth.uid())
            )
@@ -1238,11 +1238,11 @@ CREATE POLICY "select report_versions via parent"
 CREATE POLICY "staff insert report_versions via parent"
   ON report_versions FOR INSERT TO authenticated
   WITH CHECK (
-    auth.user_role() IN ('owner','staff')
+    public.user_role() IN ('owner','staff')
     AND EXISTS (
       SELECT 1 FROM reports r
        WHERE r.id = report_versions.report_id
-         AND r.organization_id = auth.user_organization_id()
+         AND r.organization_id = public.user_organization_id()
     )
   );
 CREATE POLICY "deny update report_versions"
@@ -1253,19 +1253,19 @@ CREATE POLICY "deny delete report_versions"
 ALTER TABLE vald_raw_uploads ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "staff select vald_raw_uploads in own org"
   ON vald_raw_uploads FOR SELECT TO authenticated
-  USING (organization_id = auth.user_organization_id()
+  USING (organization_id = public.user_organization_id()
          AND deleted_at IS NULL
-         AND auth.user_role() IN ('owner','staff'));
+         AND public.user_role() IN ('owner','staff'));
 CREATE POLICY "staff insert vald_raw_uploads in own org"
   ON vald_raw_uploads FOR INSERT TO authenticated
-  WITH CHECK (organization_id = auth.user_organization_id()
-              AND auth.user_role() IN ('owner','staff')
+  WITH CHECK (organization_id = public.user_organization_id()
+              AND public.user_role() IN ('owner','staff')
               AND uploaded_by_user_id = auth.uid());
 CREATE POLICY "staff update vald_raw_uploads in own org"
   ON vald_raw_uploads FOR UPDATE TO authenticated
-  USING (organization_id = auth.user_organization_id()
-         AND auth.user_role() IN ('owner','staff'))
-  WITH CHECK (organization_id = auth.user_organization_id());
+  USING (organization_id = public.user_organization_id()
+         AND public.user_role() IN ('owner','staff'))
+  WITH CHECK (organization_id = public.user_organization_id());
 CREATE POLICY "deny delete vald_raw_uploads"
   ON vald_raw_uploads FOR DELETE TO authenticated USING (false);
 
@@ -1278,6 +1278,6 @@ CREATE POLICY "deny delete vald_raw_uploads"
 CREATE POLICY "owner selects audit_log in own org"
   ON audit_log FOR SELECT TO authenticated
   USING (
-    organization_id = auth.user_organization_id()
-    AND auth.user_role() = 'owner'
+    organization_id = public.user_organization_id()
+    AND public.user_role() = 'owner'
   );

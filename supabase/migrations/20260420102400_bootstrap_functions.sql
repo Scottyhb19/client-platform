@@ -188,8 +188,8 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   caller_id    uuid := auth.uid();
-  caller_role  text := auth.user_role();
-  caller_org   uuid := auth.user_organization_id();
+  caller_role  text := public.user_role();
+  caller_org   uuid := public.user_organization_id();
   new_client_id uuid;
 BEGIN
   IF caller_id IS NULL THEN

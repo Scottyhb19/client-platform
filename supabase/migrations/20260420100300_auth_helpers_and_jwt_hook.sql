@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 20260420100300_auth_helpers_and_jwt_hook
 -- ============================================================================
--- Why: every RLS policy calls auth.user_organization_id() and auth.user_role()
+-- Why: every RLS policy calls public.user_organization_id() and public.user_role()
 -- to read the caller's tenant scope and role from the JWT. Those claims are
 -- not in the JWT by default — they are injected by a Custom Access Token Hook
 -- that runs on every JWT issue/refresh.
@@ -17,8 +17,11 @@
 -- RLS helper: read organization_id from the JWT custom claim.
 -- Returns NULL if the claim is absent; policies comparing uuid = NULL match
 -- zero rows, so the system is safely inoperable rather than unsafely open.
+--
+-- Lives in public, not auth — Supabase reserves the auth schema for its own
+-- objects and denies CREATE to the project's postgres role.
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION auth.user_organization_id()
+CREATE OR REPLACE FUNCTION public.user_organization_id()
 RETURNS uuid
 LANGUAGE sql STABLE PARALLEL SAFE
 AS $$
@@ -28,7 +31,7 @@ AS $$
   )::uuid;
 $$;
 
-COMMENT ON FUNCTION auth.user_organization_id() IS
+COMMENT ON FUNCTION public.user_organization_id() IS
   'Reads organization_id from the JWT custom claim. NULL when claim absent; policies comparing to NULL match zero rows (fail safe).';
 
 
@@ -36,14 +39,14 @@ COMMENT ON FUNCTION auth.user_organization_id() IS
 -- RLS helper: read role from the JWT custom claim.
 -- Returns one of 'owner', 'staff', 'client', or NULL.
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION auth.user_role()
+CREATE OR REPLACE FUNCTION public.user_role()
 RETURNS text
 LANGUAGE sql STABLE PARALLEL SAFE
 AS $$
   SELECT current_setting('request.jwt.claims', true)::jsonb ->> 'user_role';
 $$;
 
-COMMENT ON FUNCTION auth.user_role() IS
+COMMENT ON FUNCTION public.user_role() IS
   'Reads user_role from the JWT custom claim. One of owner | staff | client, or NULL.';
 
 
@@ -62,6 +65,8 @@ COMMENT ON FUNCTION auth.user_role() IS
 CREATE OR REPLACE FUNCTION auth_hooks.custom_access_token(event jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql STABLE
+SECURITY DEFINER
+SET search_path = public, auth, pg_temp
 AS $$
 DECLARE
   claims          jsonb := COALESCE(event->'claims', '{}'::jsonb);
