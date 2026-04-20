@@ -352,14 +352,17 @@ $$;
 COMMENT ON FUNCTION public.log_audit_event() IS
   'Generic AFTER INSERT/UPDATE/DELETE trigger body. SECURITY DEFINER runs as audit_writer so RLS on audit_log does not block writes.';
 
--- Transfer ownership to audit_writer so SECURITY DEFINER switches to that role.
-ALTER FUNCTION public.log_audit_event() OWNER TO audit_writer;
-ALTER FUNCTION public.audit_resolve_org_id(text, jsonb) OWNER TO audit_writer;
-ALTER FUNCTION public.audit_trim_row(text, jsonb)        OWNER TO audit_writer;
-ALTER FUNCTION public.audit_diff_fields(jsonb, jsonb)    OWNER TO audit_writer;
+-- Note on RLS bypass: in self-hosted Postgres we'd ALTER FUNCTION OWNER TO
+-- audit_writer so SECURITY DEFINER runs as a narrow role with BYPASSRLS.
+-- Supabase's hosted environment denies the project's postgres role the
+-- SET ROLE privilege required for ownership transfer. Postgres in Supabase
+-- already has BYPASSRLS itself, so the SECURITY DEFINER functions defined
+-- above (owned by postgres by default) achieve the same effect: trigger
+-- INSERTs to audit_log bypass the deny-INSERT policy, while authenticated
+-- users still cannot INSERT directly. audit_writer remains created and
+-- granted INSERT for documentation and future portability.
 
--- Allow authenticated callers to SEE the function signatures (so PostgREST
--- doesn't complain) but deny EXECUTE except to the trigger path.
+-- Lock down: deny EXECUTE to anonymous; PostgREST won't expose these as RPCs.
 REVOKE EXECUTE ON FUNCTION public.log_audit_event()                 FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.audit_resolve_org_id(text, jsonb) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.audit_trim_row(text, jsonb)       FROM PUBLIC;
