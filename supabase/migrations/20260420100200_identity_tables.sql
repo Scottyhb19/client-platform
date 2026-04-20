@@ -19,8 +19,10 @@ CREATE TABLE organizations (
   id          uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
   name        text         NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 200),
   slug        text         NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9-]{3,63}$'),
-  timezone    text         NOT NULL DEFAULT 'Australia/Sydney'
-               CHECK (timezone IN (SELECT name FROM pg_timezone_names)),
+  -- timezone validity is enforced by a trigger (see validate_timezone() below).
+  -- CHECK constraints in Postgres cannot reference other tables / system catalogs,
+  -- so pg_timezone_names lookup must live in a trigger function.
+  timezone    text         NOT NULL DEFAULT 'Australia/Sydney',
   email       text,
   phone       text,
   address     text,
@@ -39,7 +41,29 @@ COMMENT ON TABLE organizations IS
 COMMENT ON COLUMN organizations.slug IS
   'URL-friendly identifier: lowercase alphanumeric + hyphens, 3–63 chars.';
 COMMENT ON COLUMN organizations.timezone IS
-  'IANA timezone name; used when resolving availability_rules to UTC.';
+  'IANA timezone name; used when resolving availability_rules to UTC. Validated by validate_timezone() trigger.';
+
+-- Trigger function: validates that the timezone exists in pg_timezone_names.
+-- Reusable for any future table with a timezone column.
+CREATE OR REPLACE FUNCTION public.validate_timezone()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.timezone IS NULL THEN
+    RAISE EXCEPTION 'timezone cannot be NULL';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = NEW.timezone) THEN
+    RAISE EXCEPTION 'Invalid IANA timezone: %', NEW.timezone
+      USING HINT = 'See SELECT name FROM pg_timezone_names for the full list.';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER organizations_validate_timezone
+  BEFORE INSERT OR UPDATE OF timezone ON organizations
+  FOR EACH ROW EXECUTE FUNCTION public.validate_timezone();
 
 
 -- ----------------------------------------------------------------------------
