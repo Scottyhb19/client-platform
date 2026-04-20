@@ -149,7 +149,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   caller_id        uuid := auth.uid();
-  client_row       clients%ROWTYPE;
+  found_client_id  uuid;
   program_org_id   uuid;
   new_session_id   uuid;
 BEGIN
@@ -157,9 +157,10 @@ BEGIN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
 
-  -- Resolve the client + the owning program's org, pinning to auth.uid()
-  SELECT c.*, p.organization_id
-    INTO client_row, program_org_id
+  -- Resolve client_id + program org, pinning to auth.uid().
+  -- Two scalar targets — PL/pgSQL forbids a %ROWTYPE in a multi-INTO list.
+  SELECT c.id, p.organization_id
+    INTO found_client_id, program_org_id
     FROM program_days pd
     JOIN program_weeks pw ON pw.id = pd.program_week_id
     JOIN programs p       ON p.id  = pw.program_id
@@ -171,14 +172,14 @@ BEGIN
      AND p.deleted_at    IS NULL
      AND pd.deleted_at   IS NULL;
 
-  IF client_row.id IS NULL THEN
+  IF found_client_id IS NULL THEN
     RAISE EXCEPTION 'No active program day for this caller';
   END IF;
 
   -- Refuse if an in-progress session already exists for this client
   IF EXISTS (
     SELECT 1 FROM sessions
-     WHERE client_id    = client_row.id
+     WHERE client_id    = found_client_id
        AND completed_at IS NULL
        AND deleted_at   IS NULL
   ) THEN
@@ -187,7 +188,7 @@ BEGIN
   END IF;
 
   INSERT INTO sessions (organization_id, client_id, program_day_id, started_at)
-  VALUES (program_org_id, client_row.id, p_program_day_id, now())
+  VALUES (program_org_id, found_client_id, p_program_day_id, now())
   RETURNING id INTO new_session_id;
 
   RETURN new_session_id;
