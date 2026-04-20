@@ -69,7 +69,7 @@ Fixed inputs, not decisions this document makes:
 - **Soft-delete for all PHI.** 7-year retention for adults; until age 25 for minors at time of last activity.
 - **Audit logging at the database level via triggers.** Application-level logging is a supplement, not the source of truth.
 - **No Prisma, no ORM magic.** Schema authored in SQL; TypeScript types generated from the live schema via `supabase gen types`.
-- **Supabase Pro from launch.** Free tier does not provide the backup guarantees a clinical system requires.
+- **Supabase Pro required before the first production client record.** Free tier is acceptable during development — no PHI exists yet, so the Privacy Act does not apply. Pro ($25/mo) unlocks Point-in-Time Recovery and daily backups, which become mandatory the moment a real client is onboarded. The first Pro month coincides with the DR drill; see `/docs/go-live-checklist.md` (Gate 3 deliverable) for the full pre-launch transition.
 
 Any change that contradicts one of these is a **foundation migration**, reviewed in the same way this document is being reviewed.
 

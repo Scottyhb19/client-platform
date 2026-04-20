@@ -62,12 +62,16 @@ Each service level indicator (SLI) is a measurable signal. Each SLO is the targe
 
 **Error budget.** Zero. Any data-loss event is an S0 incident.
 
-**How we reach 100%:**
+**Dev phase (free Supabase tier, no real PHI):** the development database is rebuildable from migrations + seed data. No PITR, no daily backups. Acceptable because no clinical data exists; this is also a forcing function to keep migrations correct and seed data idempotent. Auto-pause after 7 idle days is tolerated.
+
+**Production phase — how we reach 100% durability (from go-live onward):**
 - Supabase Pro point-in-time recovery (7-day retention, 2-second granularity).
 - Nightly logical backups retained 30 days (Supabase default on Pro).
 - Weekly S3 exports to a separate AWS account in ap-southeast-2, lifecycle-archived to Glacier at 1 year.
 - Monthly restore drill confirming data integrity.
 - `audit_log` table is append-only with external shipping; a database-wide corruption event is reconstructible from the audit stream.
+
+The transition from dev to production is a named gate (`/docs/go-live-checklist.md` — Gate 3 deliverable). The upgrade to Pro happens before any real client record is created, and the first DR drill is run on the newly-upgraded project as the final pre-launch step.
 
 ### 2.3 API latency (p95)
 

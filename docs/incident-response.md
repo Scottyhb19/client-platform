@@ -121,6 +121,8 @@ These are placeholders. The operator maintains the live list in a password manag
 
 **This is an S0.**
 
+**Applicability:** this playbook assumes the production Supabase Pro project with PITR enabled. In the dev phase (free tier, no PHI), a data-loss event is not an incident — rebuild the database from migrations and seed data.
+
 1. **Stop writes to the affected table** if possible (disable the feature, revert a deploy).
 2. **Snapshot current state.** Take a full logical dump of the affected table NOW, before any recovery.
 3. **Identify the last known good state.** Cross-reference `audit_log` entries with current rows. Find the timestamp after which rows went missing.
