@@ -39,19 +39,23 @@ Extract design tokens from `Isaac_Fong_report.html`:
 - If the EP cannot adjust a program in under 60 seconds, the design has failed.
 
 ## Tech stack
-- Next.js 14+ with TypeScript
+- Next.js with TypeScript (App Router, Server Components by default)
 - Tailwind CSS
-- PostgreSQL (AWS RDS ap-southeast-2)
-- Prisma ORM
-- Clerk or NextAuth.js for auth (staff + client roles)
+- Supabase (Postgres + Auth + Storage + Row-Level Security) in ap-southeast-2
+- No ORM — raw SQL migrations + Supabase query builder + TypeScript types generated from the live schema via `supabase gen types`
+- Supabase Auth (email + password, magic link deferred). NOT Clerk, NOT NextAuth
 - Resend for email, Twilio for SMS
+
+See `/docs/` for the authoritative design decisions: `schema.md`, `auth.md`, `rls-policies.md`, `slos.md`, `incident-response.md`. Any tech-stack change must be reconciled with those documents.
 
 ## Code standards (non-negotiable)
 - TypeScript throughout — no JavaScript files. No `any` types unless absolutely unavoidable with a comment explaining why.
 - Component-based architecture. Every component should be reusable and testable.
-- Database migrations tracked in code. No manual schema changes ever.
-- Role-based middleware on every API route. No exceptions.
-- Environment variables for all secrets and configuration. Nothing hardcoded.
+- Database migrations tracked in code. No manual schema changes ever — never edit in the Supabase dashboard.
+- Multi-tenant from commit one. Every tenant-owned table carries `organization_id`.
+- Row-Level Security enforced on every tenant-owned table. RLS is the security boundary, not application code.
+- Every API route and server action authenticates via Supabase Auth; authorization is enforced by RLS. No exceptions.
+- Environment variables for all secrets and configuration. Nothing hardcoded. Service role key is server-only — never ships to the browser.
 - Responsive: 375px (mobile), 768px (tablet), 1440px (desktop).
 - Client portal is mobile-first. Staff portal is desktop-first.
 - Clean, readable code that works is better than fast, messy code that works today and breaks tomorrow.
@@ -64,17 +68,19 @@ Extract design tokens from `Isaac_Fong_report.html`:
 - If you think the person is about to make a mistake or go down a wrong path, say so immediately.
 
 ## Build order (Phase 1)
-1. Project scaffolding (Next.js + Tailwind + Prisma + PostgreSQL)
-2. Auth system (Clerk, staff + client roles, email invite)
-3. Database schema (users, clients, exercises, programs, sessions, notes, bookings)
-4. Exercise library (CRUD, defaults, tags, YouTube links)
-5. Client profile with clinical notes
-6. Program engine + session builder (the core differentiator)
-7. Program calendar view
-8. Client portal PWA
-9. Scheduling system
-10. EP Dashboard
-11. Email + SMS notifications
+1. Backend foundations — schema, auth, RLS, SLOs, incident-response docs (see `/docs/`). Four review gates before any application code.
+2. Migrations + pgTAP tests + disaster-recovery drill.
+3. Typed data access layer in `/lib/db/` with unit tests.
+4. Next.js + Tailwind + Supabase scaffolding (green-field).
+5. Auth system (Supabase Auth, staff + client roles, email invite flow).
+6. Exercise library (CRUD, defaults, tags, YouTube links).
+7. Client profile with clinical notes.
+8. Program engine + session builder (the core differentiator).
+9. Program calendar view.
+10. Client portal PWA.
+11. Scheduling system.
+12. EP Dashboard.
+13. Email + SMS notifications.
 
 ## What NOT to build
 - No social features
