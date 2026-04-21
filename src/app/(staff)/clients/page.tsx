@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { ClientsList, type ClientRow } from './_components/ClientsList'
 
@@ -61,9 +62,9 @@ export default async function ClientsPage() {
           <button type="button" className="btn outline" disabled>
             Export
           </button>
-          <button type="button" className="btn primary" disabled>
+          <Link href="/clients/new" className="btn primary">
             New client
-          </button>
+          </Link>
         </div>
       </div>
 

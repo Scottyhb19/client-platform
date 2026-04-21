@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import { ChevronRight, Search } from 'lucide-react'
+import { ChevronRight, Plus, Search } from 'lucide-react'
 import {
   initialsFor,
   toneFor,
@@ -226,10 +226,21 @@ function EmptyState({
         >
           No clients yet
         </div>
-        <p style={{ fontSize: '.9rem', margin: 0, lineHeight: 1.6 }}>
+        <p
+          style={{
+            fontSize: '.9rem',
+            margin: '0 auto 18px',
+            lineHeight: 1.6,
+            maxWidth: 380,
+          }}
+        >
           Invite your first client to get started. They&rsquo;ll receive an
           email with a link to set up their portal account.
         </p>
+        <Link href="/clients/new" className="btn primary">
+          <Plus size={14} aria-hidden />
+          Invite your first client
+        </Link>
       </div>
     )
   }
