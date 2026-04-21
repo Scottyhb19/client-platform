@@ -6,17 +6,20 @@ import {
   initialsFor,
   toneFor,
 } from '../../_lib/client-helpers'
+import {
+  ProgramCalendar,
+  type DayData,
+  type WeekData,
+} from './_components/ProgramCalendar'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * 08 Program Calendar — per client.
  *
- * Displays the client's active mesocycle (weeks + days). If no active
- * program exists, shows an empty state with a CTA to start one.
- *
- * Session Builder (09) operates on a single day of this calendar —
- * wiring lands in a later commit.
+ * Fetches client + active program + weeks + days in parallel. If no
+ * active program: empty state with CTA to /program/new. Otherwise, the
+ * ProgramCalendar client component renders collapsible week strips.
  */
 export default async function ClientProgramPage({
   params,
@@ -50,6 +53,34 @@ export default async function ClientProgramPage({
     .maybeSingle()
 
   if (progErr) throw new Error(`Load program: ${progErr.message}`)
+
+  let weeks: WeekData[] = []
+  let daysPerWeek = 0
+
+  if (program) {
+    const { data: weeksRaw, error: weeksErr } = await supabase
+      .from('program_weeks')
+      .select(
+        `id, week_number,
+         program_days(id, day_label, day_of_week, sort_order)`,
+      )
+      .eq('program_id', program.id)
+      .is('deleted_at', null)
+      .order('week_number')
+
+    if (weeksErr) throw new Error(`Load weeks: ${weeksErr.message}`)
+
+    weeks = (weeksRaw ?? []).map((w) => ({
+      id: w.id,
+      week_number: w.week_number,
+      days: (w.program_days ?? [])
+        .filter((d) => d.day_label !== null)
+        .sort((a, b) => a.sort_order - b.sort_order) as DayData[],
+    }))
+
+    // Days per week: max across all weeks (handles uneven weeks fine).
+    daysPerWeek = weeks.reduce((m, w) => Math.max(m, w.days.length), 0)
+  }
 
   return (
     <div className="page">
@@ -107,6 +138,7 @@ export default async function ClientProgramPage({
               {program.duration_weeks
                 ? `${program.duration_weeks} week block`
                 : 'Open-ended'}
+              {daysPerWeek > 0 && ` · ${daysPerWeek} day split`}
               {program.start_date && ` · starts ${formatDate(program.start_date)}`}
             </div>
           )}
@@ -133,7 +165,14 @@ export default async function ClientProgramPage({
       {!program ? (
         <EmptyProgram clientId={client.id} />
       ) : (
-        <ProgramSkeleton programName={program.name} />
+        <ProgramCalendar
+          clientId={client.id}
+          programName={program.name}
+          daysPerWeek={daysPerWeek}
+          weeks={weeks}
+          startDateIso={program.start_date}
+          todayIso={new Date().toISOString().slice(0, 10)}
+        />
       )}
     </div>
   )
@@ -179,39 +218,6 @@ function EmptyProgram({ clientId }: { clientId: string }) {
         <Plus size={14} aria-hidden />
         Start first mesocycle
       </Link>
-    </div>
-  )
-}
-
-function ProgramSkeleton({ programName }: { programName: string }) {
-  // Placeholder: week strips + day cells render here once program_weeks
-  // and program_days exist in the DB. The utility classes (.wk-strip,
-  // .day-cell, .day-tag) are already in globals.css ready for the next
-  // commit.
-  return (
-    <div
-      className="card"
-      style={{
-        padding: '28px',
-        color: 'var(--color-text-light)',
-      }}
-    >
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 800,
-          fontSize: '1.05rem',
-          color: 'var(--color-charcoal)',
-          marginBottom: 4,
-        }}
-      >
-        {programName}
-      </div>
-      <p style={{ fontSize: '.88rem', margin: 0, lineHeight: 1.55 }}>
-        Week strips and day cells wire up in the next commit. The Session
-        Builder opens from each day tile and drops you into the exercise-
-        placement view with clinical notes adjacent.
-      </p>
     </div>
   )
 }
