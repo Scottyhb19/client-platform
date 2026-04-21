@@ -1,18 +1,17 @@
-import Link from 'next/link'
-import { Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import {
-  ExerciseLibrary,
-  type LibraryExercise,
-  type Pattern,
-  type Tag,
+import { LibraryView } from './_components/LibraryView'
+import type {
+  LibraryExercise,
+  Pattern,
+  Tag,
 } from './_components/ExerciseLibrary'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * 05 Exercise Library. Shared across all clients in the organization.
- * RLS scopes every query to caller's org.
+ * 05 Library — exercises (live), circuits + sessions + programs scaffold.
+ * Data fetch stays server-side; LibraryView is a Client Component that
+ * holds the active-tab state and swaps rendered content.
  */
 export default async function LibraryPage() {
   const supabase = await createSupabaseServerClient()
@@ -69,42 +68,14 @@ export default async function LibraryPage() {
     }
   })
 
-  const total = exercises.length
-  const patternCount = (patterns ?? []).length
-
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <div className="eyebrow">
-            {total === 0
-              ? 'No exercises yet'
-              : `${total} ${total === 1 ? 'exercise' : 'exercises'}${
-                  patternCount > 0
-                    ? ` · ${patternCount} movement patterns`
-                    : ''
-                }`}
-          </div>
-          <h1>Exercise Library</h1>
-          <div className="sub">
-            Shared across all clients · defaults, tags, and video links.
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button type="button" className="btn outline" disabled>
-            Import CSV
-          </button>
-          <Link href="/library/new" className="btn primary">
-            <Plus size={14} aria-hidden />
-            New exercise
-          </Link>
-        </div>
-      </div>
-
-      <ExerciseLibrary
+      <LibraryView
         exercises={exercises}
         patterns={(patterns ?? []) as Pattern[]}
         tags={(tags ?? []) as Tag[]}
+        total={exercises.length}
+        patternCount={(patterns ?? []).length}
       />
     </div>
   )
