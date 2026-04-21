@@ -106,6 +106,7 @@ export type ProgramExercisePatch = {
   rest_seconds?: number | null
   tempo?: string | null
   instructions?: string | null
+  section_title?: string | null
 }
 
 const EDITABLE_FIELDS = new Set<keyof ProgramExercisePatch>([
@@ -116,6 +117,7 @@ const EDITABLE_FIELDS = new Set<keyof ProgramExercisePatch>([
   'rest_seconds',
   'tempo',
   'instructions',
+  'section_title',
 ])
 
 export async function updateProgramExerciseAction(
@@ -142,5 +144,67 @@ export async function updateProgramExerciseAction(
 
   if (error) return { error: `Update failed: ${error.message}` }
 
+  return { error: null }
+}
+
+/**
+ * Reorder a program_exercise up or down by one position. Swaps
+ * sort_order with the adjacent row within the same program_day.
+ */
+export async function moveProgramExerciseAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+  direction: 'up' | 'down',
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data: target, error: targetErr } = await supabase
+    .from('program_exercises')
+    .select('id, sort_order, program_day_id')
+    .eq('id', programExerciseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (targetErr || !target) {
+    return { error: `Exercise not found: ${targetErr?.message ?? 'unknown'}` }
+  }
+
+  // Find the neighbour on the relevant side.
+  const { data: neighbour, error: neighbourErr } = await supabase
+    .from('program_exercises')
+    .select('id, sort_order')
+    .eq('program_day_id', target.program_day_id)
+    .is('deleted_at', null)
+    .filter(
+      'sort_order',
+      direction === 'up' ? 'lt' : 'gt',
+      target.sort_order,
+    )
+    .order('sort_order', { ascending: direction !== 'up' })
+    .limit(1)
+    .maybeSingle()
+
+  if (neighbourErr) return { error: `Neighbour lookup: ${neighbourErr.message}` }
+  if (!neighbour) return { error: null } // already at the edge; no-op
+
+  // Swap via a sentinel value to avoid any unique-constraint collision if
+  // (day_id, sort_order) is ever promoted to UNIQUE in a future migration.
+  const sentinel = -1 - target.sort_order
+  const steps = [
+    { id: target.id, sort_order: sentinel },
+    { id: neighbour.id, sort_order: target.sort_order },
+    { id: target.id, sort_order: neighbour.sort_order },
+  ]
+  for (const step of steps) {
+    const { error: stepErr } = await supabase
+      .from('program_exercises')
+      .update({ sort_order: step.sort_order })
+      .eq('id', step.id)
+    if (stepErr) return { error: `Swap failed: ${stepErr.message}` }
+  }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }
 }

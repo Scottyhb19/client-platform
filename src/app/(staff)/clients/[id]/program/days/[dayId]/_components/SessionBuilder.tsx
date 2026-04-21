@@ -1,9 +1,16 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { Play, Search, Trash2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Play,
+  Search,
+  Trash2,
+} from 'lucide-react'
 import {
   addExerciseToDayAction,
+  moveProgramExerciseAction,
   removeProgramExerciseAction,
   updateProgramExerciseAction,
   type ProgramExercisePatch,
@@ -108,20 +115,11 @@ export function SessionBuilder({
               }}
             >
               Pick exercises from the Library panel on the right. Defaults
-              are copied in; you can tweak them per exercise in the next
-              commit.
+              are copied in; you can tweak them per exercise inline.
             </p>
           </div>
         ) : (
-          programExercises.map((pe, i) => (
-            <ExerciseSlab
-              key={pe.id}
-              pe={pe}
-              letter={letterFor(i)}
-              clientId={clientId}
-              dayId={dayId}
-            />
-          ))
+          renderGroupedExercises(programExercises, clientId, dayId)
         )}
       </div>
 
@@ -176,16 +174,91 @@ export function SessionBuilder({
 
 /* ====================== Left column: exercise slab ====================== */
 
+/**
+ * Renders the flat list of program_exercises with per-group section
+ * headers. Consecutive exercises sharing a non-null section_title fall
+ * under one SectionStrip; gaps have no header.
+ */
+function renderGroupedExercises(
+  exercises: ProgramExercise[],
+  clientId: string,
+  dayId: string,
+) {
+  const nodes: React.ReactNode[] = []
+  let lastSection: string | null | undefined = undefined
+
+  exercises.forEach((pe, i) => {
+    const section = pe.section_title?.trim() || null
+    if (section && section !== lastSection) {
+      nodes.push(<SectionStrip key={`sec-${i}`}>{section}</SectionStrip>)
+    }
+    lastSection = section ?? null
+
+    nodes.push(
+      <ExerciseSlab
+        key={pe.id}
+        pe={pe}
+        letter={letterFor(i)}
+        clientId={clientId}
+        dayId={dayId}
+        isFirst={i === 0}
+        isLast={i === exercises.length - 1}
+      />,
+    )
+  })
+
+  return nodes
+}
+
+function SectionStrip({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        margin: '22px 0 10px',
+        paddingLeft: 2,
+      }}
+    >
+      <span
+        style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: '#9A9490',
+        }}
+      />
+      <span
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 11,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: 'var(--color-text-light)',
+        }}
+      >
+        {children}
+      </span>
+    </div>
+  )
+}
+
 function ExerciseSlab({
   pe,
   letter,
   clientId,
   dayId,
+  isFirst,
+  isLast,
 }: {
   pe: ProgramExercise
   letter: string
   clientId: string
   dayId: string
+  isFirst: boolean
+  isLast: boolean
 }) {
   const rx = buildRxString(pe)
   const [pending, startTransition] = useTransition()
@@ -194,6 +267,12 @@ function ExerciseSlab({
     if (!confirm(`Remove ${pe.exercise_name} from this session?`)) return
     startTransition(async () => {
       await removeProgramExerciseAction(clientId, dayId, pe.id)
+    })
+  }
+
+  function handleMove(direction: 'up' | 'down') {
+    startTransition(async () => {
+      await moveProgramExerciseAction(clientId, dayId, pe.id, direction)
     })
   }
 
@@ -220,7 +299,7 @@ function ExerciseSlab({
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            marginBottom: 14,
+            marginBottom: 10,
           }}
         >
           <span
@@ -252,25 +331,33 @@ function ExerciseSlab({
           >
             {pe.exercise_name}
           </span>
-          <button
-            type="button"
-            onClick={handleRemove}
-            aria-label="Remove exercise"
+          <IconButton
+            disabled={isFirst || pending}
+            onClick={() => handleMove('up')}
+            label="Move up"
+          >
+            <ArrowUp size={14} aria-hidden />
+          </IconButton>
+          <IconButton
+            disabled={isLast || pending}
+            onClick={() => handleMove('down')}
+            label="Move down"
+          >
+            <ArrowDown size={14} aria-hidden />
+          </IconButton>
+          <IconButton
             disabled={pending}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255,255,255,0.55)',
-              cursor: 'pointer',
-              padding: 4,
-              display: 'grid',
-              placeItems: 'center',
-              borderRadius: 4,
-            }}
+            onClick={handleRemove}
+            label="Remove exercise"
           >
             <Trash2 size={16} aria-hidden />
-          </button>
+          </IconButton>
         </div>
+
+        <SectionTitleField
+          programExerciseId={pe.id}
+          initialValue={pe.section_title ?? ''}
+        />
 
         <div
           style={{
@@ -697,6 +784,90 @@ function EditableTextarea({
         resize: 'vertical',
         outline: 'none',
         transition: 'border-color 120ms',
+      }}
+    />
+  )
+}
+
+function IconButton({
+  children,
+  label,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.55)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        padding: 4,
+        display: 'grid',
+        placeItems: 'center',
+        borderRadius: 4,
+        transition: 'color 120ms',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function SectionTitleField({
+  programExerciseId,
+  initialValue,
+}: {
+  programExerciseId: string
+  initialValue: string
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [, startTransition] = useTransition()
+
+  function handleBlur() {
+    if (value === initialValue) return
+    const patch: ProgramExercisePatch = {
+      section_title: value.trim() === '' ? null : value.trim(),
+    }
+    startTransition(async () => {
+      await updateProgramExerciseAction(programExerciseId, patch)
+    })
+  }
+
+  return (
+    <input
+      type="text"
+      value={value}
+      placeholder="Section (e.g. Strength, Upper, Stability)"
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+      }}
+      style={{
+        width: '100%',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: `1px dashed ${CARD_BORDER}`,
+        padding: '4px 0',
+        fontFamily: 'var(--font-display)',
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '.08em',
+        textTransform: 'uppercase',
+        color: value ? 'rgba(255,255,255,0.7)' : MUTED,
+        outline: 'none',
+        marginBottom: 14,
       }}
     />
   )
