@@ -208,3 +208,112 @@ export async function moveProgramExerciseAction(
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }
 }
+
+/**
+ * Group a program_exercise into a superset with the exercise immediately
+ * above it (by sort_order). If the above exercise already has a
+ * superset_group_id, we join it; otherwise we mint a new UUID and set
+ * both rows to the same value. Not allowed on the first exercise.
+ */
+export async function groupWithAboveAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data: target } = await supabase
+    .from('program_exercises')
+    .select('id, sort_order, program_day_id')
+    .eq('id', programExerciseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!target) return { error: 'Exercise not found.' }
+
+  const { data: above } = await supabase
+    .from('program_exercises')
+    .select('id, sort_order, superset_group_id')
+    .eq('program_day_id', target.program_day_id)
+    .is('deleted_at', null)
+    .lt('sort_order', target.sort_order)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (!above) {
+    return { error: "Can't group the first exercise." }
+  }
+
+  const groupId = above.superset_group_id ?? crypto.randomUUID()
+
+  // Ensure the above exercise has the group id (if it was standalone).
+  if (!above.superset_group_id) {
+    const { error: aboveErr } = await supabase
+      .from('program_exercises')
+      .update({ superset_group_id: groupId })
+      .eq('id', above.id)
+    if (aboveErr) return { error: `Couldn't group: ${aboveErr.message}` }
+  }
+
+  const { error: targetErr } = await supabase
+    .from('program_exercises')
+    .update({ superset_group_id: groupId })
+    .eq('id', programExerciseId)
+
+  if (targetErr) return { error: `Couldn't group: ${targetErr.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
+ * Ungroup an exercise from its superset. If the remaining group has
+ * only one member left, clear that exercise's group id too — a
+ * singleton superset is meaningless and reads as a regular exercise.
+ */
+export async function ungroupFromSupersetAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data: target } = await supabase
+    .from('program_exercises')
+    .select('id, program_day_id, superset_group_id')
+    .eq('id', programExerciseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (!target || !target.superset_group_id) return { error: null }
+
+  const oldGroupId = target.superset_group_id
+
+  // Clear this exercise's group.
+  const { error: clearErr } = await supabase
+    .from('program_exercises')
+    .update({ superset_group_id: null })
+    .eq('id', programExerciseId)
+  if (clearErr) return { error: `Ungroup failed: ${clearErr.message}` }
+
+  // Check how many members remain in the old group within this day.
+  const { data: remaining } = await supabase
+    .from('program_exercises')
+    .select('id')
+    .eq('program_day_id', target.program_day_id)
+    .eq('superset_group_id', oldGroupId)
+    .is('deleted_at', null)
+
+  if (remaining && remaining.length === 1) {
+    await supabase
+      .from('program_exercises')
+      .update({ superset_group_id: null })
+      .eq('id', remaining[0].id)
+  }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}

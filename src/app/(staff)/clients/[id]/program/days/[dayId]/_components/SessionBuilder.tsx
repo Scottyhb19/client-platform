@@ -4,14 +4,18 @@ import { useMemo, useState, useTransition } from 'react'
 import {
   ArrowDown,
   ArrowUp,
+  Link2,
+  Link2Off,
   Play,
   Search,
   Trash2,
 } from 'lucide-react'
 import {
   addExerciseToDayAction,
+  groupWithAboveAction,
   moveProgramExerciseAction,
   removeProgramExerciseAction,
+  ungroupFromSupersetAction,
   updateProgramExerciseAction,
   type ProgramExercisePatch,
 } from '../actions'
@@ -175,9 +179,18 @@ export function SessionBuilder({
 /* ====================== Left column: exercise slab ====================== */
 
 /**
- * Renders the flat list of program_exercises with per-group section
- * headers. Consecutive exercises sharing a non-null section_title fall
- * under one SectionStrip; gaps have no header.
+ * Renders program_exercises with section headers + superset grouping.
+ *
+ * Letter assignment walks the ordered list once:
+ *   - Standalone exercise (no superset_group_id, or a "new" group) →
+ *     advance the group letter (A → B → C…) and label the card with
+ *     just that letter.
+ *   - Exercise continuing the current superset → keep the group letter,
+ *     increment the sub-index so the card reads "B2", "B3" etc.
+ *
+ * Grouping also shrinks the bottom margin between consecutive superset
+ * cards so they read as one unit, and inserts a small "Superset B"
+ * chip above the first card of each multi-member group.
  */
 function renderGroupedExercises(
   exercises: ProgramExercise[],
@@ -186,6 +199,21 @@ function renderGroupedExercises(
 ) {
   const nodes: React.ReactNode[] = []
   let lastSection: string | null | undefined = undefined
+  let groupLetterIndex = -1
+  let currentGroupId: string | null = null
+  let subIndex = 0
+
+  // First pass: figure out which groups have >1 member so we know when
+  // to label as "Superset" vs just a regular lettered exercise.
+  const groupCounts = new Map<string, number>()
+  for (const pe of exercises) {
+    if (pe.superset_group_id) {
+      groupCounts.set(
+        pe.superset_group_id,
+        (groupCounts.get(pe.superset_group_id) ?? 0) + 1,
+      )
+    }
+  }
 
   exercises.forEach((pe, i) => {
     const section = pe.section_title?.trim() || null
@@ -194,15 +222,75 @@ function renderGroupedExercises(
     }
     lastSection = section ?? null
 
+    const groupId = pe.superset_group_id
+    const groupMembers = groupId ? (groupCounts.get(groupId) ?? 1) : 1
+    const isSuperset = groupMembers > 1
+
+    let letter: string
+    let showSupersetHeader = false
+
+    if (!groupId || groupId !== currentGroupId) {
+      // New group starts (or standalone after group).
+      groupLetterIndex += 1
+      currentGroupId = groupId
+      subIndex = 1
+      const baseLetter = String.fromCharCode(65 + groupLetterIndex)
+      letter = isSuperset ? `${baseLetter}1` : baseLetter
+      showSupersetHeader = isSuperset
+    } else {
+      // Continuing the current superset.
+      subIndex += 1
+      const baseLetter = String.fromCharCode(65 + groupLetterIndex)
+      letter = `${baseLetter}${subIndex}`
+    }
+
+    if (showSupersetHeader) {
+      nodes.push(
+        <div
+          key={`ss-${i}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            background: 'rgba(45,178,76,0.12)',
+            borderRadius: 20,
+            padding: '3px 10px',
+            fontSize: 11,
+            fontWeight: 600,
+            color: '#4A7A5A',
+            letterSpacing: '.02em',
+            marginBottom: 6,
+          }}
+        >
+          Superset {String.fromCharCode(65 + groupLetterIndex)}
+        </div>,
+      )
+    }
+
+    const sharesGroupWithPrev =
+      i > 0 && groupId && exercises[i - 1]!.superset_group_id === groupId
+    const sharesGroupWithNext =
+      i < exercises.length - 1 &&
+      groupId &&
+      exercises[i + 1]!.superset_group_id === groupId
+
     nodes.push(
       <ExerciseSlab
         key={pe.id}
         pe={pe}
-        letter={letterFor(i)}
+        letter={letter}
         clientId={clientId}
         dayId={dayId}
         isFirst={i === 0}
         isLast={i === exercises.length - 1}
+        supersetFlow={
+          sharesGroupWithPrev && sharesGroupWithNext
+            ? 'middle'
+            : sharesGroupWithPrev
+              ? 'bottom'
+              : sharesGroupWithNext
+                ? 'top'
+                : 'solo'
+        }
       />,
     )
   })
@@ -245,6 +333,8 @@ function SectionStrip({ children }: { children: React.ReactNode }) {
   )
 }
 
+type SupersetFlow = 'solo' | 'top' | 'middle' | 'bottom'
+
 function ExerciseSlab({
   pe,
   letter,
@@ -252,6 +342,7 @@ function ExerciseSlab({
   dayId,
   isFirst,
   isLast,
+  supersetFlow,
 }: {
   pe: ProgramExercise
   letter: string
@@ -259,9 +350,11 @@ function ExerciseSlab({
   dayId: string
   isFirst: boolean
   isLast: boolean
+  supersetFlow: SupersetFlow
 }) {
   const rx = buildRxString(pe)
   const [pending, startTransition] = useTransition()
+  const grouped = !!pe.superset_group_id
 
   function handleRemove() {
     if (!confirm(`Remove ${pe.exercise_name} from this session?`)) return
@@ -276,6 +369,29 @@ function ExerciseSlab({
     })
   }
 
+  function handleGroup() {
+    startTransition(async () => {
+      const res = await groupWithAboveAction(clientId, dayId, pe.id)
+      if (res.error) alert(res.error)
+    })
+  }
+
+  function handleUngroup() {
+    startTransition(async () => {
+      const res = await ungroupFromSupersetAction(clientId, dayId, pe.id)
+      if (res.error) alert(res.error)
+    })
+  }
+
+  // Superset visuals: tight margins within a group, slightly inset left
+  // border to read as a connected spine.
+  const marginBottom =
+    supersetFlow === 'top' || supersetFlow === 'middle' ? 6 : 14
+  const borderLeftAccent =
+    supersetFlow !== 'solo'
+      ? { borderLeft: '3px solid var(--color-accent)' }
+      : undefined
+
   return (
     <div
       style={{
@@ -283,13 +399,14 @@ function ExerciseSlab({
         border: `1px solid ${CARD_BORDER}`,
         borderRadius: 14,
         padding: '18px 20px',
-        marginBottom: 14,
+        marginBottom,
         color: '#fff',
         display: 'grid',
         gridTemplateColumns: '1fr 1.2fr',
         gap: 22,
         opacity: pending ? 0.5 : 1,
         transition: 'opacity 150ms',
+        ...borderLeftAccent,
       }}
     >
       {/* LEFT: badge, name, instructions, media */}
@@ -345,6 +462,23 @@ function ExerciseSlab({
           >
             <ArrowDown size={14} aria-hidden />
           </IconButton>
+          {grouped ? (
+            <IconButton
+              disabled={pending}
+              onClick={handleUngroup}
+              label="Ungroup from superset"
+            >
+              <Link2Off size={14} aria-hidden />
+            </IconButton>
+          ) : (
+            <IconButton
+              disabled={isFirst || pending}
+              onClick={handleGroup}
+              label="Group with above (superset)"
+            >
+              <Link2 size={14} aria-hidden />
+            </IconButton>
+          )}
           <IconButton
             disabled={pending}
             onClick={handleRemove}
@@ -1098,6 +1232,3 @@ function buildRxString(pe: ProgramExercise): string {
   return parts.join(' · ') || 'No prescription yet'
 }
 
-function letterFor(index: number): string {
-  return String.fromCharCode(65 + index)
-}
