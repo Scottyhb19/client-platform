@@ -7,39 +7,84 @@ import {
   toneFor,
   statusFor,
 } from '../_lib/client-helpers'
+import {
+  ClientProfile,
+  type ProfileClient,
+  type ProfileCondition,
+  type ProfileNote,
+} from './_components/ClientProfile'
 
 export const dynamic = 'force-dynamic'
 
-/**
- * 02b Client Profile — placeholder header.
- *
- * The profile tabs (Profile / Program / Reports / Bookings / Comms) come
- * in the next commit. This stub at least gives the list rows a live
- * destination with the correct client header chrome.
- */
 export default async function ClientProfilePage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-
   const supabase = await createSupabaseServerClient()
-  const { data: client, error } = await supabase
-    .from('clients')
-    .select(
-      `id, first_name, last_name, email, phone, dob, user_id,
-       invited_at, onboarded_at, archived_at,
-       category:client_categories(name)`,
-    )
-    .eq('id', id)
-    .is('deleted_at', null)
-    .maybeSingle()
 
-  if (error) throw new Error(`Failed to load client: ${error.message}`)
+  const [
+    { data: client, error: clientErr },
+    { data: conditions, error: conditionsErr },
+    { data: notes, error: notesErr },
+  ] = await Promise.all([
+    supabase
+      .from('clients')
+      .select(
+        `id, first_name, last_name, email, phone, dob, gender, address,
+         referral_source, goals, created_at, user_id,
+         invited_at, onboarded_at, archived_at,
+         category:client_categories(name)`,
+      )
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    supabase
+      .from('client_medical_history')
+      .select('id, condition, severity, notes, is_active, diagnosis_date')
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .order('is_active', { ascending: false })
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('clinical_notes')
+      .select(
+        `id, note_date, note_type, title, body_rich, subjective,
+         is_pinned, flag_body_region`,
+      )
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .order('is_pinned', { ascending: false })
+      .order('note_date', { ascending: false }),
+  ])
+
+  if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
+  if (conditionsErr)
+    throw new Error(`Load conditions: ${conditionsErr.message}`)
+  if (notesErr) throw new Error(`Load notes: ${notesErr.message}`)
   if (!client) notFound()
 
   const status = statusFor(client)
+  const statusLabel =
+    status === 'active' ? 'Active' : status === 'invited' ? 'New' : 'Archived'
+  const statusKind: 'active' | 'new' | 'archived' =
+    status === 'active' ? 'active' : status === 'invited' ? 'new' : 'archived'
+
+  const profileClient: ProfileClient = {
+    id: client.id,
+    first_name: client.first_name,
+    last_name: client.last_name,
+    email: client.email,
+    phone: client.phone,
+    dob: client.dob,
+    gender: client.gender,
+    address: client.address,
+    referral_source: client.referral_source,
+    goals: client.goals,
+    created_at: client.created_at,
+    category_name: client.category?.name ?? null,
+  }
 
   return (
     <div className="page">
@@ -73,7 +118,7 @@ export default async function ClientProfilePage({
         </span>
         <div style={{ flex: 1 }}>
           <div className="eyebrow" style={{ marginBottom: 0 }}>
-            {client.category?.name ?? 'No category'}
+            {profileClient.category_name ?? 'No category'}
           </div>
           <h1
             style={{
@@ -86,52 +131,16 @@ export default async function ClientProfilePage({
           >
             {client.first_name} {client.last_name}
           </h1>
-          <div
-            style={{
-              display: 'flex',
-              gap: 8,
-              marginTop: 4,
-              alignItems: 'center',
-            }}
-          >
-            <span className={`tag ${status === 'active' ? 'active' : 'new'}`}>
-              {status === 'active' ? 'Active' : status === 'invited' ? 'New' : 'Archived'}
-            </span>
-            <span style={{ fontSize: '.78rem', color: 'var(--color-text-light)' }}>
-              {client.email}
-            </span>
-          </div>
         </div>
       </div>
 
-      <section
-        className="card"
-        style={{ padding: '24px 28px', marginTop: 28, maxWidth: 640 }}
-      >
-        <h2
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '1.2rem',
-            margin: 0,
-            color: 'var(--color-charcoal)',
-          }}
-        >
-          Profile tabs coming next
-        </h2>
-        <p
-          style={{
-            fontSize: '.9rem',
-            lineHeight: 1.6,
-            color: 'var(--color-text-light)',
-            marginTop: 8,
-          }}
-        >
-          Profile · Program · Reports · Bookings · Comms tabs land in the next
-          commit, with real personal + clinical details, clinical notes, and
-          the program snapshot.
-        </p>
-      </section>
+      <ClientProfile
+        client={profileClient}
+        conditions={(conditions ?? []) as ProfileCondition[]}
+        notes={(notes ?? []) as ProfileNote[]}
+        statusLabel={statusLabel}
+        statusKind={statusKind}
+      />
     </div>
   )
 }
