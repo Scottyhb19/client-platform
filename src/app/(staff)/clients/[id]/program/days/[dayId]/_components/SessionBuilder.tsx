@@ -5,6 +5,8 @@ import { Play, Search, Trash2 } from 'lucide-react'
 import {
   addExerciseToDayAction,
   removeProgramExerciseAction,
+  updateProgramExerciseAction,
+  type ProgramExercisePatch,
 } from '../actions'
 
 /*
@@ -28,6 +30,7 @@ export type ProgramExercise = {
   optional_value: string | null
   rpe: number | null
   rest_seconds: number | null
+  tempo: string | null
   instructions: string | null
   exercise_id: string
   exercise_name: string
@@ -282,26 +285,13 @@ function ExerciseSlab({
         >
           Instructions
         </div>
-        <div
-          style={{
-            background: CARD_INSET,
-            border: `1px solid ${CARD_BORDER}`,
-            borderRadius: 10,
-            padding: '12px 14px',
-            fontSize: 14,
-            lineHeight: 1.5,
-            color: 'rgba(255,255,255,0.85)',
-            fontWeight: 300,
-            marginBottom: 14,
-            minHeight: 52,
-          }}
-        >
-          {pe.instructions || (
-            <span style={{ color: MUTED, fontStyle: 'italic' }}>
-              No cues — inherits from the library.
-            </span>
-          )}
-        </div>
+        <EditableTextarea
+          programExerciseId={pe.id}
+          field="instructions"
+          initialValue={pe.instructions ?? ''}
+          placeholder="No cues — inherits from the library."
+        />
+        <div style={{ marginBottom: 14 }} />
 
         {pe.exercise_video_url ? (
           <a
@@ -379,16 +369,8 @@ function ExerciseSlab({
 
         <PrescriptionGrid pe={pe} />
 
-        <div
-          style={{
-            marginTop: 14,
-            fontSize: 12,
-            color: MUTED,
-            lineHeight: 1.5,
-          }}
-        >
-          Inline editing (sets / reps / load / RPE / rest / tempo) lands in
-          the next commit.
+        <div style={{ marginTop: 10 }}>
+          <EditableRow pe={pe} />
         </div>
       </div>
     </div>
@@ -396,13 +378,6 @@ function ExerciseSlab({
 }
 
 function PrescriptionGrid({ pe }: { pe: ProgramExercise }) {
-  const rows: Array<[string, string]> = [
-    ['Sets', pe.sets?.toString() ?? '—'],
-    ['Reps', pe.reps ?? '—'],
-    ['Load', pe.optional_value ?? '—'],
-    ['RPE', pe.rpe?.toString() ?? '—'],
-    ['Rest', pe.rest_seconds ? `${pe.rest_seconds}s` : '—'],
-  ]
   return (
     <div
       style={{
@@ -411,43 +386,338 @@ function PrescriptionGrid({ pe }: { pe: ProgramExercise }) {
         gap: 6,
       }}
     >
-      {rows.map(([label, value]) => (
-        <div
-          key={label}
-          style={{
-            background: CARD_INSET,
-            border: `1px solid ${CARD_BORDER}`,
-            borderRadius: 8,
-            padding: '8px 6px',
-            textAlign: 'center',
-          }}
-        >
-          <div
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: 10,
-              letterSpacing: '.08em',
-              textTransform: 'uppercase',
-              color: MUTED,
-              marginBottom: 3,
-            }}
-          >
-            {label}
-          </div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: value === '—' ? MUTED : CREAM,
-            }}
-          >
-            {value}
-          </div>
-        </div>
-      ))}
+      <EditableCell
+        programExerciseId={pe.id}
+        field="sets"
+        label="Sets"
+        kind="number"
+        initialValue={pe.sets?.toString() ?? ''}
+        placeholder="—"
+      />
+      <EditableCell
+        programExerciseId={pe.id}
+        field="reps"
+        label="Reps"
+        kind="text"
+        initialValue={pe.reps ?? ''}
+        placeholder="—"
+      />
+      <EditableCell
+        programExerciseId={pe.id}
+        field="optional_value"
+        label="Load"
+        kind="text"
+        initialValue={pe.optional_value ?? ''}
+        placeholder="—"
+      />
+      <EditableCell
+        programExerciseId={pe.id}
+        field="rpe"
+        label="RPE"
+        kind="number"
+        initialValue={pe.rpe?.toString() ?? ''}
+        placeholder="—"
+      />
+      <EditableCell
+        programExerciseId={pe.id}
+        field="rest_seconds"
+        label="Rest (s)"
+        kind="number"
+        initialValue={pe.rest_seconds?.toString() ?? ''}
+        placeholder="—"
+      />
     </div>
   )
+}
+
+function EditableRow({ pe }: { pe: ProgramExercise }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr',
+        gap: 8,
+      }}
+    >
+      <EditableInlineField
+        programExerciseId={pe.id}
+        field="tempo"
+        label="Tempo"
+        initialValue={pe.tempo ?? ''}
+        placeholder="e.g. 3-1-1-0"
+      />
+    </div>
+  )
+}
+
+/* ====================== Editable primitives ====================== */
+
+type EditableField = keyof ProgramExercisePatch
+
+function EditableCell({
+  programExerciseId,
+  field,
+  label,
+  kind,
+  initialValue,
+  placeholder,
+}: {
+  programExerciseId: string
+  field: EditableField
+  label: string
+  kind: 'number' | 'text'
+  initialValue: string
+  placeholder?: string
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  const [, startTransition] = useTransition()
+  const empty = value.trim() === ''
+
+  function handleBlur() {
+    if (value === initialValue) return
+    const patch = buildPatch(field, value, kind)
+    if (patch === null) {
+      setStatus('error')
+      return
+    }
+    setStatus('saving')
+    startTransition(async () => {
+      const res = await updateProgramExerciseAction(
+        programExerciseId,
+        patch,
+      )
+      setStatus(res.error ? 'error' : 'idle')
+    })
+  }
+
+  return (
+    <div
+      style={{
+        background: CARD_INSET,
+        border: `1px solid ${
+          status === 'error' ? '#B04040' : CARD_BORDER
+        }`,
+        borderRadius: 8,
+        padding: '8px 6px',
+        textAlign: 'center',
+        transition: 'border-color 120ms',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 10,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: MUTED,
+          marginBottom: 3,
+        }}
+      >
+        {label}
+        {status === 'saving' && (
+          <span
+            aria-hidden
+            style={{ color: '#6B7A6B', marginLeft: 4 }}
+            title="Saving"
+          >
+            •
+          </span>
+        )}
+      </div>
+      <input
+        type={kind === 'number' ? 'number' : 'text'}
+        inputMode={kind === 'number' ? 'numeric' : undefined}
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          textAlign: 'center',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 14,
+          fontWeight: 600,
+          color: empty ? MUTED : CREAM,
+          padding: 0,
+        }}
+      />
+    </div>
+  )
+}
+
+function EditableInlineField({
+  programExerciseId,
+  field,
+  label,
+  initialValue,
+  placeholder,
+}: {
+  programExerciseId: string
+  field: EditableField
+  label: string
+  initialValue: string
+  placeholder?: string
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  const [, startTransition] = useTransition()
+
+  function handleBlur() {
+    if (value === initialValue) return
+    const patch: ProgramExercisePatch = {
+      [field]: value.trim() === '' ? null : value.trim(),
+    } as ProgramExercisePatch
+    setStatus('saving')
+    startTransition(async () => {
+      const res = await updateProgramExerciseAction(
+        programExerciseId,
+        patch,
+      )
+      setStatus(res.error ? 'error' : 'idle')
+    })
+  }
+
+  return (
+    <label
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '60px 1fr',
+        gap: 10,
+        alignItems: 'center',
+      }}
+    >
+      <span
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 10,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: MUTED,
+        }}
+      >
+        {label}
+        {status === 'saving' && (
+          <span
+            aria-hidden
+            style={{ color: '#6B7A6B', marginLeft: 4 }}
+            title="Saving"
+          >
+            •
+          </span>
+        )}
+      </span>
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+        style={{
+          background: CARD_INSET,
+          border: `1px solid ${
+            status === 'error' ? '#B04040' : CARD_BORDER
+          }`,
+          borderRadius: 8,
+          padding: '6px 10px',
+          outline: 'none',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 13,
+          fontWeight: 500,
+          color: value ? CREAM : MUTED,
+          transition: 'border-color 120ms',
+        }}
+      />
+    </label>
+  )
+}
+
+function EditableTextarea({
+  programExerciseId,
+  field,
+  initialValue,
+  placeholder,
+}: {
+  programExerciseId: string
+  field: EditableField
+  initialValue: string
+  placeholder?: string
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  const [, startTransition] = useTransition()
+
+  function handleBlur() {
+    if (value === initialValue) return
+    const patch: ProgramExercisePatch = {
+      [field]: value.trim() === '' ? null : value,
+    } as ProgramExercisePatch
+    setStatus('saving')
+    startTransition(async () => {
+      const res = await updateProgramExerciseAction(
+        programExerciseId,
+        patch,
+      )
+      setStatus(res.error ? 'error' : 'idle')
+    })
+  }
+
+  return (
+    <textarea
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={handleBlur}
+      rows={3}
+      style={{
+        background: CARD_INSET,
+        border: `1px solid ${
+          status === 'error' ? '#B04040' : CARD_BORDER
+        }`,
+        borderRadius: 10,
+        padding: '12px 14px',
+        fontFamily: 'var(--font-sans)',
+        fontSize: 14,
+        lineHeight: 1.5,
+        color: value ? 'rgba(255,255,255,0.92)' : MUTED,
+        fontWeight: 300,
+        width: '100%',
+        minHeight: 72,
+        resize: 'vertical',
+        outline: 'none',
+        transition: 'border-color 120ms',
+      }}
+    />
+  )
+}
+
+/** Build a type-safe patch for the right field, with sensible empty handling. */
+function buildPatch(
+  field: EditableField,
+  raw: string,
+  kind: 'number' | 'text',
+): ProgramExercisePatch | null {
+  const trimmed = raw.trim()
+  if (trimmed === '') {
+    return { [field]: null } as ProgramExercisePatch
+  }
+  if (kind === 'number') {
+    const n = parseInt(trimmed, 10)
+    if (!Number.isFinite(n) || n < 0) return null
+    return { [field]: n } as ProgramExercisePatch
+  }
+  return { [field]: trimmed } as ProgramExercisePatch
 }
 
 /* ====================== Right column: Library panel ====================== */

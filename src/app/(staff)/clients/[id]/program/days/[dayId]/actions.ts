@@ -92,3 +92,55 @@ export async function removeProgramExerciseAction(
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }
 }
+
+/**
+ * Patch a program_exercise row (single-field autosave). Validates the
+ * field key against an allowlist so the client can't poke at
+ * program_day_id, exercise_id, etc.
+ */
+export type ProgramExercisePatch = {
+  sets?: number | null
+  reps?: string | null
+  optional_value?: string | null
+  rpe?: number | null
+  rest_seconds?: number | null
+  tempo?: string | null
+  instructions?: string | null
+}
+
+const EDITABLE_FIELDS = new Set<keyof ProgramExercisePatch>([
+  'sets',
+  'reps',
+  'optional_value',
+  'rpe',
+  'rest_seconds',
+  'tempo',
+  'instructions',
+])
+
+export async function updateProgramExerciseAction(
+  programExerciseId: string,
+  patch: ProgramExercisePatch,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  const clean: ProgramExercisePatch = {}
+  for (const key of Object.keys(patch) as Array<keyof ProgramExercisePatch>) {
+    if (EDITABLE_FIELDS.has(key)) {
+      // @ts-expect-error — narrowing is exhaustive via the allowlist above
+      clean[key] = patch[key]
+    }
+  }
+
+  if (Object.keys(clean).length === 0) return { error: null }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('program_exercises')
+    .update(clean)
+    .eq('id', programExerciseId)
+
+  if (error) return { error: `Update failed: ${error.message}` }
+
+  return { error: null }
+}

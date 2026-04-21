@@ -70,7 +70,7 @@ export default async function SessionBuilderPage({
       .from('program_exercises')
       .select(
         `id, sort_order, section_title, superset_group_id,
-         sets, reps, optional_value, rpe, rest_seconds, instructions,
+         sets, reps, optional_value, rpe, rest_seconds, tempo, instructions,
          exercise_id,
          exercise:exercises(name, video_url)`,
       )
@@ -107,6 +107,7 @@ export default async function SessionBuilderPage({
       optional_value: pe.optional_value,
       rpe: pe.rpe,
       rest_seconds: pe.rest_seconds,
+      tempo: pe.tempo,
       instructions: pe.instructions,
       exercise_id: pe.exercise_id,
       exercise_name: pe.exercise?.name ?? 'Unknown',
