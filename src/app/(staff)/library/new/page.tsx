@@ -1,7 +1,26 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { NewExerciseForm } from './_components/NewExerciseForm'
 
-export default function NewExercisePage() {
+export const dynamic = 'force-dynamic'
+
+export default async function NewExercisePage() {
+  const supabase = await createSupabaseServerClient()
+
+  const [{ data: patterns }, { data: tags }] = await Promise.all([
+    supabase
+      .from('movement_patterns')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('exercise_tags')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+  ])
+
   return (
     <div className="page" style={{ maxWidth: 820 }}>
       <div
@@ -43,33 +62,25 @@ export default function NewExercisePage() {
         </div>
       </div>
 
-      <section
-        className="card"
-        style={{ padding: '24px 28px', marginTop: 20, maxWidth: 640 }}
+      <p
+        style={{
+          fontSize: '.9rem',
+          color: 'var(--color-text-light)',
+          maxWidth: 560,
+          marginTop: 14,
+          marginBottom: 24,
+          lineHeight: 1.55,
+        }}
       >
-        <h2
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '1.2rem',
-            margin: 0,
-            color: 'var(--color-charcoal)',
-          }}
-        >
-          Form lands in the next commit
-        </h2>
-        <p
-          style={{
-            fontSize: '.9rem',
-            lineHeight: 1.6,
-            color: 'var(--color-text-light)',
-            marginTop: 8,
-          }}
-        >
-          Name, movement pattern, default sets/reps/load/RPE, tags, YouTube
-          video URL, description, and coaching cues. Shipping shortly.
-        </p>
-      </section>
+        Add an exercise with sensible defaults. These become the starting
+        point in the session builder — any use can override sets, reps, load,
+        and RPE.
+      </p>
+
+      <NewExerciseForm
+        patterns={patterns ?? []}
+        tags={tags ?? []}
+      />
     </div>
   )
 }
