@@ -12,6 +12,7 @@ import {
   type ProfileClient,
   type ProfileCondition,
   type ProfileNote,
+  type ProfileProgramSummary,
 } from './_components/ClientProfile'
 
 export const dynamic = 'force-dynamic'
@@ -28,6 +29,7 @@ export default async function ClientProfilePage({
     { data: client, error: clientErr },
     { data: conditions, error: conditionsErr },
     { data: notes, error: notesErr },
+    { data: activeProgram },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -57,6 +59,16 @@ export default async function ClientProfilePage({
       .is('deleted_at', null)
       .order('is_pinned', { ascending: false })
       .order('note_date', { ascending: false }),
+    supabase
+      .from('programs')
+      .select(
+        `id, name, duration_weeks, start_date,
+         program_weeks(id, program_days(id))`,
+      )
+      .eq('client_id', id)
+      .eq('status', 'active')
+      .is('deleted_at', null)
+      .maybeSingle(),
   ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
@@ -84,6 +96,34 @@ export default async function ClientProfilePage({
     goals: client.goals,
     created_at: client.created_at,
     category_name: client.category?.name ?? null,
+  }
+
+  // Build program summary for the Program tab: current week (by calendar)
+  // + max days per week across the mesocycle.
+  let programSummary: ProfileProgramSummary | null = null
+  if (activeProgram) {
+    const weeks = activeProgram.program_weeks ?? []
+    const daysPerWeek = weeks.reduce(
+      (m, w) => Math.max(m, (w.program_days ?? []).length),
+      0,
+    )
+    let currentWeek: number | null = null
+    if (activeProgram.start_date) {
+      const diffMs =
+        Date.now() - new Date(activeProgram.start_date).getTime()
+      if (diffMs >= 0) {
+        const wks = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7)) + 1
+        currentWeek = Math.min(wks, activeProgram.duration_weeks ?? wks)
+      }
+    }
+    programSummary = {
+      id: activeProgram.id,
+      name: activeProgram.name,
+      duration_weeks: activeProgram.duration_weeks,
+      start_date: activeProgram.start_date,
+      current_week: currentWeek,
+      days_per_week: daysPerWeek,
+    }
   }
 
   return (
@@ -138,6 +178,7 @@ export default async function ClientProfilePage({
         client={profileClient}
         conditions={(conditions ?? []) as ProfileCondition[]}
         notes={(notes ?? []) as ProfileNote[]}
+        program={programSummary}
         statusLabel={statusLabel}
         statusKind={statusKind}
       />

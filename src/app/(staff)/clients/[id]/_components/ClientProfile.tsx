@@ -7,6 +7,7 @@ import {
   Edit3,
   MessageSquare,
   Pin,
+  Plus,
 } from 'lucide-react'
 import type { Database } from '@/types/database'
 
@@ -47,6 +48,15 @@ export type ProfileNote = {
   flag_body_region: string | null
 }
 
+export type ProfileProgramSummary = {
+  id: string
+  name: string
+  duration_weeks: number | null
+  start_date: string | null
+  current_week: number | null
+  days_per_week: number
+}
+
 type Tab = 'profile' | 'program' | 'reports' | 'bookings' | 'comms'
 
 const TABS: Array<{ key: Tab; label: string }> = [
@@ -61,6 +71,7 @@ interface ClientProfileProps {
   client: ProfileClient
   conditions: ProfileCondition[]
   notes: ProfileNote[]
+  program: ProfileProgramSummary | null
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
 }
@@ -69,6 +80,7 @@ export function ClientProfile({
   client,
   conditions,
   notes,
+  program,
   statusLabel,
   statusKind,
 }: ClientProfileProps) {
@@ -125,43 +137,7 @@ export function ClientProfile({
         />
       )}
       {tab === 'program' && (
-        <div
-          className="card"
-          style={{
-            padding: '32px 28px',
-            textAlign: 'center',
-            color: 'var(--color-text-light)',
-          }}
-        >
-          <div
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: '1.1rem',
-              color: 'var(--color-charcoal)',
-              marginBottom: 6,
-            }}
-          >
-            Program calendar
-          </div>
-          <p
-            style={{
-              fontSize: '.88rem',
-              lineHeight: 1.55,
-              margin: '0 auto 18px',
-              maxWidth: 460,
-            }}
-          >
-            Mesocycles, weeks, and day splits live on the dedicated program
-            page — opens full-width so the calendar has room to breathe.
-          </p>
-          <Link
-            href={`/clients/${client.id}/program`}
-            className="btn primary"
-          >
-            Open program calendar
-          </Link>
-        </div>
+        <ProgramTab clientId={client.id} program={program} />
       )}
       {tab === 'reports' && (
         <EmptyTab
@@ -217,7 +193,7 @@ function ProfileTabContent({
   notes,
   statusLabel,
   statusKind,
-}: Omit<ClientProfileProps, never>) {
+}: Omit<ClientProfileProps, 'program'>) {
   return (
     <div
       style={{
@@ -534,6 +510,135 @@ function NoteTypeBadge({ kind }: { kind: NoteType }) {
     >
       {label}
     </span>
+  )
+}
+
+function ProgramTab({
+  clientId,
+  program,
+}: {
+  clientId: string
+  program: ProfileProgramSummary | null
+}) {
+  if (!program) {
+    return (
+      <div
+        className="card"
+        style={{
+          padding: '40px 28px',
+          textAlign: 'center',
+          color: 'var(--color-text-light)',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 800,
+            fontSize: '1.2rem',
+            color: 'var(--color-charcoal)',
+            marginBottom: 6,
+          }}
+        >
+          No active program
+        </div>
+        <p
+          style={{
+            fontSize: '.9rem',
+            lineHeight: 1.6,
+            margin: '0 auto 20px',
+            maxWidth: 440,
+          }}
+        >
+          Start a mesocycle — pick the duration (weeks), day split, and a
+          start date. Weeks + days scaffold out ready for the Session Builder.
+        </p>
+        <Link href={`/clients/${clientId}/program/new`} className="btn primary">
+          <Plus size={14} aria-hidden />
+          Start first mesocycle
+        </Link>
+      </div>
+    )
+  }
+
+  const weeksLabel = program.duration_weeks
+    ? `${program.duration_weeks} week block`
+    : 'Open-ended'
+  const currentLabel =
+    program.current_week !== null && program.duration_weeks
+      ? `Week ${program.current_week} of ${program.duration_weeks}`
+      : program.current_week
+        ? `Week ${program.current_week}`
+        : null
+
+  return (
+    <div className="card" style={{ padding: '24px 28px' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 14,
+          marginBottom: 18,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <div className="eyebrow" style={{ marginBottom: 2 }}>
+            Active mesocycle
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontSize: '1.3rem',
+              color: 'var(--color-charcoal)',
+              lineHeight: 1.2,
+            }}
+          >
+            {program.name}
+          </div>
+          <div
+            style={{
+              fontSize: '.86rem',
+              color: 'var(--color-text-light)',
+              marginTop: 4,
+            }}
+          >
+            {weeksLabel} · {program.days_per_week} day split
+            {currentLabel && ` · ${currentLabel}`}
+            {program.start_date && ` · started ${formatDate(program.start_date)}`}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <Link
+            href={`/clients/${clientId}/program/new`}
+            className="btn outline"
+          >
+            <Plus size={14} aria-hidden />
+            New mesocycle
+          </Link>
+          <Link
+            href={`/clients/${clientId}/program`}
+            className="btn primary"
+          >
+            Open calendar
+          </Link>
+        </div>
+      </div>
+
+      <p
+        style={{
+          fontSize: '.82rem',
+          color: 'var(--color-text-light)',
+          margin: 0,
+          lineHeight: 1.55,
+        }}
+      >
+        Open the calendar for the full week grid + day-by-day session
+        builder. Starting a new mesocycle archives the current one.
+      </p>
+    </div>
   )
 }
 
