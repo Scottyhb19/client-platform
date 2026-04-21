@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 import {
   Calendar,
@@ -124,10 +125,43 @@ export function ClientProfile({
         />
       )}
       {tab === 'program' && (
-        <EmptyTab
-          title="No active program"
-          description="The program engine + session builder land in a later commit. Active mesocycles, weeks, and day splits will show here."
-        />
+        <div
+          className="card"
+          style={{
+            padding: '32px 28px',
+            textAlign: 'center',
+            color: 'var(--color-text-light)',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontSize: '1.1rem',
+              color: 'var(--color-charcoal)',
+              marginBottom: 6,
+            }}
+          >
+            Program calendar
+          </div>
+          <p
+            style={{
+              fontSize: '.88rem',
+              lineHeight: 1.55,
+              margin: '0 auto 18px',
+              maxWidth: 460,
+            }}
+          >
+            Mesocycles, weeks, and day splits live on the dedicated program
+            page — opens full-width so the calendar has room to breathe.
+          </p>
+          <Link
+            href={`/clients/${client.id}/program`}
+            className="btn primary"
+          >
+            Open program calendar
+          </Link>
+        </div>
       )}
       {tab === 'reports' && (
         <EmptyTab

@@ -346,6 +346,91 @@ body {
   border-color: var(--color-charcoal);
 }
 
+/* --- Program calendar week --- */
+.wk-strip {
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.wk-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  background: var(--color-card);
+  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.wk-head:hover {
+  background: #f5f0ea;
+}
+.wk-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.wk-meta {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+  display: flex;
+  gap: 18px;
+  align-items: center;
+}
+.wk-caret {
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--color-muted);
+}
+.wk-caret.open {
+  transform: rotate(90deg);
+}
+.wk-body {
+  border-top: 1px solid var(--color-border-subtle);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  background: #f5f0ea;
+}
+.day-cell {
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 70px;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.day-cell:hover {
+  border-color: var(--color-primary);
+}
+.day-cell.empty {
+  background: var(--color-surface);
+  border-style: dashed;
+  cursor: default;
+}
+.day-cell.today {
+  border-color: var(--color-primary);
+  background: rgba(30, 26, 24, 0.03);
+}
+.day-date {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--color-charcoal);
+}
+.day-tag {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: rgba(45, 178, 76, 0.1);
+  padding: 2px 6px;
+  border-radius: 6px;
+  display: inline-block;
+  margin-top: 4px;
+}
+
 /* --- Avatar --- */
 .avatar {
   border-radius: 50%;
