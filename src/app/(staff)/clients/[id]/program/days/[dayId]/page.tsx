@@ -7,6 +7,7 @@ import {
   type LibraryPick,
   type PinnedNote,
   type ProgramExercise,
+  type SessionReport,
 } from './_components/SessionBuilder'
 
 export const dynamic = 'force-dynamic'
@@ -60,11 +61,12 @@ export default async function SessionBuilderPage({
 
   if (!client) notFound()
 
-  // Session content + library pool + pinned notes in parallel.
+  // Session content + library pool + pinned notes + reports in parallel.
   const [
     { data: programExercisesRaw, error: peErr },
     { data: libraryRaw },
     { data: notesRaw },
+    { data: reportsRaw },
   ] = await Promise.all([
     supabase
       .from('program_exercises')
@@ -92,6 +94,13 @@ export default async function SessionBuilderPage({
       .eq('is_pinned', true)
       .is('deleted_at', null)
       .order('note_date', { ascending: false }),
+    supabase
+      .from('reports')
+      .select('id, title, report_type, test_date, is_published')
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .order('test_date', { ascending: false })
+      .limit(20),
   ])
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
@@ -125,6 +134,14 @@ export default async function SessionBuilderPage({
     id: n.id,
     body: (n.body_rich ?? n.subjective ?? '').trim(),
     flag_body_region: n.flag_body_region,
+  }))
+
+  const reports: SessionReport[] = (reportsRaw ?? []).map((r) => ({
+    id: r.id,
+    title: r.title,
+    report_type: r.report_type,
+    test_date: r.test_date,
+    is_published: r.is_published,
   }))
 
   const programName = day.program_week?.program?.name ?? ''
@@ -203,6 +220,7 @@ export default async function SessionBuilderPage({
         programExercises={programExercises}
         libraryOptions={libraryOptions}
         pinnedNotes={pinnedNotes}
+        reports={reports}
       />
     </div>
   )
