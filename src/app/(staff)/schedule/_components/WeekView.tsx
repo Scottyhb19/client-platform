@@ -1,0 +1,857 @@
+'use client'
+
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  FileText,
+  Plus,
+  Settings as SettingsIcon,
+  StickyNote,
+  X,
+} from 'lucide-react'
+import {
+  initialsFor,
+  toneFor,
+  type AvatarTone,
+} from '../../clients/_lib/client-helpers'
+
+export type Appointment = {
+  id: string
+  start_at: string
+  end_at: string
+  appointment_type: string
+  status: 'pending' | 'confirmed' | 'cancelled' | 'no_show' | 'completed'
+  location: string | null
+  notes: string | null
+  client: {
+    id: string
+    first_name: string
+    last_name: string
+    category_name: string | null
+  }
+}
+
+interface WeekViewProps {
+  weekStartIso: string
+  appointments: Appointment[]
+  todayIso: string
+  nowIso: string
+}
+
+// Grid constants
+const HOUR_START = 6 // 6am
+const HOUR_END = 20 // 8pm (exclusive)
+const HOURS = HOUR_END - HOUR_START // 14
+const QUARTERS_PER_HOUR = 4
+const PX_PER_QUARTER = 16 // 64px/hour
+const PX_PER_HOUR = PX_PER_QUARTER * QUARTERS_PER_HOUR
+
+const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+export function WeekView({
+  weekStartIso,
+  appointments,
+  todayIso,
+  nowIso,
+}: WeekViewProps) {
+  const weekStart = parseIsoDate(weekStartIso)
+  const today = parseIsoDate(todayIso)
+  const now = new Date(nowIso)
+  const router = useRouter()
+
+  // Popover state: which appointment's card is open + viewport coords.
+  const [popover, setPopover] = useState<{
+    appt: Appointment
+    x: number
+    y: number
+  } | null>(null)
+
+  // ESC / outside-click closes the popover.
+  useEffect(() => {
+    if (!popover) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setPopover(null)
+    }
+    function onClick(e: MouseEvent) {
+      const el = e.target as HTMLElement
+      if (!el.closest('[data-popover-card]')) {
+        setPopover(null)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onClick)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onClick)
+    }
+  }, [popover])
+
+  // Group appointments by day index (0 = Mon … 6 = Sun)
+  const appointmentsByDay = useMemo(() => {
+    const map: Appointment[][] = Array.from({ length: 7 }, () => [])
+    for (const a of appointments) {
+      const start = new Date(a.start_at)
+      const dayIdx = dayIndexFromMonday(start, weekStart)
+      if (dayIdx >= 0 && dayIdx < 7) map[dayIdx].push(a)
+    }
+    return map
+  }, [appointments, weekStart])
+
+  const monthLabel = formatMonthYear(weekStart)
+
+  function gotoWeek(direction: 'prev' | 'next' | 'today') {
+    if (direction === 'today') {
+      router.push('/schedule')
+      return
+    }
+    const delta = direction === 'next' ? 7 : -7
+    const target = addDays(weekStart, delta)
+    router.push(`/schedule?w=${toIsoDate(target)}`)
+  }
+
+  return (
+    <div
+      style={{
+        background: 'var(--color-card)',
+        height: 'calc(100vh - 52px)',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* Toolbar */}
+      <div
+        style={{
+          padding: '14px 22px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: '1px solid var(--color-border-subtle)',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{ display: 'flex', alignItems: 'center', gap: 14 }}
+        >
+          <div style={{ display: 'flex', gap: 0 }}>
+            <button
+              type="button"
+              aria-label="Previous week"
+              onClick={() => gotoWeek('prev')}
+              style={navArrowStyle('left')}
+            >
+              <ChevronLeft size={14} aria-hidden />
+            </button>
+            <button
+              type="button"
+              aria-label="Next week"
+              onClick={() => gotoWeek('next')}
+              style={navArrowStyle('right')}
+            >
+              <ChevronRight size={14} aria-hidden />
+            </button>
+          </div>
+          <button
+            type="button"
+            className="btn outline"
+            onClick={() => gotoWeek('today')}
+          >
+            Today
+          </button>
+          <h2
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '1.2rem',
+              margin: 0,
+            }}
+          >
+            {monthLabel}
+          </h2>
+        </div>
+
+        <div
+          style={{ display: 'flex', gap: 10, alignItems: 'center' }}
+        >
+          <button type="button" className="btn outline" disabled>
+            <SettingsIcon size={14} aria-hidden />
+            Settings
+          </button>
+          <button type="button" className="btn primary" disabled>
+            <Plus size={14} aria-hidden />
+            New booking
+          </button>
+        </div>
+      </div>
+
+      {/* Date rolodex */}
+      <DateRolodex weekStart={weekStart} today={today} />
+
+      {/* Day headers */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `52px repeat(7, 1fr)`,
+          borderBottom: '1px solid var(--color-border-subtle)',
+          flexShrink: 0,
+        }}
+      >
+        <div />
+        {DAY_LABELS.map((label, i) => {
+          const date = addDays(weekStart, i)
+          const isToday = sameCalendarDay(date, today)
+          return (
+            <div
+              key={label}
+              style={{
+                padding: '12px 14px',
+                borderLeft: '1px solid var(--color-border-subtle)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '.86rem',
+                color: isToday
+                  ? 'var(--color-primary)'
+                  : 'var(--color-charcoal)',
+                background: isToday ? 'rgba(30,26,24,.03)' : 'transparent',
+              }}
+            >
+              {label} {date.getDate()}
+              {isToday && (
+                <span
+                  style={{
+                    fontSize: '.62rem',
+                    fontWeight: 700,
+                    color: 'var(--color-accent)',
+                    marginLeft: 6,
+                    letterSpacing: '.06em',
+                  }}
+                >
+                  TODAY
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Time grid */}
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          position: 'relative',
+        }}
+      >
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `52px repeat(7, 1fr)`,
+            position: 'relative',
+          }}
+        >
+          {/* Hour labels column */}
+          <div>
+            {Array.from({ length: HOURS }).map((_, i) => {
+              const h = HOUR_START + i
+              return (
+                <div
+                  key={h}
+                  style={{
+                    height: PX_PER_HOUR,
+                    fontSize: '.64rem',
+                    color: 'var(--color-muted)',
+                    padding: '4px 6px',
+                    textAlign: 'right',
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {formatHour(h)}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* 7 day columns */}
+          {Array.from({ length: 7 }).map((_, dayIdx) => {
+            const date = addDays(weekStart, dayIdx)
+            const isToday = sameCalendarDay(date, today)
+            return (
+              <div
+                key={dayIdx}
+                style={{
+                  position: 'relative',
+                  borderLeft: '1px solid var(--color-border-subtle)',
+                  background: isToday ? 'rgba(30,26,24,.02)' : '#fff',
+                }}
+              >
+                {/* 15-min cells with hover highlight */}
+                {Array.from({ length: HOURS * QUARTERS_PER_HOUR }).map(
+                  (_, q) => (
+                    <QuarterCell key={q} quarterIndex={q} />
+                  ),
+                )}
+
+                {/* Appointment blocks */}
+                {appointmentsByDay[dayIdx].map((a) => (
+                  <AppointmentBlock
+                    key={a.id}
+                    appointment={a}
+                    onClick={(ev) =>
+                      setPopover({
+                        appt: a,
+                        x: ev.clientX,
+                        y: ev.clientY,
+                      })
+                    }
+                  />
+                ))}
+
+                {/* Current-time indicator */}
+                {isToday && <NowLine now={now} />}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {appointments.length === 0 && <EmptyWeekHint />}
+
+      {/* Popover */}
+      {popover && <AppointmentPopover data={popover} onClose={() => setPopover(null)} />}
+    </div>
+  )
+}
+
+/* ====================== Date rolodex ====================== */
+
+function DateRolodex({
+  weekStart,
+  today,
+}: {
+  weekStart: Date
+  today: Date
+}) {
+  // Show a 14-day strip starting 3 days before the week's Monday so there
+  // are peek days on either side. Matches the design's rhythm.
+  const rolodexStart = addDays(weekStart, -3)
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 4,
+        padding: '10px 22px',
+        borderBottom: '1px solid var(--color-border-subtle)',
+        overflow: 'hidden',
+        flexShrink: 0,
+      }}
+    >
+      {Array.from({ length: 14 }).map((_, i) => {
+        const date = addDays(rolodexStart, i)
+        const isToday = sameCalendarDay(date, today)
+        const dayShort = date.toLocaleDateString('en-AU', {
+          weekday: 'narrow',
+        })
+        return (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              textAlign: 'center',
+              padding: '6px 0',
+              background: isToday
+                ? 'var(--color-primary)'
+                : 'transparent',
+              color: isToday ? '#fff' : 'var(--color-text)',
+              borderRadius: 8,
+              cursor: 'default',
+            }}
+          >
+            <div
+              style={{
+                fontSize: '.6rem',
+                color: isToday
+                  ? 'rgba(255,255,255,.6)'
+                  : 'var(--color-muted)',
+                fontWeight: 600,
+              }}
+            >
+              {dayShort}
+            </div>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '.9rem',
+              }}
+            >
+              {date.getDate()}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ====================== Quarter cell (hover highlight) ====================== */
+
+function QuarterCell({ quarterIndex }: { quarterIndex: number }) {
+  const [hover, setHover] = useState(false)
+  const isHourStart = quarterIndex % 4 === 0
+  const isHalfHour = quarterIndex % 4 === 2
+  // Subtle rule at the top of every hour, dashed rule at the half-hour.
+  const borderTop = isHourStart
+    ? '1px solid var(--color-border-subtle)'
+    : isHalfHour
+      ? '1px dashed #F0EBE5'
+      : 'none'
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        height: PX_PER_QUARTER,
+        borderTop,
+        background: hover ? 'rgba(30,26,24,0.04)' : 'transparent',
+        cursor: 'copy',
+        transition: 'background 80ms',
+      }}
+    />
+  )
+}
+
+/* ====================== Appointment block ====================== */
+
+function AppointmentBlock({
+  appointment,
+  onClick,
+}: {
+  appointment: Appointment
+  onClick: (ev: React.MouseEvent) => void
+}) {
+  const start = new Date(appointment.start_at)
+  const end = new Date(appointment.end_at)
+  const top =
+    ((start.getHours() - HOUR_START) * PX_PER_HOUR) +
+    (start.getMinutes() / 15) * PX_PER_QUARTER
+  const durationMin =
+    (end.getTime() - start.getTime()) / (1000 * 60)
+  const height = (durationMin / 15) * PX_PER_QUARTER - 2
+
+  const tone = toneForStatus(appointment.status)
+  const { bg, border } = toneToColors(tone)
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        position: 'absolute',
+        top: top + 1,
+        left: 4,
+        right: 4,
+        height,
+        background: bg,
+        borderLeft: `3px solid ${border}`,
+        borderTop: 'none',
+        borderRight: 'none',
+        borderBottom: 'none',
+        borderRadius: 6,
+        padding: '6px 10px',
+        cursor: 'pointer',
+        textAlign: 'left',
+        overflow: 'hidden',
+        color: 'var(--color-text)',
+        zIndex: 2,
+      }}
+    >
+      <div
+        style={{
+          fontSize: '.76rem',
+          fontWeight: 600,
+          color: 'var(--color-charcoal)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {appointment.client.first_name} {appointment.client.last_name}
+      </div>
+      <div
+        style={{
+          fontSize: '.68rem',
+          color: 'var(--color-text-light)',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {appointment.appointment_type}
+      </div>
+    </button>
+  )
+}
+
+/* ====================== Current-time line ====================== */
+
+function NowLine({ now }: { now: Date }) {
+  const hour = now.getHours()
+  if (hour < HOUR_START || hour >= HOUR_END) return null
+  const top =
+    (hour - HOUR_START) * PX_PER_HOUR +
+    (now.getMinutes() / 15) * PX_PER_QUARTER
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top,
+        left: 0,
+        right: 0,
+        height: 2,
+        background: 'var(--color-alert)',
+        zIndex: 5,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          left: -5,
+          top: -4,
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          background: 'var(--color-alert)',
+        }}
+      />
+    </div>
+  )
+}
+
+/* ====================== Empty-state hint ====================== */
+
+function EmptyWeekHint() {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 240,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        textAlign: 'center',
+        color: 'var(--color-text-light)',
+        pointerEvents: 'none',
+        fontSize: '.82rem',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 800,
+          fontSize: '1rem',
+          color: 'var(--color-charcoal)',
+          marginBottom: 4,
+        }}
+      >
+        No bookings this week
+      </div>
+      New booking dialog lands in the next commit. Hover any 15-minute slot
+      to preview where it lands.
+    </div>
+  )
+}
+
+/* ====================== Appointment popover card ====================== */
+
+function AppointmentPopover({
+  data,
+  onClose,
+}: {
+  data: { appt: Appointment; x: number; y: number }
+  onClose: () => void
+}) {
+  const { appt, x, y } = data
+  const c = appt.client
+  const tone = toneFor(c.id)
+  const start = new Date(appt.start_at)
+  const end = new Date(appt.end_at)
+
+  // Clamp the card into the viewport — 320px wide, 280px tall.
+  const cardW = 320
+  const cardH = 280
+  const left = Math.min(Math.max(x + 12, 8), window.innerWidth - cardW - 8)
+  const top = Math.min(Math.max(y + 12, 8), window.innerHeight - cardH - 8)
+
+  return (
+    <div
+      data-popover-card
+      role="dialog"
+      aria-label={`${c.first_name} ${c.last_name} appointment`}
+      style={{
+        position: 'fixed',
+        top,
+        left,
+        width: cardW,
+        background: 'var(--color-card)',
+        border: '1px solid var(--color-border-subtle)',
+        borderRadius: 12,
+        boxShadow: '0 10px 30px rgba(0,0,0,.15)',
+        zIndex: 1000,
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          padding: '16px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          borderBottom: '1px solid var(--color-border-subtle)',
+        }}
+      >
+        <span
+          className={`avatar ${tone}`}
+          style={{ width: 42, height: 42, fontSize: 42 * 0.38 }}
+        >
+          {initialsFor(c.first_name, c.last_name)}
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              color: 'var(--color-charcoal)',
+              lineHeight: 1.2,
+            }}
+          >
+            {c.first_name} {c.last_name}
+          </div>
+          <div
+            style={{
+              fontSize: '.72rem',
+              color: 'var(--color-muted)',
+              marginTop: 1,
+            }}
+          >
+            {c.category_name ?? 'No category'}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--color-muted)',
+            cursor: 'pointer',
+            padding: 4,
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          <X size={16} aria-hidden />
+        </button>
+      </div>
+
+      {/* Appointment details */}
+      <div
+        style={{
+          padding: '12px 18px',
+          borderBottom: '1px solid var(--color-border-subtle)',
+          fontSize: '.82rem',
+          color: 'var(--color-text)',
+          lineHeight: 1.5,
+        }}
+      >
+        <div style={{ fontWeight: 600 }}>
+          {formatDayDate(start)} · {formatTime(start)}–{formatTime(end)}
+        </div>
+        <div
+          style={{
+            fontSize: '.78rem',
+            color: 'var(--color-text-light)',
+            marginTop: 2,
+          }}
+        >
+          {appt.appointment_type}
+          {appt.location && ` · ${appt.location}`}
+          {' · '}
+          <StatusPill status={appt.status} />
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div
+        style={{
+          padding: 12,
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 8,
+        }}
+      >
+        <Link
+          href={`/clients/${c.id}`}
+          className="btn outline"
+          style={{ justifyContent: 'center', padding: '8px 10px' }}
+        >
+          Open profile
+        </Link>
+        <Link
+          href={`/clients/${c.id}/program`}
+          className="btn outline"
+          style={{ justifyContent: 'center', padding: '8px 10px' }}
+        >
+          <FileText size={13} aria-hidden />
+          Program
+        </Link>
+        <Link
+          href={`/clients/${c.id}?tab=profile`}
+          className="btn outline"
+          style={{ justifyContent: 'center', padding: '8px 10px' }}
+        >
+          <StickyNote size={13} aria-hidden />
+          Add note
+        </Link>
+        <button
+          type="button"
+          className="btn primary"
+          disabled
+          title="Payments coming with billing module"
+          style={{ justifyContent: 'center', padding: '8px 10px' }}
+        >
+          <CreditCard size={13} aria-hidden />
+          Take payment
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function StatusPill({ status }: { status: Appointment['status'] }) {
+  const label = status.replace('_', ' ')
+  const color =
+    status === 'confirmed' || status === 'completed'
+      ? 'var(--color-primary)'
+      : status === 'cancelled' || status === 'no_show'
+        ? 'var(--color-alert)'
+        : '#9A7A0E'
+  return (
+    <span
+      style={{
+        fontWeight: 600,
+        color,
+        textTransform: 'capitalize',
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+/* ====================== Helpers ====================== */
+
+function parseIsoDate(iso: string): Date {
+  // Treat the ISO date (YYYY-MM-DD) as local midnight — Supabase timezone
+  // stays server-side; all display is in the browser's local time.
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y!, (m ?? 1) - 1, d ?? 1)
+}
+
+function toIsoDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+function addDays(date: Date, days: number): Date {
+  const d = new Date(date)
+  d.setDate(d.getDate() + days)
+  return d
+}
+
+function sameCalendarDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function dayIndexFromMonday(d: Date, monday: Date): number {
+  const ms = d.getTime() - monday.getTime()
+  return Math.floor(ms / (1000 * 60 * 60 * 24))
+}
+
+function formatHour(h: number): string {
+  if (h === 12) return '12pm'
+  if (h === 0) return '12am'
+  return h > 12 ? `${h - 12}pm` : `${h}am`
+}
+
+function formatMonthYear(d: Date): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    month: 'long',
+    year: 'numeric',
+  }).format(d)
+}
+
+function formatDayDate(d: Date): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(d)
+}
+
+function formatTime(d: Date): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(d)
+}
+
+function navArrowStyle(side: 'left' | 'right'): React.CSSProperties {
+  return {
+    width: 30,
+    height: 30,
+    border: '1px solid var(--color-border-subtle)',
+    background: '#fff',
+    borderRadius: side === 'left' ? '6px 0 0 6px' : '0 6px 6px 0',
+    borderLeftWidth: side === 'right' ? 0 : 1,
+    cursor: 'pointer',
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--color-text-light)',
+  }
+}
+
+function toneForStatus(status: Appointment['status']): AvatarTone {
+  if (status === 'cancelled' || status === 'no_show') return 'r'
+  if (status === 'pending') return 'a'
+  return 'g'
+}
+
+function toneToColors(tone: AvatarTone): { bg: string; border: string } {
+  if (tone === 'r')
+    return {
+      bg: 'rgba(214,64,69,.08)',
+      border: 'var(--color-alert)',
+    }
+  if (tone === 'a')
+    return {
+      bg: 'rgba(232,163,23,.08)',
+      border: '#E8A317',
+    }
+  return {
+    bg: 'rgba(30,26,24,.06)',
+    border: 'var(--color-primary)',
+  }
+}
