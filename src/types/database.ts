@@ -1254,38 +1254,53 @@ export type Database = {
       }
       organizations: {
         Row: {
+          abn: string | null
           address: string | null
           created_at: string
           deleted_at: string | null
           email: string | null
+          email_notifications_enabled: boolean
           id: string
           name: string
           phone: string | null
+          provider_number: string | null
+          reminder_lead_hours: number
           slug: string
+          sms_notifications_enabled: boolean
           timezone: string
           updated_at: string
         }
         Insert: {
+          abn?: string | null
           address?: string | null
           created_at?: string
           deleted_at?: string | null
           email?: string | null
+          email_notifications_enabled?: boolean
           id?: string
           name: string
           phone?: string | null
+          provider_number?: string | null
+          reminder_lead_hours?: number
           slug: string
+          sms_notifications_enabled?: boolean
           timezone?: string
           updated_at?: string
         }
         Update: {
+          abn?: string | null
           address?: string | null
           created_at?: string
           deleted_at?: string | null
           email?: string | null
+          email_notifications_enabled?: boolean
           id?: string
           name?: string
           phone?: string | null
+          provider_number?: string | null
+          reminder_lead_hours?: number
           slug?: string
+          sms_notifications_enabled?: boolean
           timezone?: string
           updated_at?: string
         }
