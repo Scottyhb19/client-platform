@@ -1,5 +1,9 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { WeekView, type Appointment } from './_components/WeekView'
+import {
+  WeekView,
+  type Appointment,
+  type BookingClient,
+} from './_components/WeekView'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,19 +27,37 @@ export default async function SchedulePage({
   const weekEnd = addDays(weekStart, 7) // exclusive
 
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase
-    .from('appointments')
-    .select(
-      `id, start_at, end_at, appointment_type, status, location, notes,
-       client:clients(id, first_name, last_name,
-         category:client_categories(name))`,
-    )
-    .gte('start_at', weekStart.toISOString())
-    .lt('start_at', weekEnd.toISOString())
-    .is('deleted_at', null)
-    .order('start_at')
+  const [{ data, error }, { data: clientRows }] = await Promise.all([
+    supabase
+      .from('appointments')
+      .select(
+        `id, start_at, end_at, appointment_type, status, location, notes,
+         client:clients(id, first_name, last_name,
+           category:client_categories(name))`,
+      )
+      .gte('start_at', weekStart.toISOString())
+      .lt('start_at', weekEnd.toISOString())
+      .is('deleted_at', null)
+      .order('start_at'),
+    supabase
+      .from('clients')
+      .select(
+        `id, first_name, last_name,
+         category:client_categories(name)`,
+      )
+      .is('deleted_at', null)
+      .is('archived_at', null)
+      .order('first_name'),
+  ])
 
   if (error) throw new Error(`Load appointments: ${error.message}`)
+
+  const clients: BookingClient[] = (clientRows ?? []).map((c) => ({
+    id: c.id,
+    first_name: c.first_name,
+    last_name: c.last_name,
+    category_name: c.category?.name ?? null,
+  }))
 
   const appointments: Appointment[] = (data ?? [])
     .filter((a) => a.client !== null)
@@ -60,6 +82,7 @@ export default async function SchedulePage({
     <WeekView
       weekStartIso={toIsoDate(weekStart)}
       appointments={appointments}
+      clients={clients}
       todayIso={toIsoDate(now)}
       nowIso={now.toISOString()}
     />

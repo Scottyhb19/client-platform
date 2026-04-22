@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,6 +18,10 @@ import {
   toneFor,
   type AvatarTone,
 } from '../../clients/_lib/client-helpers'
+import {
+  cancelAppointmentAction,
+  createAppointmentAction,
+} from '../actions'
 
 export type Appointment = {
   id: string
@@ -35,9 +39,17 @@ export type Appointment = {
   }
 }
 
+export type BookingClient = {
+  id: string
+  first_name: string
+  last_name: string
+  category_name: string | null
+}
+
 interface WeekViewProps {
   weekStartIso: string
   appointments: Appointment[]
+  clients: BookingClient[]
   todayIso: string
   nowIso: string
 }
@@ -55,6 +67,7 @@ const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 export function WeekView({
   weekStartIso,
   appointments,
+  clients,
   todayIso,
   nowIso,
 }: WeekViewProps) {
@@ -69,6 +82,9 @@ export function WeekView({
     x: number
     y: number
   } | null>(null)
+
+  // Composer state: which slot the user clicked to create a booking.
+  const [composer, setComposer] = useState<{ startAt: Date } | null>(null)
 
   // ESC / outside-click closes the popover.
   useEffect(() => {
@@ -180,7 +196,11 @@ export function WeekView({
             <SettingsIcon size={14} aria-hidden />
             Settings
           </button>
-          <button type="button" className="btn primary" disabled>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => setComposer({ startAt: defaultNewBookingStart(now) })}
+          >
             <Plus size={14} aria-hidden />
             New booking
           </button>
@@ -291,7 +311,15 @@ export function WeekView({
                 {/* 15-min cells with hover highlight */}
                 {Array.from({ length: HOURS * QUARTERS_PER_HOUR }).map(
                   (_, q) => (
-                    <QuarterCell key={q} quarterIndex={q} />
+                    <QuarterCell
+                      key={q}
+                      quarterIndex={q}
+                      onClick={() =>
+                        setComposer({
+                          startAt: slotToDate(date, q),
+                        })
+                      }
+                    />
                   ),
                 )}
 
@@ -321,9 +349,39 @@ export function WeekView({
       {appointments.length === 0 && <EmptyWeekHint />}
 
       {/* Popover */}
-      {popover && <AppointmentPopover data={popover} onClose={() => setPopover(null)} />}
+      {popover && (
+        <AppointmentPopover
+          data={popover}
+          onClose={() => setPopover(null)}
+          onCancelled={() => {
+            setPopover(null)
+            router.refresh()
+          }}
+        />
+      )}
+
+      {/* Booking composer */}
+      {composer && (
+        <BookingComposer
+          startAt={composer.startAt}
+          clients={clients}
+          onClose={() => setComposer(null)}
+          onCreated={() => {
+            setComposer(null)
+            router.refresh()
+          }}
+        />
+      )}
     </div>
   )
+}
+
+/* Convert (day, quarter-index) → Date at that slot in local time. */
+function slotToDate(day: Date, quarterIndex: number): Date {
+  const totalMin = quarterIndex * 15
+  const h = HOUR_START + Math.floor(totalMin / 60)
+  const m = totalMin % 60
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0)
 }
 
 /* ====================== Date rolodex ====================== */
@@ -399,7 +457,13 @@ function DateRolodex({
 
 /* ====================== Quarter cell (hover highlight) ====================== */
 
-function QuarterCell({ quarterIndex }: { quarterIndex: number }) {
+function QuarterCell({
+  quarterIndex,
+  onClick,
+}: {
+  quarterIndex: number
+  onClick: () => void
+}) {
   const [hover, setHover] = useState(false)
   const isHourStart = quarterIndex % 4 === 0
   const isHalfHour = quarterIndex % 4 === 2
@@ -413,10 +477,11 @@ function QuarterCell({ quarterIndex }: { quarterIndex: number }) {
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={onClick}
       style={{
         height: PX_PER_QUARTER,
         borderTop,
-        background: hover ? 'rgba(30,26,24,0.04)' : 'transparent',
+        background: hover ? 'rgba(30,26,24,0.08)' : 'transparent',
         cursor: 'copy',
         transition: 'background 80ms',
       }}
@@ -569,15 +634,35 @@ function EmptyWeekHint() {
 function AppointmentPopover({
   data,
   onClose,
+  onCancelled,
 }: {
   data: { appt: Appointment; x: number; y: number }
   onClose: () => void
+  onCancelled: () => void
 }) {
   const { appt, x, y } = data
   const c = appt.client
   const tone = toneFor(c.id)
   const start = new Date(appt.start_at)
   const end = new Date(appt.end_at)
+  const [cancelling, startCancel] = useTransition()
+
+  function handleCancel() {
+    if (
+      !confirm(
+        `Cancel ${c.first_name}'s ${formatTime(start)} ${appt.appointment_type}?`,
+      )
+    )
+      return
+    startCancel(async () => {
+      const res = await cancelAppointmentAction(appt.id, null)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      onCancelled()
+    })
+  }
 
   // Clamp the card into the viewport — 320px wide, 280px tall.
   const cardW = 320
@@ -729,8 +814,427 @@ function AppointmentPopover({
           Take payment
         </button>
       </div>
+
+      {appt.status !== 'cancelled' && (
+        <div
+          style={{
+            padding: '10px 12px',
+            borderTop: '1px solid var(--color-border-subtle)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={cancelling}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-alert)',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '.8rem',
+              fontWeight: 600,
+              cursor: cancelling ? 'wait' : 'pointer',
+              padding: '4px 8px',
+            }}
+          >
+            {cancelling ? 'Cancelling…' : 'Cancel appointment'}
+          </button>
+        </div>
+      )}
     </div>
   )
+}
+
+/* ====================== Booking composer modal ====================== */
+
+const APPT_TYPES = [
+  'Session',
+  'Initial assessment',
+  'Review',
+  'Telehealth',
+]
+
+function BookingComposer({
+  startAt,
+  clients,
+  onClose,
+  onCreated,
+}: {
+  startAt: Date
+  clients: BookingClient[]
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [clientId, setClientId] = useState(clients[0]?.id ?? '')
+  const [date, setDate] = useState(toIsoDate(startAt))
+  const [time, setTime] = useState(toHhMm(startAt))
+  const [duration, setDuration] = useState(60)
+  const [type, setType] = useState('Session')
+  const [location, setLocation] = useState('')
+  const [notes, setNotes] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  // ESC closes; backdrop click closes.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!clientId) {
+      setError('Pick a client.')
+      return
+    }
+    const startIso = combineDateTime(date, time).toISOString()
+    setError(null)
+    startTransition(async () => {
+      const res = await createAppointmentAction({
+        clientId,
+        startAtIso: startIso,
+        durationMinutes: duration,
+        appointmentType: type,
+        location: location.trim() || null,
+        notes: notes.trim() || null,
+      })
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      onCreated()
+    })
+  }
+
+  return (
+    <div
+      onMouseDown={(e) => {
+        // Backdrop click closes; cards inside stop propagation.
+        if ((e.target as HTMLElement).dataset.backdrop === '1') onClose()
+      }}
+      data-backdrop="1"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(30,26,24,.35)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 1100,
+      }}
+    >
+      <form
+        data-composer-card
+        onSubmit={handleSubmit}
+        onMouseDown={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--color-card)',
+          borderRadius: 14,
+          boxShadow: '0 20px 60px rgba(0,0,0,.25)',
+          width: 520,
+          maxWidth: 'calc(100vw - 32px)',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '16px 22px',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 2 }}>
+              03 Schedule · New booking
+            </div>
+            <h2
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '1.25rem',
+                margin: 0,
+              }}
+            >
+              Book an appointment
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-muted)',
+              cursor: 'pointer',
+              padding: 6,
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <X size={18} aria-hidden />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 22px', display: 'grid', gap: 14 }}>
+          {error && (
+            <div
+              role="alert"
+              style={{
+                padding: '10px 14px',
+                background: 'rgba(214,64,69,.08)',
+                border: '1px solid rgba(214,64,69,.25)',
+                borderRadius: 8,
+                color: 'var(--color-alert)',
+                fontSize: '.86rem',
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {/* Client */}
+          <ComposerField label="Client" required>
+            {clients.length === 0 ? (
+              <div
+                style={{
+                  fontSize: '.82rem',
+                  color: 'var(--color-muted)',
+                  padding: '8px 0',
+                }}
+              >
+                No clients yet — invite one on /clients first.
+              </div>
+            ) : (
+              <select
+                name="client_id"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                style={composerInput}
+                required
+              >
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.first_name} {c.last_name}
+                    {c.category_name ? ` · ${c.category_name}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </ComposerField>
+
+          {/* Date + time + duration row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: 12,
+            }}
+          >
+            <ComposerField label="Date" required>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+                style={composerInput}
+              />
+            </ComposerField>
+            <ComposerField label="Start time" required>
+              <input
+                type="time"
+                step={900}
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                required
+                style={composerInput}
+              />
+            </ComposerField>
+            <ComposerField label="Duration (min)" required>
+              <input
+                type="number"
+                step={15}
+                min={15}
+                max={480}
+                value={duration}
+                onChange={(e) =>
+                  setDuration(parseInt(e.target.value, 10) || 0)
+                }
+                required
+                style={composerInput}
+              />
+            </ComposerField>
+          </div>
+
+          {/* Type + location */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 12,
+            }}
+          >
+            <ComposerField label="Type">
+              <select
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+                style={composerInput}
+              >
+                {APPT_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </ComposerField>
+            <ComposerField label="Location">
+              <input
+                type="text"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Studio / Clinic / Online"
+                style={composerInput}
+              />
+            </ComposerField>
+          </div>
+
+          {/* Notes */}
+          <ComposerField label="Notes (optional)">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Anything staff should see on the day — equipment, prep cues, intake questions."
+              style={{
+                ...composerInput,
+                height: 'auto',
+                padding: '10px 12px',
+                lineHeight: 1.5,
+                resize: 'vertical',
+              }}
+            />
+          </ComposerField>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: '14px 22px',
+            borderTop: '1px solid var(--color-border-subtle)',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn outline"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={pending || clients.length === 0}
+          >
+            {pending ? 'Booking…' : 'Book appointment'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
+function ComposerField({
+  label,
+  required,
+  children,
+}: {
+  label: string
+  required?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <label style={{ display: 'block' }}>
+      <div
+        style={{
+          fontSize: '.64rem',
+          fontWeight: 700,
+          color: 'var(--color-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '.06em',
+          marginBottom: 5,
+        }}
+      >
+        {label}
+        {required && (
+          <span
+            aria-hidden
+            style={{ color: 'var(--color-alert)', marginLeft: 4 }}
+          >
+            *
+          </span>
+        )}
+      </div>
+      {children}
+    </label>
+  )
+}
+
+const composerInput: React.CSSProperties = {
+  width: '100%',
+  height: 36,
+  padding: '0 12px',
+  border: '1px solid var(--color-border-subtle)',
+  borderRadius: 7,
+  background: 'var(--color-surface)',
+  fontFamily: 'var(--font-sans)',
+  fontSize: '.86rem',
+  outline: 'none',
+  color: 'var(--color-text)',
+}
+
+function combineDateTime(dateIso: string, hhmm: string): Date {
+  const [y, m, d] = dateIso.split('-').map(Number)
+  const [h, min] = hhmm.split(':').map(Number)
+  return new Date(y!, (m ?? 1) - 1, d ?? 1, h ?? 0, min ?? 0, 0, 0)
+}
+
+function toHhMm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(
+    d.getMinutes(),
+  ).padStart(2, '0')}`
+}
+
+/**
+ * For the toolbar "New booking" button — snap to the next quarter-hour
+ * if we're inside business hours, otherwise default to 9:00am today.
+ */
+function defaultNewBookingStart(now: Date): Date {
+  const d = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    now.getHours(),
+    now.getMinutes(),
+  )
+  if (d.getHours() < HOUR_START || d.getHours() >= HOUR_END) {
+    d.setHours(9, 0, 0, 0)
+    return d
+  }
+  const mod = d.getMinutes() % 15
+  if (mod !== 0) d.setMinutes(d.getMinutes() + (15 - mod))
+  d.setSeconds(0, 0)
+  return d
 }
 
 function StatusPill({ status }: { status: Appointment['status'] }) {
