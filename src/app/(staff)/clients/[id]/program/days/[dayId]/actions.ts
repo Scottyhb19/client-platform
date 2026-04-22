@@ -269,6 +269,53 @@ export async function groupWithAboveAction(
 }
 
 /**
+ * Publish a program_day so the client can see it in the portal.
+ * Idempotent — re-publishing a published day is a no-op (the
+ * published_at timestamp stays put so we don't lose "originally
+ * assigned" context).
+ */
+export async function publishProgramDayAction(
+  clientId: string,
+  dayId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('program_days')
+    .update({ published_at: new Date().toISOString() })
+    .eq('id', dayId)
+    .is('published_at', null)
+
+  if (error) return { error: `Publish failed: ${error.message}` }
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  revalidatePath(`/clients/${clientId}/program`)
+  return { error: null }
+}
+
+/**
+ * Unpublish — yanks portal visibility. Useful if the EP published by
+ * accident; client stops seeing the day until it's re-published.
+ */
+export async function unpublishProgramDayAction(
+  clientId: string,
+  dayId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('program_days')
+    .update({ published_at: null })
+    .eq('id', dayId)
+
+  if (error) return { error: `Unpublish failed: ${error.message}` }
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  revalidatePath(`/clients/${clientId}/program`)
+  return { error: null }
+}
+
+/**
  * Ungroup an exercise from its superset. If the remaining group has
  * only one member left, clear that exercise's group id too — a
  * singleton superset is meaningless and reads as a regular exercise.

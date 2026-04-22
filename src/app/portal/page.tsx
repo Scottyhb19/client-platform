@@ -33,6 +33,9 @@ export default async function PortalTodayPage() {
   if (!client) notFound()
 
   // Active program + weeks + days + exercises.
+  // NOTE: program_days carry a `published_at` timestamp — the portal
+  // filters below so clients only see days the EP has explicitly
+  // assigned. Unpublished/draft days stay server-side.
   const { data: program } = await supabase
     .from('programs')
     .select(
@@ -40,7 +43,7 @@ export default async function PortalTodayPage() {
        program_weeks(
          id, week_number,
          program_days(
-           id, day_label, day_of_week, sort_order,
+           id, day_label, day_of_week, sort_order, published_at,
            program_exercises(
              id, sort_order, section_title, superset_group_id,
              sets, reps, optional_value, rpe,
@@ -68,12 +71,18 @@ export default async function PortalTodayPage() {
     return w.week_number === diff + 1
   })
 
-  // Map weekday → programmed day for the week strip.
+  // Map weekday → programmed day for the week strip. Only published
+  // days surface to the client; unpublished ones are invisible.
+  const publishedDays =
+    currentWeekRow?.program_days?.filter(
+      (d) => d.published_at !== null,
+    ) ?? []
+
   const programmedByWeekday = new Map<
     number,
     { dayLabel: string | null; done: boolean }
   >()
-  for (const d of currentWeekRow?.program_days ?? []) {
+  for (const d of publishedDays) {
     if (d.day_of_week === null) continue
     programmedByWeekday.set(d.day_of_week, {
       dayLabel: d.day_label,
@@ -83,10 +92,8 @@ export default async function PortalTodayPage() {
 
   const weekDots: WeekDot[] = buildWeekDots(weekStart, programmedByWeekday)
 
-  // Today's session, if any.
-  const todayDay = currentWeekRow?.program_days?.find(
-    (d) => d.day_of_week === todayDow,
-  )
+  // Today's session, if any (and only if published).
+  const todayDay = publishedDays.find((d) => d.day_of_week === todayDow)
   const session: TodaySession | null = todayDay
     ? {
         dayId: todayDay.id,

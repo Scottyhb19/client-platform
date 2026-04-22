@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Copy, Send } from 'lucide-react'
+import { ArrowLeft, Copy } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   SessionBuilder,
@@ -9,6 +9,7 @@ import {
   type ProgramExercise,
   type SessionReport,
 } from './_components/SessionBuilder'
+import { AssignButton } from './_components/AssignButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,7 @@ export default async function SessionBuilderPage({
   const { data: day } = await supabase
     .from('program_days')
     .select(
-      `id, day_label, day_of_week, sort_order,
+      `id, day_label, day_of_week, sort_order, published_at,
        program_week:program_weeks(
          week_number,
          program:programs(id, name, client_id)
@@ -202,15 +203,18 @@ export default async function SessionBuilderPage({
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button type="button" className="btn outline" disabled>
             <Copy size={14} aria-hidden />
             Duplicate
           </button>
-          <button type="button" className="btn primary" disabled>
-            <Send size={14} aria-hidden />
-            Assign to {client.first_name}
-          </button>
+          <AssignButton
+            clientId={id}
+            dayId={dayId}
+            clientFirstName={client.first_name}
+            publishedAt={day.published_at}
+            exerciseCount={programExercises.length}
+          />
         </div>
       </div>
 

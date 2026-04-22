@@ -1314,6 +1314,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           program_week_id: string
+          published_at: string | null
           sort_order: number
           updated_at: string
         }
@@ -1324,6 +1325,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           program_week_id: string
+          published_at?: string | null
           sort_order?: number
           updated_at?: string
         }
@@ -1334,6 +1336,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           program_week_id?: string
+          published_at?: string | null
           sort_order?: number
           updated_at?: string
         }
