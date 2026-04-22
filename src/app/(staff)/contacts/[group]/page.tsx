@@ -1,13 +1,6 @@
-import { PlaceholderPage } from '../../_components/PlaceholderPage'
+import { renderContactsPage } from '../page'
 
-const GROUP_LABELS: Record<string, string> = {
-  gps: 'General Practitioners',
-  surgeons: 'Surgeons',
-  'sports-doc': 'Sports Doctors',
-  physios: 'Physiotherapists',
-  chiros: 'Chiropractors',
-  eps: 'Exercise Physiologists',
-}
+export const dynamic = 'force-dynamic'
 
 export default async function ContactsGroupPage({
   params,
@@ -15,13 +8,5 @@ export default async function ContactsGroupPage({
   params: Promise<{ group: string }>
 }) {
   const { group } = await params
-  const label = GROUP_LABELS[group] ?? 'Contacts'
-
-  return (
-    <PlaceholderPage
-      eyebrow="04 Contacts"
-      title={label}
-      description="Filtered view — referral sub-group."
-    />
-  )
+  return await renderContactsPage(group)
 }

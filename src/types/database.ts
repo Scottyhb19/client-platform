@@ -891,6 +891,62 @@ export type Database = {
           },
         ]
       }
+      contacts: {
+        Row: {
+          contact_group: string
+          created_at: string
+          deleted_at: string | null
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          phone: string | null
+          practice: string | null
+          tags: string[]
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          contact_group: string
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          phone?: string | null
+          practice?: string | null
+          tags?: string[]
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          contact_group?: string
+          created_at?: string
+          deleted_at?: string | null
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          phone?: string | null
+          practice?: string | null
+          tags?: string[]
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       exercise_logs: {
         Row: {
           completed_at: string | null
