@@ -1,9 +1,13 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import {
+  createSupabaseServerClient,
+  createSupabaseServiceRoleClient,
+} from '@/lib/supabase/server'
 import type { InviteClientState } from './types'
 
 /**
@@ -76,6 +80,35 @@ export async function inviteClientAction(
     return {
       error: `Failed to create client: ${error.message}`,
       fieldErrors: {},
+    }
+  }
+
+  // If the EP opted in, send the real invite email via Supabase Admin API.
+  // Per /docs/auth.md §5.3 this is the service-role bridge — it creates
+  // (or finds) the auth.users row and dispatches the magic link. The
+  // email's redirect lands on /auth/callback?token_hash=...&next=/welcome
+  // where the new user sets a password + we link the clients.user_id.
+  if (sendInvite) {
+    const admin = await createSupabaseServiceRoleClient()
+    const host = (await headers()).get('host') ?? 'localhost:3000'
+    const proto =
+      (await headers()).get('x-forwarded-proto') ??
+      (host.startsWith('localhost') ? 'http' : 'https')
+    const welcomeNext = `/welcome?client_id=${data.id}`
+    const redirectTo = `${proto}://${host}/auth/callback?next=${encodeURIComponent(welcomeNext)}`
+
+    const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
+      email,
+      { redirectTo },
+    )
+    if (inviteErr) {
+      // Soft-fail: the clients row is saved. Surface the error so the
+      // EP can resend. Don't roll back — re-inviting is cheaper than
+      // re-entering details.
+      return {
+        error: `Client saved, but invite email failed: ${inviteErr.message}. You can resend from the client profile.`,
+        fieldErrors: {},
+      }
     }
   }
 
