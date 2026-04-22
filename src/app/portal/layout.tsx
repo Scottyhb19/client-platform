@@ -1,6 +1,25 @@
+import type { Metadata, Viewport } from 'next'
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BottomNav } from './_components/BottomNav'
+import { RegisterSW } from './_components/RegisterSW'
+
+export const metadata: Metadata = {
+  title: 'Odyssey',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    title: 'Odyssey',
+    statusBarStyle: 'default',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#1E1A18',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover', // lets us use env(safe-area-inset-*) on iOS
+}
 
 /**
  * Client portal layout.
@@ -66,6 +85,7 @@ export default async function PortalLayout({
         <main style={{ flex: 1, overflowY: 'auto' }}>{children}</main>
         <BottomNav />
       </div>
+      <RegisterSW />
     </div>
   )
 }

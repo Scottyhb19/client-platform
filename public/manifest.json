@@ -1,0 +1,19 @@
+{
+  "name": "Odyssey",
+  "short_name": "Odyssey",
+  "description": "Your training program + sessions, in one place.",
+  "start_url": "/portal",
+  "scope": "/portal/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E8ECE9",
+  "theme_color": "#1E1A18",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48 32x32 16x16",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["health", "fitness", "lifestyle"]
+}

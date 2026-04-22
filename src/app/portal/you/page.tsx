@@ -98,6 +98,38 @@ export default async function PortalYouPage() {
           </div>
         ))}
 
+        {/* Install-to-home tip */}
+        <div
+          style={{
+            marginTop: 18,
+            background: '#fff',
+            border: '1px solid var(--color-border-subtle)',
+            borderRadius: 10,
+            padding: '14px 16px',
+            fontSize: '.8rem',
+            lineHeight: 1.5,
+            color: 'var(--color-text-light)',
+          }}
+        >
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.7rem',
+              letterSpacing: '.06em',
+              textTransform: 'uppercase',
+              color: 'var(--color-primary)',
+              marginBottom: 4,
+            }}
+          >
+            Pin to home screen
+          </div>
+          On iPhone, tap <strong>Share</strong> →{' '}
+          <strong>Add to Home Screen</strong>. On Android, tap{' '}
+          <strong>Install</strong> in the browser menu. Your portal then
+          launches like any other app.
+        </div>
+
         <form action={logout} style={{ marginTop: 18 }}>
           <button
             type="submit"
