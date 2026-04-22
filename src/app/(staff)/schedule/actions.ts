@@ -74,3 +74,38 @@ export async function cancelAppointmentAction(
   revalidatePath('/schedule')
   return { error: null }
 }
+
+/**
+ * Persist a drag-move or drag-resize on an appointment.
+ * RLS enforces tenant scope; we just validate start < end and that the
+ * new start/end are real dates.
+ */
+export async function updateAppointmentTimeAction(
+  appointmentId: string,
+  startAtIso: string,
+  endAtIso: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  const start = new Date(startAtIso)
+  const end = new Date(endAtIso)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return { error: 'Invalid dates.' }
+  }
+  if (end.getTime() <= start.getTime()) {
+    return { error: 'End must be after start.' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('appointments')
+    .update({
+      start_at: start.toISOString(),
+      end_at: end.toISOString(),
+    })
+    .eq('id', appointmentId)
+
+  if (error) return { error: `Update failed: ${error.message}` }
+  revalidatePath('/schedule')
+  return { error: null }
+}

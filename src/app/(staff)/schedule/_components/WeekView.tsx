@@ -2,7 +2,14 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -21,6 +28,7 @@ import {
 import {
   cancelAppointmentAction,
   createAppointmentAction,
+  updateAppointmentTimeAction,
 } from '../actions'
 
 export type Appointment = {
@@ -85,6 +93,10 @@ export function WeekView({
 
   // Composer state: which slot the user clicked to create a booking.
   const [composer, setComposer] = useState<{ startAt: Date } | null>(null)
+
+  // Grid container ref — used by AppointmentBlock's drag code to map
+  // pointer coords to a day column via elementFromPoint.
+  const gridRef = useRef<HTMLDivElement | null>(null)
 
   // ESC / outside-click closes the popover.
   useEffect(() => {
@@ -266,6 +278,7 @@ export function WeekView({
         }}
       >
         <div
+          ref={gridRef}
           style={{
             display: 'grid',
             gridTemplateColumns: `52px repeat(7, 1fr)`,
@@ -302,6 +315,7 @@ export function WeekView({
             return (
               <div
                 key={dayIdx}
+                data-day-idx={dayIdx}
                 style={{
                   position: 'relative',
                   borderLeft: '1px solid var(--color-border-subtle)',
@@ -328,13 +342,15 @@ export function WeekView({
                   <AppointmentBlock
                     key={a.id}
                     appointment={a}
-                    onClick={(ev) =>
+                    gridRef={gridRef}
+                    onOpenPopover={(ev) =>
                       setPopover({
                         appt: a,
                         x: ev.clientX,
                         y: ev.clientY,
                       })
                     }
+                    onCommitted={() => router.refresh()}
                   />
                 ))}
 
@@ -491,47 +507,222 @@ function QuarterCell({
 
 /* ====================== Appointment block ====================== */
 
+type DragState =
+  | null
+  | {
+      mode: 'move' | 'resize'
+      startX: number
+      startY: number
+      deltaMin: number // time shift (only snapped)
+      deltaDays: number // for move only — cross-column shift
+      didMove: boolean
+    }
+
+const DRAG_THRESHOLD_PX = 4
+const RESIZE_HANDLE_HEIGHT = 8
+
 function AppointmentBlock({
   appointment,
-  onClick,
+  gridRef,
+  onOpenPopover,
+  onCommitted,
 }: {
   appointment: Appointment
-  onClick: (ev: React.MouseEvent) => void
+  gridRef: React.RefObject<HTMLDivElement | null>
+  onOpenPopover: (ev: React.PointerEvent | React.MouseEvent) => void
+  onCommitted: () => void
 }) {
   const start = new Date(appointment.start_at)
   const end = new Date(appointment.end_at)
-  const top =
-    ((start.getHours() - HOUR_START) * PX_PER_HOUR) +
+  const baseTop =
+    (start.getHours() - HOUR_START) * PX_PER_HOUR +
     (start.getMinutes() / 15) * PX_PER_QUARTER
-  const durationMin =
-    (end.getTime() - start.getTime()) / (1000 * 60)
-  const height = (durationMin / 15) * PX_PER_QUARTER - 2
+  const baseHeight =
+    ((end.getTime() - start.getTime()) / (1000 * 60 * 15)) *
+      PX_PER_QUARTER -
+    2
 
   const tone = toneForStatus(appointment.status)
   const { bg, border } = toneToColors(tone)
 
+  const [drag, setDrag] = useState<DragState>(null)
+  const dragRef = useRef<DragState>(null)
+  const apptRef = useRef(appointment)
+  const callbacksRef = useRef({ onOpenPopover, onCommitted })
+  const [pending, startTransition] = useTransition()
+
+  // Keep refs fresh so the window-level pointer handlers (installed on
+  // drag-start, not per-render) always read the current values.
+  useEffect(() => {
+    dragRef.current = drag
+  }, [drag])
+  useEffect(() => {
+    apptRef.current = appointment
+  }, [appointment])
+  useEffect(() => {
+    callbacksRef.current = { onOpenPopover, onCommitted }
+  }, [onOpenPopover, onCommitted])
+
+  const handleMove = useCallback(
+    (ev: PointerEvent) => {
+      const d = dragRef.current
+      if (!d) return
+      const dx = ev.clientX - d.startX
+      const dy = ev.clientY - d.startY
+      const moved =
+        Math.abs(dx) > DRAG_THRESHOLD_PX ||
+        Math.abs(dy) > DRAG_THRESHOLD_PX
+
+      // Snap vertical to 15-min increments (PX_PER_QUARTER px each).
+      const deltaMin = Math.round(dy / PX_PER_QUARTER) * 15
+
+      // For 'move', also detect horizontal shift by sniffing the day
+      // column under the cursor.
+      let deltaDays = d.deltaDays
+      if (d.mode === 'move') {
+        const underEl = document.elementFromPoint(ev.clientX, ev.clientY)
+        const col = underEl?.closest('[data-day-idx]') as HTMLElement | null
+        if (col) {
+          const hoverIdx = parseInt(col.dataset.dayIdx ?? '', 10)
+          const startDayIdx = dayIndexFromStart(
+            apptRef.current.start_at,
+            gridRef,
+          )
+          if (Number.isFinite(hoverIdx) && Number.isFinite(startDayIdx)) {
+            deltaDays = hoverIdx - startDayIdx
+          }
+        }
+      }
+
+      setDrag({
+        ...d,
+        deltaMin,
+        deltaDays,
+        didMove: d.didMove || moved,
+      })
+    },
+    [gridRef],
+  )
+
+  const handleUp = useCallback((ev: PointerEvent) => {
+    const d = dragRef.current
+    window.removeEventListener('pointermove', handleMove)
+    window.removeEventListener('pointerup', handleUp)
+    window.removeEventListener('pointercancel', handleUp)
+    if (!d) {
+      setDrag(null)
+      return
+    }
+
+    if (!d.didMove) {
+      // Treat as a click → open popover.
+      setDrag(null)
+      callbacksRef.current.onOpenPopover({
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+      } as React.MouseEvent)
+      return
+    }
+
+    // Commit the new start/end to the DB.
+    const appt = apptRef.current
+    const origStart = new Date(appt.start_at)
+    const origEnd = new Date(appt.end_at)
+
+    let newStart = origStart
+    let newEnd = origEnd
+
+    if (d.mode === 'move') {
+      newStart = addMinutes(addDaysDate(origStart, d.deltaDays), d.deltaMin)
+      newEnd = addMinutes(addDaysDate(origEnd, d.deltaDays), d.deltaMin)
+    } else {
+      newEnd = addMinutes(origEnd, d.deltaMin)
+      if (newEnd.getTime() - newStart.getTime() < 15 * 60 * 1000) {
+        newEnd = new Date(newStart.getTime() + 15 * 60 * 1000)
+      }
+    }
+
+    setDrag(null)
+    startTransition(async () => {
+      const res = await updateAppointmentTimeAction(
+        appt.id,
+        newStart.toISOString(),
+        newEnd.toISOString(),
+      )
+      if (res.error) alert(res.error)
+      callbacksRef.current.onCommitted()
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Render-time transform: while dragging, translate or stretch the
+  // block so the user sees the preview.
+  const transform = drag
+    ? drag.mode === 'move'
+      ? `translate(calc(${drag.deltaDays} * 100%), ${
+          (drag.deltaMin / 15) * PX_PER_QUARTER
+        }px)`
+      : undefined
+    : undefined
+
+  const liveHeight =
+    drag && drag.mode === 'resize'
+      ? Math.max(
+          PX_PER_QUARTER - 2,
+          baseHeight + (drag.deltaMin / 15) * PX_PER_QUARTER,
+        )
+      : baseHeight
+
+  function startDrag(mode: 'move' | 'resize', ev: React.PointerEvent) {
+    // Ignore right/middle clicks.
+    if (ev.button !== 0) return
+    ev.preventDefault()
+    const state: DragState = {
+      mode,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      deltaMin: 0,
+      deltaDays: 0,
+      didMove: false,
+    }
+    dragRef.current = state
+    setDrag(state)
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+    window.addEventListener('pointercancel', handleUp)
+  }
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
+      onPointerDown={(ev) => startDrag('move', ev)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ')
+          onOpenPopover(ev as unknown as React.MouseEvent)
+      }}
       style={{
         position: 'absolute',
-        top: top + 1,
+        top: baseTop + 1,
         left: 4,
         right: 4,
-        height,
+        height: liveHeight,
         background: bg,
         borderLeft: `3px solid ${border}`,
-        borderTop: 'none',
-        borderRight: 'none',
-        borderBottom: 'none',
         borderRadius: 6,
         padding: '6px 10px',
-        cursor: 'pointer',
-        textAlign: 'left',
+        cursor: drag ? 'grabbing' : 'grab',
         overflow: 'hidden',
         color: 'var(--color-text)',
-        zIndex: 2,
+        zIndex: drag ? 3 : 2,
+        transform,
+        transition: drag ? 'none' : 'transform 120ms, height 120ms',
+        opacity: pending ? 0.5 : drag ? 0.85 : 1,
+        boxShadow: drag
+          ? '0 6px 18px rgba(0,0,0,.18)'
+          : undefined,
+        userSelect: 'none',
+        touchAction: 'none',
       }}
     >
       <div
@@ -555,10 +746,76 @@ function AppointmentBlock({
           textOverflow: 'ellipsis',
         }}
       >
-        {appointment.appointment_type}
+        {drag
+          ? formatDragPreview(appointment, drag)
+          : appointment.appointment_type}
       </div>
-    </button>
+
+      {/* Bottom resize handle */}
+      <div
+        onPointerDown={(ev) => {
+          ev.stopPropagation()
+          startDrag('resize', ev)
+        }}
+        aria-label="Resize appointment"
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: RESIZE_HANDLE_HEIGHT,
+          cursor: 'ns-resize',
+          background:
+            'linear-gradient(to top, rgba(30,26,24,.15), transparent)',
+        }}
+      />
+    </div>
   )
+}
+
+function formatDragPreview(
+  appointment: Appointment,
+  drag: NonNullable<DragState>,
+): string {
+  const origStart = new Date(appointment.start_at)
+  const origEnd = new Date(appointment.end_at)
+  if (drag.mode === 'move') {
+    const ns = addMinutes(addDaysDate(origStart, drag.deltaDays), drag.deltaMin)
+    const ne = addMinutes(addDaysDate(origEnd, drag.deltaDays), drag.deltaMin)
+    return `${formatDayDate(ns)} · ${formatTime(ns)}–${formatTime(ne)}`
+  }
+  const ne = addMinutes(origEnd, drag.deltaMin)
+  const clampedEnd =
+    ne.getTime() - origStart.getTime() < 15 * 60 * 1000
+      ? new Date(origStart.getTime() + 15 * 60 * 1000)
+      : ne
+  return `${formatTime(origStart)}–${formatTime(clampedEnd)}`
+}
+
+function addMinutes(d: Date, minutes: number): Date {
+  return new Date(d.getTime() + minutes * 60 * 1000)
+}
+
+function addDaysDate(d: Date, days: number): Date {
+  const r = new Date(d)
+  r.setDate(r.getDate() + days)
+  return r
+}
+
+/**
+ * Which Mon–Sun column (0–6) a given ISO timestamp falls into, given
+ * the week view's convention (Monday is column 0). The grid always
+ * holds 7 consecutive columns starting with the week's Monday, so
+ * this is pure calendar math — no DOM walk needed.
+ * gridRef is kept in the signature for a future variant that supports
+ * non-Mon-first locales.
+ */
+function dayIndexFromStart(
+  startIso: string,
+  _gridRef: React.RefObject<HTMLDivElement | null>,
+): number {
+  const d = new Date(startIso)
+  return (d.getDay() + 6) % 7 // Mon=0 … Sun=6
 }
 
 /* ====================== Current-time line ====================== */
