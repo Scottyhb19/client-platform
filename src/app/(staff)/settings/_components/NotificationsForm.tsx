@@ -1,11 +1,8 @@
 'use client'
 
 import { useActionState } from 'react'
-import {
-  initialSettingsState,
-  updateNotificationsAction,
-  type SettingsState,
-} from '../actions'
+import { updateNotificationsAction } from '../actions'
+import { initialSettingsState, type SettingsState } from '../_state'
 import { Banner, FieldLabel, inputStyle } from './PracticeInfoForm'
 
 export type NotificationSettings = {

@@ -13,6 +13,8 @@ import {
   LookupManager,
   type LookupRow,
 } from './_components/LookupManager'
+import { SessionTypesEditor } from './session-types/_components/SessionTypesEditor'
+import type { SessionTypeRow } from './session-types/actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,30 +25,39 @@ export default async function SettingsPage() {
   ])
   const supabase = await createSupabaseServerClient()
 
-  const [{ data: org }, { data: tags }, { data: categories }] =
-    await Promise.all([
-      supabase
-        .from('organizations')
-        .select(
-          `id, name, email, phone, address, timezone, abn, provider_number,
-           email_notifications_enabled, sms_notifications_enabled,
-           reminder_lead_hours`,
-        )
-        .eq('id', organizationId)
-        .maybeSingle(),
-      supabase
-        .from('exercise_tags')
-        .select('id, name')
-        .is('deleted_at', null)
-        .order('sort_order')
-        .order('name'),
-      supabase
-        .from('client_categories')
-        .select('id, name')
-        .is('deleted_at', null)
-        .order('sort_order')
-        .order('name'),
-    ])
+  const [
+    { data: org },
+    { data: tags },
+    { data: categories },
+    { data: sessionTypes },
+  ] = await Promise.all([
+    supabase
+      .from('organizations')
+      .select(
+        `id, name, email, phone, address, timezone, abn, provider_number,
+         email_notifications_enabled, sms_notifications_enabled,
+         reminder_lead_hours`,
+      )
+      .eq('id', organizationId)
+      .maybeSingle(),
+    supabase
+      .from('exercise_tags')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order')
+      .order('name'),
+    supabase
+      .from('client_categories')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order')
+      .order('name'),
+    supabase
+      .from('session_types')
+      .select('id, name, color, sort_order')
+      .is('deleted_at', null)
+      .order('sort_order'),
+  ])
 
   const practiceInfo: PracticeInfo = {
     name: org?.name ?? 'Your practice',
@@ -71,6 +82,12 @@ export default async function SettingsPage() {
   const categoryRows: LookupRow[] = (categories ?? []).map((c) => ({
     id: c.id,
     name: c.name,
+  }))
+  const sessionTypeRows: SessionTypeRow[] = (sessionTypes ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    color: s.color,
+    sort_order: s.sort_order,
   }))
 
   return (
@@ -111,6 +128,13 @@ export default async function SettingsPage() {
         desc="Groupings shown on the Clientele list and filters."
       >
         <LookupManager kind="categories" rows={categoryRows} />
+      </Section>
+
+      <Section
+        title="Session types"
+        desc="Appointment categories shown in the booking form. Colours tint the blocks on the schedule grid."
+      >
+        <SessionTypesEditor initialTypes={sessionTypeRows} />
       </Section>
 
       <Section title="Account" desc="Signed in as you.">

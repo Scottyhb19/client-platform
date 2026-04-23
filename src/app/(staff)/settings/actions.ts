@@ -3,16 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-
-export type SettingsState = {
-  error: string | null
-  success: boolean
-}
-
-export const initialSettingsState: SettingsState = {
-  error: null,
-  success: false,
-}
+import type { SettingsState } from './_state'
 
 /* ====================== Practice info ====================== */
 
@@ -121,10 +112,15 @@ async function removeLookup(
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
-  const { error } = await supabase
-    .from(table)
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id)
+  // Hard DELETE instead of soft-delete: PostgREST's default
+  // `return=representation` re-SELECTs the updated row, which trips the
+  // SELECT policy's `deleted_at IS NULL` clause after soft-delete and
+  // surfaces as "new row violates row-level security policy". DELETE has
+  // no post-check and no returning row to SELECT.
+  //   exercise_tags → exercise_tag_assignments cascades on delete
+  //   client_categories → clients.category_id is SET NULL on delete
+  // Both are intended side-effects of the user's "remove" click.
+  const { error } = await supabase.from(table).delete().eq('id', id)
   if (error) return { error: `Remove failed: ${error.message}` }
   revalidatePath('/settings')
   return { error: null }

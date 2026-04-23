@@ -1,11 +1,8 @@
 'use client'
 
 import { useActionState } from 'react'
-import {
-  initialSettingsState,
-  updatePracticeInfoAction,
-  type SettingsState,
-} from '../actions'
+import { updatePracticeInfoAction } from '../actions'
+import { initialSettingsState, type SettingsState } from '../_state'
 
 export type PracticeInfo = {
   name: string

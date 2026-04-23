@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useOptimistic, useState, useTransition } from 'react'
 import { X } from 'lucide-react'
 import {
   addClientCategoryAction,
@@ -13,6 +13,10 @@ import { inputStyle } from './PracticeInfoForm'
 export type LookupRow = { id: string; name: string }
 
 type Kind = 'tags' | 'categories'
+
+type OptimisticOp =
+  | { kind: 'add'; row: LookupRow }
+  | { kind: 'remove'; id: string }
 
 const ACTIONS = {
   tags: {
@@ -39,17 +43,33 @@ export function LookupManager({
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
+  // Optimistic list — instant UI feedback while the server action runs.
+  // Auto-resets to the server-provided `rows` when the transition ends
+  // and the settings page's revalidatePath re-renders with real data.
+  const [displayRows, applyOptimistic] = useOptimistic<
+    LookupRow[],
+    OptimisticOp
+  >(rows, (state, op) => {
+    if (op.kind === 'add') return [...state, op.row]
+    return state.filter((r) => r.id !== op.id)
+  })
+
   function handleAdd() {
     const trimmed = name.trim()
     if (!trimmed) return
     setError(null)
+    setName('')
+    const tempRow: LookupRow = {
+      id: `temp-${Date.now()}`,
+      name: trimmed,
+    }
     startTransition(async () => {
+      applyOptimistic({ kind: 'add', row: tempRow })
       const res = await add(trimmed)
       if (res.error) {
         setError(res.error)
-        return
+        setName(trimmed) // restore so the user can correct
       }
-      setName('')
     })
   }
 
@@ -61,6 +81,7 @@ export function LookupManager({
     )
       return
     startTransition(async () => {
+      applyOptimistic({ kind: 'remove', id })
       const res = await remove(id)
       if (res.error) alert(res.error)
     })
@@ -86,7 +107,7 @@ export function LookupManager({
       )}
 
       {/* Existing chips */}
-      {rows.length === 0 ? (
+      {displayRows.length === 0 ? (
         <div
           style={{
             fontSize: '.82rem',
@@ -105,7 +126,7 @@ export function LookupManager({
             marginBottom: 14,
           }}
         >
-          {rows.map((r) => (
+          {displayRows.map((r) => (
             <span
               key={r.id}
               style={{

@@ -453,3 +453,15 @@ body {
 .avatar.n {
   background: linear-gradient(135deg, #555, #888);
 }
+
+/* Schedule date rolodex — hide the scrollbar but keep it scrollable. */
+.rolodex-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Schedule time grid — hide the vertical scrollbar so day column edges
+   align with the day header borders (otherwise the scrollbar steals
+   width from the grid's 1fr columns). Still scrollable via wheel. */
+.time-grid-scroll::-webkit-scrollbar {
+  display: none;
+}

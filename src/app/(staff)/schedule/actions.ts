@@ -13,6 +13,76 @@ export type CreateAppointmentInput = {
   notes: string | null
 }
 
+export type NewClientInlineInput = {
+  firstName: string
+  lastName: string
+  email: string
+}
+
+export type NewClientInlineResult = {
+  error: string | null
+  client: {
+    id: string
+    first_name: string
+    last_name: string
+    category_name: string | null
+  } | null
+}
+
+/**
+ * Create a bare-bones client from the booking composer.
+ * Skips the Supabase auth invite — the EP can send that later from the
+ * client's profile. Returns the new row so the composer can select it
+ * without a page refresh.
+ */
+export async function createClientInlineAction(
+  input: NewClientInlineInput,
+): Promise<NewClientInlineResult> {
+  const { organizationId } = await requireRole(['owner', 'staff'])
+
+  const first = input.firstName.trim()
+  const last = input.lastName.trim()
+  const email = input.email.trim().toLowerCase()
+
+  if (!first || !last) {
+    return { error: 'First and last name are required.', client: null }
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: 'A valid email is required.', client: null }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await supabase
+    .from('clients')
+    .insert({
+      organization_id: organizationId,
+      first_name: first,
+      last_name: last,
+      email,
+    })
+    .select('id, first_name, last_name')
+    .single()
+
+  if (error) {
+    if (error.code === '23505') {
+      return { error: 'A client with that email already exists.', client: null }
+    }
+    return { error: `Could not create client: ${error.message}`, client: null }
+  }
+
+  revalidatePath('/schedule')
+  revalidatePath('/clients')
+  return {
+    error: null,
+    client: {
+      id: data.id,
+      first_name: data.first_name,
+      last_name: data.last_name,
+      category_name: null,
+    },
+  }
+}
+
 export async function createAppointmentAction(
   input: CreateAppointmentInput,
 ): Promise<{ error: string | null; id: string | null }> {
