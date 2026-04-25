@@ -21,7 +21,7 @@ export default async function StaffLayout({
 
   const supabase = await createSupabaseServerClient()
 
-  const [{ data: profile }, { data: org }] = await Promise.all([
+  const [{ data: profile }, { data: org }, unreadCountResult] = await Promise.all([
     supabase
       .from('user_profiles')
       .select('first_name, last_name')
@@ -32,14 +32,27 @@ export default async function StaffLayout({
       .select('timezone')
       .eq('id', organizationId)
       .maybeSingle(),
+    // Unread client→staff messages across the whole org. RLS already scopes;
+    // the index messages_org_unread_idx covers this lookup.
+    supabase
+      .from('messages' as never)
+      .select('id', { count: 'exact', head: true })
+      .eq('sender_role', 'client')
+      .is('read_at', null)
+      .is('deleted_at', null),
   ])
 
   const initials = computeInitials(profile?.first_name, profile?.last_name, email)
   const todayLabel = formatToday(org?.timezone ?? 'Australia/Sydney')
+  const messageCount = unreadCountResult.count ?? 0
 
   return (
     <>
-      <TopBar userInitials={initials} todayLabel={todayLabel} />
+      <TopBar
+        userInitials={initials}
+        todayLabel={todayLabel}
+        messageCount={messageCount}
+      />
       <div className="flex-1">{children}</div>
     </>
   )

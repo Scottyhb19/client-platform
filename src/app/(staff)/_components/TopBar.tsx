@@ -135,10 +135,15 @@ export function TopBar({ userInitials, todayLabel, messageCount = 0 }: TopBarPro
 
       <div className="topright">
         <span className="today-pill">{todayLabel}</span>
-        <button type="button" className="bell" title="Messages" aria-label="Messages">
+        <Link
+          href="/messages"
+          className={`bell ${pathname === '/messages' || pathname.startsWith('/messages/') ? 'active' : ''}`}
+          title="Messages"
+          aria-label={messageCount > 0 ? `Messages (${messageCount} unread)` : 'Messages'}
+        >
           <MessageCircle size={16} aria-hidden />
           {messageCount > 0 && <span className="count">{messageCount}</span>}
-        </button>
+        </Link>
         <Link
           href="/settings"
           className={`bell ${isSettingsActive ? 'active' : ''}`}

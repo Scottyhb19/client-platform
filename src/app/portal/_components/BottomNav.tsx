@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { BarChart2, Calendar, Clock, Home, User } from 'lucide-react'
+import { BarChart2, Calendar, Clock, Home, MessageCircle, User } from 'lucide-react'
 
 const ITEMS = [
   { key: 'today', label: 'Today', href: '/portal', icon: Home },
@@ -14,6 +14,12 @@ const ITEMS = [
     icon: BarChart2,
   },
   { key: 'book', label: 'Book', href: '/portal/book', icon: Clock },
+  {
+    key: 'messages',
+    label: 'Messages',
+    href: '/portal/messages',
+    icon: MessageCircle,
+  },
   { key: 'you', label: 'You', href: '/portal/you', icon: User },
 ]
 
@@ -31,7 +37,7 @@ export function BottomNav() {
         borderTop: '1px solid #E2DDD7',
         paddingBottom: 'env(safe-area-inset-bottom, 14px)',
         display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
+        gridTemplateColumns: 'repeat(6, 1fr)',
         zIndex: 10,
       }}
     >
