@@ -2,10 +2,14 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import {
-  addDays,
-  sameCalendarDay,
-} from '../_lib/portal-helpers'
+import { sameCalendarDay, type WeekDot } from '../_lib/portal-helpers'
+
+// WeekDot is the type for the strip of seven dots across the top of the
+// portal Today screen. Defined in portal-helpers (a non-client module) so
+// the server page can call buildWeekDots while this client component just
+// renders. Re-exported here so existing import sites (page.tsx) keep
+// working until they migrate to the helpers import.
+export type { WeekDot }
 
 export type TodaySessionExercise = {
   id: string
@@ -23,11 +27,6 @@ export type TodaySession = {
   exercises: TodaySessionExercise[]
 }
 
-export type WeekDot = {
-  date: Date // midnight local
-  dayLabel: string | null // day_label (A/B/C) when programmed, else null
-  state: 'rest' | 'done' | 'today' | 'upcoming'
-}
 
 interface TodayScreenProps {
   greeting: string
@@ -450,26 +449,3 @@ function weekdayShort(d: Date): string {
   return d.toLocaleDateString('en-AU', { weekday: 'narrow' })
 }
 
-/* Exposed for the page helper that builds weekDots server-side. */
-export function buildWeekDots(
-  weekStart: Date,
-  programmedByWeekday: Map<number, { dayLabel: string | null; done: boolean }>,
-): WeekDot[] {
-  const out: WeekDot[] = []
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(weekStart, i)
-    const entry = programmedByWeekday.get((date.getDay() + 6) % 7)
-    const isToday = sameCalendarDay(date, today)
-    const isPast = date.getTime() < today.getTime()
-    let state: WeekDot['state'] = 'rest'
-    if (entry) {
-      if (entry.done || isPast) state = 'done'
-      else if (isToday) state = 'today'
-      else state = 'upcoming'
-    }
-    out.push({ date, dayLabel: entry?.dayLabel ?? null, state })
-  }
-  return out
-}

@@ -45,3 +45,38 @@ export function greetingFor(now = new Date()): string {
   if (h < 17) return 'Afternoon'
   return 'Evening'
 }
+
+/**
+ * Week-strip dot model — one entry per day of the current week. Lives in
+ * helpers (not TodayScreen.tsx) because both the server page builder and
+ * the client component need it; React Server Components forbid importing
+ * functions from a 'use client' module into a server file.
+ */
+export type WeekDot = {
+  date: Date
+  dayLabel: string | null
+  state: 'rest' | 'done' | 'today' | 'upcoming'
+}
+
+export function buildWeekDots(
+  weekStart: Date,
+  programmedByWeekday: Map<number, { dayLabel: string | null; done: boolean }>,
+): WeekDot[] {
+  const out: WeekDot[] = []
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(weekStart, i)
+    const entry = programmedByWeekday.get((date.getDay() + 6) % 7)
+    const isToday = sameCalendarDay(date, today)
+    const isPast = date.getTime() < today.getTime()
+    let state: WeekDot['state'] = 'rest'
+    if (entry) {
+      if (entry.done || isPast) state = 'done'
+      else if (isToday) state = 'today'
+      else state = 'upcoming'
+    }
+    out.push({ date, dayLabel: entry?.dayLabel ?? null, state })
+  }
+  return out
+}

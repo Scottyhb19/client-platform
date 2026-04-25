@@ -1,16 +1,16 @@
 import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
-  buildWeekDots,
   TodayScreen,
   type TodaySession,
   type TodaySessionExercise,
-  type WeekDot,
 } from './_components/TodayScreen'
 import {
+  buildWeekDots,
   greetingFor,
   mondayOfCurrentWeek,
   weekdayIndex,
+  type WeekDot,
 } from './_lib/portal-helpers'
 
 export const dynamic = 'force-dynamic'
