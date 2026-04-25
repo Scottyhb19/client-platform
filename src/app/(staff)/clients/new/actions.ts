@@ -103,17 +103,49 @@ export async function inviteClientAction(
     const welcomeNext = `/welcome?client_id=${data.id}`
     const redirectTo = `${proto}://${host}/auth/callback?next=${encodeURIComponent(welcomeNext)}`
 
-    // Step 1: create the auth user + accept URL without firing Supabase's email.
-    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink(
-      { type: 'invite', email, options: { redirectTo } },
-    )
-    const acceptUrl = linkData?.properties?.action_link ?? null
-    if (linkErr || !acceptUrl) {
-      return {
-        error: `Client saved, but the invite link could not be generated: ${
-          linkErr?.message ?? 'no link returned'
-        }. You can resend from the client profile.`,
-        fieldErrors: {},
+    // Step 1: create the auth user + accept URL without firing Supabase's
+    // email. Two paths:
+    //   (a) Brand-new email → 'invite' type creates the auth.users row and
+    //       returns a one-time accept URL.
+    //   (b) Email already in auth.users (returning client; orphan from a
+    //       previously-archived clients row; etc.) → 'invite' fails with
+    //       "already registered". Fall back to 'magiclink' which generates
+    //       a sign-in link for the existing user. The downstream /welcome
+    //       flow links the new clients.user_id either way via
+    //       client_accept_invite.
+    let acceptUrl: string | null = null
+    {
+      const inviteResult = await admin.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: { redirectTo },
+      })
+      if (inviteResult.data?.properties?.action_link) {
+        acceptUrl = inviteResult.data.properties.action_link
+      } else if (isAlreadyRegisteredError(inviteResult.error)) {
+        // Existing user — switch to magic-link sign-in. Same redirect target.
+        const magicResult = await admin.auth.admin.generateLink({
+          type: 'magiclink',
+          email,
+          options: { redirectTo },
+        })
+        if (magicResult.data?.properties?.action_link) {
+          acceptUrl = magicResult.data.properties.action_link
+        } else {
+          return {
+            error: `Client saved, but the sign-in link could not be generated: ${
+              magicResult.error?.message ?? 'no link returned'
+            }. You can resend from the client profile.`,
+            fieldErrors: {},
+          }
+        }
+      } else {
+        return {
+          error: `Client saved, but the invite link could not be generated: ${
+            inviteResult.error?.message ?? 'no link returned'
+          }. You can resend from the client profile.`,
+          fieldErrors: {},
+        }
       }
     }
 
@@ -164,4 +196,22 @@ function toNullable(value: FormDataEntryValue | null): string | null {
   if (value === null) return null
   const s = value.toString().trim()
   return s.length === 0 ? null : s
+}
+
+/**
+ * Detect Supabase's "user already exists" error from generateLink({ type: 'invite' }).
+ *
+ * Supabase has tightened the error shape over versions — newer responses
+ * carry a `code: 'email_exists'` field; older ones only set the message.
+ * Match both so the magic-link fallback survives an SDK upgrade.
+ */
+function isAlreadyRegisteredError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const e = err as { code?: string; message?: string; status?: number }
+  if (e.code === 'email_exists') return true
+  const msg = e.message?.toLowerCase() ?? ''
+  if (msg.includes('already been registered')) return true
+  if (msg.includes('already registered')) return true
+  if (msg.includes('user already exists')) return true
+  return false
 }
