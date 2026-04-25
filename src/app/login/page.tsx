@@ -42,12 +42,6 @@ export default async function LoginPage({
             </p>
           </div>
 
-          <div className="relative z-10 flex gap-8 pt-7 border-t border-white/[0.08]">
-            <Stat n="48k" l="Sessions logged" />
-            <Stat n="9.2/10" l="Practitioner NPS" />
-            <Stat n="3" l="Surfaces unified" />
-          </div>
-
           {/* Decorative accent glow */}
           <div
             aria-hidden
@@ -154,24 +148,7 @@ export default async function LoginPage({
                 Sign in
               </button>
 
-              <div className="my-2 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-                <div className="h-px bg-border-subtle" />
-                <div className="text-[0.7rem] tracking-[0.04em] text-muted">
-                  OR
-                </div>
-                <div className="h-px bg-border-subtle" />
-              </div>
-
-              <button
-                type="button"
-                disabled
-                title="Google sign-in coming soon"
-                className="w-full rounded-[7px] border border-border-subtle bg-card text-text font-semibold text-[0.92rem] px-[22px] py-3 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Continue with Google
-              </button>
-
-              <div className="mt-4 text-center text-[0.84rem] text-text-light">
+              <div className="mt-6 text-center text-[0.84rem] text-text-light">
                 New to Odyssey?{" "}
                 <Link
                   href="/signup"
@@ -188,15 +165,3 @@ export default async function LoginPage({
   );
 }
 
-function Stat({ n, l }: { n: string; l: string }) {
-  return (
-    <div>
-      <div className="font-display font-extrabold text-white text-[1.5rem] leading-none">
-        {n}
-      </div>
-      <div className="text-white/45 text-[0.72rem] mt-1 tracking-[0.02em]">
-        {l}
-      </div>
-    </div>
-  );
-}
