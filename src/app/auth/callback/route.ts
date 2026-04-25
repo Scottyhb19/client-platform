@@ -70,26 +70,59 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(next, url.origin))
   }
 
-  // Supabase's implicit flow puts both successes (access_token) and errors
-  // (error_description) in the URL FRAGMENT, which never reaches the server.
-  // Return a tiny HTML bridge that reads the fragment client-side and
-  // re-redirects to /login with the real error in the query string —
-  // otherwise every magic-link error reads as the bland "Missing auth code".
+  // Supabase's implicit flow puts BOTH outcomes in the URL fragment:
+  //   success → #access_token=...&refresh_token=...&type=invite
+  //   error   → #error=access_denied&error_code=...&error_description=...
+  // The fragment never reaches the server, so we render a tiny HTML bridge
+  // that reads it client-side. On success it POSTs the tokens to
+  // /auth/set-session (which writes them into the session cookie via
+  // supabase.auth.setSession), then redirects to `next`. On error it
+  // redirects to /login with the real error in the query.
+  const safeNext = JSON.stringify(next) // safe interpolation into JS literal
   const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>Continuing…</title></head>
-<body style="font-family:-apple-system,sans-serif;padding:32px;color:#78746f;">
-<p>Continuing…</p>
+<html><head><meta charset="utf-8"><title>Signing you in…</title></head>
+<body style="font-family:-apple-system,sans-serif;padding:32px;color:#78746f;background:#F7F4F0;">
+<p>Signing you in…</p>
 <script>
-  (function(){
-    var hash = location.hash.slice(1);
-    var params = new URLSearchParams(hash);
-    var msg = params.get('error_description')
-      || params.get('error_code')
-      || params.get('error')
-      || 'No auth code received from the verifier.';
-    var u = new URL('/login', location.origin);
-    u.searchParams.set('error', msg);
-    location.replace(u.toString());
+  (async function(){
+    try {
+      var hash = location.hash.slice(1);
+      var params = new URLSearchParams(hash);
+      var err = params.get('error_description') || params.get('error_code') || params.get('error');
+      if (err) {
+        var u = new URL('/login', location.origin);
+        u.searchParams.set('error', err);
+        location.replace(u.toString());
+        return;
+      }
+      var access_token = params.get('access_token');
+      var refresh_token = params.get('refresh_token');
+      if (!access_token || !refresh_token) {
+        var u2 = new URL('/login', location.origin);
+        u2.searchParams.set('error', 'Sign-in link is missing an auth code. Ask for a fresh invite.');
+        location.replace(u2.toString());
+        return;
+      }
+      var resp = await fetch('/auth/set-session', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ access_token: access_token, refresh_token: refresh_token })
+      });
+      if (!resp.ok) {
+        var data = await resp.json().catch(function(){ return {}; });
+        var u3 = new URL('/login', location.origin);
+        u3.searchParams.set('error', (data && data.error) || 'Could not establish session.');
+        location.replace(u3.toString());
+        return;
+      }
+      // Drop the fragment so refreshes on /welcome don't leak the tokens
+      // back into anything; replace() history-cleans the redirect.
+      location.replace(${safeNext});
+    } catch (e) {
+      var u4 = new URL('/login', location.origin);
+      u4.searchParams.set('error', 'Sign-in failed: ' + (e && e.message ? e.message : e));
+      location.replace(u4.toString());
+    }
   })();
 </script>
 </body></html>`
