@@ -55,7 +55,7 @@ export async function archiveClientAction(
   }
 
   // Service-role write to dodge the soft-delete RETURNING gotcha.
-  const admin = await createSupabaseServiceRoleClient()
+  const admin = createSupabaseServiceRoleClient()
   const now = new Date().toISOString()
   const { error: archiveErr } = await admin
     .from('clients')

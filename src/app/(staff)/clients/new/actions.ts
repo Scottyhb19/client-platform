@@ -95,7 +95,7 @@ export async function inviteClientAction(
   // The accept URL still routes through /auth/callback, which exchanges
   // the token for a session and forwards to /welcome → /welcome/install.
   if (sendInvite) {
-    const admin = await createSupabaseServiceRoleClient()
+    const admin = createSupabaseServiceRoleClient()
     const host = (await headers()).get('host') ?? 'localhost:3000'
     const proto =
       (await headers()).get('x-forwarded-proto') ??
@@ -120,7 +120,7 @@ export async function inviteClientAction(
     // Step 2: pull the practice + practitioner names so the email reads
     // human. Both fall back to gentle defaults — we never block the
     // invite send on a missing display name.
-    const supabaseAdmin = await createSupabaseServiceRoleClient()
+    const supabaseAdmin = createSupabaseServiceRoleClient()
     const [{ data: org }, { data: prof }] = await Promise.all([
       supabaseAdmin
         .from('organizations')
