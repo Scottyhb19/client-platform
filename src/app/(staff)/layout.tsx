@@ -35,7 +35,7 @@ export default async function StaffLayout({
     // Unread client→staff messages across the whole org. RLS already scopes;
     // the index messages_org_unread_idx covers this lookup.
     supabase
-      .from('messages' as never)
+      .from('messages')
       .select('id', { count: 'exact', head: true })
       .eq('sender_role', 'client')
       .is('read_at', null)

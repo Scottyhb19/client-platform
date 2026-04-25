@@ -1,6 +1,6 @@
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { MessageRow, MessageThreadRow } from '@/lib/messages/types'
+import type { MessageRow } from '@/lib/messages/types'
 import { ClientThread } from './_components/ClientThread'
 
 export default async function PortalMessagesPage() {
@@ -8,14 +8,11 @@ export default async function PortalMessagesPage() {
   const supabase = await createSupabaseServerClient()
 
   // RLS already restricts to the caller's own thread — no .eq needed.
-  type Mt = Pick<MessageThreadRow, 'id' | 'organization_id'>
-  const { data: threadRow } = await supabase
-    .from('message_threads' as never)
+  const { data: thread } = await supabase
+    .from('message_threads')
     .select('id, organization_id')
     .is('deleted_at', null)
     .maybeSingle()
-
-  const thread = (threadRow ?? null) as Mt | null
 
   let messages: MessageRow[] = []
   let practitionerName: string | null = null
@@ -23,7 +20,7 @@ export default async function PortalMessagesPage() {
   if (thread) {
     const [msgsRes, orgRes] = await Promise.all([
       supabase
-        .from('messages' as never)
+        .from('messages')
         .select(
           'id, thread_id, organization_id, sender_user_id, sender_role, body, read_at, created_at, updated_at, deleted_at',
         )
@@ -39,7 +36,7 @@ export default async function PortalMessagesPage() {
         .eq('id', thread.organization_id)
         .maybeSingle(),
     ])
-    messages = (msgsRes.data ?? []) as unknown as MessageRow[]
+    messages = msgsRes.data ?? []
     practitionerName = orgRes.data?.name ?? null
   }
 

@@ -1214,6 +1214,118 @@ export type Database = {
           },
         ]
       }
+      message_threads: {
+        Row: {
+          client_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          last_message_at: string | null
+          last_message_preview: string | null
+          last_message_sender_role: string | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          last_message_sender_role?: string | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          last_message_at?: string | null
+          last_message_preview?: string | null
+          last_message_sender_role?: string | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_threads_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_threads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          organization_id: string
+          read_at: string | null
+          sender_role: string
+          sender_user_id: string
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          organization_id: string
+          read_at?: string | null
+          sender_role: string
+          sender_user_id: string
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          organization_id?: string
+          read_at?: string | null
+          sender_role?: string
+          sender_user_id?: string
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_user_id_fkey"
+            columns: ["sender_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "message_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       movement_patterns: {
         Row: {
           created_at: string

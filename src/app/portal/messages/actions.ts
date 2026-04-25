@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { MESSAGE_BODY_MAX, type MessageRow, type MessageThreadRow } from '@/lib/messages/types'
+import { MESSAGE_BODY_MAX } from '@/lib/messages/types'
 
 type Result<T = null> = { data: T | null; error: string | null }
 
@@ -33,9 +33,8 @@ export async function sendClientMessageAction(
 
   // Resolve the client's single thread via RLS — the thread SELECT policy
   // already constrains to client.user_id = auth.uid().
-  type Mt = Pick<MessageThreadRow, 'id' | 'organization_id'>
   const thread = await supabase
-    .from('message_threads' as never)
+    .from('message_threads')
     .select('id, organization_id')
     .is('deleted_at', null)
     .maybeSingle()
@@ -49,25 +48,24 @@ export async function sendClientMessageAction(
     }
   }
 
-  const { id: threadId, organization_id: organizationId } = thread.data as Mt
+  const { id: threadId, organization_id: organizationId } = thread.data
 
-  type Msg = Pick<MessageRow, 'id'>
   const inserted = await supabase
-    .from('messages' as never)
+    .from('messages')
     .insert({
       thread_id: threadId,
       organization_id: organizationId,
       sender_user_id: userId,
       sender_role: 'client',
       body: trimmed,
-    } as never)
+    })
     .select('id')
     .single()
 
   if (inserted.error) return { data: null, error: inserted.error.message }
 
   revalidatePath('/portal/messages')
-  return { data: { messageId: (inserted.data as Msg).id }, error: null }
+  return { data: { messageId: inserted.data.id }, error: null }
 }
 
 /**
@@ -78,9 +76,8 @@ export async function markClientThreadReadAction(): Promise<Result> {
   const supabase = await createSupabaseServerClient()
 
   // Find the client's thread (one of) — RLS limits scope.
-  type Mt = Pick<MessageThreadRow, 'id'>
   const thread = await supabase
-    .from('message_threads' as never)
+    .from('message_threads')
     .select('id')
     .is('deleted_at', null)
     .maybeSingle()
@@ -88,9 +85,9 @@ export async function markClientThreadReadAction(): Promise<Result> {
   if (thread.error || !thread.data) return { data: null, error: null }
 
   const { error } = await supabase
-    .from('messages' as never)
-    .update({ read_at: new Date().toISOString() } as never)
-    .eq('thread_id', (thread.data as Mt).id)
+    .from('messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('thread_id', thread.data.id)
     .eq('sender_role', 'staff')
     .is('read_at', null)
 

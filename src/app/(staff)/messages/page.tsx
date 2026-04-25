@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Filter, Edit3 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { MessageRow, MessageThreadRow } from '@/lib/messages/types'
+import type { MessageRow, SenderRole } from '@/lib/messages/types'
 import { Inbox } from './_components/Inbox'
 
 interface PageProps {
@@ -16,21 +16,8 @@ export default async function MessagesPage({ searchParams }: PageProps) {
 
   // Threads list — joined to clients for name/initials/age. RLS already
   // scopes to the user's organization, so no .eq('organization_id', ...) needed.
-  type ThreadRow = Pick<
-    MessageThreadRow,
-    'id' | 'client_id' | 'last_message_at' | 'last_message_preview' | 'last_message_sender_role'
-  > & {
-    clients: {
-      first_name: string
-      last_name: string
-      email: string
-      phone: string | null
-      dob: string | null
-    } | null
-  }
-
   const { data: threadsRaw } = await supabase
-    .from('message_threads' as never)
+    .from('message_threads')
     .select(
       'id, client_id, last_message_at, last_message_preview, last_message_sender_role, clients(first_name, last_name, email, phone, dob)',
     )
@@ -38,14 +25,13 @@ export default async function MessagesPage({ searchParams }: PageProps) {
     .order('last_message_at', { ascending: false, nullsFirst: false })
     .limit(100)
 
-  const threads = (threadsRaw ?? []) as unknown as ThreadRow[]
+  const threads = threadsRaw ?? []
 
   // Per-thread unread count of client→staff messages, computed once.
-  type UnreadAgg = { thread_id: string; count: number }
   const unreadByThread = new Map<string, number>()
   if (threads.length > 0) {
     const { data: unreadRows } = await supabase
-      .from('messages' as never)
+      .from('messages')
       .select('thread_id')
       .in(
         'thread_id',
@@ -55,11 +41,10 @@ export default async function MessagesPage({ searchParams }: PageProps) {
       .is('read_at', null)
       .is('deleted_at', null)
 
-    for (const row of (unreadRows ?? []) as unknown as Array<{ thread_id: string }>) {
+    for (const row of unreadRows ?? []) {
       unreadByThread.set(row.thread_id, (unreadByThread.get(row.thread_id) ?? 0) + 1)
     }
   }
-  void (null as unknown as UnreadAgg) // unused type alias kept for clarity
 
   // Resolve which thread to show. If no ?thread param, default to the most
   // recent. If there are zero threads, the client component renders an empty
@@ -72,7 +57,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
   let activeMessages: MessageRow[] = []
   if (activeThreadId) {
     const { data: msgs } = await supabase
-      .from('messages' as never)
+      .from('messages')
       .select(
         'id, thread_id, organization_id, sender_user_id, sender_role, body, read_at, created_at, updated_at, deleted_at',
       )
@@ -80,7 +65,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .limit(500)
-    activeMessages = (msgs ?? []) as unknown as MessageRow[]
+    activeMessages = msgs ?? []
   }
 
   const totalUnread = Array.from(unreadByThread.values()).reduce((a, b) => a + b, 0)
@@ -120,7 +105,9 @@ export default async function MessagesPage({ searchParams }: PageProps) {
             dob: t.clients?.dob ?? null,
             lastMessageAt: t.last_message_at,
             lastMessagePreview: t.last_message_preview,
-            lastMessageSenderRole: t.last_message_sender_role,
+            // CHECK constraint guarantees one of these two values, but the
+            // generated type is the loose `string | null`. Narrow at the boundary.
+            lastMessageSenderRole: t.last_message_sender_role as SenderRole | null,
             unreadCount: unreadByThread.get(t.id) ?? 0,
           }))}
           activeThreadId={activeThreadId}
