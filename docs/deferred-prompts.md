@@ -44,64 +44,7 @@ friendly pre-check", push.
 
 ---
 
-## 2. Click-through gate to defeat Gmail link prefetch
-
-```
-Gmail's spam scanner pre-fetches every URL in incoming emails to scan
-for malware. For magic-link / invite emails this consumes the one-time
-token before the user clicks. The result is "otp_expired" errors for
-any client whose email provider does aggressive prefetching (Gmail,
-sometimes Yahoo).
-
-Build a click-through gate so the URL in the email points to OUR domain,
-not Supabase's verify endpoint. Only an actual user click reaches the
-real action_link.
-
-Architecture:
-1. New migration: table `invite_tokens` with columns
-     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-     organization_id uuid NOT NULL REFERENCES organizations(id),
-     client_id uuid NOT NULL REFERENCES clients(id),
-     action_link text NOT NULL,
-     created_at timestamptz NOT NULL DEFAULT now(),
-     expires_at timestamptz NOT NULL,
-     consumed_at timestamptz
-   Index on (id) WHERE consumed_at IS NULL AND expires_at > now()
-   RLS: deny all from authenticated. The route handler accesses via
-   the service-role client.
-
-2. New route: src/app/i/[id]/page.tsx
-   - Server component that looks up the invite_tokens row by id
-   - If not found / consumed / expired: render an error page
-   - If valid: render a small page with a button "Continue to your
-     portal" that does a client-side window.location.assign(action_link)
-     (NOT an auto-redirect — the click is what defeats prefetch)
-   - Don't mark consumed at all on click; rely on expires_at (8 hours).
-     Simpler than tracking burned tokens.
-
-3. Update src/app/(staff)/clients/new/actions.ts:
-   - After getting action_link from generateLink, INSERT an
-     invite_tokens row with that action_link
-   - Pass the short URL `${proto}://${host}/i/${tokenId}` to
-     sendClientInviteEmail instead of the raw action_link
-
-4. Email template doesn't need changes — it just receives a different
-   URL string.
-
-Existing migration patterns are in supabase/migrations/. Match the
-style: explicit RLS comments, audit-friendly columns, partial index
-where appropriate.
-
-Test by inviting a Gmail address — should now reach /welcome instead of
-expiring.
-
-Reference docs/schema.md for the conventions in this codebase. Run
-type-check + supabase migration push, commit per project style, push.
-```
-
----
-
-## 3. Migrate to Supabase's new Publishable/Secret API keys
+## 2. Migrate to Supabase's new Publishable/Secret API keys
 
 ```
 My Supabase project (azjllcsffixswiigjqhj) currently uses the legacy
@@ -153,7 +96,7 @@ what to do. Don't retry blindly.
 
 ---
 
-## 4. Custom domain + Vercel hookup
+## 3. Custom domain + Vercel hookup
 
 ```
 I want to put my Vercel-deployed Next.js app onto a custom domain instead
@@ -200,7 +143,7 @@ Don't just retry blindly.
 
 ---
 
-## 5. Replace the text logo with a real wordmark + icon
+## 4. Replace the text logo with a real wordmark + icon
 
 ```
 The Odyssey app currently uses a text-only "Odyssey." brand (Barlow
@@ -240,7 +183,7 @@ file so I can see what changed.
 
 ---
 
-## 6. Polish the PWA name and icons
+## 5. Polish the PWA name and icons
 
 ```
 Audit and improve the PWA install experience for my Next.js app. The
