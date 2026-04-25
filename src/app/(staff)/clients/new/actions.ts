@@ -28,7 +28,7 @@ export async function inviteClientAction(
   _prev: InviteClientState,
   formData: FormData,
 ): Promise<InviteClientState> {
-  const { userId, organizationId } = await requireRole(['owner', 'staff'])
+  const { userId, email: callerEmail, organizationId } = await requireRole(['owner', 'staff'])
 
   const firstName = (formData.get('first_name') ?? '').toString().trim()
   const lastName = (formData.get('last_name') ?? '').toString().trim()
@@ -49,6 +49,50 @@ export async function inviteClientAction(
   }
   if (Object.keys(fieldErrors).length > 0) {
     return { error: null, fieldErrors }
+  }
+
+  // Owner-as-client guard: a practitioner inviting themselves (or another
+  // staffer in the same practice) is logically nonsensical — clients are a
+  // distinct role and the auth model can't hold both for the same email.
+  // Catch it here with a friendly under-field message instead of letting
+  // the magic-link flow fail confusingly downstream.
+  if (email === callerEmail.toLowerCase()) {
+    return {
+      error: null,
+      fieldErrors: {
+        email:
+          "You can't invite your own email as a client. Use a different address.",
+      },
+    }
+  }
+
+  // Cross-staff check: any other owner/staff in THIS org with this email.
+  // user_profiles doesn't carry email (it lives on auth.users), so we
+  // scope by user_organization_roles first and resolve emails via the
+  // admin API. The role filter + same-org filter keeps this tiny — for a
+  // solo practice this is one cheap query that returns no rows.
+  // We DON'T check other organisations: a client legitimately can be a
+  // practitioner elsewhere. We DON'T check existing auth.users either:
+  // the magic-link fallback already handles a stand-alone existing user.
+  const admin = createSupabaseServiceRoleClient()
+  const { data: peerRoles } = await admin
+    .from('user_organization_roles')
+    .select('user_id')
+    .eq('organization_id', organizationId)
+    .in('role', ['owner', 'staff'])
+    .neq('user_id', userId)
+
+  for (const r of peerRoles ?? []) {
+    const { data: u } = await admin.auth.admin.getUserById(r.user_id)
+    if (u?.user?.email?.toLowerCase() === email) {
+      return {
+        error: null,
+        fieldErrors: {
+          email:
+            'This email belongs to a practitioner in your practice. Clients need a separate email.',
+        },
+      }
+    }
   }
 
   const supabase = await createSupabaseServerClient()
