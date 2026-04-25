@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { getOrCreateThreadAction } from '../../../messages/actions'
+import { archiveClientAction } from '../actions'
 import {
   ChevronRight,
   CreditCard,
@@ -149,6 +150,9 @@ function ClientHeader({
   const router = useRouter()
   const [isOpening, startOpenThread] = useTransition()
   const [openError, setOpenError] = useState<string | null>(null)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [isArchiving, startArchive] = useTransition()
+  const [archiveError, setArchiveError] = useState<string | null>(null)
 
   function handleOpenThread() {
     if (isOpening) return
@@ -160,6 +164,18 @@ function ClientHeader({
         return
       }
       router.push(`/messages?thread=${res.data.threadId}`)
+    })
+  }
+
+  function handleArchive() {
+    if (isArchiving) return
+    setArchiveError(null)
+    startArchive(async () => {
+      const res = await archiveClientAction(client.id)
+      // archiveClientAction redirects on success — if we get here, it errored.
+      if (res?.error) {
+        setArchiveError(res.error)
+      }
     })
   }
 
@@ -253,6 +269,12 @@ function ClientHeader({
               >
                 <Mail size={16} aria-hidden />
               </IconGhost>
+              <IconGhost
+                label="Archive client"
+                onClick={() => setArchiveOpen(true)}
+              >
+                <MoreHorizontal size={16} aria-hidden />
+              </IconGhost>
             </div>
 
             <div
@@ -332,6 +354,151 @@ function ClientHeader({
               </button>
             )
           })}
+        </div>
+      </div>
+      {archiveOpen && (
+        <ArchiveConfirm
+          fullName={fullName}
+          onCancel={() => {
+            if (!isArchiving) {
+              setArchiveOpen(false)
+              setArchiveError(null)
+            }
+          }}
+          onConfirm={handleArchive}
+          isArchiving={isArchiving}
+          error={archiveError}
+        />
+      )}
+    </div>
+  )
+}
+
+function ArchiveConfirm({
+  fullName,
+  onCancel,
+  onConfirm,
+  isArchiving,
+  error,
+}: {
+  fullName: string
+  onCancel: () => void
+  onConfirm: () => void
+  isArchiving: boolean
+  error: string | null
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="archive-heading"
+      onClick={onCancel}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(28, 25, 23, .55)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 100,
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 440,
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 14,
+          padding: '24px 26px',
+          boxShadow: '0 12px 40px rgba(0,0,0,.18)',
+        }}
+      >
+        <h2
+          id="archive-heading"
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '1.3rem',
+            margin: '0 0 8px',
+            color: 'var(--color-charcoal)',
+          }}
+        >
+          Archive {fullName}?
+        </h2>
+        <p
+          style={{
+            fontSize: '.9rem',
+            color: 'var(--color-text-light)',
+            lineHeight: 1.55,
+            margin: '0 0 8px',
+          }}
+        >
+          They&rsquo;ll be removed from your active client list and their email
+          will be freed up so it can be re-invited later.
+        </p>
+        <p
+          style={{
+            fontSize: '.84rem',
+            color: 'var(--color-text-light)',
+            lineHeight: 1.5,
+            margin: '0 0 18px',
+          }}
+        >
+          Their clinical record (notes, programs, sessions) stays in the
+          database for compliance — this is not a permanent delete.
+        </p>
+        {error && (
+          <div
+            role="alert"
+            style={{
+              padding: '10px 12px',
+              background: 'rgba(214,64,69,.08)',
+              border: '1px solid rgba(214,64,69,.25)',
+              borderRadius: 8,
+              color: 'var(--color-alert)',
+              fontSize: '.84rem',
+              marginBottom: 14,
+            }}
+          >
+            {error}
+          </div>
+        )}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            className="btn outline"
+            onClick={onCancel}
+            disabled={isArchiving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isArchiving}
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontWeight: 600,
+              fontSize: '.84rem',
+              padding: '8px 16px',
+              borderRadius: 7,
+              border: '1px solid var(--color-alert)',
+              background: 'var(--color-alert)',
+              color: '#fff',
+              cursor: isArchiving ? 'not-allowed' : 'pointer',
+              opacity: isArchiving ? 0.7 : 1,
+            }}
+          >
+            {isArchiving ? 'Archiving…' : 'Archive client'}
+          </button>
         </div>
       </div>
     </div>
