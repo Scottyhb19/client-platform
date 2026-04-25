@@ -149,17 +149,42 @@ export async function inviteClientAction(
       }
     }
 
-    // Step 2: pull the practice + practitioner names so the email reads
+    // Step 2: stash the action_link behind a short id and email THAT
+    // instead. Defeats Gmail's link prefetcher: the email body now points
+    // at /i/<id> on our domain, which renders a click-through button —
+    // a prefetcher hits the page, sees no redirect, stops. The Supabase
+    // verify URL only fires when the human taps. See migration
+    // 20260426100000_invite_tokens.sql for table + RLS detail.
+    const tokenInsert = await admin
+      .from('invite_tokens')
+      .insert({
+        organization_id: organizationId,
+        client_id: data.id,
+        action_link: acceptUrl,
+      })
+      .select('id')
+      .single()
+    if (tokenInsert.error || !tokenInsert.data) {
+      return {
+        error: `Client saved, but the invite link could not be stored: ${
+          tokenInsert.error?.message ?? 'no row returned'
+        }. You can resend from the client profile.`,
+        fieldErrors: {},
+      }
+    }
+    const tokenId = tokenInsert.data.id
+    const gateUrl = `${proto}://${host}/i/${tokenId}`
+
+    // Step 3: pull the practice + practitioner names so the email reads
     // human. Both fall back to gentle defaults — we never block the
     // invite send on a missing display name.
-    const supabaseAdmin = createSupabaseServiceRoleClient()
     const [{ data: org }, { data: prof }] = await Promise.all([
-      supabaseAdmin
+      admin
         .from('organizations')
         .select('name')
         .eq('id', organizationId)
         .maybeSingle(),
-      supabaseAdmin
+      admin
         .from('user_profiles')
         .select('first_name, last_name')
         .eq('user_id', userId)
@@ -171,14 +196,15 @@ export async function inviteClientAction(
       .join(' ')
       .trim() || 'Your practitioner'
 
-    // Step 3: send. Soft-fail mirrors the original behaviour — clients
-    // row stays, EP can resend.
+    // Step 4: send. Soft-fail mirrors the original behaviour — clients
+    // row stays, EP can resend. The acceptUrl in the email is the short
+    // gate URL, not the raw Supabase verify link.
     const { error: emailErr } = await sendClientInviteEmail({
       to: email,
       firstName,
       practiceName,
       practitionerName,
-      acceptUrl,
+      acceptUrl: gateUrl,
     })
     if (emailErr) {
       return {
