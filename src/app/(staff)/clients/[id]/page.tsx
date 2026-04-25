@@ -1,12 +1,6 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import {
-  initialsFor,
-  toneFor,
-  statusFor,
-} from '../_lib/client-helpers'
+import { statusFor } from '../_lib/client-helpers'
 import {
   ClientProfile,
   type ProfileClient,
@@ -127,61 +121,13 @@ export default async function ClientProfilePage({
   }
 
   return (
-    <div className="page">
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          marginBottom: 6,
-        }}
-      >
-        <Link
-          href="/clients"
-          aria-label="Back to clientele"
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--color-text-light)',
-            padding: 6,
-            display: 'grid',
-            placeItems: 'center',
-          }}
-        >
-          <ArrowLeft size={18} aria-hidden />
-        </Link>
-        <span
-          className={`avatar ${toneFor(client.id)}`}
-          style={{ width: 52, height: 52, fontSize: 52 * 0.38 }}
-        >
-          {initialsFor(client.first_name, client.last_name)}
-        </span>
-        <div style={{ flex: 1 }}>
-          <div className="eyebrow" style={{ marginBottom: 0 }}>
-            {profileClient.category_name ?? 'No category'}
-          </div>
-          <h1
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: '1.9rem',
-              margin: 0,
-              letterSpacing: '-.01em',
-            }}
-          >
-            {client.first_name} {client.last_name}
-          </h1>
-        </div>
-      </div>
-
-      <ClientProfile
-        client={profileClient}
-        conditions={(conditions ?? []) as ProfileCondition[]}
-        notes={(notes ?? []) as ProfileNote[]}
-        program={programSummary}
-        statusLabel={statusLabel}
-        statusKind={statusKind}
-      />
-    </div>
+    <ClientProfile
+      client={profileClient}
+      conditions={(conditions ?? []) as ProfileCondition[]}
+      notes={(notes ?? []) as ProfileNote[]}
+      program={programSummary}
+      statusLabel={statusLabel}
+      statusKind={statusKind}
+    />
   )
 }

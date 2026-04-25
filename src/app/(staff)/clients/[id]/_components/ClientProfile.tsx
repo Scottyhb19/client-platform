@@ -3,13 +3,22 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import {
-  Calendar,
+  ChevronRight,
+  CreditCard,
   Edit3,
-  MessageSquare,
+  FileText,
+  Filter,
+  Mail,
+  MessageCircle,
+  MoreHorizontal,
+  Paperclip,
   Pin,
   Plus,
+  Search,
+  Upload,
 } from 'lucide-react'
 import type { Database } from '@/types/database'
+import { initialsFor, toneFor } from '../../_lib/client-helpers'
 
 type NoteType = Database['public']['Enums']['note_type']
 
@@ -57,14 +66,15 @@ export type ProfileProgramSummary = {
   days_per_week: number
 }
 
-type Tab = 'profile' | 'program' | 'reports' | 'bookings' | 'comms'
+type Tab = 'details' | 'notes' | 'program' | 'reports' | 'files' | 'invoices'
 
 const TABS: Array<{ key: Tab; label: string }> = [
-  { key: 'profile', label: 'Profile' },
-  { key: 'program', label: 'Program' },
+  { key: 'details', label: 'Client details' },
+  { key: 'notes', label: 'Session notes' },
+  { key: 'program', label: 'Programs' },
   { key: 'reports', label: 'Reports' },
-  { key: 'bookings', label: 'Bookings' },
-  { key: 'comms', label: 'Comms' },
+  { key: 'files', label: 'Files' },
+  { key: 'invoices', label: 'Invoices' },
 ]
 
 interface ClientProfileProps {
@@ -84,434 +94,675 @@ export function ClientProfile({
   statusLabel,
   statusKind,
 }: ClientProfileProps) {
-  const [tab, setTab] = useState<Tab>('profile')
+  const [tab, setTab] = useState<Tab>('details')
 
   return (
-    <>
-      <HeaderActions />
-
-      {/* Tabs bar */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 2,
-          borderBottom: '1px solid var(--color-border-subtle)',
-          margin: '22px 0 24px',
-        }}
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            style={{
-              padding: '10px 18px',
-              background: 'none',
-              border: 'none',
-              borderBottom: `2px solid ${
-                tab === t.key ? 'var(--color-primary)' : 'transparent'
-              }`,
-              marginBottom: -1,
-              color:
-                tab === t.key
-                  ? 'var(--color-primary)'
-                  : 'var(--color-text-light)',
-              fontFamily: 'var(--font-sans)',
-              fontWeight: 600,
-              fontSize: '.86rem',
-              cursor: 'pointer',
-            }}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'profile' && (
-        <ProfileTabContent
-          client={client}
-          conditions={conditions}
-          notes={notes}
-          statusLabel={statusLabel}
-          statusKind={statusKind}
-        />
-      )}
-      {tab === 'program' && (
-        <ProgramTab clientId={client.id} program={program} />
-      )}
-      {tab === 'reports' && (
-        <EmptyTab
-          title="No reports yet"
-          description="Reports aggregate from assessments, sessions, and third-party integrations (e.g. VALD ForceFrame). Nothing to show until a report is generated."
-        />
-      )}
-      {tab === 'bookings' && (
-        <EmptyTab
-          title="No bookings yet"
-          description="Appointments will show here once the Schedule module lands."
-        />
-      )}
-      {tab === 'comms' && (
-        <EmptyTab
-          title="No messages yet"
-          description="Email + SMS sent to this client will be logged here. Wiring lands with scheduling reminders."
-        />
-      )}
-    </>
-  )
-}
-
-function HeaderActions() {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 10,
-        justifyContent: 'flex-end',
-        marginTop: -42,
-      }}
-    >
-      <button type="button" className="btn outline" disabled>
-        <MessageSquare size={14} aria-hidden />
-        Message
-      </button>
-      <button type="button" className="btn outline" disabled>
-        <Calendar size={14} aria-hidden />
-        Book
-      </button>
-      <button type="button" className="btn primary" disabled>
-        <Edit3 size={14} aria-hidden />
-        Edit profile
-      </button>
-    </div>
-  )
-}
-
-function ProfileTabContent({
-  client,
-  conditions,
-  notes,
-  statusLabel,
-  statusKind,
-}: Omit<ClientProfileProps, 'program'>) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: 18,
-      }}
-    >
-      <PersonalDetailsCard client={client} />
-      <ClinicalDetailsCard
+    <div style={{ background: 'var(--color-surface)', minHeight: '100%' }}>
+      <ClientHeader
         client={client}
         conditions={conditions}
+        statusLabel={statusLabel}
+        statusKind={statusKind}
+        tab={tab}
+        onTab={setTab}
       />
-      <ClinicalNotesCard notes={notes} />
 
-      {/* Status strip — subtle, matches the design's header flags */}
-      <div
-        style={{
-          gridColumn: '1 / -1',
-          fontSize: '.78rem',
-          color: 'var(--color-text-light)',
-          display: 'flex',
-          gap: 12,
-          alignItems: 'center',
-        }}
-      >
-        <span className={`tag ${statusKind}`}>{statusLabel}</span>
-        <span>Client since {formatMonthYear(client.created_at)}</span>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 32px 60px' }}>
+        {tab === 'details' && (
+          <DetailsTab client={client} conditions={conditions} />
+        )}
+        {tab === 'notes' && <NotesTab notes={notes} />}
+        {tab === 'program' && (
+          <ProgramTab clientId={client.id} program={program} />
+        )}
+        {tab === 'reports' && <ReportsTab />}
+        {tab === 'files' && <FilesTab />}
+        {tab === 'invoices' && <InvoicesTab />}
       </div>
     </div>
   )
 }
 
-function PersonalDetailsCard({ client }: { client: ProfileClient }) {
-  const rows: Array<[string, string]> = [
-    ['Email', client.email],
-    ['Phone', client.phone ?? '—'],
-    ['DOB', client.dob ? formatDate(client.dob) : '—'],
-    ['Gender', client.gender ?? '—'],
-    ['Address', client.address ?? '—'],
-    ['Referral', client.referral_source ?? '—'],
-  ]
+/* =========================================================================
+ * HEADER  — sticky white bar with breadcrumb, identity, tags, and tab strip
+ * ========================================================================= */
+
+function ClientHeader({
+  client,
+  conditions,
+  statusLabel,
+  statusKind,
+  tab,
+  onTab,
+}: {
+  client: ProfileClient
+  conditions: ProfileCondition[]
+  statusLabel: 'Active' | 'New' | 'Archived'
+  statusKind: 'active' | 'new' | 'archived'
+  tab: Tab
+  onTab: (t: Tab) => void
+}) {
+  const fullName = `${client.first_name} ${client.last_name}`
+  const activeFlags = conditions.filter((c) => c.is_active).slice(0, 2)
 
   return (
-    <div className="card" style={{ padding: 22 }}>
-      <div className="eyebrow">Personal details</div>
-      {rows.map(([k, v], i) => (
+    <div
+      style={{
+        background: '#fff',
+        borderBottom: '1px solid var(--color-border-subtle)',
+        position: 'sticky',
+        top: 52,
+        zIndex: 30,
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 1200,
+          margin: '0 auto',
+          padding: '20px 32px 0',
+        }}
+      >
+        {/* Breadcrumb */}
         <div
-          key={k}
           style={{
             display: 'flex',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '9px 0',
-            borderBottom: i === rows.length - 1 ? 'none' : '1px solid #F0EBE5',
-            fontSize: '.84rem',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: '.74rem',
+            color: 'var(--color-muted)',
+            marginBottom: 14,
           }}
         >
-          <span style={{ color: 'var(--color-text-light)' }}>{k}</span>
-          <span
+          <Link
+            href="/clients"
             style={{
-              fontWeight: 500,
-              color:
-                v === '—' ? 'var(--color-muted)' : 'var(--color-text)',
-              textAlign: 'right',
+              color: 'var(--color-text-light)',
+              textDecoration: 'none',
             }}
           >
-            {v}
-          </span>
+            Clients
+          </Link>
+          <ChevronRight size={12} aria-hidden />
+          <span>{fullName}</span>
         </div>
-      ))}
+
+        {/* Identity row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 18,
+            marginBottom: 12,
+          }}
+        >
+          <span
+            className={`avatar ${toneFor(client.id)}`}
+            style={{ width: 64, height: 64, fontSize: 22 }}
+          >
+            {initialsFor(client.first_name, client.last_name)}
+          </span>
+
+          <div style={{ flex: 1 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <h1
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 800,
+                  fontSize: '1.9rem',
+                  color: 'var(--color-charcoal)',
+                  margin: 0,
+                  letterSpacing: '-.005em',
+                }}
+              >
+                {fullName}
+              </h1>
+              <IconGhost label="Message client" disabled>
+                <MessageCircle size={16} aria-hidden />
+              </IconGhost>
+              <IconGhost
+                label={`Email ${fullName}`}
+                href={`mailto:${client.email}`}
+              >
+                <Mail size={16} aria-hidden />
+              </IconGhost>
+            </div>
+
+            <div
+              style={{
+                fontSize: '.84rem',
+                color: 'var(--color-text-light)',
+                marginTop: 8,
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+                flexWrap: 'wrap',
+              }}
+            >
+              {client.category_name && (
+                <span className="tag muted">{client.category_name}</span>
+              )}
+              {activeFlags.map((c) => (
+                <span key={c.id} className="tag flag">
+                  {c.condition}
+                  {c.severity ? ` — severity ${c.severity}` : ''}
+                </span>
+              ))}
+              <span className={`tag ${statusKind}`}>{statusLabel}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Tab strip */}
+        <div
+          role="tablist"
+          aria-label="Client profile sections"
+          style={{
+            display: 'flex',
+            gap: 0,
+            borderBottom: '1px solid var(--color-border-subtle)',
+            marginBottom: -1,
+          }}
+        >
+          {TABS.map((t) => {
+            const on = tab === t.key
+            return (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => onTab(t.key)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '12px 18px',
+                  fontFamily: 'var(--font-sans)',
+                  fontWeight: on ? 600 : 500,
+                  fontSize: '.85rem',
+                  color: on ? 'var(--color-primary)' : 'var(--color-text-light)',
+                  borderBottom: `2px solid ${
+                    on ? 'var(--color-primary)' : 'transparent'
+                  }`,
+                  marginBottom: -1,
+                  cursor: 'pointer',
+                  transition: 'color 150ms cubic-bezier(0.4,0,0.2,1)',
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
 
-function ClinicalDetailsCard({
+function IconGhost({
+  children,
+  label,
+  href,
+  disabled,
+}: {
+  children: React.ReactNode
+  label: string
+  href?: string
+  disabled?: boolean
+}) {
+  const style: React.CSSProperties = {
+    width: 30,
+    height: 30,
+    display: 'inline-grid',
+    placeItems: 'center',
+    borderRadius: 6,
+    color: disabled ? 'var(--color-muted)' : 'var(--color-text-light)',
+    background: 'transparent',
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    textDecoration: 'none',
+    transition: 'all 150ms cubic-bezier(0.4,0,0.2,1)',
+  }
+  if (href && !disabled) {
+    return (
+      <a href={href} aria-label={label} title={label} style={style}>
+        {children}
+      </a>
+    )
+  }
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      style={style}
+    >
+      {children}
+    </button>
+  )
+}
+
+/* =========================================================================
+ * TAB 1 — CLIENT DETAILS
+ * ========================================================================= */
+
+function DetailsTab({
   client,
   conditions,
 }: {
   client: ProfileClient
   conditions: ProfileCondition[]
 }) {
+  const contactRows: Array<[string, string | null]> = [
+    ['Email', client.email],
+    ['Phone', client.phone],
+    ['DOB', client.dob ? formatDob(client.dob) : null],
+    ['Gender', client.gender],
+    ['Address', client.address],
+    ['Referrer', client.referral_source],
+  ]
+
+  const inactive = conditions.filter((c) => !c.is_active)
+
   return (
-    <div className="card" style={{ padding: 22 }}>
-      <div className="eyebrow">Clinical details</div>
+    <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <Panel title="Contact" action={<GhostBtn icon={<Edit3 size={14} />} disabled />}>
+        <div style={{ padding: '14px 18px' }}>
+          {contactRows.map(([k, v]) => (
+            <DetailRow key={k} label={k} value={v ?? '—'} muted={!v} />
+          ))}
+        </div>
+      </Panel>
 
-      <ClinicalSection title="Conditions">
-        {conditions.length === 0 ? (
-          <span style={{ color: 'var(--color-muted)' }}>None recorded.</span>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: 16, lineHeight: 1.6 }}>
-            {conditions.map((c) => (
-              <li key={c.id}>
-                <strong>{c.condition}</strong>
-                {c.severity && ` · severity ${c.severity}`}
-                {c.notes && <span> — {c.notes}</span>}
-                {!c.is_active && (
-                  <span
-                    style={{
-                      marginLeft: 6,
-                      fontSize: '.72rem',
-                      color: 'var(--color-muted)',
-                    }}
-                  >
-                    (resolved)
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </ClinicalSection>
+      <Panel title="Goals">
+        <div
+          style={{
+            padding: '14px 18px',
+            fontSize: '.86rem',
+            color: client.goals?.trim()
+              ? 'var(--color-text)'
+              : 'var(--color-muted)',
+            lineHeight: 1.6,
+          }}
+        >
+          {client.goals?.trim() || 'None recorded.'}
+        </div>
+      </Panel>
 
-      <ClinicalSection title="Goals">
-        {client.goals?.trim() ? (
-          <span>{client.goals}</span>
-        ) : (
-          <span style={{ color: 'var(--color-muted)' }}>None recorded.</span>
-        )}
-      </ClinicalSection>
+      {inactive.length > 0 && (
+        <Panel title="Resolved / historical">
+          <div style={{ padding: '14px 18px' }}>
+            <ul
+              style={{
+                margin: 0,
+                paddingLeft: 18,
+                fontSize: '.86rem',
+                color: 'var(--color-text)',
+                lineHeight: 1.7,
+              }}
+            >
+              {inactive.map((c) => (
+                <li key={c.id}>
+                  {c.condition}
+                  {c.severity ? ` · severity ${c.severity}` : ''}
+                  {c.diagnosis_date && (
+                    <span
+                      style={{
+                        color: 'var(--color-muted)',
+                        fontSize: '.78rem',
+                        marginLeft: 6,
+                      }}
+                    >
+                      ({formatDate(c.diagnosis_date)})
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Panel>
+      )}
     </div>
   )
 }
 
-function ClinicalSection({
-  title,
-  children,
+function DetailRow({
+  label,
+  value,
+  muted,
 }: {
-  title: string
-  children: React.ReactNode
+  label: string
+  value: string
+  muted?: boolean
 }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '82px 1fr',
+        gap: 12,
+        padding: '5px 0',
+        fontSize: '.82rem',
+      }}
+    >
+      <span
         style={{
+          color: 'var(--color-muted)',
           fontSize: '.7rem',
-          fontWeight: 600,
-          color: 'var(--color-text-light)',
-          textTransform: 'uppercase',
           letterSpacing: '.04em',
+          textTransform: 'uppercase',
+          fontWeight: 500,
+          paddingTop: 3,
         }}
       >
-        {title}
+        {label}
+      </span>
+      <span style={{ color: muted ? 'var(--color-muted)' : 'var(--color-text)' }}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+/* =========================================================================
+ * TAB 2 — SESSION NOTES
+ * ========================================================================= */
+
+function NotesTab({ notes }: { notes: ProfileNote[] }) {
+  const counts = {
+    all: notes.length,
+    soap: notes.filter(
+      (n) => n.note_type === 'progress_note' || n.note_type === 'initial_assessment',
+    ).length,
+    flagged: notes.filter(
+      (n) =>
+        n.is_pinned ||
+        n.note_type === 'injury_flag' ||
+        n.note_type === 'contraindication',
+    ).length,
+    discharge: notes.filter((n) => n.note_type === 'discharge').length,
+    general: notes.filter((n) => n.note_type === 'general').length,
+  }
+
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 320px',
+        gap: 22,
+        alignItems: 'start',
+      }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <SoapComposer />
+
+        {notes.length === 0 ? (
+          <div
+            className="card"
+            style={{
+              padding: '32px 24px',
+              textAlign: 'center',
+              color: 'var(--color-text-light)',
+              fontSize: '.88rem',
+            }}
+          >
+            No notes yet — SOAP entries, re-assessments, and flags will land here.
+          </div>
+        ) : (
+          notes.map((n) => <NoteCard key={n.id} note={n} />)
+        )}
       </div>
+
       <div
         style={{
-          fontSize: '.86rem',
-          marginTop: 4,
-          lineHeight: 1.5,
-          color: 'var(--color-text)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 16,
+          position: 'sticky',
+          top: 230,
         }}
       >
-        {children}
+        <Panel title="Filter">
+          <div
+            style={{
+              padding: '12px 18px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            <FilterRow label="All notes" count={counts.all} active />
+            <FilterRow label="SOAP" count={counts.soap} />
+            <FilterRow label="Flagged" count={counts.flagged} />
+            <FilterRow label="Discharge" count={counts.discharge} />
+            <FilterRow label="General" count={counts.general} />
+          </div>
+        </Panel>
       </div>
     </div>
   )
 }
 
-function ClinicalNotesCard({ notes }: { notes: ProfileNote[] }) {
-  const pinned = notes.filter((n) => n.is_pinned)
-  const rest = notes.filter((n) => !n.is_pinned)
+function FilterRow({
+  label,
+  count,
+  active,
+}: {
+  label: string
+  count: number
+  active?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      style={{
+        background: active ? 'var(--color-surface)' : 'transparent',
+        border: 'none',
+        padding: '6px 10px',
+        borderRadius: 6,
+        display: 'flex',
+        justifyContent: 'space-between',
+        fontSize: '.84rem',
+        color: 'var(--color-text)',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ color: 'var(--color-muted)' }}>{count}</span>
+    </button>
+  )
+}
+
+function SoapComposer() {
+  return (
+    <Panel
+      title="Add clinical note"
+      action={
+        <div style={{ display: 'flex', gap: 6 }}>
+          {['SOAP', 'Free text', 'Re-assessment', 'Phone call'].map((t, i) => (
+            <span
+              key={t}
+              className={`chip ${i === 0 ? 'on' : ''}`}
+              style={{
+                fontSize: '.7rem',
+                padding: '4px 10px',
+                cursor: 'not-allowed',
+                opacity: 0.85,
+              }}
+            >
+              {t}
+            </span>
+          ))}
+        </div>
+      }
+    >
+      <div style={{ padding: 18, display: 'grid', gap: 12 }}>
+        {(['Subjective', 'Objective', 'Assessment', 'Plan'] as const).map((s) => (
+          <div key={s}>
+            <label
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '.7rem',
+                letterSpacing: '.06em',
+                textTransform: 'uppercase',
+                color: 'var(--color-muted)',
+                display: 'block',
+                marginBottom: 4,
+              }}
+            >
+              {s}
+            </label>
+            <textarea
+              disabled
+              placeholder={`${s.toLowerCase()}…`}
+              style={{
+                width: '100%',
+                minHeight: 56,
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border-subtle)',
+                borderRadius: 7,
+                padding: '9px 12px',
+                fontSize: '.85rem',
+                fontFamily: 'inherit',
+                lineHeight: 1.5,
+                resize: 'vertical',
+                color: 'var(--color-text)',
+                opacity: 0.7,
+              }}
+            />
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button type="button" className="btn ghost" disabled>
+            <Paperclip size={14} aria-hidden />
+            Attach
+          </button>
+          <div style={{ flex: 1 }} />
+          <button type="button" className="btn outline" disabled>
+            Save draft
+          </button>
+          <button type="button" className="btn primary" disabled>
+            Save note
+          </button>
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+function NoteCard({ note }: { note: ProfileNote }) {
+  const flagged =
+    note.is_pinned ||
+    note.note_type === 'injury_flag' ||
+    note.note_type === 'contraindication'
+  const body = note.body_rich ?? note.subjective ?? ''
 
   return (
-    <div className="card" style={{ gridColumn: '1 / -1', padding: 22 }}>
+    <div
+      className="card"
+      style={{
+        padding: '16px 20px',
+        borderLeft: flagged ? '3px solid var(--color-alert)' : undefined,
+      }}
+    >
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 10,
+          alignItems: 'baseline',
+          gap: 12,
+          marginBottom: 8,
         }}
       >
-        <div className="eyebrow" style={{ margin: 0 }}>
-          Clinical notes
-        </div>
-        <button type="button" className="btn outline" disabled>
-          Add note
-        </button>
-      </div>
-
-      {pinned.map((n) => (
-        <PinnedNoteRow key={n.id} note={n} />
-      ))}
-
-      {rest.length === 0 && pinned.length === 0 && (
-        <div
-          style={{
-            fontSize: '.88rem',
-            color: 'var(--color-muted)',
-            padding: '14px 0',
-          }}
-        >
-          No notes yet. SOAP-style notes, flags, and reassessments will live
-          here.
-        </div>
-      )}
-
-      {rest.map((n) => (
-        <NoteRow key={n.id} note={n} />
-      ))}
-    </div>
-  )
-}
-
-function PinnedNoteRow({ note }: { note: ProfileNote }) {
-  return (
-    <div
-      style={{
-        background: 'rgba(214,64,69,.05)',
-        borderLeft: '3px solid var(--color-alert)',
-        padding: '10px 14px',
-        borderRadius: '0 6px 6px 0',
-        fontSize: '.84rem',
-        lineHeight: 1.5,
-        marginBottom: 14,
-      }}
-    >
-      <div
-        style={{
-          fontSize: '.66rem',
-          fontWeight: 700,
-          color: 'var(--color-alert)',
-          textTransform: 'uppercase',
-          letterSpacing: '.04em',
-          marginBottom: 2,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-        }}
-      >
-        <Pin size={10} aria-hidden />
-        Pinned · {noteTypeLabel(note.note_type)}
-        {note.flag_body_region && ` · ${note.flag_body_region}`}
-      </div>
-      <NoteBody note={note} />
-    </div>
-  )
-}
-
-function NoteRow({ note }: { note: ProfileNote }) {
-  return (
-    <div style={{ padding: '14px 0', borderTop: '1px solid #F0EBE5' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          marginBottom: 6,
-        }}
-      >
-        <span style={{ fontSize: '.72rem', color: 'var(--color-muted)' }}>
-          {formatDate(note.note_date)}
-        </span>
-        <NoteTypeBadge kind={note.note_type} />
-        {note.title && (
-          <span style={{ fontSize: '.86rem', fontWeight: 600 }}>
-            {note.title}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.88rem',
+              color: 'var(--color-charcoal)',
+            }}
+          >
+            {formatDate(note.note_date)}
           </span>
+          {note.is_pinned && (
+            <span
+              style={{
+                fontSize: '.62rem',
+                fontWeight: 700,
+                color: 'var(--color-alert)',
+                textTransform: 'uppercase',
+                letterSpacing: '.04em',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <Pin size={10} aria-hidden /> Pinned
+            </span>
+          )}
+          <span className={`tag ${flagged ? 'flag' : 'muted'}`}>
+            {noteTypeLabel(note.note_type)}
+          </span>
+          {note.flag_body_region && (
+            <span style={{ fontSize: '.74rem', color: 'var(--color-muted)' }}>
+              {note.flag_body_region}
+            </span>
+          )}
+          {note.title && (
+            <span style={{ fontSize: '.86rem', fontWeight: 600 }}>
+              {note.title}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled
+            aria-label="Edit note"
+            style={{ padding: 6 }}
+          >
+            <Edit3 size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled
+            aria-label="More actions"
+            style={{ padding: 6 }}
+          >
+            <MoreHorizontal size={14} aria-hidden />
+          </button>
+        </div>
+      </div>
+      <div
+        style={{
+          fontSize: '.86rem',
+          color: 'var(--color-text)',
+          whiteSpace: 'pre-wrap',
+          lineHeight: 1.6,
+        }}
+      >
+        {body.trim() || (
+          <span style={{ color: 'var(--color-muted)' }}>(empty note)</span>
         )}
       </div>
-      <NoteBody note={note} />
     </div>
   )
 }
 
-function NoteBody({ note }: { note: ProfileNote }) {
-  const body = note.body_rich ?? note.subjective ?? ''
-  if (!body.trim()) {
-    return (
-      <div style={{ fontSize: '.84rem', color: 'var(--color-muted)' }}>
-        (empty note)
-      </div>
-    )
-  }
-  return (
-    <div style={{ fontSize: '.86rem', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-      {body}
-    </div>
-  )
-}
-
-function NoteTypeBadge({ kind }: { kind: NoteType }) {
-  const label = noteTypeLabel(kind)
-  const palette: Record<NoteType, { bg: string; fg: string }> = {
-    initial_assessment: {
-      bg: 'rgba(45,178,76,.1)',
-      fg: 'var(--color-primary)',
-    },
-    progress_note: { bg: 'rgba(232,163,23,.1)', fg: '#9A7A0E' },
-    injury_flag: {
-      bg: 'rgba(214,64,69,.1)',
-      fg: 'var(--color-alert)',
-    },
-    contraindication: {
-      bg: 'rgba(214,64,69,.1)',
-      fg: 'var(--color-alert)',
-    },
-    discharge: { bg: 'rgba(30,26,24,.06)', fg: 'var(--color-charcoal)' },
-    general: { bg: 'rgba(30,26,24,.06)', fg: 'var(--color-charcoal)' },
-  }
-  const c = palette[kind]
-  return (
-    <span
-      style={{
-        fontSize: '.62rem',
-        fontWeight: 700,
-        textTransform: 'uppercase',
-        letterSpacing: '.04em',
-        padding: '2px 7px',
-        borderRadius: 4,
-        background: c.bg,
-        color: c.fg,
-      }}
-    >
-      {label}
-    </span>
-  )
-}
+/* =========================================================================
+ * TAB 3 — PROGRAMS
+ * ========================================================================= */
 
 function ProgramTab({
   clientId,
@@ -539,7 +790,7 @@ function ProgramTab({
             marginBottom: 6,
           }}
         >
-          No active program
+          No active mesocycle
         </div>
         <p
           style={{
@@ -549,8 +800,8 @@ function ProgramTab({
             maxWidth: 440,
           }}
         >
-          Start a mesocycle — pick the duration (weeks), day split, and a
-          start date. Weeks + days scaffold out ready for the Session Builder.
+          Start a mesocycle — pick the duration, day split, and a start date.
+          Weeks and days scaffold out ready for the Session Builder.
         </p>
         <Link href={`/clients/${clientId}/program/new`} className="btn primary">
           <Plus size={14} aria-hidden />
@@ -561,127 +812,353 @@ function ProgramTab({
   }
 
   const weeksLabel = program.duration_weeks
-    ? `${program.duration_weeks} week block`
+    ? `${program.duration_weeks}-week block`
     : 'Open-ended'
   const currentLabel =
     program.current_week !== null && program.duration_weeks
-      ? `Week ${program.current_week} of ${program.duration_weeks}`
+      ? `Wk ${program.current_week} of ${program.duration_weeks}`
       : program.current_week
-        ? `Week ${program.current_week}`
+        ? `Wk ${program.current_week}`
         : null
 
   return (
-    <div className="card" style={{ padding: '24px 28px' }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: 14,
-          marginBottom: 18,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 2 }}>
-            Active mesocycle
-          </div>
-          <div
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: '1.3rem',
-              color: 'var(--color-charcoal)',
-              lineHeight: 1.2,
-            }}
-          >
-            {program.name}
-          </div>
-          <div
-            style={{
-              fontSize: '.86rem',
-              color: 'var(--color-text-light)',
-              marginTop: 4,
-            }}
-          >
-            {weeksLabel} · {program.days_per_week} day split
-            {currentLabel && ` · ${currentLabel}`}
-            {program.start_date && ` · started ${formatDate(program.start_date)}`}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10 }}>
+    <Panel
+      title={`${program.name} · ${weeksLabel}${
+        currentLabel ? ` · ${currentLabel}` : ''
+      }`}
+      action={
+        <div style={{ display: 'flex', gap: 8 }}>
           <Link
             href={`/clients/${clientId}/program/new`}
             className="btn outline"
+            style={{ fontSize: '.78rem', padding: '6px 12px' }}
           >
-            <Plus size={14} aria-hidden />
+            <Plus size={13} aria-hidden />
             New mesocycle
           </Link>
           <Link
             href={`/clients/${clientId}/program`}
             className="btn primary"
+            style={{ fontSize: '.78rem', padding: '6px 12px' }}
           >
             Open calendar
           </Link>
         </div>
-      </div>
-
-      <p
+      }
+    >
+      <div
         style={{
-          fontSize: '.82rem',
+          padding: '16px 20px',
           color: 'var(--color-text-light)',
-          margin: 0,
+          fontSize: '.86rem',
           lineHeight: 1.55,
         }}
       >
-        Open the calendar for the full week grid + day-by-day session
-        builder. Starting a new mesocycle archives the current one.
-      </p>
+        {program.days_per_week} day split
+        {program.start_date && ` · started ${formatDate(program.start_date)}`}
+        . Open the calendar for the full week grid plus the day-by-day Session
+        Builder.
+      </div>
+    </Panel>
+  )
+}
+
+/* =========================================================================
+ * TAB 4 — REPORTS
+ * ========================================================================= */
+
+function ReportsTab() {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+      <Panel
+        title="Force-plate assessment · Latest"
+        action={
+          <button type="button" className="btn outline" disabled style={{ fontSize: '.78rem' }}>
+            <Plus size={13} aria-hidden />
+            Log assessment
+          </button>
+        }
+      >
+        <EmptyBlock
+          line1="No assessments logged yet"
+          line2="Force-plate, isokinetic, and movement-screen results will populate this panel once the assessment module is wired up."
+        />
+      </Panel>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 22,
+        }}
+      >
+        <Panel title="Body composition">
+          <EmptyBlock
+            line1="No measurements yet"
+            line2="Weight, body fat, and lean mass over time will track here."
+          />
+        </Panel>
+        <Panel title="Strength benchmarks (1RM est.)">
+          <EmptyBlock
+            line1="No benchmarks yet"
+            line2="Estimated 1RMs roll up from logged sessions once enough data is in."
+          />
+        </Panel>
+      </div>
     </div>
   )
 }
 
-function EmptyTab({
+/* =========================================================================
+ * TAB 5 — FILES
+ * ========================================================================= */
+
+function FilesTab() {
+  return (
+    <Panel
+      title="Files · 0"
+      action={
+        <div style={{ display: 'flex', gap: 8 }}>
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            <Search
+              size={13}
+              aria-hidden
+              style={{
+                position: 'absolute',
+                left: 10,
+                color: 'var(--color-muted)',
+                pointerEvents: 'none',
+              }}
+            />
+            <input
+              type="search"
+              disabled
+              placeholder="Search files…"
+              style={{
+                width: 220,
+                padding: '6px 12px 6px 30px',
+                border: '1px solid var(--color-border-subtle)',
+                borderRadius: 7,
+                background: 'var(--color-surface)',
+                fontSize: '.78rem',
+                color: 'var(--color-text)',
+                outline: 'none',
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+          <button type="button" className="btn outline" disabled style={{ fontSize: '.78rem' }}>
+            <Filter size={13} aria-hidden />
+            All types
+          </button>
+          <button type="button" className="btn primary" disabled style={{ fontSize: '.78rem' }}>
+            <Upload size={13} aria-hidden />
+            Upload
+          </button>
+        </div>
+      }
+    >
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 110px 130px 120px 60px',
+          padding: '10px 20px',
+          background: 'var(--color-surface)',
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '.66rem',
+          letterSpacing: '.06em',
+          textTransform: 'uppercase',
+          color: 'var(--color-muted)',
+          borderBottom: '1px solid var(--color-border-subtle)',
+        }}
+      >
+        <div>Name</div>
+        <div>Type</div>
+        <div>Uploaded</div>
+        <div>Size</div>
+        <div />
+      </div>
+      <EmptyBlock
+        line1="No files yet"
+        line2="Referrals, imaging, consent forms, assessment exports, and demo videos will live here. Drag-and-drop or use Upload."
+        accent={
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              background: 'var(--color-surface)',
+              display: 'grid',
+              placeItems: 'center',
+              color: 'var(--color-muted)',
+              margin: '0 auto 14px',
+            }}
+          >
+            <FileText size={20} aria-hidden />
+          </div>
+        }
+      />
+    </Panel>
+  )
+}
+
+/* =========================================================================
+ * TAB 6 — INVOICES
+ * ========================================================================= */
+
+function InvoicesTab() {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '2fr 1fr',
+        gap: 22,
+        alignItems: 'start',
+      }}
+    >
+      <Panel
+        title="Invoices"
+        action={
+          <button type="button" className="btn outline" disabled style={{ fontSize: '.78rem' }}>
+            <Plus size={13} aria-hidden />
+            New invoice
+          </button>
+        }
+      >
+        <EmptyBlock
+          line1="No invoices yet"
+          line2="Issued and paid invoices will appear here once billing is wired up."
+          accent={
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: 'var(--color-surface)',
+                display: 'grid',
+                placeItems: 'center',
+                color: 'var(--color-muted)',
+                margin: '0 auto 14px',
+              }}
+            >
+              <CreditCard size={20} aria-hidden />
+            </div>
+          }
+        />
+      </Panel>
+
+      <Panel title="Funding">
+        <div style={{ padding: '14px 18px' }}>
+          <DetailRow label="Scheme" value="—" muted />
+          <DetailRow label="Member #" value="—" muted />
+          <DetailRow label="Sessions YTD" value="0" muted />
+          <DetailRow label="Paid YTD" value="—" muted />
+          <DetailRow label="Outstanding" value="—" muted />
+        </div>
+      </Panel>
+    </div>
+  )
+}
+
+/* =========================================================================
+ * Shared building blocks
+ * ========================================================================= */
+
+function Panel({
   title,
-  description,
+  action,
+  children,
 }: {
   title: string
-  description: string
+  action?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        <div className="panel-title">{title}</div>
+        {action}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function GhostBtn({
+  icon,
+  disabled,
+  label,
+}: {
+  icon: React.ReactNode
+  disabled?: boolean
+  label?: string
+}) {
+  return (
+    <button
+      type="button"
+      className="btn ghost"
+      disabled={disabled}
+      aria-label={label ?? 'Action'}
+      style={{ padding: 6 }}
+    >
+      {icon}
+    </button>
+  )
+}
+
+function EmptyBlock({
+  line1,
+  line2,
+  accent,
+}: {
+  line1: string
+  line2: string
+  accent?: React.ReactNode
 }) {
   return (
     <div
-      className="card"
       style={{
-        padding: '32px 28px',
+        padding: '32px 24px',
         textAlign: 'center',
         color: 'var(--color-text-light)',
       }}
     >
+      {accent}
       <div
         style={{
           fontFamily: 'var(--font-display)',
-          fontWeight: 800,
-          fontSize: '1.1rem',
+          fontWeight: 700,
+          fontSize: '1rem',
           color: 'var(--color-charcoal)',
-          marginBottom: 6,
+          marginBottom: 4,
         }}
       >
-        {title}
+        {line1}
       </div>
       <p
         style={{
-          fontSize: '.88rem',
-          lineHeight: 1.55,
+          fontSize: '.84rem',
+          lineHeight: 1.6,
           margin: '0 auto',
-          maxWidth: 460,
+          maxWidth: 440,
         }}
       >
-        {description}
+        {line2}
       </p>
     </div>
   )
 }
+
+/* =========================================================================
+ * Helpers
+ * ========================================================================= */
 
 function noteTypeLabel(kind: NoteType): string {
   return {
@@ -706,13 +1183,20 @@ function formatDate(dateIso: string): string {
   }
 }
 
-function formatMonthYear(dateIso: string): string {
+function formatDob(dateIso: string): string {
   try {
-    return new Intl.DateTimeFormat('en-AU', {
+    const dt = new Date(dateIso)
+    const formatted = new Intl.DateTimeFormat('en-AU', {
+      day: 'numeric',
       month: 'short',
       year: 'numeric',
-    }).format(new Date(dateIso))
+    }).format(dt)
+    const age = Math.floor(
+      (Date.now() - dt.getTime()) / (365.25 * 24 * 3600 * 1000),
+    )
+    return `${formatted} (${age})`
   } catch {
     return dateIso
   }
 }
+
