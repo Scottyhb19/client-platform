@@ -9,42 +9,7 @@ Order in this file is rough priority. Pick whatever's blocking you.
 
 ---
 
-## 1. Reject "owner-as-client" invites with a pre-check
-
-```
-The "Invite a client" form currently lets a practitioner invite their OWN
-email as a client. This is logically nonsensical (you can't be your own
-client) and creates a confusing failure mode. Add a pre-check.
-
-In src/app/(staff)/clients/new/actions.ts (the inviteClientAction
-function), before the clients table INSERT:
-
-1. If the submitted email matches the calling user's own email
-   (available from requireRole's auth context), reject with:
-   "You can't invite your own email as a client. Use a different
-   address."
-
-2. Else, query user_organization_roles JOIN user_profiles to find any
-   user in the SAME organization with that email. If found and their
-   role is 'owner' or 'staff', reject with:
-   "This email belongs to a practitioner in your practice. Clients need
-   a separate email."
-
-Both rejections should set fieldErrors.email so the message renders
-under the Email field, NOT as a top-level alert. Match the existing
-fieldErrors shape (look at the email validation block above).
-
-Don't pre-check against clients in OTHER organizations — clients can
-legitimately be in multiple practices. Don't pre-check against existing
-auth.users either — the magic-link fallback already handles that case.
-
-Run npm run type-check, commit "Invite: reject owner-as-client with
-friendly pre-check", push.
-```
-
----
-
-## 2. Migrate to Supabase's new Publishable/Secret API keys
+## 1. Migrate to Supabase's new Publishable/Secret API keys
 
 ```
 My Supabase project (azjllcsffixswiigjqhj) currently uses the legacy
@@ -96,7 +61,7 @@ what to do. Don't retry blindly.
 
 ---
 
-## 3. Custom domain + Vercel hookup
+## 2. Custom domain + Vercel hookup
 
 ```
 I want to put my Vercel-deployed Next.js app onto a custom domain instead
@@ -143,7 +108,7 @@ Don't just retry blindly.
 
 ---
 
-## 4. Replace the text logo with a real wordmark + icon
+## 3. Replace the text logo with a real wordmark + icon
 
 ```
 The Odyssey app currently uses a text-only "Odyssey." brand (Barlow
@@ -183,7 +148,7 @@ file so I can see what changed.
 
 ---
 
-## 5. Polish the PWA name and icons
+## 4. Polish the PWA name and icons
 
 ```
 Audit and improve the PWA install experience for my Next.js app. The
