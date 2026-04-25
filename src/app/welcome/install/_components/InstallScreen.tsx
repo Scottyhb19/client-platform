@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { ArrowDown, Check, Share, Smartphone } from 'lucide-react'
+import { ArrowDown, Share, Smartphone } from 'lucide-react'
 
 type Platform = 'ios' | 'android' | 'desktop' | 'standalone' | 'unknown'
 
@@ -39,12 +39,12 @@ function detectPlatform(): Platform {
   return 'desktop'
 }
 
-interface InstallScreenProps {
-  practiceName: string
-  firstName: string | null
-}
-
-export function InstallScreen({ practiceName, firstName }: InstallScreenProps) {
+/**
+ * Eyebrow + heading + subtitle live in the AuthShell wrapper at
+ * /welcome/install/page.tsx — this component renders just the platform-
+ * specific install instructions and the "skip" escape hatch.
+ */
+export function InstallScreen() {
   const [platform, setPlatform] = useState<Platform>('unknown')
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installing, setInstalling] = useState(false)
@@ -93,81 +93,37 @@ export function InstallScreen({ practiceName, firstName }: InstallScreenProps) {
   }
 
   return (
-    <main
-      style={{
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        padding: 24,
-        background: 'var(--color-surface)',
-      }}
-    >
-      <div
+    <>
+      <div>
+        {platform === 'ios' && <IOSInstructions />}
+        {platform === 'android' && (
+          <AndroidInstructions
+            onInstall={triggerAndroidInstall}
+            hasPrompt={Boolean(promptEvent)}
+            installing={installing}
+          />
+        )}
+        {platform === 'desktop' && <DesktopInstructions />}
+        {(platform === 'unknown' || platform === 'standalone') && <Loading />}
+      </div>
+
+      <Link
+        href="/portal"
         style={{
-          width: '100%',
-          maxWidth: 460,
-          background: 'var(--color-card)',
+          display: 'block',
+          marginTop: 18,
+          padding: '10px 14px',
+          textAlign: 'center',
+          fontSize: '.84rem',
+          color: 'var(--color-text-light)',
+          textDecoration: 'none',
           border: '1px solid var(--color-border-subtle)',
-          borderRadius: 14,
-          padding: '28px 32px',
-          boxShadow: '0 2px 8px rgba(0,0,0,.04)',
+          borderRadius: 8,
         }}
       >
-        <Eyebrow text={practiceName} />
-        <h1
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: '1.6rem',
-            margin: 0,
-            letterSpacing: '-.01em',
-          }}
-        >
-          {firstName ? `One more step, ${firstName}.` : 'One more step.'}
-        </h1>
-        <p
-          style={{
-            fontSize: '.92rem',
-            color: 'var(--color-text-light)',
-            lineHeight: 1.55,
-            marginTop: 8,
-          }}
-        >
-          Add Odyssey to your home screen so it opens like an app — no Safari
-          tabs, no scrolling through bookmarks.
-        </p>
-
-        <div style={{ marginTop: 22 }}>
-          {platform === 'ios' && <IOSInstructions />}
-          {platform === 'android' && (
-            <AndroidInstructions
-              onInstall={triggerAndroidInstall}
-              hasPrompt={Boolean(promptEvent)}
-              installing={installing}
-            />
-          )}
-          {platform === 'desktop' && <DesktopInstructions />}
-          {(platform === 'unknown' || platform === 'standalone') && <Loading />}
-        </div>
-
-        <Link
-          href="/portal"
-          style={{
-            display: 'block',
-            marginTop: 22,
-            padding: '10px 14px',
-            textAlign: 'center',
-            fontSize: '.86rem',
-            color: 'var(--color-text-light)',
-            textDecoration: 'none',
-            border: '1px solid var(--color-border-subtle)',
-            borderRadius: 8,
-          }}
-        >
-          Skip — open in browser
-        </Link>
-      </div>
-    </main>
+        Skip — open in browser
+      </Link>
+    </>
   )
 }
 
@@ -336,28 +292,6 @@ function Loading() {
       }}
     >
       Loading…
-    </div>
-  )
-}
-
-function Eyebrow({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        fontFamily: 'var(--font-display)',
-        fontWeight: 700,
-        fontSize: '.72rem',
-        letterSpacing: '.06em',
-        textTransform: 'uppercase',
-        color: 'var(--color-muted)',
-        marginBottom: 4,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-      }}
-    >
-      <Check size={12} aria-hidden style={{ color: 'var(--color-accent)' }} />
-      {text}
     </div>
   )
 }

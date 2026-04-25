@@ -1,19 +1,20 @@
 import { redirect } from 'next/navigation'
+import {
+  AuthEyebrow,
+  AuthHeading,
+  AuthShell,
+  AuthSubtitle,
+} from '@/components/auth/AuthShell'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { InstallScreen } from './_components/InstallScreen'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * Install interstitial.
- *
- * Sits between /welcome (set password) and /portal (Today screen). The point
- * is to nudge the client to install the PWA to their home screen BEFORE they
- * start using it day-to-day, because the install moment is fleeting — once
- * they're inside the portal they forget the app is installable at all.
- *
- * Auth gate: requires a logged-in client. If they reach this URL without a
- * session (bookmark, sharing) we send them to /login.
+ * Install interstitial — sits between /welcome (set password) and /portal
+ * so newly-onboarded clients get nudged to add the PWA to their home screen
+ * while the install moment is fresh. AuthShell wrapper keeps the visual
+ * journey consistent with /login → /welcome.
  */
 export default async function InstallPage() {
   const supabase = await createSupabaseServerClient()
@@ -22,7 +23,6 @@ export default async function InstallPage() {
   } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Practice name for the welcome eyebrow — same lookup as /welcome.
   const { data: client } = await supabase
     .from('clients')
     .select('first_name, organization:organizations(name)')
@@ -30,10 +30,20 @@ export default async function InstallPage() {
     .is('deleted_at', null)
     .maybeSingle()
 
+  const practiceName = client?.organization?.name ?? 'Odyssey'
+  const firstName = client?.first_name ?? null
+
   return (
-    <InstallScreen
-      practiceName={client?.organization?.name ?? 'Odyssey'}
-      firstName={client?.first_name ?? null}
-    />
+    <AuthShell>
+      <AuthEyebrow>{practiceName}</AuthEyebrow>
+      <AuthHeading>
+        {firstName ? `One more step, ${firstName}.` : 'One more step.'}
+      </AuthHeading>
+      <AuthSubtitle>
+        Add Odyssey to your home screen so it opens like an app — no Safari
+        tabs, no scrolling through bookmarks.
+      </AuthSubtitle>
+      <InstallScreen />
+    </AuthShell>
   )
 }
