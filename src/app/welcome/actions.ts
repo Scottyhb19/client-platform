@@ -77,6 +77,10 @@ export async function setPasswordAndAcceptAction(
   //    belt-and-braces here.)
   await supabase.auth.refreshSession()
 
-  // 4. Off to the portal.
-  redirect('/portal')
+  // 4. Nudge the install before they reach the portal. The install screen
+  //    detects the platform and serves iOS Safari instructions, an Android
+  //    one-tap install, or a "open this on your phone" desktop fallback.
+  //    Already-installed clients (display-mode: standalone) auto-bounce
+  //    through to /portal so it never feels like an extra step on return.
+  redirect('/welcome/install')
 }

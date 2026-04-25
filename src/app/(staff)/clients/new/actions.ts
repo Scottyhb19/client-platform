@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
+import { sendClientInviteEmail } from '@/lib/email/send-client-invite'
 import {
   createSupabaseServerClient,
   createSupabaseServiceRoleClient,
@@ -27,7 +28,7 @@ export async function inviteClientAction(
   _prev: InviteClientState,
   formData: FormData,
 ): Promise<InviteClientState> {
-  const { organizationId } = await requireRole(['owner', 'staff'])
+  const { userId, organizationId } = await requireRole(['owner', 'staff'])
 
   const firstName = (formData.get('first_name') ?? '').toString().trim()
   const lastName = (formData.get('last_name') ?? '').toString().trim()
@@ -83,11 +84,16 @@ export async function inviteClientAction(
     }
   }
 
-  // If the EP opted in, send the real invite email via Supabase Admin API.
-  // Per /docs/auth.md §5.3 this is the service-role bridge — it creates
-  // (or finds) the auth.users row and dispatches the magic link. The
-  // email's redirect lands on /auth/callback?token_hash=...&next=/welcome
-  // where the new user sets a password + we link the clients.user_id.
+  // If the EP opted in, send our own invite email via Resend rather than
+  // Supabase's default magic-link email. Two reasons: (1) the email looks
+  // like it came from the practice, not "Supabase"; (2) we steer the
+  // client to install the PWA on their phone, which the default template
+  // can't do. Sequence:
+  //   1. admin.generateLink({ type: 'invite' })  — creates auth.users
+  //      row + a one-time accept URL, WITHOUT sending Supabase's email.
+  //   2. We POST a custom Resend email containing that URL.
+  // The accept URL still routes through /auth/callback, which exchanges
+  // the token for a session and forwards to /welcome → /welcome/install.
   if (sendInvite) {
     const admin = await createSupabaseServiceRoleClient()
     const host = (await headers()).get('host') ?? 'localhost:3000'
@@ -97,16 +103,54 @@ export async function inviteClientAction(
     const welcomeNext = `/welcome?client_id=${data.id}`
     const redirectTo = `${proto}://${host}/auth/callback?next=${encodeURIComponent(welcomeNext)}`
 
-    const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
-      email,
-      { redirectTo },
+    // Step 1: create the auth user + accept URL without firing Supabase's email.
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink(
+      { type: 'invite', email, options: { redirectTo } },
     )
-    if (inviteErr) {
-      // Soft-fail: the clients row is saved. Surface the error so the
-      // EP can resend. Don't roll back — re-inviting is cheaper than
-      // re-entering details.
+    const acceptUrl = linkData?.properties?.action_link ?? null
+    if (linkErr || !acceptUrl) {
       return {
-        error: `Client saved, but invite email failed: ${inviteErr.message}. You can resend from the client profile.`,
+        error: `Client saved, but the invite link could not be generated: ${
+          linkErr?.message ?? 'no link returned'
+        }. You can resend from the client profile.`,
+        fieldErrors: {},
+      }
+    }
+
+    // Step 2: pull the practice + practitioner names so the email reads
+    // human. Both fall back to gentle defaults — we never block the
+    // invite send on a missing display name.
+    const supabaseAdmin = await createSupabaseServiceRoleClient()
+    const [{ data: org }, { data: prof }] = await Promise.all([
+      supabaseAdmin
+        .from('organizations')
+        .select('name')
+        .eq('id', organizationId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from('user_profiles')
+        .select('first_name, last_name')
+        .eq('user_id', userId)
+        .maybeSingle(),
+    ])
+    const practiceName = org?.name?.trim() || 'your practice'
+    const practitionerName = [prof?.first_name, prof?.last_name]
+      .filter((s): s is string => Boolean(s?.trim()))
+      .join(' ')
+      .trim() || 'Your practitioner'
+
+    // Step 3: send. Soft-fail mirrors the original behaviour — clients
+    // row stays, EP can resend.
+    const { error: emailErr } = await sendClientInviteEmail({
+      to: email,
+      firstName,
+      practiceName,
+      practitionerName,
+      acceptUrl,
+    })
+    if (emailErr) {
+      return {
+        error: `Client saved, but invite email failed: ${emailErr}. You can resend from the client profile.`,
         fieldErrors: {},
       }
     }

@@ -48,6 +48,9 @@ Extract design tokens from `Isaac_Fong_report.html`:
 
 See `/docs/` for the authoritative design decisions: `schema.md`, `auth.md`, `rls-policies.md`, `slos.md`, `incident-response.md`. Any tech-stack change must be reconciled with those documents.
 
+## Local dev gotchas
+- **CSS edits not appearing after a hot reload**: Turbopack's dev cache (`.next/dev/`) sometimes hangs onto a stale CSS chunk that pre-dates a globals.css edit. A plain `npm run dev` restart does NOT invalidate it. Cure: stop the server, `Remove-Item .next -Recurse -Force` (PowerShell) or `rm -rf .next`, then `npm run dev`. Symptom: classes you just added don't appear in the served chunk at `/_next/static/chunks/[root-of-the-server]__*.css`.
+
 ## Code standards (non-negotiable)
 - TypeScript throughout — no JavaScript files. No `any` types unless absolutely unavoidable with a comment explaining why.
 - Component-based architecture. Every component should be reusable and testable.
