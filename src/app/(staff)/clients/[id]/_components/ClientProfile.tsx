@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useState, useTransition } from 'react'
+import { getOrCreateThreadAction } from '../../../messages/actions'
 import {
   ChevronRight,
   CreditCard,
@@ -144,6 +146,22 @@ function ClientHeader({
 }) {
   const fullName = `${client.first_name} ${client.last_name}`
   const activeFlags = conditions.filter((c) => c.is_active).slice(0, 2)
+  const router = useRouter()
+  const [isOpening, startOpenThread] = useTransition()
+  const [openError, setOpenError] = useState<string | null>(null)
+
+  function handleOpenThread() {
+    if (isOpening) return
+    setOpenError(null)
+    startOpenThread(async () => {
+      const res = await getOrCreateThreadAction(client.id)
+      if (res.error || !res.data) {
+        setOpenError(res.error ?? 'Could not open thread.')
+        return
+      }
+      router.push(`/messages?thread=${res.data.threadId}`)
+    })
+  }
 
   return (
     <div
@@ -222,7 +240,11 @@ function ClientHeader({
               >
                 {fullName}
               </h1>
-              <IconGhost label="Message client" disabled>
+              <IconGhost
+                label={isOpening ? 'Opening thread…' : `Message ${fullName}`}
+                onClick={handleOpenThread}
+                disabled={isOpening}
+              >
                 <MessageCircle size={16} aria-hidden />
               </IconGhost>
               <IconGhost
@@ -255,6 +277,18 @@ function ClientHeader({
               ))}
               <span className={`tag ${statusKind}`}>{statusLabel}</span>
             </div>
+            {openError && (
+              <div
+                role="alert"
+                style={{
+                  marginTop: 8,
+                  fontSize: '.78rem',
+                  color: 'var(--color-alert)',
+                }}
+              >
+                {openError}
+              </div>
+            )}
           </div>
         </div>
 
@@ -308,11 +342,13 @@ function IconGhost({
   children,
   label,
   href,
+  onClick,
   disabled,
 }: {
   children: React.ReactNode
   label: string
   href?: string
+  onClick?: () => void
   disabled?: boolean
 }) {
   const style: React.CSSProperties = {
@@ -341,6 +377,7 @@ function IconGhost({
       aria-label={label}
       title={label}
       disabled={disabled}
+      onClick={onClick}
       style={style}
     >
       {children}
