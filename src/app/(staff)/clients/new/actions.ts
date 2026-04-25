@@ -171,11 +171,6 @@ export async function inviteClientAction(
       .join(' ')
       .trim() || 'Your practitioner'
 
-    // TEMP DEBUG — diagnose "Missing auth code" by seeing what URL
-    // Supabase actually generated. Remove once verified working.
-    console.info('[invite] redirectTo:', redirectTo)
-    console.info('[invite] acceptUrl:', acceptUrl)
-
     // Step 3: send. Soft-fail mirrors the original behaviour — clients
     // row stays, EP can resend.
     const { error: emailErr } = await sendClientInviteEmail({

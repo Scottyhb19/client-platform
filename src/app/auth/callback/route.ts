@@ -29,16 +29,6 @@ export async function GET(request: Request) {
     | null
   const next = url.searchParams.get('next') ?? '/onboarding/org'
 
-  // TEMP DEBUG — print every incoming param so we can see what's being
-  // sent. Some flows redirect with `error=...&error_code=...` instead
-  // of code/token_hash; surfacing those helps us diagnose. Remove once
-  // the invite flow is verified end-to-end.
-  console.info('[callback] full url:', request.url)
-  console.info(
-    '[callback] params:',
-    Object.fromEntries(url.searchParams.entries()),
-  )
-
   const supabase = await createSupabaseServerClient()
 
   if (code) {
