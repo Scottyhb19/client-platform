@@ -52,6 +52,7 @@ export default async function StaffLayout({
         userInitials={initials}
         todayLabel={todayLabel}
         messageCount={messageCount}
+        organizationId={organizationId}
       />
       <div className="flex-1">{children}</div>
     </>

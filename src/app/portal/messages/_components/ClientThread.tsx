@@ -86,9 +86,22 @@ export function ClientThread(props: ClientThreadProps) {
           filter: `thread_id=eq.${threadId}`,
         } as never,
         (payload: { new: MessageRow }) => {
-          setMessages((prev) =>
-            prev.some((m) => m.id === payload.new.id) ? prev : [...prev, payload.new],
-          )
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === payload.new.id)) return prev
+            // Drop any optimistic row this realtime event canonicalises so we
+            // don't end up with two rows sharing the same id once the post-
+            // send callback also tries to swap the id in.
+            const filtered = prev.filter(
+              (m) =>
+                !(
+                  m.id.startsWith('optimistic-') &&
+                  m.sender_user_id === payload.new.sender_user_id &&
+                  m.sender_role === payload.new.sender_role &&
+                  m.body === payload.new.body
+                ),
+            )
+            return [...filtered, payload.new]
+          })
         },
       )
       .subscribe()
@@ -131,11 +144,14 @@ export function ClientThread(props: ClientThreadProps) {
         setDraft(body)
         return
       }
-      setMessages((prev) =>
-        prev.map((m) =>
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === res.data!.messageId)) {
+          return prev.filter((m) => m.id !== optimisticId)
+        }
+        return prev.map((m) =>
           m.id === optimisticId ? { ...m, id: res.data!.messageId } : m,
-        ),
-      )
+        )
+      })
       router.refresh()
     })
   }
@@ -145,8 +161,11 @@ export function ClientThread(props: ClientThreadProps) {
       | { kind: 'divider'; key: string; label: string }
       | { kind: 'msg'; msg: MessageRow }
     > = []
+    const seen = new Set<string>()
     let lastDayKey = ''
     for (const m of messages) {
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
       const d = new Date(m.created_at)
       const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
       if (dayKey !== lastDayKey) {

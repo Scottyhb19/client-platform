@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { ChevronDown, MessageCircle, Settings } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
 /**
  * Top bar for the staff platform.
@@ -42,10 +43,12 @@ interface TopBarProps {
   userInitials: string
   todayLabel: string
   messageCount?: number
+  organizationId: string
 }
 
-export function TopBar({ userInitials, todayLabel, messageCount = 0 }: TopBarProps) {
+export function TopBar({ userInitials, todayLabel, messageCount = 0, organizationId }: TopBarProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [contactsOpen, setContactsOpen] = useState(false)
   const contactsRef = useRef<HTMLDivElement>(null)
 
@@ -53,6 +56,31 @@ export function TopBar({ userInitials, todayLabel, messageCount = 0 }: TopBarPro
   useEffect(() => {
     setContactsOpen(false)
   }, [pathname])
+
+  // Live-refresh the unread badge. messageCount is server-rendered by the
+  // staff layout, so router.refresh() re-runs the count query. We listen for
+  // any messages event in this org (new client message → count up, read_at
+  // flip → count down). RLS already gates which rows reach this subscriber.
+  useEffect(() => {
+    if (!organizationId) return
+    const supabase = createSupabaseBrowserClient()
+    const channel = supabase
+      .channel(`topbar-msgs:${organizationId}`)
+      .on(
+        'postgres_changes' as never,
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `organization_id=eq.${organizationId}`,
+        } as never,
+        () => router.refresh(),
+      )
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [organizationId, router])
 
   useEffect(() => {
     if (!contactsOpen) return

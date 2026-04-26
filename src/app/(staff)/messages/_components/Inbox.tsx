@@ -188,9 +188,20 @@ export function Inbox(props: InboxProps) {
         } as never,
         (payload: { new: MessageRow }) => {
           setMessages((prev) => {
-            // Skip if we already inserted this optimistically
             if (prev.some((m) => m.id === payload.new.id)) return prev
-            return [...prev, payload.new]
+            // Drop any optimistic row that this realtime event canonicalises.
+            // Without this we'd race the post-send callback and end up with
+            // two rows sharing the same real id (duplicate React key).
+            const filtered = prev.filter(
+              (m) =>
+                !(
+                  m.id.startsWith('optimistic-') &&
+                  m.sender_user_id === payload.new.sender_user_id &&
+                  m.sender_role === payload.new.sender_role &&
+                  m.body === payload.new.body
+                ),
+            )
+            return [...filtered, payload.new]
           })
         },
       )
@@ -267,12 +278,17 @@ export function Inbox(props: InboxProps) {
         setDraft(body)
         return
       }
-      // Replace optimistic with the canonical row id from the server.
-      setMessages((prev) =>
-        prev.map((m) =>
+      // Replace optimistic with the canonical row id — unless the realtime
+      // event has already inserted it, in which case just drop the optimistic
+      // (the realtime row is now the source of truth).
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === res.data!.messageId)) {
+          return prev.filter((m) => m.id !== optimisticId)
+        }
+        return prev.map((m) =>
           m.id === optimisticId ? { ...m, id: res.data!.messageId } : m,
-        ),
-      )
+        )
+      })
       router.refresh()
     })
   }
@@ -419,11 +435,16 @@ function ThreadPane({
       ? 'thread-pane__counter warn'
       : 'thread-pane__counter'
 
-  // Group messages into "today" / "yesterday" / etc. dividers.
+  // Group messages into "today" / "yesterday" / etc. dividers. Dedupes by id
+  // as cheap insurance — if state ever drifts (race conditions, double
+  // realtime delivery), we render once instead of crashing on duplicate keys.
   const grouped = useMemo(() => {
     const out: Array<{ kind: 'divider'; key: string; label: string } | { kind: 'msg'; msg: MessageRow }> = []
+    const seen = new Set<string>()
     let lastDayKey = ''
     for (const m of messages) {
+      if (seen.has(m.id)) continue
+      seen.add(m.id)
       const d = new Date(m.created_at)
       const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
       if (dayKey !== lastDayKey) {

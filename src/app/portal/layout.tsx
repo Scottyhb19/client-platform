@@ -62,6 +62,25 @@ export default async function PortalLayout({
 
   if (!client) redirect('/welcome')
 
+  // Resolve the client's thread (if any) once so BottomNav can subscribe to
+  // realtime with a filter. Supabase realtime postgres_changes silently drops
+  // events when there's no filter on certain configurations — using the same
+  // thread_id filter as the working ClientThread subscription rules that out.
+  const { data: thread } = await supabase
+    .from('message_threads')
+    .select('id')
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  // Unread staff→client messages count for the portal nav badge. RLS scopes
+  // messages to the caller's own thread, so no thread_id filter needed.
+  const { count: unreadFromStaff } = await supabase
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('sender_role', 'staff')
+    .is('read_at', null)
+    .is('deleted_at', null)
+
   return (
     <div
       style={{
@@ -83,7 +102,10 @@ export default async function PortalLayout({
         }}
       >
         <main style={{ flex: 1, overflowY: 'auto' }}>{children}</main>
-        <BottomNav />
+        <BottomNav
+          messageCount={unreadFromStaff ?? 0}
+          threadId={thread?.id ?? null}
+        />
       </div>
       <RegisterSW />
     </div>

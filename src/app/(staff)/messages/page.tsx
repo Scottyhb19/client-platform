@@ -16,10 +16,13 @@ export default async function MessagesPage({ searchParams }: PageProps) {
 
   // Threads list — joined to clients for name/initials/age. RLS already
   // scopes to the user's organization, so no .eq('organization_id', ...) needed.
+  // !inner on clients drops threads whose client is soft-deleted (the clients
+  // SELECT policy filters deleted_at IS NULL). Without this, archiving a
+  // client leaves an orphan thread with a null embed → blank name + "?" avatar.
   const { data: threadsRaw } = await supabase
     .from('message_threads')
     .select(
-      'id, client_id, last_message_at, last_message_preview, last_message_sender_role, clients(first_name, last_name, email, phone, dob)',
+      'id, client_id, last_message_at, last_message_preview, last_message_sender_role, clients!inner(first_name, last_name, email, phone, dob)',
     )
     .is('deleted_at', null)
     .order('last_message_at', { ascending: false, nullsFirst: false })

@@ -146,6 +146,28 @@ body {
   display: grid;
   place-items: center;
 }
+/* Portal bottom-nav unread badge. Parent Link is position: relative; this
+   sits at the top-right of the centred icon. White ring so the red is
+   unmistakable against the dark icon stroke on mobile. */
+.portal-nav-badge {
+  position: absolute;
+  top: 6px;
+  left: calc(50% + 4px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--color-alert);
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px #fff;
+}
 .topright .today-pill {
   font-family: var(--font-display);
   font-weight: 600;
