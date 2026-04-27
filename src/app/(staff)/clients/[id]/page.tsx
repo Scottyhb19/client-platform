@@ -1,22 +1,50 @@
 import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth/require-role'
 import { statusFor } from '../_lib/client-helpers'
 import {
   ClientProfile,
+  type ProfileAppointment,
   type ProfileClient,
   type ProfileCondition,
   type ProfileNote,
+  type ProfileNoteTemplate,
   type ProfileProgramSummary,
+  type ProfileReport,
+  type Tab,
 } from './_components/ClientProfile'
 
 export const dynamic = 'force-dynamic'
 
+const VALID_TABS: Tab[] = [
+  'details',
+  'notes',
+  'program',
+  'reports',
+  'files',
+  'invoices',
+]
+
+function pickTab(value: string | string[] | undefined): Tab {
+  if (typeof value !== 'string') return 'details'
+  return (VALID_TABS as string[]).includes(value) ? (value as Tab) : 'details'
+}
+
 export default async function ClientProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { id } = await params
+  const sp = await searchParams
+  const initialTab = pickTab(sp.tab)
+  const openCreate = sp.new === '1' || sp.new === 'true'
+  const initialAppointmentId =
+    typeof sp.appointment === 'string' ? sp.appointment : null
+
+  const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
   const [
@@ -24,6 +52,10 @@ export default async function ClientProfilePage({
     { data: conditions, error: conditionsErr },
     { data: notes, error: notesErr },
     { data: activeProgram },
+    { data: noteTemplateRows },
+    { data: noteTemplateFieldRows },
+    { data: appointmentRows },
+    { data: reportRows },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -47,12 +79,14 @@ export default async function ClientProfilePage({
       .from('clinical_notes')
       .select(
         `id, note_date, note_type, title, body_rich, subjective,
-         is_pinned, flag_body_region`,
+         is_pinned, flag_body_region, template_id, appointment_id,
+         content_json, version, created_at`,
       )
       .eq('client_id', id)
       .is('deleted_at', null)
       .order('is_pinned', { ascending: false })
-      .order('note_date', { ascending: false }),
+      .order('note_date', { ascending: false })
+      .order('created_at', { ascending: false }),
     supabase
       .from('programs')
       .select(
@@ -63,6 +97,36 @@ export default async function ClientProfilePage({
       .eq('status', 'active')
       .is('deleted_at', null)
       .maybeSingle(),
+    supabase
+      .from('note_templates')
+      .select('id, name, sort_order')
+      .eq('organization_id', organizationId)
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('note_template_fields')
+      .select('id, template_id, label, field_type, default_value, sort_order')
+      .order('sort_order'),
+    // Appointments around "now": last 30 past + next 30 future, excluding
+    // cancelled. Sorted ASC so the picker can split into upcoming / past
+    // by walking the array.
+    supabase
+      .from('appointments')
+      .select('id, start_at, end_at, appointment_type, status')
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .order('start_at', { ascending: true })
+      .limit(120),
+    supabase
+      .from('reports')
+      .select(
+        'id, title, report_type, test_date, is_published, storage_bucket, storage_path',
+      )
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .order('test_date', { ascending: false })
+      .limit(60),
   ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
@@ -120,14 +184,81 @@ export default async function ClientProfilePage({
     }
   }
 
+  // Group fields under their parent template, sorted as queried.
+  const noteTemplates: ProfileNoteTemplate[] = (noteTemplateRows ?? []).map(
+    (t) => ({
+      id: t.id,
+      name: t.name,
+      sort_order: t.sort_order,
+      fields: (noteTemplateFieldRows ?? [])
+        .filter((f) => f.template_id === t.id)
+        .map((f) => ({
+          id: f.id,
+          label: f.label,
+          field_type: f.field_type,
+          default_value: f.default_value,
+          sort_order: f.sort_order,
+        })),
+    }),
+  )
+
+  const profileNotes: ProfileNote[] = (notes ?? []).map((n) => ({
+    id: n.id,
+    note_date: n.note_date,
+    note_type: n.note_type,
+    title: n.title,
+    body_rich: n.body_rich,
+    subjective: n.subjective,
+    is_pinned: n.is_pinned,
+    flag_body_region: n.flag_body_region,
+    template_id: n.template_id,
+    appointment_id: n.appointment_id,
+    content_json: n.content_json as ProfileNote['content_json'],
+    version: n.version,
+    created_at: n.created_at,
+  }))
+
+  // Last template the EP used for this client → defaults the create-form
+  // picker. notes are already ordered by note_date DESC, created_at DESC,
+  // so the first entry with a template_id wins.
+  const lastTemplateId =
+    profileNotes.find((n) => n.template_id !== null)?.template_id ?? null
+
+  const appointments: ProfileAppointment[] = (appointmentRows ?? []).map(
+    (a) => ({
+      id: a.id,
+      start_at: a.start_at,
+      end_at: a.end_at,
+      appointment_type: a.appointment_type,
+      status: a.status,
+    }),
+  )
+
+  const reports: ProfileReport[] = (reportRows ?? []).map((r) => ({
+    id: r.id,
+    title: r.title,
+    report_type: r.report_type,
+    test_date: r.test_date,
+    is_published: r.is_published,
+    storage_bucket: r.storage_bucket,
+    storage_path: r.storage_path,
+  }))
+
   return (
     <ClientProfile
       client={profileClient}
       conditions={(conditions ?? []) as ProfileCondition[]}
-      notes={(notes ?? []) as ProfileNote[]}
+      notes={profileNotes}
       program={programSummary}
       statusLabel={statusLabel}
       statusKind={statusKind}
+      noteTemplates={noteTemplates}
+      appointments={appointments}
+      reports={reports}
+      lastTemplateId={lastTemplateId}
+      initialTab={initialTab}
+      initialOpenCreate={openCreate}
+      initialAppointmentId={initialAppointmentId}
     />
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { getOrCreateThreadAction } from '../../../messages/actions'
 import { archiveClientAction } from '../actions'
@@ -14,16 +14,17 @@ import {
   Mail,
   MessageCircle,
   MoreHorizontal,
-  Paperclip,
-  Pin,
   Plus,
   Search,
   Upload,
 } from 'lucide-react'
 import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
+import { NotesTab } from './NotesTab'
 
 type NoteType = Database['public']['Enums']['note_type']
+type NoteFieldType = Database['public']['Enums']['note_template_field_type']
+type AppointmentStatus = Database['public']['Enums']['appointment_status']
 
 export type ProfileClient = {
   id: string
@@ -49,6 +50,16 @@ export type ProfileCondition = {
   diagnosis_date: string | null
 }
 
+export type ProfileNoteContentField = {
+  label: string
+  type: NoteFieldType
+  value: string
+}
+
+export type ProfileNoteContentJson = {
+  fields: ProfileNoteContentField[]
+}
+
 export type ProfileNote = {
   id: string
   note_date: string
@@ -58,6 +69,44 @@ export type ProfileNote = {
   subjective: string | null
   is_pinned: boolean
   flag_body_region: string | null
+  template_id: string | null
+  appointment_id: string | null
+  content_json: ProfileNoteContentJson | null
+  version: number
+  created_at: string
+}
+
+export type ProfileNoteTemplateField = {
+  id: string
+  label: string
+  field_type: NoteFieldType
+  default_value: string | null
+  sort_order: number
+}
+
+export type ProfileNoteTemplate = {
+  id: string
+  name: string
+  sort_order: number
+  fields: ProfileNoteTemplateField[]
+}
+
+export type ProfileAppointment = {
+  id: string
+  start_at: string
+  end_at: string
+  appointment_type: string
+  status: AppointmentStatus
+}
+
+export type ProfileReport = {
+  id: string
+  title: string
+  report_type: string
+  test_date: string
+  is_published: boolean
+  storage_bucket: string | null
+  storage_path: string | null
 }
 
 export type ProfileProgramSummary = {
@@ -69,7 +118,13 @@ export type ProfileProgramSummary = {
   days_per_week: number
 }
 
-type Tab = 'details' | 'notes' | 'program' | 'reports' | 'files' | 'invoices'
+export type Tab =
+  | 'details'
+  | 'notes'
+  | 'program'
+  | 'reports'
+  | 'files'
+  | 'invoices'
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'details', label: 'Client details' },
@@ -87,6 +142,51 @@ interface ClientProfileProps {
   program: ProfileProgramSummary | null
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
+  noteTemplates: ProfileNoteTemplate[]
+  appointments: ProfileAppointment[]
+  reports: ProfileReport[]
+  lastTemplateId: string | null
+  initialTab: Tab
+  initialOpenCreate: boolean
+  initialAppointmentId: string | null
+}
+
+const VALID_TABS: Tab[] = [
+  'details',
+  'notes',
+  'program',
+  'reports',
+  'files',
+  'invoices',
+]
+
+/**
+ * URL-driven tab state. Reading the `tab` search param keeps the active
+ * tab consistent across deep-links (e.g. the schedule popover's "Add note"
+ * lands on `?tab=notes&new=1`). Updating `setTab` rewrites the URL via a
+ * shallow replace so the back button still works.
+ */
+function useTab(initial: Tab): [Tab, (next: Tab) => void] {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlTab = searchParams.get('tab')
+  const tab: Tab =
+    urlTab && (VALID_TABS as string[]).includes(urlTab)
+      ? (urlTab as Tab)
+      : initial
+
+  function setTab(next: Tab) {
+    const params = new URLSearchParams(searchParams.toString())
+    if (next === 'details') {
+      params.delete('tab')
+    } else {
+      params.set('tab', next)
+    }
+    const qs = params.toString()
+    router.replace(qs ? `?${qs}` : '?')
+  }
+
+  return [tab, setTab]
 }
 
 export function ClientProfile({
@@ -96,8 +196,15 @@ export function ClientProfile({
   program,
   statusLabel,
   statusKind,
+  noteTemplates,
+  appointments,
+  reports,
+  lastTemplateId,
+  initialTab,
+  initialOpenCreate,
+  initialAppointmentId,
 }: ClientProfileProps) {
-  const [tab, setTab] = useState<Tab>('details')
+  const [tab, setTab] = useTab(initialTab)
 
   return (
     <div style={{ background: 'var(--color-surface)', minHeight: '100%' }}>
@@ -114,7 +221,18 @@ export function ClientProfile({
         {tab === 'details' && (
           <DetailsTab client={client} conditions={conditions} />
         )}
-        {tab === 'notes' && <NotesTab notes={notes} />}
+        {tab === 'notes' && (
+          <NotesTab
+            clientId={client.id}
+            notes={notes}
+            templates={noteTemplates}
+            appointments={appointments}
+            reports={reports}
+            lastTemplateId={lastTemplateId}
+            initialOpenCreate={initialOpenCreate}
+            initialAppointmentId={initialAppointmentId}
+          />
+        )}
         {tab === 'program' && (
           <ProgramTab clientId={client.id} program={program} />
         )}
@@ -184,9 +302,6 @@ function ClientHeader({
       style={{
         background: '#fff',
         borderBottom: '1px solid var(--color-border-subtle)',
-        position: 'sticky',
-        top: 52,
-        zIndex: 30,
       }}
     >
       <div
@@ -675,294 +790,8 @@ function DetailRow({
 }
 
 /* =========================================================================
- * TAB 2 — SESSION NOTES
+ * TAB 2 — SESSION NOTES (rendered by ./NotesTab.tsx — see import above)
  * ========================================================================= */
-
-function NotesTab({ notes }: { notes: ProfileNote[] }) {
-  const counts = {
-    all: notes.length,
-    soap: notes.filter(
-      (n) => n.note_type === 'progress_note' || n.note_type === 'initial_assessment',
-    ).length,
-    flagged: notes.filter(
-      (n) =>
-        n.is_pinned ||
-        n.note_type === 'injury_flag' ||
-        n.note_type === 'contraindication',
-    ).length,
-    discharge: notes.filter((n) => n.note_type === 'discharge').length,
-    general: notes.filter((n) => n.note_type === 'general').length,
-  }
-
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 320px',
-        gap: 22,
-        alignItems: 'start',
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <SoapComposer />
-
-        {notes.length === 0 ? (
-          <div
-            className="card"
-            style={{
-              padding: '32px 24px',
-              textAlign: 'center',
-              color: 'var(--color-text-light)',
-              fontSize: '.88rem',
-            }}
-          >
-            No notes yet — SOAP entries, re-assessments, and flags will land here.
-          </div>
-        ) : (
-          notes.map((n) => <NoteCard key={n.id} note={n} />)
-        )}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-          position: 'sticky',
-          top: 230,
-        }}
-      >
-        <Panel title="Filter">
-          <div
-            style={{
-              padding: '12px 18px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
-            }}
-          >
-            <FilterRow label="All notes" count={counts.all} active />
-            <FilterRow label="SOAP" count={counts.soap} />
-            <FilterRow label="Flagged" count={counts.flagged} />
-            <FilterRow label="Discharge" count={counts.discharge} />
-            <FilterRow label="General" count={counts.general} />
-          </div>
-        </Panel>
-      </div>
-    </div>
-  )
-}
-
-function FilterRow({
-  label,
-  count,
-  active,
-}: {
-  label: string
-  count: number
-  active?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      style={{
-        background: active ? 'var(--color-surface)' : 'transparent',
-        border: 'none',
-        padding: '6px 10px',
-        borderRadius: 6,
-        display: 'flex',
-        justifyContent: 'space-between',
-        fontSize: '.84rem',
-        color: 'var(--color-text)',
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-      }}
-    >
-      <span>{label}</span>
-      <span style={{ color: 'var(--color-muted)' }}>{count}</span>
-    </button>
-  )
-}
-
-function SoapComposer() {
-  return (
-    <Panel
-      title="Add clinical note"
-      action={
-        <div style={{ display: 'flex', gap: 6 }}>
-          {['SOAP', 'Free text', 'Re-assessment', 'Phone call'].map((t, i) => (
-            <span
-              key={t}
-              className={`chip ${i === 0 ? 'on' : ''}`}
-              style={{
-                fontSize: '.7rem',
-                padding: '4px 10px',
-                cursor: 'not-allowed',
-                opacity: 0.85,
-              }}
-            >
-              {t}
-            </span>
-          ))}
-        </div>
-      }
-    >
-      <div style={{ padding: 18, display: 'grid', gap: 12 }}>
-        {(['Subjective', 'Objective', 'Assessment', 'Plan'] as const).map((s) => (
-          <div key={s}>
-            <label
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontWeight: 700,
-                fontSize: '.7rem',
-                letterSpacing: '.06em',
-                textTransform: 'uppercase',
-                color: 'var(--color-muted)',
-                display: 'block',
-                marginBottom: 4,
-              }}
-            >
-              {s}
-            </label>
-            <textarea
-              disabled
-              placeholder={`${s.toLowerCase()}…`}
-              style={{
-                width: '100%',
-                minHeight: 56,
-                background: 'var(--color-surface)',
-                border: '1px solid var(--color-border-subtle)',
-                borderRadius: 7,
-                padding: '9px 12px',
-                fontSize: '.85rem',
-                fontFamily: 'inherit',
-                lineHeight: 1.5,
-                resize: 'vertical',
-                color: 'var(--color-text)',
-                opacity: 0.7,
-              }}
-            />
-          </div>
-        ))}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button type="button" className="btn ghost" disabled>
-            <Paperclip size={14} aria-hidden />
-            Attach
-          </button>
-          <div style={{ flex: 1 }} />
-          <button type="button" className="btn outline" disabled>
-            Save draft
-          </button>
-          <button type="button" className="btn primary" disabled>
-            Save note
-          </button>
-        </div>
-      </div>
-    </Panel>
-  )
-}
-
-function NoteCard({ note }: { note: ProfileNote }) {
-  const flagged =
-    note.is_pinned ||
-    note.note_type === 'injury_flag' ||
-    note.note_type === 'contraindication'
-  const body = note.body_rich ?? note.subjective ?? ''
-
-  return (
-    <div
-      className="card"
-      style={{
-        padding: '16px 20px',
-        borderLeft: flagged ? '3px solid var(--color-alert)' : undefined,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          gap: 12,
-          marginBottom: 8,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: '.88rem',
-              color: 'var(--color-charcoal)',
-            }}
-          >
-            {formatDate(note.note_date)}
-          </span>
-          {note.is_pinned && (
-            <span
-              style={{
-                fontSize: '.62rem',
-                fontWeight: 700,
-                color: 'var(--color-alert)',
-                textTransform: 'uppercase',
-                letterSpacing: '.04em',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              <Pin size={10} aria-hidden /> Pinned
-            </span>
-          )}
-          <span className={`tag ${flagged ? 'flag' : 'muted'}`}>
-            {noteTypeLabel(note.note_type)}
-          </span>
-          {note.flag_body_region && (
-            <span style={{ fontSize: '.74rem', color: 'var(--color-muted)' }}>
-              {note.flag_body_region}
-            </span>
-          )}
-          {note.title && (
-            <span style={{ fontSize: '.86rem', fontWeight: 600 }}>
-              {note.title}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            type="button"
-            className="btn ghost"
-            disabled
-            aria-label="Edit note"
-            style={{ padding: 6 }}
-          >
-            <Edit3 size={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            disabled
-            aria-label="More actions"
-            style={{ padding: 6 }}
-          >
-            <MoreHorizontal size={14} aria-hidden />
-          </button>
-        </div>
-      </div>
-      <div
-        style={{
-          fontSize: '.86rem',
-          color: 'var(--color-text)',
-          whiteSpace: 'pre-wrap',
-          lineHeight: 1.6,
-        }}
-      >
-        {body.trim() || (
-          <span style={{ color: 'var(--color-muted)' }}>(empty note)</span>
-        )}
-      </div>
-    </div>
-  )
-}
 
 /* =========================================================================
  * TAB 3 — PROGRAMS
@@ -1363,17 +1192,6 @@ function EmptyBlock({
 /* =========================================================================
  * Helpers
  * ========================================================================= */
-
-function noteTypeLabel(kind: NoteType): string {
-  return {
-    initial_assessment: 'Initial assessment',
-    progress_note: 'Progress note',
-    injury_flag: 'Injury flag',
-    contraindication: 'Contraindication',
-    discharge: 'Discharge',
-    general: 'Note',
-  }[kind]
-}
 
 function formatDate(dateIso: string): string {
   try {

@@ -14,16 +14,18 @@
   --color-charcoal: #231f20;
   --color-slate: #35363a;
 
-  /* Text */
+  /* Text — darkened from the original #78746f / #a09890 for legibility on
+     warm parchment without losing the faded, non-harsh feel. */
   --color-text: #1c1917;
-  --color-text-light: #78746f;
-  --color-muted: #a09890;
+  --color-text-light: #5e5852;
+  --color-muted: #7a7166;
 
   /* Surfaces */
   --color-surface: #f7f4f0;
   --color-surface-2: #ede8e2;
   --color-card: #ffffff;
-  --color-border-subtle: #e2ddd7;
+  --color-border-subtle: #d6cfc6;
+  --color-border: #cfc7bd;
 
   /* Semantic */
   --color-warning: #e8a317;
@@ -311,12 +313,15 @@ body {
   background: rgba(30, 26, 24, 0.05);
 }
 
-/* --- Card --- */
+/* --- Card ---
+   Slightly firmer border + a warm-tinted shadow so cards lift off the
+   parchment surface instead of dissolving into it. */
 .card {
   background: var(--color-card);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(35, 31, 32, 0.04),
+    0 4px 14px rgba(35, 31, 32, 0.05);
 }
 
 /* --- Tags / chips / badges --- */

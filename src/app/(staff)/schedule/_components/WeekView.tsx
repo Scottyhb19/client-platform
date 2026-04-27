@@ -1704,7 +1704,7 @@ function AppointmentPopover({
           Program
         </Link>
         <Link
-          href={`/clients/${c.id}?tab=profile`}
+          href={`/clients/${c.id}?tab=notes&new=1&appointment=${appt.id}`}
           className="btn outline"
           style={{ justifyContent: 'center', padding: '8px 10px' }}
         >

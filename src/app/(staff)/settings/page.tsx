@@ -15,6 +15,11 @@ import {
 } from './_components/LookupManager'
 import { SessionTypesEditor } from './session-types/_components/SessionTypesEditor'
 import type { SessionTypeRow } from './session-types/actions'
+import { NoteTemplatesEditor } from './note-templates/_components/NoteTemplatesEditor'
+import {
+  seedDefaultNoteTemplatesIfEmpty,
+  type NoteTemplateRow,
+} from './note-templates/actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,11 +30,17 @@ export default async function SettingsPage() {
   ])
   const supabase = await createSupabaseServerClient()
 
+  // Idempotent: only seeds the default SOAP+ template the first time the
+  // org has zero templates. Subsequent visits are a single SELECT.
+  await seedDefaultNoteTemplatesIfEmpty()
+
   const [
     { data: org },
     { data: tags },
     { data: categories },
     { data: sessionTypes },
+    { data: noteTemplateRows },
+    { data: noteTemplateFieldRows },
   ] = await Promise.all([
     supabase
       .from('organizations')
@@ -56,6 +67,16 @@ export default async function SettingsPage() {
       .from('session_types')
       .select('id, name, color, sort_order')
       .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('note_templates')
+      .select('id, name, sort_order')
+      .eq('organization_id', organizationId)
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('note_template_fields')
+      .select('id, template_id, label, field_type, default_value, sort_order')
       .order('sort_order'),
   ])
 
@@ -89,6 +110,24 @@ export default async function SettingsPage() {
     color: s.color,
     sort_order: s.sort_order,
   }))
+
+  // Group fields under their parent template, preserving sort_order.
+  const noteTemplates: NoteTemplateRow[] = (noteTemplateRows ?? []).map(
+    (t) => ({
+      id: t.id,
+      name: t.name,
+      sort_order: t.sort_order,
+      fields: (noteTemplateFieldRows ?? [])
+        .filter((f) => f.template_id === t.id)
+        .map((f) => ({
+          id: f.id,
+          label: f.label,
+          field_type: f.field_type,
+          default_value: f.default_value,
+          sort_order: f.sort_order,
+        })),
+    }),
+  )
 
   return (
     <div className="page" style={{ maxWidth: 820 }}>
@@ -135,6 +174,13 @@ export default async function SettingsPage() {
         desc="Appointment categories shown in the booking form. Colours tint the blocks on the schedule grid."
       >
         <SessionTypesEditor initialTypes={sessionTypeRows} />
+      </Section>
+
+      <Section
+        title="Note templates"
+        desc="Custom shapes for clinical notes. Each template is a list of labelled fields you fill in when writing a note. Edit, reorder, or build new ones — historical notes keep the labels they were saved with."
+      >
+        <NoteTemplatesEditor initialTemplates={noteTemplates} />
       </Section>
 
       <Section title="Account" desc="Signed in as you.">

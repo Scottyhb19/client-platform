@@ -619,10 +619,12 @@ export type Database = {
       }
       clinical_notes: {
         Row: {
+          appointment_id: string | null
           assessment: string | null
           author_user_id: string
           body_rich: string | null
           client_id: string
+          content_json: Json | null
           created_at: string
           deleted_at: string | null
           flag_body_region: string | null
@@ -637,15 +639,18 @@ export type Database = {
           organization_id: string
           plan: string | null
           subjective: string | null
+          template_id: string | null
           title: string | null
           updated_at: string
           version: number
         }
         Insert: {
+          appointment_id?: string | null
           assessment?: string | null
           author_user_id: string
           body_rich?: string | null
           client_id: string
+          content_json?: Json | null
           created_at?: string
           deleted_at?: string | null
           flag_body_region?: string | null
@@ -660,15 +665,18 @@ export type Database = {
           organization_id: string
           plan?: string | null
           subjective?: string | null
+          template_id?: string | null
           title?: string | null
           updated_at?: string
           version?: number
         }
         Update: {
+          appointment_id?: string | null
           assessment?: string | null
           author_user_id?: string
           body_rich?: string | null
           client_id?: string
+          content_json?: Json | null
           created_at?: string
           deleted_at?: string | null
           flag_body_region?: string | null
@@ -683,11 +691,19 @@ export type Database = {
           organization_id?: string
           plan?: string | null
           subjective?: string | null
+          template_id?: string | null
           title?: string | null
           updated_at?: string
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "clinical_notes_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "clinical_notes_author_user_id_fkey"
             columns: ["author_user_id"]
@@ -707,6 +723,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_notes_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "note_templates"
             referencedColumns: ["id"]
           },
         ]
@@ -1402,6 +1425,85 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "movement_patterns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      note_template_fields: {
+        Row: {
+          created_at: string
+          default_value: string | null
+          field_type: Database["public"]["Enums"]["note_template_field_type"]
+          id: string
+          label: string
+          sort_order: number
+          template_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_value?: string | null
+          field_type?: Database["public"]["Enums"]["note_template_field_type"]
+          id?: string
+          label: string
+          sort_order?: number
+          template_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_value?: string | null
+          field_type?: Database["public"]["Enums"]["note_template_field_type"]
+          id?: string
+          label?: string
+          sort_order?: number
+          template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_template_fields_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "note_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      note_templates: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          organization_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_templates_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
@@ -2601,6 +2703,7 @@ export type Database = {
         | "failed"
         | "bounced"
       communication_type: "email" | "sms"
+      note_template_field_type: "short_text" | "long_text" | "number"
       note_type:
         | "initial_assessment"
         | "progress_note"
@@ -2772,6 +2875,7 @@ export const Constants = {
         "bounced",
       ],
       communication_type: ["email", "sms"],
+      note_template_field_type: ["short_text", "long_text", "number"],
       note_type: [
         "initial_assessment",
         "progress_note",
