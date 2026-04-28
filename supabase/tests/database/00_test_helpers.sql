@@ -16,11 +16,12 @@
 -- created mid-test never leak between files.
 -- ============================================================================
 
--- Install pgTAP only if absent. On hosted Supabase, the extension is
--- preinstalled in the dashboard's allowed list and CREATE EXTENSION is
--- a no-op when already present. In local Docker the first test run
--- creates it.
-CREATE EXTENSION IF NOT EXISTS pgtap;
+-- Install pgTAP only if absent. Supabase managed installs extensions
+-- into the `extensions` schema, not public — explicit WITH SCHEMA so
+-- a fresh project gets it in the right place. Test files SET
+-- search_path TO public, extensions, pg_temp so the plan(), is() etc.
+-- functions resolve unqualified.
+CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
 
 -- ----------------------------------------------------------------------------

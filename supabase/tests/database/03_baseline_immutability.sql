@@ -1,3 +1,7 @@
+-- pgTAP installs into the `extensions` schema on Supabase managed; bring
+-- it into search_path so plan(), is(), finish() etc. resolve unqualified.
+SET search_path TO public, extensions, pg_temp;
+
 -- ============================================================================
 -- 03_baseline_immutability
 -- ============================================================================
