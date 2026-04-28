@@ -46,35 +46,26 @@ BEGIN
     client_row_id, org_id, 'Bob', 'Baseline', 'bob@test.local'
   );
 
-  -- Spoof the staff JWT so any later RLS-evaluated query (assertions
-  -- via the view, etc.) sees a valid staff session.
+  -- Spoof the staff JWT and switch role to authenticated, so the
+  -- test_sessions / test_results INSERT policies (which target the
+  -- authenticated role) actually apply and pass with the staff JWT.
+  -- This is the same pattern test 04 uses successfully — Supabase's
+  -- postgres role doesn't reliably bypass RLS, so we go through the
+  -- policies legitimately.
   PERFORM public._test_set_jwt(staff_uid, org_id, 'staff');
+  EXECUTE 'SET LOCAL ROLE authenticated';
 
   -- Three sessions, three months apart, same client + same test (CMJ
   -- bilateral jump_height — auto visibility, decimal value).
-  -- Use the SECURITY DEFINER helpers to dodge SQL-Editor RLS quirks.
-  PERFORM public._test_insert_test_session(
-    session_a, org_id, client_row_id, staff_uid,
-    '2026-01-15 09:00:00+11'::timestamptz
-  );
-  PERFORM public._test_insert_test_session(
-    session_b, org_id, client_row_id, staff_uid,
-    '2026-02-15 09:00:00+11'::timestamptz
-  );
-  PERFORM public._test_insert_test_session(
-    session_c, org_id, client_row_id, staff_uid,
-    '2026-03-15 09:00:00+11'::timestamptz
-  );
+  INSERT INTO test_sessions (id, organization_id, client_id, conducted_by, conducted_at) VALUES
+    (session_a, org_id, client_row_id, staff_uid, now() - interval '90 days'),
+    (session_b, org_id, client_row_id, staff_uid, now() - interval '60 days'),
+    (session_c, org_id, client_row_id, staff_uid, now() - interval '30 days');
 
-  PERFORM public._test_insert_test_result(
-    org_id, session_a, 'fp_cmj_bilateral', 'jump_height', NULL, 32.4, 'cm'
-  );
-  PERFORM public._test_insert_test_result(
-    org_id, session_b, 'fp_cmj_bilateral', 'jump_height', NULL, 34.1, 'cm'
-  );
-  PERFORM public._test_insert_test_result(
-    org_id, session_c, 'fp_cmj_bilateral', 'jump_height', NULL, 36.8, 'cm'
-  );
+  INSERT INTO test_results (organization_id, test_session_id, test_id, metric_id, side, value, unit) VALUES
+    (org_id, session_a, 'fp_cmj_bilateral', 'jump_height', NULL, 32.4, 'cm'),
+    (org_id, session_b, 'fp_cmj_bilateral', 'jump_height', NULL, 34.1, 'cm'),
+    (org_id, session_c, 'fp_cmj_bilateral', 'jump_height', NULL, 36.8, 'cm');
 
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
     org_id    AS org_id,
