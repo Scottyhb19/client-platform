@@ -135,6 +135,10 @@ BEGIN
     session_a     AS session_a,
     session_b     AS session_b,
     session_c     AS session_c;
+  -- Grant access so any later SET LOCAL ROLE authenticated assertion can
+  -- read it. (Defensive — this file's assertions all run as the test
+  -- runner, but the helpers and pattern are shared across files.)
+  GRANT SELECT ON _ids TO authenticated;
 END $$;
 
 

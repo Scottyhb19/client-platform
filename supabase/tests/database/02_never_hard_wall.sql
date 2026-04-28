@@ -79,13 +79,16 @@ BEGIN
   );
 
   -- Stash IDs in a session-local table so the assertions below can
-  -- reach them.
+  -- reach them. GRANT SELECT to authenticated because later assertions
+  -- SET LOCAL ROLE authenticated to test RLS — without the grant the
+  -- temp table (owned by postgres) is invisible to authenticated.
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
     org_id        AS org_id,
     staff_uid     AS staff_uid,
     client_uid    AS client_uid,
     client_row_id AS client_row_id,
     session_id    AS session_id;
+  GRANT SELECT ON _ids TO authenticated;
 END $$;
 
 

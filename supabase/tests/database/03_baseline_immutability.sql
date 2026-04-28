@@ -64,6 +64,8 @@ BEGIN
     session_a AS session_a,
     session_b AS session_b,
     session_c AS session_c;
+  -- Grant access so SET LOCAL ROLE authenticated can read it below.
+  GRANT SELECT ON _ids TO authenticated;
 END $$;
 
 
