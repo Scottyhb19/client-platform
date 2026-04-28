@@ -31,6 +31,12 @@ export type CreateTestSessionInput = {
   source?: 'manual' | 'vald' | 'imported'
   appointmentId?: string | null
   notes?: string | null
+  /**
+   * If the modal applied a saved battery as the metric set, store its id
+   * on the session so a future modal-open can show "Last used: <name>"
+   * for this client. Pure UX hint — has no effect on visibility or RLS.
+   */
+  appliedBatteryId?: string | null
   results: TestResultInput[]
   /**
    * If true, results that triggered a soft-bound warning have already
@@ -158,9 +164,10 @@ export async function createTestSessionAction(
       p_source: input.source ?? 'manual',
       // supabase-js's type generator treats all plpgsql args as
       // non-nullable; the SQL function itself accepts NULL fine.
-      // The cast keeps the call intent explicit at the boundary.
+      // The casts keep the call intent explicit at the boundary.
       p_appointment_id: (input.appointmentId ?? null) as unknown as string,
       p_notes: (input.notes ?? null) as unknown as string,
+      p_applied_battery_id: (input.appliedBatteryId ?? null) as unknown as string,
       p_results: rpcPayload,
     },
   )
