@@ -40,6 +40,12 @@ import type {
   ProfileNoteTemplate,
   ProfileReport,
 } from './ClientProfile'
+import { TestCaptureModal } from './TestCaptureModal'
+import type {
+  BatteryRow,
+  CatalogCategory,
+  LastUsedBatteryHint,
+} from '@/lib/testing'
 
 type SidebarTab = 'previous' | 'reports' | 'files'
 type LeftMode =
@@ -62,6 +68,12 @@ interface NotesTabProps {
   lastTemplateId: string | null
   initialOpenCreate: boolean
   initialAppointmentId: string | null
+  // Testing-module props for the in-note "capture test session" panel.
+  // Threaded through to the NoteForm so a clinician can run a battery
+  // alongside their narrative without leaving the note editor.
+  testCatalog: CatalogCategory[]
+  testBatteries: BatteryRow[]
+  lastUsedBattery: LastUsedBatteryHint | null
 }
 
 /**
@@ -88,6 +100,9 @@ export function NotesTab({
   lastTemplateId,
   initialOpenCreate,
   initialAppointmentId,
+  testCatalog,
+  testBatteries,
+  lastUsedBattery,
 }: NotesTabProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -251,6 +266,9 @@ export function NotesTab({
             onCancel={handleCancel}
             onSaved={handleSavedOk}
             onEditExistingNote={handleEditExistingNote}
+            testCatalog={testCatalog}
+            testBatteries={testBatteries}
+            lastUsedBattery={lastUsedBattery}
           />
         )}
         {leftMode.kind === 'edit' && (
@@ -270,6 +288,9 @@ export function NotesTab({
             onCancel={handleCancel}
             onSaved={handleSavedOk}
             onEditExistingNote={handleEditExistingNote}
+            testCatalog={testCatalog}
+            testBatteries={testBatteries}
+            lastUsedBattery={lastUsedBattery}
           />
         )}
       </div>
@@ -333,6 +354,9 @@ const NoteForm = forwardRef<
     onCancel: () => void
     onSaved: () => void
     onEditExistingNote: (noteId: string) => void
+    testCatalog: CatalogCategory[]
+    testBatteries: BatteryRow[]
+    lastUsedBattery: LastUsedBatteryHint | null
   }
 >(function NoteForm(
   {
@@ -350,6 +374,9 @@ const NoteForm = forwardRef<
     onCancel,
     onSaved,
     onEditExistingNote,
+    testCatalog,
+    testBatteries,
+    lastUsedBattery,
   },
   ref,
 ) {
@@ -445,6 +472,16 @@ const NoteForm = forwardRef<
     seededTemplateRef.current = activeTemplate.id
   }, [activeTemplate, mode])
 
+  // ---- In-note test capture ---------------------------------------------
+  // Per brief §1.2 entry point #1, a clinical note can link to a test
+  // session captured alongside the narrative. Exposed in create mode
+  // only; edit mode preserves whatever link the note already has.
+  const [testSessionId, setTestSessionId] = useState<string | null>(null)
+  const [testCaptureSummary, setTestCaptureSummary] = useState<string | null>(
+    null,
+  )
+  const [captureOpen, setCaptureOpen] = useState(false)
+
   // ---- Save / submit -----------------------------------------------------
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
@@ -474,6 +511,7 @@ const NoteForm = forwardRef<
         templateId: activeTemplate.id,
         appointmentId,
         fields,
+        testSessionId,
       })
       if (res.error) {
         setError(res.error)
@@ -720,6 +758,85 @@ const NoteForm = forwardRef<
         </div>
       )}
 
+      {mode === 'create' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '12px 20px',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '.7rem',
+              letterSpacing: '.04em',
+              textTransform: 'uppercase',
+              fontWeight: 500,
+              color: 'var(--color-muted)',
+            }}
+          >
+            Test session
+          </span>
+          {testSessionId === null ? (
+            <button
+              type="button"
+              className="btn outline"
+              onClick={() => setCaptureOpen(true)}
+              disabled={pending}
+              style={{ fontSize: '.78rem', padding: '6px 12px' }}
+            >
+              <Plus size={13} aria-hidden /> Capture test session
+            </button>
+          ) : (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                fontSize: '.82rem',
+                color: 'var(--color-text)',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  display: 'inline-block',
+                  width: 6,
+                  height: 6,
+                  borderRadius: 999,
+                  background: 'var(--color-accent, #2e7d32)',
+                }}
+              />
+              Captured · {testCaptureSummary ?? 'linked'}
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setCaptureOpen(true)}
+                disabled={pending}
+                style={{ fontSize: '.74rem', padding: '4px 8px' }}
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => {
+                  setTestSessionId(null)
+                  setTestCaptureSummary(null)
+                }}
+                disabled={pending}
+                style={{ fontSize: '.74rem', padding: '4px 8px' }}
+              >
+                Clear
+              </button>
+            </span>
+          )}
+        </div>
+      )}
+
       <div style={{ padding: '14px 20px 8px' }}>
         {!activeTemplate && (
           <div
@@ -803,6 +920,21 @@ const NoteForm = forwardRef<
           {pending ? 'Saving…' : mode === 'create' ? 'Save note' : 'Save changes'}
         </button>
       </div>
+
+      {mode === 'create' && (
+        <TestCaptureModal
+          open={captureOpen}
+          onClose={() => setCaptureOpen(false)}
+          clientId={clientId}
+          catalog={testCatalog}
+          batteries={testBatteries}
+          lastUsedBattery={lastUsedBattery}
+          onCaptured={(sessionId, summary) => {
+            setTestSessionId(sessionId)
+            setTestCaptureSummary(summary)
+          }}
+        />
+      )}
     </div>
   )
 })

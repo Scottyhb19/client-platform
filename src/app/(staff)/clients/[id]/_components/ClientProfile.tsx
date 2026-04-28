@@ -246,6 +246,9 @@ export function ClientProfile({
             lastTemplateId={lastTemplateId}
             initialOpenCreate={initialOpenCreate}
             initialAppointmentId={initialAppointmentId}
+            testCatalog={testCatalog}
+            testBatteries={testBatteries}
+            lastUsedBattery={lastUsedBattery}
           />
         )}
         {tab === 'program' && (

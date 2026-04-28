@@ -21,6 +21,12 @@ export type CreateClinicalNoteInput = {
   templateId: string | null
   appointmentId: string | null
   fields: NoteFieldValue[]
+  /**
+   * Optional link to a test_session that was captured alongside this note.
+   * Single FK per /docs/testing-module-schema.md §14 Q2 sign-off; the
+   * note narrative survives if the session is later removed.
+   */
+  testSessionId?: string | null
 }
 
 export type UpdateClinicalNoteInput = {
@@ -28,6 +34,7 @@ export type UpdateClinicalNoteInput = {
   templateId: string | null
   appointmentId: string | null
   fields: NoteFieldValue[]
+  testSessionId?: string | null
   /** Last-read version, threaded through for OCC. */
   version: number
 }
@@ -139,6 +146,7 @@ export async function createClinicalNoteAction(
       template_id: input.templateId,
       appointment_id: input.appointmentId,
       content_json: content,
+      test_session_id: input.testSessionId ?? null,
     })
     .select('id')
     .single()
@@ -303,21 +311,28 @@ export async function updateClinicalNoteAction(
 
   // OCC: refuse the write if version moved underneath us. The trigger
   // bumps version on every UPDATE, so the next read will see the new one.
+  // testSessionId is included only when the caller provided it explicitly
+  // — `undefined` keeps the existing value, an explicit `null` clears it.
+  const baseUpdate = {
+    template_id: input.templateId,
+    appointment_id: input.appointmentId,
+    note_date: noteDate,
+    content_json: content,
+    // Clear legacy SOAP columns so we don't render stale duplicate
+    // content alongside the new field set.
+    subjective: null,
+    objective: null,
+    assessment: null,
+    plan: null,
+    body_rich: null,
+  } as const
+  const update =
+    input.testSessionId === undefined
+      ? baseUpdate
+      : { ...baseUpdate, test_session_id: input.testSessionId }
   const { data, error } = await supabase
     .from('clinical_notes')
-    .update({
-      template_id: input.templateId,
-      appointment_id: input.appointmentId,
-      note_date: noteDate,
-      content_json: content,
-      // Clear legacy SOAP columns so we don't render stale duplicate
-      // content alongside the new field set.
-      subjective: null,
-      objective: null,
-      assessment: null,
-      plan: null,
-      body_rich: null,
-    })
+    .update(update)
     .eq('id', input.noteId)
     .eq('version', input.version)
     .select('id, client_id')

@@ -66,6 +66,14 @@ interface CaptureProps {
   catalog: CatalogCategory[]
   batteries: BatteryRow[]
   lastUsedBattery: LastUsedBatteryHint | null
+  /**
+   * Optional. Fired after a successful capture, before the modal closes.
+   * Used by the note-form integration so a clinical note can link to
+   * the just-captured session_id without an extra round-trip. Receives
+   * the new session id and a short human-readable summary like
+   * "8 metrics across 3 tests".
+   */
+  onCaptured?: (sessionId: string, summary: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +134,7 @@ export function TestCaptureModal({
   catalog,
   batteries,
   lastUsedBattery,
+  onCaptured,
 }: CaptureProps) {
   const [phase, setPhase] = useState<Phase>('pick')
   const [selected, setSelected] = useState<SelectedMetric[]>([])
@@ -241,6 +250,11 @@ export function TestCaptureModal({
         }
         setError(res.error)
         return
+      }
+      if (onCaptured && res.data) {
+        const groups = groupForEntry(selected)
+        const summary = `${results.length} metric${results.length === 1 ? '' : 's'} across ${groups.length} test${groups.length === 1 ? '' : 's'}`
+        onCaptured(res.data.sessionId, summary)
       }
       close()
     })

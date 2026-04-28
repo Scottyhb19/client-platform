@@ -190,6 +190,26 @@ Running record of what's closed, in order. Each entry references the commit on m
 - **clinical_notes.test_session_id FK** — closed pending push. Migration `20260428130000`. Single nullable FK per Q2 sign-off; ON DELETE SET NULL preserves narrative if the session is removed.
 - **create_test_session RPC + server action** — closed pending push. Migration `20260428130100` (atomic SECURITY INVOKER RPC) + `src/app/(staff)/clients/[id]/test-actions.ts` (`createTestSessionAction`, `softDeleteTestSessionAction`). RPC respects RLS — staff can write, clients cannot.
 
-### Phase B.2 — Capture modal UI (next)
+### Phase B.2 — Capture modal + Reports tab (closed)
 
-- P1-1 capture modal: pick → enter → confirm. Three-state component, opens from the Reports tab + from inside note templates + invocable from a future VALD-shape importer.
+- **P1-1 capture modal** — closed in [ba5687c](https://github.com/Scottyhb19/client-platform/commit/ba5687c). `TestCaptureModal` walks pick → enter → confirm; bilateral metrics show side-by-side L/R inputs; soft-bound warnings raise a confirm sheet before save.
+- **P1-3 staff Reports tab** — closed in [ba5687c](https://github.com/Scottyhb19/client-platform/commit/ba5687c). New `ReportsTab.tsx` lists captured sessions with date / metric count / battery / notes preview. "+ Record test" opens the modal. Charts and per-test cards arrive in Phase D.
+- **`applied_battery_id` per-client last-used hint** — closed in [9b941b3](https://github.com/Scottyhb19/client-platform/commit/9b941b3). Migration `20260428140000` adds the column + ON DELETE SET NULL FK to test_batteries; `create_test_session` RPC accepts the optional id; modal surfaces the hint above the dropdown when the client has prior captures.
+- **RLS recursion fix** — closed in [ba5687c](https://github.com/Scottyhb19/client-platform/commit/ba5687c). Migration `20260428150000` replaces cross-table EXISTS sub-queries in the test_sessions/test_results/client_publications policies with SECURITY DEFINER helpers (`client_owns_test_session`, `test_session_in_org`, `test_session_has_active_publication`, `test_session_has_auto_visible_metric`). Same security model — the helpers do exactly the checks the inline EXISTS would have. Phase-A pgTAP tests still pass; Phase-A had a latent recursion bug that only fired under PostgREST's planner.
+
+### Phase B.4 — Note-template capture hook (closed pending push)
+
+- **P1-2 Run-battery hook in note templates** — `clinical_notes.test_session_id` FK lands in B.1; the v1 UI is a "+ Capture test session" panel inside the create-note form (mode = 'create' only — edit preserves whatever link is already on the row). Captures via TestCaptureModal with an `onCaptured` callback that returns the new session_id; clicking Save submits both the note and the link in a single server-action call. The brief's richer "test_battery field type inside note templates" framing is deferred to Phase C polish — v1 delivers the data outcome (note ↔ session) without a template-editor change.
+- **Server action surface**: `createClinicalNoteAction` and `updateClinicalNoteAction` now accept an optional `testSessionId`. `undefined` keeps the existing value on update; explicit `null` clears it.
+
+### Phase B.5 — Three-entry-points pgTAP (closed pending push)
+
+- **Brief §8 Test 2** — `supabase/tests/database/04_three_entry_points.sql`. Asserts that note-template capture, Reports-modal capture, and a simulated VALD import all produce structurally-identical test_results rows distinguishable only by `test_sessions.source` (and the FK on the path-a clinical_note). Confirms the data layer is ready for the future VALD parser without a separate RPC.
+
+### Phase C — Settings UI (next)
+
+- P1-4 Settings → Tests page. Per-metric override editor, custom-test builder, disable-test toggle, batteries builder. Resolver already plumbed; this phase adds the UI to read/write the underlying tables.
+
+### Phase D — Reports rendering (after C)
+
+- P1-5/6/7 + P2-1: chart library decision, test cards, comparison view, publish flow.
