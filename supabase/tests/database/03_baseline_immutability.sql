@@ -46,6 +46,11 @@ BEGIN
     client_row_id, org_id, 'Bob', 'Baseline', 'bob@test.local'
   );
 
+  -- Spoof the staff JWT so the test_sessions INSERT policy lets us
+  -- insert. Without this, the WITH CHECK on the policy fails because
+  -- user_role() returns NULL (no claims set).
+  PERFORM public._test_set_jwt(staff_uid, org_id, 'staff');
+
   -- Three sessions, three months apart, same client + same test (CMJ
   -- bilateral jump_height — auto visibility, decimal value).
   INSERT INTO test_sessions (id, organization_id, client_id, conducted_by, conducted_at) VALUES

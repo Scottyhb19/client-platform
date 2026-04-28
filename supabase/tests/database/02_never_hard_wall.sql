@@ -56,6 +56,11 @@ BEGIN
     client_row_id, org_id, client_uid, 'Pat', 'Patient', 'pat@test.local'
   );
 
+  -- Spoof the staff JWT so the test_sessions INSERT policy lets us
+  -- insert. Defensive — works regardless of whether the SQL Editor's
+  -- role has BYPASSRLS or not.
+  PERFORM public._test_set_jwt(staff_uid, org_id, 'staff');
+
   -- One session containing two results: a Tampa Scale (never) AND a KOOS
   -- pain subscale (on_publish). Both belong to the same session so a
   -- "publish the session" action affects them differently.
