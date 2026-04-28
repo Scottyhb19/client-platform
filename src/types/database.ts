@@ -587,6 +587,61 @@ export type Database = {
           },
         ]
       }
+      client_publications: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          framing_text: string | null
+          id: string
+          organization_id: string
+          published_at: string
+          published_by: string
+          test_session_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          framing_text?: string | null
+          id?: string
+          organization_id: string
+          published_at?: string
+          published_by: string
+          test_session_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          framing_text?: string | null
+          id?: string
+          organization_id?: string
+          published_at?: string
+          published_by?: string
+          test_session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_publications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_publications_published_by_fkey"
+            columns: ["published_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "client_publications_test_session_id_fkey"
+            columns: ["test_session_id"]
+            isOneToOne: false
+            referencedRelation: "test_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           address: string | null
@@ -1638,6 +1693,259 @@ export type Database = {
         }
         Relationships: []
       }
+      physical_markers_schema_seed: {
+        Row: {
+          category_display_order: number
+          category_id: string
+          category_name: string
+          client_portal_visibility: Database["public"]["Enums"]["client_portal_visibility_t"]
+          client_view_chart: Database["public"]["Enums"]["client_view_chart_t"]
+          comparison_mode: Database["public"]["Enums"]["comparison_mode_t"]
+          default_chart: Database["public"]["Enums"]["default_chart_t"]
+          direction_of_good: Database["public"]["Enums"]["direction_of_good_t"]
+          input_type: string
+          metric_id: string
+          metric_label: string
+          side_left_right: boolean
+          subcategory_display_order: number
+          subcategory_id: string
+          subcategory_name: string
+          subcategory_notes: string | null
+          test_display_order: number
+          test_id: string
+          test_name: string
+          test_notes: string | null
+          unit: string
+        }
+        Insert: {
+          category_display_order: number
+          category_id: string
+          category_name: string
+          client_portal_visibility: Database["public"]["Enums"]["client_portal_visibility_t"]
+          client_view_chart: Database["public"]["Enums"]["client_view_chart_t"]
+          comparison_mode: Database["public"]["Enums"]["comparison_mode_t"]
+          default_chart: Database["public"]["Enums"]["default_chart_t"]
+          direction_of_good: Database["public"]["Enums"]["direction_of_good_t"]
+          input_type: string
+          metric_id: string
+          metric_label: string
+          side_left_right: boolean
+          subcategory_display_order: number
+          subcategory_id: string
+          subcategory_name: string
+          subcategory_notes?: string | null
+          test_display_order: number
+          test_id: string
+          test_name: string
+          test_notes?: string | null
+          unit: string
+        }
+        Update: {
+          category_display_order?: number
+          category_id?: string
+          category_name?: string
+          client_portal_visibility?: Database["public"]["Enums"]["client_portal_visibility_t"]
+          client_view_chart?: Database["public"]["Enums"]["client_view_chart_t"]
+          comparison_mode?: Database["public"]["Enums"]["comparison_mode_t"]
+          default_chart?: Database["public"]["Enums"]["default_chart_t"]
+          direction_of_good?: Database["public"]["Enums"]["direction_of_good_t"]
+          input_type?: string
+          metric_id?: string
+          metric_label?: string
+          side_left_right?: boolean
+          subcategory_display_order?: number
+          subcategory_id?: string
+          subcategory_name?: string
+          subcategory_notes?: string | null
+          test_display_order?: number
+          test_id?: string
+          test_name?: string
+          test_notes?: string | null
+          unit?: string
+        }
+        Relationships: []
+      }
+      physical_markers_schema_version: {
+        Row: {
+          id: number
+          schema_version: string
+          seeded_at: string
+        }
+        Insert: {
+          id?: number
+          schema_version: string
+          seeded_at?: string
+        }
+        Update: {
+          id?: number
+          schema_version?: string
+          seeded_at?: string
+        }
+        Relationships: []
+      }
+      practice_custom_tests: {
+        Row: {
+          category_id: string
+          created_at: string
+          deleted_at: string | null
+          display_order: number
+          id: string
+          metrics: Json
+          name: string
+          organization_id: string
+          subcategory_id: string
+          test_id: string
+          updated_at: string
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          metrics: Json
+          name: string
+          organization_id: string
+          subcategory_id: string
+          test_id: string
+          updated_at?: string
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          display_order?: number
+          id?: string
+          metrics?: Json
+          name?: string
+          organization_id?: string
+          subcategory_id?: string
+          test_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_custom_tests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_disabled_tests: {
+        Row: {
+          disabled_at: string
+          disabled_by: string | null
+          id: string
+          organization_id: string
+          test_id: string
+        }
+        Insert: {
+          disabled_at?: string
+          disabled_by?: string | null
+          id?: string
+          organization_id: string
+          test_id: string
+        }
+        Update: {
+          disabled_at?: string
+          disabled_by?: string | null
+          id?: string
+          organization_id?: string
+          test_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_disabled_tests_disabled_by_fkey"
+            columns: ["disabled_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "practice_disabled_tests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      practice_test_settings: {
+        Row: {
+          client_portal_visibility:
+            | Database["public"]["Enums"]["client_portal_visibility_t"]
+            | null
+          client_view_chart:
+            | Database["public"]["Enums"]["client_view_chart_t"]
+            | null
+          comparison_mode:
+            | Database["public"]["Enums"]["comparison_mode_t"]
+            | null
+          created_at: string
+          default_chart: Database["public"]["Enums"]["default_chart_t"] | null
+          direction_of_good:
+            | Database["public"]["Enums"]["direction_of_good_t"]
+            | null
+          id: string
+          metric_id: string
+          organization_id: string
+          test_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_portal_visibility?:
+            | Database["public"]["Enums"]["client_portal_visibility_t"]
+            | null
+          client_view_chart?:
+            | Database["public"]["Enums"]["client_view_chart_t"]
+            | null
+          comparison_mode?:
+            | Database["public"]["Enums"]["comparison_mode_t"]
+            | null
+          created_at?: string
+          default_chart?: Database["public"]["Enums"]["default_chart_t"] | null
+          direction_of_good?:
+            | Database["public"]["Enums"]["direction_of_good_t"]
+            | null
+          id?: string
+          metric_id: string
+          organization_id: string
+          test_id: string
+          updated_at?: string
+        }
+        Update: {
+          client_portal_visibility?:
+            | Database["public"]["Enums"]["client_portal_visibility_t"]
+            | null
+          client_view_chart?:
+            | Database["public"]["Enums"]["client_view_chart_t"]
+            | null
+          comparison_mode?:
+            | Database["public"]["Enums"]["comparison_mode_t"]
+            | null
+          created_at?: string
+          default_chart?: Database["public"]["Enums"]["default_chart_t"] | null
+          direction_of_good?:
+            | Database["public"]["Enums"]["direction_of_good_t"]
+            | null
+          id?: string
+          metric_id?: string
+          organization_id?: string
+          test_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_test_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       program_days: {
         Row: {
           created_at: string
@@ -2422,6 +2730,178 @@ export type Database = {
           },
         ]
       }
+      test_batteries: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          metric_keys: Json
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          metric_keys: Json
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          metric_keys?: Json
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_batteries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      test_results: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          metric_id: string
+          organization_id: string
+          side: Database["public"]["Enums"]["test_side_t"] | null
+          test_id: string
+          test_session_id: string
+          unit: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          metric_id: string
+          organization_id: string
+          side?: Database["public"]["Enums"]["test_side_t"] | null
+          test_id: string
+          test_session_id: string
+          unit: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          metric_id?: string
+          organization_id?: string
+          side?: Database["public"]["Enums"]["test_side_t"] | null
+          test_id?: string
+          test_session_id?: string
+          unit?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_results_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_results_test_session_id_fkey"
+            columns: ["test_session_id"]
+            isOneToOne: false
+            referencedRelation: "test_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      test_sessions: {
+        Row: {
+          appointment_id: string | null
+          client_id: string
+          conducted_at: string
+          conducted_by: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          notes: string | null
+          organization_id: string
+          source: Database["public"]["Enums"]["test_source_t"]
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          appointment_id?: string | null
+          client_id: string
+          conducted_at: string
+          conducted_by: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          organization_id: string
+          source?: Database["public"]["Enums"]["test_source_t"]
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          appointment_id?: string | null
+          client_id?: string
+          conducted_at?: string
+          conducted_by?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          notes?: string | null
+          organization_id?: string
+          source?: Database["public"]["Enums"]["test_source_t"]
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_sessions_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_sessions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_sessions_conducted_by_fkey"
+            columns: ["conducted_by"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "test_sessions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_organization_roles: {
         Row: {
           created_at: string
@@ -2620,7 +3100,45 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      test_results_with_baseline: {
+        Row: {
+          client_id: string | null
+          conducted_at: string | null
+          created_at: string | null
+          id: string | null
+          is_baseline: boolean | null
+          metric_id: string | null
+          organization_id: string | null
+          side: Database["public"]["Enums"]["test_side_t"] | null
+          test_id: string | null
+          test_session_id: string | null
+          unit: string | null
+          value: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_results_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_results_test_session_id_fkey"
+            columns: ["test_session_id"]
+            isOneToOne: false
+            referencedRelation: "test_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "test_sessions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       audit_diff_fields: {
@@ -2742,6 +3260,18 @@ export type Database = {
         }
         Returns: string
       }
+      test_metric_visibility: {
+        Args: {
+          p_metric_id: string
+          p_organization_id: string
+          p_test_id: string
+        }
+        Returns: Database["public"]["Enums"]["client_portal_visibility_t"]
+      }
+      test_session_is_baseline: {
+        Args: { p_session_id: string; p_test_id: string }
+        Returns: boolean
+      }
       user_organization_id: { Args: never; Returns: string }
       user_role: { Args: never; Returns: string }
     }
@@ -2767,6 +3297,13 @@ export type Database = {
       assessment_status: "draft" | "completed" | "archived"
       audit_action: "INSERT" | "UPDATE" | "DELETE"
       availability_recurrence: "weekly" | "one_off"
+      client_portal_visibility_t: "auto" | "on_publish" | "never"
+      client_view_chart_t:
+        | "line"
+        | "milestone"
+        | "bar"
+        | "narrative_only"
+        | "hidden"
       communication_direction: "outbound" | "inbound"
       communication_status:
         | "draft"
@@ -2776,6 +3313,22 @@ export type Database = {
         | "failed"
         | "bounced"
       communication_type: "email" | "sms"
+      comparison_mode_t:
+        | "absolute"
+        | "bilateral_lsi"
+        | "vs_baseline"
+        | "vs_normative"
+      default_chart_t:
+        | "line"
+        | "bar"
+        | "radar"
+        | "asymmetry_bar"
+        | "target_zone"
+      direction_of_good_t:
+        | "higher"
+        | "lower"
+        | "target_range"
+        | "context_dependent"
       file_category:
         | "gpccmp"
         | "radiology"
@@ -2793,6 +3346,8 @@ export type Database = {
         | "general"
       program_status: "draft" | "active" | "archived"
       program_type: "home_gym" | "in_clinic"
+      test_side_t: "left" | "right"
+      test_source_t: "manual" | "vald" | "imported"
       user_role: "owner" | "staff" | "client"
     }
     CompositeTypes: {
@@ -2945,6 +3500,14 @@ export const Constants = {
       assessment_status: ["draft", "completed", "archived"],
       audit_action: ["INSERT", "UPDATE", "DELETE"],
       availability_recurrence: ["weekly", "one_off"],
+      client_portal_visibility_t: ["auto", "on_publish", "never"],
+      client_view_chart_t: [
+        "line",
+        "milestone",
+        "bar",
+        "narrative_only",
+        "hidden",
+      ],
       communication_direction: ["outbound", "inbound"],
       communication_status: [
         "draft",
@@ -2955,6 +3518,19 @@ export const Constants = {
         "bounced",
       ],
       communication_type: ["email", "sms"],
+      comparison_mode_t: [
+        "absolute",
+        "bilateral_lsi",
+        "vs_baseline",
+        "vs_normative",
+      ],
+      default_chart_t: ["line", "bar", "radar", "asymmetry_bar", "target_zone"],
+      direction_of_good_t: [
+        "higher",
+        "lower",
+        "target_range",
+        "context_dependent",
+      ],
       file_category: [
         "gpccmp",
         "radiology",
@@ -2974,6 +3550,8 @@ export const Constants = {
       ],
       program_status: ["draft", "active", "archived"],
       program_type: ["home_gym", "in_clinic"],
+      test_side_t: ["left", "right"],
+      test_source_t: ["manual", "vald", "imported"],
       user_role: ["owner", "staff", "client"],
     },
   },
