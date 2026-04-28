@@ -9,18 +9,15 @@ import {
   ChevronRight,
   CreditCard,
   Edit3,
-  FileText,
-  Filter,
   Mail,
   MessageCircle,
   MoreHorizontal,
   Plus,
-  Search,
-  Upload,
 } from 'lucide-react'
 import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { NotesTab } from './NotesTab'
+import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 
 type NoteType = Database['public']['Enums']['note_type']
 type NoteFieldType = Database['public']['Enums']['note_template_field_type']
@@ -145,6 +142,7 @@ interface ClientProfileProps {
   noteTemplates: ProfileNoteTemplate[]
   appointments: ProfileAppointment[]
   reports: ProfileReport[]
+  files: ClientFile[]
   lastTemplateId: string | null
   initialTab: Tab
   initialOpenCreate: boolean
@@ -199,6 +197,7 @@ export function ClientProfile({
   noteTemplates,
   appointments,
   reports,
+  files,
   lastTemplateId,
   initialTab,
   initialOpenCreate,
@@ -237,7 +236,9 @@ export function ClientProfile({
           <ProgramTab clientId={client.id} program={program} />
         )}
         {tab === 'reports' && <ReportsTab />}
-        {tab === 'files' && <FilesTab />}
+        {tab === 'files' && (
+          <FilesTabComponent clientId={client.id} files={files} />
+        )}
         {tab === 'invoices' && <InvoicesTab />}
       </div>
     </div>
@@ -943,104 +944,8 @@ function ReportsTab() {
 }
 
 /* =========================================================================
- * TAB 5 — FILES
+ * TAB 5 — FILES (rendered by ./FilesTab.tsx — see import above)
  * ========================================================================= */
-
-function FilesTab() {
-  return (
-    <Panel
-      title="Files · 0"
-      action={
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div
-            style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            <Search
-              size={13}
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: 10,
-                color: 'var(--color-muted)',
-                pointerEvents: 'none',
-              }}
-            />
-            <input
-              type="search"
-              disabled
-              placeholder="Search files…"
-              style={{
-                width: 220,
-                padding: '6px 12px 6px 30px',
-                border: '1px solid var(--color-border-subtle)',
-                borderRadius: 7,
-                background: 'var(--color-surface)',
-                fontSize: '.78rem',
-                color: 'var(--color-text)',
-                outline: 'none',
-                fontFamily: 'inherit',
-              }}
-            />
-          </div>
-          <button type="button" className="btn outline" disabled style={{ fontSize: '.78rem' }}>
-            <Filter size={13} aria-hidden />
-            All types
-          </button>
-          <button type="button" className="btn primary" disabled style={{ fontSize: '.78rem' }}>
-            <Upload size={13} aria-hidden />
-            Upload
-          </button>
-        </div>
-      }
-    >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 110px 130px 120px 60px',
-          padding: '10px 20px',
-          background: 'var(--color-surface)',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.66rem',
-          letterSpacing: '.06em',
-          textTransform: 'uppercase',
-          color: 'var(--color-muted)',
-          borderBottom: '1px solid var(--color-border-subtle)',
-        }}
-      >
-        <div>Name</div>
-        <div>Type</div>
-        <div>Uploaded</div>
-        <div>Size</div>
-        <div />
-      </div>
-      <EmptyBlock
-        line1="No files yet"
-        line2="Referrals, imaging, consent forms, assessment exports, and demo videos will live here. Drag-and-drop or use Upload."
-        accent={
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              background: 'var(--color-surface)',
-              display: 'grid',
-              placeItems: 'center',
-              color: 'var(--color-muted)',
-              margin: '0 auto 14px',
-            }}
-          >
-            <FileText size={20} aria-hidden />
-          </div>
-        }
-      />
-    </Panel>
-  )
-}
 
 /* =========================================================================
  * TAB 6 — INVOICES

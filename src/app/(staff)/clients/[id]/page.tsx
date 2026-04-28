@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
 import { statusFor } from '../_lib/client-helpers'
+import type { ClientFile } from './_components/FilesTab'
 import {
   ClientProfile,
   type ProfileAppointment,
@@ -56,6 +57,7 @@ export default async function ClientProfilePage({
     { data: noteTemplateFieldRows },
     { data: appointmentRows },
     { data: reportRows },
+    { data: fileRows, error: filesErr },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -127,12 +129,43 @@ export default async function ClientProfilePage({
       .is('deleted_at', null)
       .order('test_date', { ascending: false })
       .limit(60),
+    // Cast: client_files isn't in the typed Database surface until
+    // `npm run supabase:types` is re-run after migration 20260428100000.
+    // Drop the cast once types are regenerated.
+    supabase
+      .from('client_files' as never)
+      .select(
+        'id, category, name, original_filename, mime_type, size_bytes, created_at',
+      )
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+      .limit(200) as unknown as Promise<{
+        data: ClientFile[] | null
+        error: { message: string } | null
+      }>,
   ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
   if (conditionsErr)
     throw new Error(`Load conditions: ${conditionsErr.message}`)
   if (notesErr) throw new Error(`Load notes: ${notesErr.message}`)
+  // The client_files table is created by migration 20260428100000. Until
+  // that migration is applied, the query errors out — we treat the
+  // not-yet-migrated case as "show empty Files tab" rather than crashing
+  // the whole client page. Postgres reports it as 42P01 / "relation does
+  // not exist"; PostgREST reports it as PGRST205 / "Could not find the
+  // table ... in the schema cache". Match either. Anything else is a real
+  // failure and bubbles up.
+  const filesErrAny = filesErr as { code?: string; message?: string } | null
+  const filesMissingMsg = filesErrAny?.message ?? ''
+  const filesMissing =
+    filesErrAny?.code === '42P01' ||
+    filesErrAny?.code === 'PGRST205' ||
+    /relation .*client_files.* does not exist/i.test(filesMissingMsg) ||
+    /could not find the table .*client_files/i.test(filesMissingMsg)
+  if (filesErrAny && !filesMissing) {
+    throw new Error(`Load files: ${filesErrAny.message ?? 'unknown'}`)
+  }
   if (!client) notFound()
 
   const status = statusFor(client)
@@ -244,6 +277,8 @@ export default async function ClientProfilePage({
     storage_path: r.storage_path,
   }))
 
+  const files: ClientFile[] = (fileRows ?? []) as ClientFile[]
+
   return (
     <ClientProfile
       client={profileClient}
@@ -255,6 +290,7 @@ export default async function ClientProfilePage({
       noteTemplates={noteTemplates}
       appointments={appointments}
       reports={reports}
+      files={files}
       lastTemplateId={lastTemplateId}
       initialTab={initialTab}
       initialOpenCreate={openCreate}

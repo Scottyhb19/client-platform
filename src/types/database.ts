@@ -457,6 +457,79 @@ export type Database = {
           },
         ]
       }
+      client_files: {
+        Row: {
+          category: Database["public"]["Enums"]["file_category"]
+          client_id: string
+          created_at: string
+          id: string
+          mime_type: string | null
+          name: string
+          notes: string | null
+          organization_id: string
+          original_filename: string
+          size_bytes: number
+          storage_bucket: string
+          storage_path: string
+          updated_at: string
+          uploaded_by_user_id: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["file_category"]
+          client_id: string
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name: string
+          notes?: string | null
+          organization_id: string
+          original_filename: string
+          size_bytes: number
+          storage_bucket?: string
+          storage_path: string
+          updated_at?: string
+          uploaded_by_user_id: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["file_category"]
+          client_id?: string
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          original_filename?: string
+          size_bytes?: number
+          storage_bucket?: string
+          storage_path?: string
+          updated_at?: string
+          uploaded_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_files_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_files_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_files_uploaded_by_user_id_fkey"
+            columns: ["uploaded_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       client_medical_history: {
         Row: {
           client_id: string
@@ -2703,6 +2776,13 @@ export type Database = {
         | "failed"
         | "bounced"
       communication_type: "email" | "sms"
+      file_category:
+        | "gpccmp"
+        | "radiology"
+        | "workers_comp"
+        | "specialist_letter"
+        | "referral"
+        | "other"
       note_template_field_type: "short_text" | "long_text" | "number"
       note_type:
         | "initial_assessment"
@@ -2875,6 +2955,14 @@ export const Constants = {
         "bounced",
       ],
       communication_type: ["email", "sms"],
+      file_category: [
+        "gpccmp",
+        "radiology",
+        "workers_comp",
+        "specialist_letter",
+        "referral",
+        "other",
+      ],
       note_template_field_type: ["short_text", "long_text", "number"],
       note_type: [
         "initial_assessment",
