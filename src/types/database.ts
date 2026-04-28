@@ -2840,6 +2840,7 @@ export type Database = {
       }
       test_sessions: {
         Row: {
+          applied_battery_id: string | null
           appointment_id: string | null
           client_id: string
           conducted_at: string
@@ -2854,6 +2855,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          applied_battery_id?: string | null
           appointment_id?: string | null
           client_id: string
           conducted_at: string
@@ -2868,6 +2870,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          applied_battery_id?: string | null
           appointment_id?: string | null
           client_id?: string
           conducted_at?: string
@@ -2882,6 +2885,13 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "test_sessions_applied_battery_id_fkey"
+            columns: ["applied_battery_id"]
+            isOneToOne: false
+            referencedRelation: "test_batteries"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "test_sessions_appointment_id_fkey"
             columns: ["appointment_id"]
@@ -3254,6 +3264,7 @@ export type Database = {
       }
       create_test_session: {
         Args: {
+          p_applied_battery_id: string
           p_appointment_id: string
           p_client_id: string
           p_conducted_at: string

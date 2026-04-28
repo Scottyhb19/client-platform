@@ -18,6 +18,13 @@ import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { NotesTab } from './NotesTab'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
+import { ReportsTab } from './ReportsTab'
+import type {
+  BatteryRow,
+  CapturedSessionRow,
+  CatalogCategory,
+  LastUsedBatteryHint,
+} from '@/lib/testing'
 
 type NoteType = Database['public']['Enums']['note_type']
 type NoteFieldType = Database['public']['Enums']['note_template_field_type']
@@ -147,6 +154,11 @@ interface ClientProfileProps {
   initialTab: Tab
   initialOpenCreate: boolean
   initialAppointmentId: string | null
+  // Testing module
+  testCatalog: CatalogCategory[]
+  testBatteries: BatteryRow[]
+  lastUsedBattery: LastUsedBatteryHint | null
+  capturedSessions: CapturedSessionRow[]
 }
 
 const VALID_TABS: Tab[] = [
@@ -202,6 +214,10 @@ export function ClientProfile({
   initialTab,
   initialOpenCreate,
   initialAppointmentId,
+  testCatalog,
+  testBatteries,
+  lastUsedBattery,
+  capturedSessions,
 }: ClientProfileProps) {
   const [tab, setTab] = useTab(initialTab)
 
@@ -235,7 +251,15 @@ export function ClientProfile({
         {tab === 'program' && (
           <ProgramTab clientId={client.id} program={program} />
         )}
-        {tab === 'reports' && <ReportsTab />}
+        {tab === 'reports' && (
+          <ReportsTab
+            clientId={client.id}
+            catalog={testCatalog}
+            batteries={testBatteries}
+            lastUsedBattery={lastUsedBattery}
+            capturedSessions={capturedSessions}
+          />
+        )}
         {tab === 'files' && (
           <FilesTabComponent clientId={client.id} files={files} />
         )}
@@ -898,50 +922,8 @@ function ProgramTab({
 }
 
 /* =========================================================================
- * TAB 4 — REPORTS
+ * TAB 4 — REPORTS (rendered by ./ReportsTab.tsx — see import above)
  * ========================================================================= */
-
-function ReportsTab() {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-      <Panel
-        title="Force-plate assessment · Latest"
-        action={
-          <button type="button" className="btn outline" disabled style={{ fontSize: '.78rem' }}>
-            <Plus size={13} aria-hidden />
-            Log assessment
-          </button>
-        }
-      >
-        <EmptyBlock
-          line1="No assessments logged yet"
-          line2="Force-plate, isokinetic, and movement-screen results will populate this panel once the assessment module is wired up."
-        />
-      </Panel>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 22,
-        }}
-      >
-        <Panel title="Body composition">
-          <EmptyBlock
-            line1="No measurements yet"
-            line2="Weight, body fat, and lean mass over time will track here."
-          />
-        </Panel>
-        <Panel title="Strength benchmarks (1RM est.)">
-          <EmptyBlock
-            line1="No benchmarks yet"
-            line2="Estimated 1RMs roll up from logged sessions once enough data is in."
-          />
-        </Panel>
-      </div>
-    </div>
-  )
-}
 
 /* =========================================================================
  * TAB 5 — FILES (rendered by ./FilesTab.tsx — see import above)

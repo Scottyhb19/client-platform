@@ -20,6 +20,19 @@ export {
   validateMetricValue,
   type ValidationVerdict,
 } from './validation-bounds'
+export {
+  loadCatalog,
+  loadActiveBatteries,
+  loadLastUsedBatteryForClient,
+  loadCapturedSessionsForClient,
+  type CatalogCategory,
+  type CatalogSubcategory,
+  type CatalogTest,
+  type CatalogMetric,
+  type BatteryRow,
+  type LastUsedBatteryHint,
+  type CapturedSessionRow,
+} from './loaders'
 export type {
   ClientPortalVisibility,
   ClientViewChart,

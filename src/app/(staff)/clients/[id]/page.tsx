@@ -14,6 +14,12 @@ import {
   type ProfileReport,
   type Tab,
 } from './_components/ClientProfile'
+import {
+  loadActiveBatteries,
+  loadCapturedSessionsForClient,
+  loadCatalog,
+  loadLastUsedBatteryForClient,
+} from '@/lib/testing'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +64,10 @@ export default async function ClientProfilePage({
     { data: appointmentRows },
     { data: reportRows },
     { data: fileRows, error: filesErr },
+    testCatalog,
+    testBatteries,
+    lastUsedBattery,
+    capturedSessions,
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -143,6 +153,11 @@ export default async function ClientProfilePage({
         data: ClientFile[] | null
         error: { message: string } | null
       }>,
+    // Testing-module data for the Reports tab + capture modal.
+    loadCatalog(supabase, organizationId),
+    loadActiveBatteries(supabase, organizationId),
+    loadLastUsedBatteryForClient(supabase, id),
+    loadCapturedSessionsForClient(supabase, id),
   ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
@@ -295,6 +310,10 @@ export default async function ClientProfilePage({
       initialTab={initialTab}
       initialOpenCreate={openCreate}
       initialAppointmentId={initialAppointmentId}
+      testCatalog={testCatalog}
+      testBatteries={testBatteries}
+      lastUsedBattery={lastUsedBattery}
+      capturedSessions={capturedSessions}
     />
   )
 }
