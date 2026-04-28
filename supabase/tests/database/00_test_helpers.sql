@@ -140,3 +140,96 @@ $$;
 
 COMMENT ON FUNCTION public._test_grant_membership(uuid, uuid, user_role) IS
   'pgTAP helper: grant a user a role in an organization. Test-only.';
+
+
+-- ----------------------------------------------------------------------------
+-- _test_insert_test_session — bypass-RLS helper for fixture creation.
+--
+-- The Supabase SQL Editor's role context isn't reliable across queries —
+-- direct INSERTs into test_sessions sometimes hit the RLS policy
+-- (TO authenticated) even when we expect BYPASSRLS. Wrapping the write
+-- in a SECURITY DEFINER function (owned by postgres) routes around the
+-- inconsistency.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._test_insert_test_session(
+  p_id           uuid,
+  p_org          uuid,
+  p_client       uuid,
+  p_conducted_by uuid,
+  p_conducted_at timestamptz,
+  p_source       test_source_t DEFAULT 'manual'
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  INSERT INTO test_sessions (
+    id, organization_id, client_id, conducted_by, conducted_at, source
+  ) VALUES (
+    p_id, p_org, p_client, p_conducted_by, p_conducted_at, p_source
+  );
+  RETURN p_id;
+END;
+$$;
+
+COMMENT ON FUNCTION public._test_insert_test_session(uuid, uuid, uuid, uuid, timestamptz, test_source_t) IS
+  'pgTAP helper: insert a test_session bypassing RLS. Test-only.';
+
+
+-- ----------------------------------------------------------------------------
+-- _test_insert_test_result — bypass-RLS helper for fixture creation.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._test_insert_test_result(
+  p_org          uuid,
+  p_session      uuid,
+  p_test_id      text,
+  p_metric_id    text,
+  p_side         test_side_t,
+  p_value        numeric,
+  p_unit         text
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  INSERT INTO test_results (
+    organization_id, test_session_id, test_id, metric_id, side, value, unit
+  ) VALUES (
+    p_org, p_session, p_test_id, p_metric_id, p_side, p_value, p_unit
+  );
+END;
+$$;
+
+COMMENT ON FUNCTION public._test_insert_test_result(uuid, uuid, text, text, test_side_t, numeric, text) IS
+  'pgTAP helper: insert a test_result bypassing RLS. Test-only.';
+
+
+-- ----------------------------------------------------------------------------
+-- _test_insert_client_publication — bypass-RLS helper for fixture creation.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public._test_insert_client_publication(
+  p_org           uuid,
+  p_session       uuid,
+  p_published_by  uuid,
+  p_framing_text  text DEFAULT NULL
+) RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  pub_id uuid;
+BEGIN
+  INSERT INTO client_publications (
+    organization_id, test_session_id, published_by, framing_text
+  ) VALUES (
+    p_org, p_session, p_published_by, p_framing_text
+  ) RETURNING id INTO pub_id;
+  RETURN pub_id;
+END;
+$$;
+
+COMMENT ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text) IS
+  'pgTAP helper: insert a client_publication bypassing RLS. Test-only.';

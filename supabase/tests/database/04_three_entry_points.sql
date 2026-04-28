@@ -60,9 +60,12 @@ BEGIN
   INSERT INTO note_templates (id, organization_id, name, sort_order)
   VALUES (template_id, org_id, 'Initial Assessment', 0);
 
-  -- create_test_session reads auth.uid + the JWT custom claims, so spoof
-  -- before calling it.
+  -- create_test_session is SECURITY INVOKER and goes through RLS, so:
+  -- (1) spoof the JWT so user_organization_id() and auth.uid() return values,
+  -- (2) switch role to authenticated so the policies (which target that role)
+  --     actually apply.
   PERFORM public._test_set_jwt(staff_uid, org_id, 'staff');
+  EXECUTE 'SET LOCAL ROLE authenticated';
 
   -- Path (a): note-template entry. Capture first, then create the
   -- clinical_note that links to it. Mirrors what NotesTab does on submit.

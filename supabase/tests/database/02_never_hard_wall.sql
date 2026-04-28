@@ -56,31 +56,29 @@ BEGIN
     client_row_id, org_id, client_uid, 'Pat', 'Patient', 'pat@test.local'
   );
 
-  -- Spoof the staff JWT so the test_sessions INSERT policy lets us
-  -- insert. Defensive — works regardless of whether the SQL Editor's
-  -- role has BYPASSRLS or not.
+  -- Spoof the staff JWT for any later RLS-evaluated queries.
   PERFORM public._test_set_jwt(staff_uid, org_id, 'staff');
 
   -- One session containing two results: a Tampa Scale (never) AND a KOOS
   -- pain subscale (on_publish). Both belong to the same session so a
   -- "publish the session" action affects them differently.
-  INSERT INTO test_sessions (
-    id, organization_id, client_id, conducted_by, conducted_at, source
-  ) VALUES (
-    session_id, org_id, client_row_id, staff_uid, now() - interval '1 day', 'manual'
+  -- Use the SECURITY DEFINER helpers to dodge SQL-Editor RLS quirks.
+  PERFORM public._test_insert_test_session(
+    session_id, org_id, client_row_id, staff_uid,
+    now() - interval '1 day'
   );
 
-  INSERT INTO test_results (
-    organization_id, test_session_id, test_id, metric_id, side, value, unit
-  ) VALUES
-    (org_id, session_id, 'pts_tampa', 'total_score', NULL, 38, '17–68'),
-    (org_id, session_id, 'pts_koos',  'pain',        NULL, 72, '0–100');
+  PERFORM public._test_insert_test_result(
+    org_id, session_id, 'pts_tampa', 'total_score', NULL, 38, '17–68'
+  );
+  PERFORM public._test_insert_test_result(
+    org_id, session_id, 'pts_koos', 'pain', NULL, 72, '0–100'
+  );
 
   -- Publish the session.
-  INSERT INTO client_publications (
-    organization_id, test_session_id, published_by, framing_text
-  ) VALUES (
-    org_id, session_id, staff_uid, 'Initial baseline — your starting point.'
+  PERFORM public._test_insert_client_publication(
+    org_id, session_id, staff_uid,
+    'Initial baseline — your starting point.'
   );
 
   -- Stash IDs in a session-local table so the assertions below can
