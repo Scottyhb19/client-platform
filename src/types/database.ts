@@ -768,6 +768,7 @@ export type Database = {
           plan: string | null
           subjective: string | null
           template_id: string | null
+          test_session_id: string | null
           title: string | null
           updated_at: string
           version: number
@@ -794,6 +795,7 @@ export type Database = {
           plan?: string | null
           subjective?: string | null
           template_id?: string | null
+          test_session_id?: string | null
           title?: string | null
           updated_at?: string
           version?: number
@@ -820,6 +822,7 @@ export type Database = {
           plan?: string | null
           subjective?: string | null
           template_id?: string | null
+          test_session_id?: string | null
           title?: string | null
           updated_at?: string
           version?: number
@@ -858,6 +861,13 @@ export type Database = {
             columns: ["template_id"]
             isOneToOne: false
             referencedRelation: "note_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clinical_notes_test_session_id_fkey"
+            columns: ["test_session_id"]
+            isOneToOne: false
+            referencedRelation: "test_sessions"
             referencedColumns: ["id"]
           },
         ]
@@ -3239,6 +3249,17 @@ export type Database = {
           p_last_name: string
           p_org_name: string
           p_timezone: string
+        }
+        Returns: string
+      }
+      create_test_session: {
+        Args: {
+          p_appointment_id: string
+          p_client_id: string
+          p_conducted_at: string
+          p_notes: string
+          p_results: Json
+          p_source: Database["public"]["Enums"]["test_source_t"]
         }
         Returns: string
       }

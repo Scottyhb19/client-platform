@@ -15,6 +15,11 @@ export {
   loadSchemaSeed,
   assertSchemaConsistent,
 } from './schema-loader'
+export {
+  getMetricBounds,
+  validateMetricValue,
+  type ValidationVerdict,
+} from './validation-bounds'
 export type {
   ClientPortalVisibility,
   ClientViewChart,

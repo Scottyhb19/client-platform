@@ -168,3 +168,28 @@ Per brief §9 — flagged here so they don't drift in:
 ## 6. Stop point
 
 This document is the contract. **No code changes start until it's reviewed and signed off.** Open questions in §4 should be resolved (or explicitly deferred with a stake in the ground) before Phase A begins.
+
+---
+
+## 7. Progress log
+
+Running record of what's closed, in order. Each entry references the commit on master.
+
+### Phase A — Foundations (closed)
+
+- **P0-1 runtime config resolver** — closed in [eb5694c](https://github.com/Scottyhb19/client-platform/commit/eb5694c). `src/lib/testing/{schema-loader,resolver,index}.ts`. `resolveMetricSettings(supabase, org, test, metric)` is the single allowed path; `'server-only'` import enforces it at build time.
+- **P0-2 testing-module tables** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222). 7 tables, 7 enums, view + function, in migrations `20260428120000…121000`.
+- **P0-3 RLS policies** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222), migration `20260428120800`. Tampa Scale never-wall verified by pgTAP `02_never_hard_wall.sql`.
+- **P0-4 is_baseline view + function** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222), migration `20260428120400`. View uses `WITH (security_invoker = on)` so it respects underlying RLS.
+- **P0-5 publish gate** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222). `client_publications` table + soft-delete-as-unpublish.
+- **P0-6 pgTAP scaffolding** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222). `supabase/tests/database/{00_test_helpers,01_visibility_override,02_never_hard_wall,03_baseline_immutability}.sql`. All green on staging.
+
+### Phase B.1 — Capture-flow foundation (in progress)
+
+- **P1-8 validation_bounds.json** — closed pending push. `data/validation_bounds.json` + `src/lib/testing/validation-bounds.ts`. `validateMetricValue()` returns hard-bound errors and soft-bound warnings; the modal will call this before any RPC fires.
+- **clinical_notes.test_session_id FK** — closed pending push. Migration `20260428130000`. Single nullable FK per Q2 sign-off; ON DELETE SET NULL preserves narrative if the session is removed.
+- **create_test_session RPC + server action** — closed pending push. Migration `20260428130100` (atomic SECURITY INVOKER RPC) + `src/app/(staff)/clients/[id]/test-actions.ts` (`createTestSessionAction`, `softDeleteTestSessionAction`). RPC respects RLS — staff can write, clients cannot.
+
+### Phase B.2 — Capture modal UI (next)
+
+- P1-1 capture modal: pick → enter → confirm. Three-state component, opens from the Reports tab + from inside note templates + invocable from a future VALD-shape importer.
