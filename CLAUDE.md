@@ -50,7 +50,7 @@ The product is specified across a small set of authoritative documents. Read the
 
 1. `Client_Platform_Brief_v2.1.docx` — the master product spec. Covers all UX decisions, data model, hosting architecture, and compliance requirements for the platform as a whole.
 2. `CLAUDE_CODE_BUILD_PROMPT_testing_module.md` — the target-state brief for the testing & reports module. This is the spec the existing module is being polished *toward* — not a greenfield build spec.
-3. `physical_markers_schema_v1.1.json` — the test schema with rendering hints (direction of good, default chart, comparison mode, client visibility, client view chart) per metric. Read at runtime, not hard-coded.
+3. `data/physical_markers_schema_v1.1.json` — the test schema with rendering hints (direction of good, default chart, comparison mode, client visibility, client view chart) per metric. Read at runtime, not hard-coded. The seeded `physical_markers_schema_seed` table is the runtime artifact; the JSON is the editing source of truth (see `docs/testing-module-schema.md` §14 Q5).
 4. `Odyssey_Design_System.pdf` — the visual and brand system. Authoritative for colour, type, spacing, motion, components, voice, copy, and casing. Tokens already in `src/app/globals.css` and `src/lib/constants.ts`. Reference layouts in the four root `.html` prototypes.
 5. `/docs/` — authoritative architecture decisions. Contents:
    - `schema.md`, `auth.md`, `rls-policies.md`, `slos.md`, `incident-response.md` — the foundation documents. Drafted and self-reviewed during build. **External IT advisor review is parked but not abandoned** — see Open gates below. Treat the docs as the current authoritative position; flag anything that looks wrong.

@@ -1,0 +1,2073 @@
+{
+  "schema_version": "1.1.0",
+  "description": "Physical markers database schema for clinical tracking software — baseline vs follow-up progression model. v1.1 adds rendering hints (direction_of_good, default_chart, comparison_mode, client_portal_visibility, client_view_chart) per metric. These are factory defaults; per-EP overrides live in the practice_test_settings table.",
+  "categories": [
+    {
+      "id": "rom",
+      "name": "Range of motion",
+      "display_order": 1,
+      "subcategories": [
+        {
+          "id": "rom_hip",
+          "name": "Hip",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "rom_hip_flexion",
+              "name": "Hip flexion",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "passive",
+                  "label": "Passive",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "active",
+                  "label": "Active",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "rom_hip_ir_er",
+              "name": "Hip IR / ER",
+              "display_order": 2,
+              "notes": "Measured supine and prone",
+              "metrics": [
+                {
+                  "id": "ir_supine",
+                  "label": "IR supine",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "er_supine",
+                  "label": "ER supine",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "ir_prone",
+                  "label": "IR prone",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "er_prone",
+                  "label": "ER prone",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "rom_hip_thomas",
+              "name": "Thomas test (hip flexor length)",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "angle",
+                  "label": "Angle",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "lower",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rom_knee",
+          "name": "Knee",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "rom_knee_flex_ext",
+              "name": "Knee flexion / extension",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "flexion_passive",
+                  "label": "Flexion passive",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "flexion_active",
+                  "label": "Flexion active",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "extension_passive",
+                  "label": "Extension passive",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "extension_active",
+                  "label": "Extension active",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rom_ankle",
+          "name": "Ankle & foot",
+          "display_order": 3,
+          "tests": [
+            {
+              "id": "rom_ankle_df_lunge",
+              "name": "Ankle dorsiflexion — weight-bearing lunge test",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "distance_cm",
+                  "label": "Wall distance",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "angle_deg",
+                  "label": "Angle",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "rom_shoulder",
+          "name": "Shoulder",
+          "display_order": 4,
+          "tests": [
+            {
+              "id": "rom_shoulder_flex_ext",
+              "name": "Shoulder flexion / extension",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "flexion",
+                  "label": "Flexion",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "extension",
+                  "label": "Extension",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "rom_shoulder_ir_er",
+              "name": "Shoulder IR / ER",
+              "display_order": 2,
+              "notes": "Measured at 0° and 90° abduction",
+              "metrics": [
+                {
+                  "id": "ir_0deg",
+                  "label": "IR at 0°",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "er_0deg",
+                  "label": "ER at 0°",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "ir_90deg",
+                  "label": "IR at 90°",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "er_90deg",
+                  "label": "ER at 90°",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "rom_shoulder_abd_add",
+              "name": "Shoulder abduction / adduction",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "abduction",
+                  "label": "Abduction",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "adduction",
+                  "label": "Adduction",
+                  "unit": "deg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "force_plate",
+      "name": "Force plate",
+      "display_order": 2,
+      "subcategories": [
+        {
+          "id": "fp_cmj",
+          "name": "CMJ — bilateral",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "fp_cmj_bilateral",
+              "name": "Countermovement jump",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "jump_height",
+                  "label": "Jump height",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "conc_peak_force",
+                  "label": "Concentric peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "ecc_peak_force",
+                  "label": "Eccentric peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "ecc_dec_rfd",
+                  "label": "Eccentric deceleration RFD",
+                  "unit": "N/s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "peak_power",
+                  "label": "Peak power",
+                  "unit": "W",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "ft_ct",
+                  "label": "FT:CT ratio",
+                  "unit": "ratio",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fp_sj",
+          "name": "Squat jump",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "fp_sj",
+              "name": "Squat jump",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "jump_height",
+                  "label": "Jump height",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fp_dj",
+          "name": "Drop jump",
+          "display_order": 3,
+          "tests": [
+            {
+              "id": "fp_dj_bilateral",
+              "name": "Drop jump — bilateral",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "rsi",
+                  "label": "RSI",
+                  "unit": "m/s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fp_unilateral",
+          "name": "Unilateral jump",
+          "display_order": 4,
+          "tests": [
+            {
+              "id": "fp_slcmj",
+              "name": "Single-leg CMJ",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "jump_height",
+                  "label": "Jump height",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "lsi",
+                  "label": "LSI",
+                  "unit": "%",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "fp_sl_dj",
+              "name": "Single-leg drop jump",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "rsi",
+                  "label": "RSI",
+                  "unit": "m/s",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "contact_time",
+                  "label": "Contact time",
+                  "unit": "ms",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "lower",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fp_broad",
+          "name": "Broad jump",
+          "display_order": 5,
+          "tests": [
+            {
+              "id": "fp_broad_jump",
+              "name": "Broad jump",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "distance",
+                  "label": "Distance",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fp_isometric",
+          "name": "Isometric",
+          "display_order": 6,
+          "tests": [
+            {
+              "id": "fp_imtp",
+              "name": "IMTP",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "rfd_0_100",
+                  "label": "RFD 0–100ms",
+                  "unit": "N/s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "impulse",
+                  "label": "Impulse",
+                  "unit": "N·s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fp_balance",
+          "name": "Balance / postural",
+          "display_order": 7,
+          "tests": [
+            {
+              "id": "fp_cop_bilateral",
+              "name": "Bilateral COP sway",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "eyes_open",
+                  "label": "Eyes open",
+                  "unit": "mm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "eyes_closed",
+                  "label": "Eyes closed",
+                  "unit": "mm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "fp_cop_unilateral",
+              "name": "Unilateral COP sway",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "sway",
+                  "label": "Sway",
+                  "unit": "mm",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "lower",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dynamometry",
+      "name": "Dynamometry",
+      "display_order": 3,
+      "subcategories": [
+        {
+          "id": "dyn_nordbord",
+          "name": "NordBord — eccentric hamstrings",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "dyn_nordic",
+              "name": "Nordic hamstring curl",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "lsi",
+                  "label": "LSI",
+                  "unit": "%",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "force_angle_curve",
+                  "label": "Force-angle curve",
+                  "unit": "file",
+                  "input_type": "file",
+                  "side": null,
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "never",
+                  "client_view_chart": "hidden"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dyn_forceframe",
+          "name": "ForceFrame — isometric",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "dyn_ff_hip_abd",
+              "name": "Hip abductor peak force",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "dyn_ff_hip_add",
+              "name": "Hip adductor peak force",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "dyn_ff_add_abd_ratio",
+              "name": "Adductor : abductor ratio",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "ratio",
+                  "label": "Ratio",
+                  "unit": "ratio",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                }
+              ]
+            },
+            {
+              "id": "dyn_ff_shoulder_er_ir",
+              "name": "Shoulder ER/IR ratio",
+              "display_order": 4,
+              "metrics": [
+                {
+                  "id": "er_force",
+                  "label": "ER peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "ir_force",
+                  "label": "IR peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "ratio",
+                  "label": "ER:IR ratio",
+                  "unit": "ratio",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                }
+              ]
+            },
+            {
+              "id": "dyn_ff_knee_ext",
+              "name": "Knee extension isometric peak force",
+              "display_order": 5,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "dyn_ff_knee_flex",
+              "name": "Knee flexion isometric peak force",
+              "display_order": 6,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "dyn_dynamo",
+          "name": "DynaMo — handheld dynamometry",
+          "display_order": 3,
+          "tests": [
+            {
+              "id": "dyn_hhd_knee_ext",
+              "name": "Knee extension HHD",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "dyn_hhd_knee_flex",
+              "name": "Knee flexion HHD",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "dyn_hhd_shoulder_abd",
+              "name": "Shoulder abduction HHD",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "N",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "dyn_hhd_grip",
+              "name": "Wrist grip strength",
+              "display_order": 4,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "kg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "body_composition",
+      "name": "Body composition",
+      "display_order": 4,
+      "subcategories": [
+        {
+          "id": "bc_dexa",
+          "name": "DEXA",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "bc_dexa_scan",
+              "name": "DEXA scan",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "total_lean_mass",
+                  "label": "Total lean mass",
+                  "unit": "kg",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "body_fat_pct",
+                  "label": "Body fat %",
+                  "unit": "%",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "vat",
+                  "label": "Visceral adipose tissue",
+                  "unit": "g",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "bmd",
+                  "label": "Bone mineral density (BMD)",
+                  "unit": "g/cm²",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "t_score",
+                  "label": "T-score",
+                  "unit": "SD",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "bc_anthropometry",
+          "name": "Anthropometry",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "bc_anthro",
+              "name": "Anthropometric measures",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "body_mass",
+                  "label": "Body mass",
+                  "unit": "kg",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "height",
+                  "label": "Height",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "absolute",
+                  "client_portal_visibility": "never",
+                  "client_view_chart": "hidden"
+                },
+                {
+                  "id": "waist_circ",
+                  "label": "Waist circumference",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "hip_circ",
+                  "label": "Hip circumference",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "waist_hip_ratio",
+                  "label": "Waist-hip ratio",
+                  "unit": "ratio",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "thigh_circ",
+                  "label": "Thigh circumference",
+                  "unit": "cm",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cardiorespiratory",
+      "name": "Cardiorespiratory",
+      "display_order": 5,
+      "subcategories": [
+        {
+          "id": "cardio_resting",
+          "name": "Resting",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "cardio_resting_vitals",
+              "name": "Resting vitals",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "hr",
+                  "label": "Resting heart rate",
+                  "unit": "bpm",
+                  "input_type": "integer",
+                  "side": null,
+                  "direction_of_good": "context_dependent",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "bp_systolic",
+                  "label": "Systolic BP",
+                  "unit": "mmHg",
+                  "input_type": "integer",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "bp_diastolic",
+                  "label": "Diastolic BP",
+                  "unit": "mmHg",
+                  "input_type": "integer",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "spo2",
+                  "label": "SpO₂",
+                  "unit": "%",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cardio_field",
+          "name": "Submaximal / field",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "cardio_6mwt",
+              "name": "6-minute walk test",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "distance",
+                  "label": "Distance",
+                  "unit": "m",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "cardio_yoyo_ir2",
+              "name": "Yo-Yo IR2",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "level",
+                  "label": "Level reached",
+                  "unit": "level",
+                  "input_type": "text",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "total_distance",
+                  "label": "Total distance",
+                  "unit": "m",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "cardio_beep",
+              "name": "Beep test (20m shuttle)",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "level",
+                  "label": "Level reached",
+                  "unit": "level",
+                  "input_type": "text",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "vo2max_est",
+                  "label": "Estimated VO₂max",
+                  "unit": "mL/kg/min",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "cardio_step",
+              "name": "Step test (Chester / Kasch)",
+              "display_order": 4,
+              "metrics": [
+                {
+                  "id": "hr_recovery",
+                  "label": "HR at 1min recovery",
+                  "unit": "bpm",
+                  "input_type": "integer",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "vo2max_est",
+                  "label": "Estimated VO₂max",
+                  "unit": "mL/kg/min",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "cardio_max",
+          "name": "Maximal / lab",
+          "display_order": 3,
+          "tests": [
+            {
+              "id": "cardio_vo2max",
+              "name": "VO₂max",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "vo2max_direct",
+                  "label": "VO₂max direct",
+                  "unit": "mL/kg/min",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                },
+                {
+                  "id": "vo2max_estimated",
+                  "label": "VO₂max estimated",
+                  "unit": "mL/kg/min",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "biomarkers",
+      "name": "Biomarkers — blood & fluid",
+      "display_order": 6,
+      "subcategories": [
+        {
+          "id": "bio_metabolic",
+          "name": "Metabolic / nutrition",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "bio_metabolic_panel",
+              "name": "Metabolic & nutrition panel",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "vitamin_d",
+                  "label": "Vitamin D (25-OH)",
+                  "unit": "nmol/L",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "hba1c",
+                  "label": "HbA1c",
+                  "unit": "%",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "glucose",
+                  "label": "Fasting glucose",
+                  "unit": "mmol/L",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "cholesterol",
+                  "label": "Total cholesterol",
+                  "unit": "mmol/L",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "target_range",
+                  "default_chart": "target_zone",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "ldl",
+                  "label": "LDL",
+                  "unit": "mmol/L",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                },
+                {
+                  "id": "hdl",
+                  "label": "HDL",
+                  "unit": "mmol/L",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_normative",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "neuromuscular",
+      "name": "Neuromuscular & neurological",
+      "display_order": 7,
+      "subcategories": [
+        {
+          "id": "neuro_balance",
+          "name": "Balance — clinical",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "neuro_sls",
+              "name": "Single leg stance",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "eyes_open",
+                  "label": "Eyes open",
+                  "unit": "s",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "eyes_closed",
+                  "label": "Eyes closed",
+                  "unit": "s",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "functional_movement",
+      "name": "Functional movement",
+      "display_order": 8,
+      "subcategories": [
+        {
+          "id": "func_upper",
+          "name": "Upper limb functional",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "func_pushup",
+              "name": "Push-up test",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "max_reps",
+                  "label": "Max reps",
+                  "unit": "reps",
+                  "input_type": "integer",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sport_performance",
+      "name": "Sport-specific performance",
+      "display_order": 9,
+      "subcategories": [
+        {
+          "id": "sport_speed",
+          "name": "Speed & sprint",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "sport_sprint_10m",
+              "name": "10m sprint",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "time",
+                  "label": "Time",
+                  "unit": "s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "sport_sprint_20m",
+              "name": "20m sprint",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "time",
+                  "label": "Time",
+                  "unit": "s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            },
+            {
+              "id": "sport_t_test",
+              "name": "T-test (agility)",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "time",
+                  "label": "Time",
+                  "unit": "s",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "line"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "sport_generic",
+          "name": "Generic capacity",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "sport_grip",
+              "name": "Grip strength — bilateral",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "peak_force",
+                  "label": "Peak force",
+                  "unit": "kg",
+                  "input_type": "decimal",
+                  "side": [
+                    "left",
+                    "right"
+                  ],
+                  "direction_of_good": "higher",
+                  "default_chart": "asymmetry_bar",
+                  "comparison_mode": "bilateral_lsi",
+                  "client_portal_visibility": "auto",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "patient_reported",
+      "name": "Patient-reported & pain",
+      "display_order": 10,
+      "subcategories": [
+        {
+          "id": "pts_pain",
+          "name": "Pain",
+          "display_order": 1,
+          "tests": [
+            {
+              "id": "pts_vas",
+              "name": "VAS pain",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "score",
+                  "label": "VAS score",
+                  "unit": "mm",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pts_region",
+          "name": "Function — region specific",
+          "display_order": 2,
+          "tests": [
+            {
+              "id": "pts_koos",
+              "name": "KOOS",
+              "display_order": 1,
+              "metrics": [
+                {
+                  "id": "pain",
+                  "label": "Pain subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "symptoms",
+                  "label": "Symptoms subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "adl",
+                  "label": "ADL subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "sport_rec",
+                  "label": "Sport & recreation subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "qol",
+                  "label": "QoL subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "pts_hoos",
+              "name": "HOOS",
+              "display_order": 2,
+              "metrics": [
+                {
+                  "id": "pain",
+                  "label": "Pain subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "symptoms",
+                  "label": "Symptoms subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "adl",
+                  "label": "ADL subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "sport_rec",
+                  "label": "Sport & recreation subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                },
+                {
+                  "id": "qol",
+                  "label": "QoL subscale",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "pts_acl_rsi",
+              "name": "ACL-RSI",
+              "display_order": 3,
+              "metrics": [
+                {
+                  "id": "total_score",
+                  "label": "Total score",
+                  "unit": "0–100",
+                  "input_type": "decimal",
+                  "side": null,
+                  "direction_of_good": "higher",
+                  "default_chart": "bar",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "milestone"
+                }
+              ]
+            },
+            {
+              "id": "pts_tampa",
+              "name": "Tampa Scale (kinesiophobia)",
+              "display_order": 4,
+              "metrics": [
+                {
+                  "id": "total_score",
+                  "label": "Total score",
+                  "unit": "17–68",
+                  "input_type": "integer",
+                  "side": null,
+                  "direction_of_good": "lower",
+                  "default_chart": "line",
+                  "comparison_mode": "vs_baseline",
+                  "client_portal_visibility": "never",
+                  "client_view_chart": "hidden"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "result_record": {
+    "description": "Shape of a single test result entry stored in the database",
+    "fields": {
+      "id": {
+        "type": "uuid",
+        "description": "Unique result ID"
+      },
+      "athlete_id": {
+        "type": "uuid",
+        "description": "Foreign key — athlete / client"
+      },
+      "test_id": {
+        "type": "string",
+        "description": "References test.id in schema"
+      },
+      "metric_id": {
+        "type": "string",
+        "description": "References metric.id within test"
+      },
+      "side": {
+        "type": "string",
+        "enum": [
+          "left",
+          "right",
+          null
+        ],
+        "description": "Null for bilateral / non-sided metrics"
+      },
+      "value": {
+        "type": "number",
+        "description": "Numeric result"
+      },
+      "unit": {
+        "type": "string",
+        "description": "Unit as defined in schema metric"
+      },
+      "session_id": {
+        "type": "uuid",
+        "description": "Groups all metrics recorded in one session"
+      },
+      "is_baseline": {
+        "type": "boolean",
+        "description": "True for the first recorded session — all subsequent sessions compared against this"
+      },
+      "recorded_at": {
+        "type": "datetime",
+        "description": "ISO 8601 timestamp"
+      },
+      "notes": {
+        "type": "string",
+        "description": "Optional free-text clinician note"
+      },
+      "created_by": {
+        "type": "uuid",
+        "description": "Clinician user ID"
+      }
+    }
+  },
+  "rendering_hints": {
+    "direction_of_good": {
+      "higher": "Larger value is a better outcome",
+      "lower": "Smaller value is a better outcome",
+      "target_range": "Clinically meaningful range exists; deviations either side are flagged",
+      "context_dependent": "No general direction; chart engine renders neutral until per-client context is set"
+    },
+    "default_chart": {
+      "line": "Single value tracked over time",
+      "bar": "Categorical comparison at one timepoint (e.g. KOOS subscales)",
+      "radar": "Multi-axis snapshot — reserved for ≥4 related metrics",
+      "asymmetry_bar": "Left vs right with LSI annotation — default for bilateral metrics",
+      "target_zone": "Value plotted within a clinical reference band"
+    },
+    "comparison_mode": {
+      "absolute": "Raw value, no comparison context",
+      "bilateral_lsi": "Limb symmetry index = (involved/uninvolved) × 100",
+      "vs_baseline": "Each session compared to first recorded session",
+      "vs_normative": "Compared to population/age-matched norms"
+    },
+    "client_portal_visibility": {
+      "auto": "Result appears in client Reports tab as soon as logged",
+      "on_publish": "Held until clinician publishes with optional framing text",
+      "never": "Never visible to client (clinician-only screening tools)"
+    },
+    "client_view_chart": {
+      "line": "Line chart over time (used sparingly client-side)",
+      "milestone": "Baseline → Latest with delta — strips noisy middle data",
+      "bar": "Subscale comparison at one timepoint",
+      "narrative_only": "No chart; clinician summary text only",
+      "hidden": "Never rendered in client portal"
+    }
+  }
+}
