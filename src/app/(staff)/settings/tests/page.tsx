@@ -3,12 +3,14 @@ import { ChevronLeft } from 'lucide-react'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
+  loadAllBatteriesForOrg,
   loadAllDisabledTests,
   loadAllOverridesForOrg,
   loadCatalog,
   loadCustomTestsForOrg,
   type OverrideMapEntry,
 } from '@/lib/testing'
+import { BatteryBuilder } from './_components/BatteryBuilder'
 import { CustomTestBuilder } from './_components/CustomTestBuilder'
 import { DisableTestsList } from './_components/DisableTestsList'
 import { OverrideEditor } from './_components/OverrideEditor'
@@ -19,21 +21,28 @@ export default async function SettingsTestsPage() {
   const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const [catalog, schemaCatalog, overrides, disabled, customTests] =
-    await Promise.all([
-      // Default load: includes custom tests, excludes disabled. Used by the
-      // override editor (3.1) so the EP can adjust hints on enabled tests.
-      loadCatalog(supabase, organizationId),
-      // Schema-only, includes-disabled load: used by the disable-tests
-      // list (3.3). Custom tests are managed via the Custom Tests section.
-      loadCatalog(supabase, organizationId, {
-        includeCustom: false,
-        includeDisabled: true,
-      }),
-      loadAllOverridesForOrg(supabase, organizationId),
-      loadAllDisabledTests(supabase, organizationId),
-      loadCustomTestsForOrg(supabase, organizationId),
-    ])
+  const [
+    catalog,
+    schemaCatalog,
+    overrides,
+    disabled,
+    customTests,
+    batteries,
+  ] = await Promise.all([
+    // Default load: includes custom tests, excludes disabled. Used by the
+    // override editor (3.1) so the EP can adjust hints on enabled tests.
+    loadCatalog(supabase, organizationId),
+    // Schema-only, includes-disabled load: used by the disable-tests
+    // list (3.3). Custom tests are managed via the Custom Tests section.
+    loadCatalog(supabase, organizationId, {
+      includeCustom: false,
+      includeDisabled: true,
+    }),
+    loadAllOverridesForOrg(supabase, organizationId),
+    loadAllDisabledTests(supabase, organizationId),
+    loadCustomTestsForOrg(supabase, organizationId),
+    loadAllBatteriesForOrg(supabase, organizationId),
+  ])
 
   // Maps don't survive the Server → Client component boundary cleanly.
   // Plain objects do.
@@ -96,9 +105,9 @@ export default async function SettingsTestsPage() {
 
       <Section
         title="Saved batteries"
-        desc="Pre-defined sets of metrics for one-click capture. Apply from the capture modal or from inside a clinical note."
+        desc="Pre-defined sets of metrics for one-click capture. Cross-category by design — combine ROM, force plate, isokinetic, and questionnaire metrics in one battery. Apply from the capture modal."
       >
-        <ComingNext label="3.4 — battery builder" />
+        <BatteryBuilder batteries={batteries} catalog={catalog} />
       </Section>
     </div>
   )
@@ -148,16 +157,3 @@ function Section({
   )
 }
 
-function ComingNext({ label }: { label: string }) {
-  return (
-    <div
-      style={{
-        padding: '32px 22px',
-        color: 'var(--color-text-light)',
-        fontSize: '.85rem',
-      }}
-    >
-      {label} — wired in the next polish-pass turn.
-    </div>
-  )
-}

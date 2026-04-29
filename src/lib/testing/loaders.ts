@@ -316,6 +316,32 @@ export async function loadActiveBatteries(
   return ((data ?? []) as unknown as BatteryRow[])
 }
 
+/** Editable view of a battery — includes is_active so the form can toggle. */
+export interface EditableBatteryRow extends BatteryRow {
+  is_active: boolean
+}
+
+/**
+ * All non-deleted batteries (active + inactive) for the org. Used by the
+ * Settings → Tests battery builder. The capture modal continues to use
+ * loadActiveBatteries which filters to is_active = true.
+ */
+export async function loadAllBatteriesForOrg(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<EditableBatteryRow[]> {
+  const { data, error } = await supabase
+    .from('test_batteries')
+    .select('id, name, description, is_active, metric_keys')
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+    .order('is_active', { ascending: false })
+    .order('name', { ascending: true })
+
+  if (error) throw new Error(`Load all batteries: ${error.message}`)
+  return ((data ?? []) as unknown as EditableBatteryRow[])
+}
+
 // ---------------------------------------------------------------------------
 // Last used battery for this client (UX hint)
 // ---------------------------------------------------------------------------

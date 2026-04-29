@@ -23,6 +23,7 @@ export {
 export {
   loadCatalog,
   loadActiveBatteries,
+  loadAllBatteriesForOrg,
   loadLastUsedBatteryForClient,
   loadCapturedSessionsForClient,
   loadAllOverridesForOrg,
@@ -33,6 +34,7 @@ export {
   type CatalogTest,
   type CatalogMetric,
   type BatteryRow,
+  type EditableBatteryRow,
   type LastUsedBatteryHint,
   type CapturedSessionRow,
   type OverrideMapEntry,

@@ -418,6 +418,170 @@ export async function setTestEnabledAction(
   return { error: null }
 }
 
+/* ============================================================================
+   3.4 — Saved test batteries
+   ============================================================================
+   Cross-category by design (Q3 sign-off): a battery may pull metrics from
+   any combination of categories. The capture modal already consumes
+   metric_keys to pre-select the picks; the existing applied_battery_id
+   plumbing on test_sessions handles the "last used" hint.
+
+   Per-side selection deferred: v1 picks at the metric level, side defaults
+   to null. Bilateral metrics auto-capture both sides during the session.
+   Side-specific selection (`side: 'left' | 'right'`) is supported by the
+   data shape if/when a future iteration needs it.
+
+   archive routes through the soft_delete_test_battery RPC from migration
+   20260429120000 to dodge the deleted_at-IS-NULL SELECT-policy trap.
+   ============================================================================ */
+
+export interface BatteryMetricKey {
+  test_id: string
+  metric_id: string
+  side?: 'left' | 'right' | null
+}
+
+export interface CreateBatteryInput {
+  name: string
+  description: string | null
+  is_active: boolean
+  metric_keys: BatteryMetricKey[]
+}
+
+export type UpdateBatteryInput = CreateBatteryInput
+
+function validateBatteryInput(input: CreateBatteryInput): string | null {
+  const trimmedName = input.name.trim()
+  if (trimmedName.length === 0 || trimmedName.length > 200) {
+    return 'Name must be 1–200 characters.'
+  }
+  if (input.description !== null && input.description.length > 2000) {
+    return 'Description must be 2000 characters or fewer.'
+  }
+  if (input.metric_keys.length < 1 || input.metric_keys.length > 100) {
+    return 'A battery needs between 1 and 100 metrics.'
+  }
+  const seen = new Set<string>()
+  for (const k of input.metric_keys) {
+    if (!TEST_ID_RE.test(k.test_id)) {
+      return `Invalid test id "${k.test_id}".`
+    }
+    if (!METRIC_ID_RE.test(k.metric_id)) {
+      return `Invalid metric id "${k.metric_id}".`
+    }
+    if (
+      k.side !== undefined &&
+      k.side !== null &&
+      k.side !== 'left' &&
+      k.side !== 'right'
+    ) {
+      return `Invalid side for ${k.test_id}.${k.metric_id}.`
+    }
+    const key = `${k.test_id}::${k.metric_id}::${k.side ?? ''}`
+    if (seen.has(key)) {
+      return `Duplicate metric pick: ${k.test_id} / ${k.metric_id}.`
+    }
+    seen.add(key)
+  }
+  return null
+}
+
+function normaliseMetricKeys(metric_keys: BatteryMetricKey[]) {
+  // Inferred return: { test_id: string; metric_id: string; side: 'left' | 'right' | null }[]
+  // — no optional `side` field so the result satisfies Supabase's Json
+  // index-signature contract (closed shape, every key has a value).
+  return metric_keys.map((k) => ({
+    test_id: k.test_id,
+    metric_id: k.metric_id,
+    side: k.side ?? null,
+  }))
+}
+
+export async function createBatteryAction(
+  input: CreateBatteryInput,
+): Promise<{ error: string | null; id: string | null }> {
+  const validationError = validateBatteryInput(input)
+  if (validationError) return { error: validationError, id: null }
+
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase
+    .from('test_batteries')
+    .insert({
+      organization_id: organizationId,
+      name: input.name.trim(),
+      description: input.description?.trim() ? input.description.trim() : null,
+      is_active: input.is_active,
+      metric_keys: normaliseMetricKeys(input.metric_keys),
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '23505') {
+      return {
+        error: `A battery named "${input.name.trim()}" already exists.`,
+        id: null,
+      }
+    }
+    return { error: `Save failed: ${error.message}`, id: null }
+  }
+
+  revalidatePath('/settings/tests')
+  return { error: null, id: data?.id ?? null }
+}
+
+export async function updateBatteryAction(
+  id: string,
+  input: UpdateBatteryInput,
+): Promise<{ error: string | null }> {
+  const validationError = validateBatteryInput(input)
+  if (validationError) return { error: validationError }
+
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('test_batteries')
+    .update({
+      name: input.name.trim(),
+      description: input.description?.trim() ? input.description.trim() : null,
+      is_active: input.is_active,
+      metric_keys: normaliseMetricKeys(input.metric_keys),
+    })
+    .eq('id', id)
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+
+  if (error) {
+    if (error.code === '23505') {
+      return { error: `A battery with that name already exists.` }
+    }
+    return { error: `Save failed: ${error.message}` }
+  }
+
+  revalidatePath('/settings/tests')
+  return { error: null }
+}
+
+export async function archiveBatteryAction(
+  id: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  // soft_delete_test_battery is SECURITY DEFINER; the function body
+  // re-checks org + role inside.
+  const { error } = await supabase.rpc('soft_delete_test_battery', {
+    p_id: id,
+  })
+  if (error) return { error: `Archive failed: ${error.message}` }
+
+  revalidatePath('/settings/tests')
+  return { error: null }
+}
+
 // ----------------------------------------------------------------------------
 // Type-safe payload builders. Per-field switches let TS narrow each branch
 // to the exact column type — avoids dynamic-key updates which the strict
