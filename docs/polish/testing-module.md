@@ -184,11 +184,11 @@ Running record of what's closed, in order. Each entry references the commit on m
 - **P0-5 publish gate** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222). `client_publications` table + soft-delete-as-unpublish.
 - **P0-6 pgTAP scaffolding** — closed in [0004222](https://github.com/Scottyhb19/client-platform/commit/0004222). `supabase/tests/database/{00_test_helpers,01_visibility_override,02_never_hard_wall,03_baseline_immutability}.sql`. All green on staging.
 
-### Phase B.1 — Capture-flow foundation (in progress)
+### Phase B.1 — Capture-flow foundation (closed)
 
-- **P1-8 validation_bounds.json** — closed pending push. `data/validation_bounds.json` + `src/lib/testing/validation-bounds.ts`. `validateMetricValue()` returns hard-bound errors and soft-bound warnings; the modal will call this before any RPC fires.
-- **clinical_notes.test_session_id FK** — closed pending push. Migration `20260428130000`. Single nullable FK per Q2 sign-off; ON DELETE SET NULL preserves narrative if the session is removed.
-- **create_test_session RPC + server action** — closed pending push. Migration `20260428130100` (atomic SECURITY INVOKER RPC) + `src/app/(staff)/clients/[id]/test-actions.ts` (`createTestSessionAction`, `softDeleteTestSessionAction`). RPC respects RLS — staff can write, clients cannot.
+- **P1-8 validation_bounds.json** — closed. `data/validation_bounds.json` + `src/lib/testing/validation-bounds.ts`. `validateMetricValue()` returns hard-bound errors and soft-bound warnings; the modal calls this before any RPC fires.
+- **clinical_notes.test_session_id FK** — closed. Migration `20260428130000`. Single nullable FK per Q2 sign-off; ON DELETE SET NULL preserves narrative if the session is removed.
+- **create_test_session RPC + server action** — closed. Migration `20260428130100` (atomic SECURITY INVOKER RPC) + `src/app/(staff)/clients/[id]/test-actions.ts` (`createTestSessionAction`, `softDeleteTestSessionAction`). RPC respects RLS — staff can write, clients cannot.
 
 ### Phase B.2 — Capture modal + Reports tab (closed)
 
@@ -197,19 +197,62 @@ Running record of what's closed, in order. Each entry references the commit on m
 - **`applied_battery_id` per-client last-used hint** — closed in [9b941b3](https://github.com/Scottyhb19/client-platform/commit/9b941b3). Migration `20260428140000` adds the column + ON DELETE SET NULL FK to test_batteries; `create_test_session` RPC accepts the optional id; modal surfaces the hint above the dropdown when the client has prior captures.
 - **RLS recursion fix** — closed in [ba5687c](https://github.com/Scottyhb19/client-platform/commit/ba5687c). Migration `20260428150000` replaces cross-table EXISTS sub-queries in the test_sessions/test_results/client_publications policies with SECURITY DEFINER helpers (`client_owns_test_session`, `test_session_in_org`, `test_session_has_active_publication`, `test_session_has_auto_visible_metric`). Same security model — the helpers do exactly the checks the inline EXISTS would have. Phase-A pgTAP tests still pass; Phase-A had a latent recursion bug that only fired under PostgREST's planner.
 
-### Phase B.4 — Note-template capture hook (closed pending push)
+### Phase B.4 — Note-template capture hook (closed)
 
-- **P1-2 Run-battery hook in note templates** — `clinical_notes.test_session_id` FK lands in B.1; the v1 UI is a "+ Capture test session" panel inside the create-note form (mode = 'create' only — edit preserves whatever link is already on the row). Captures via TestCaptureModal with an `onCaptured` callback that returns the new session_id; clicking Save submits both the note and the link in a single server-action call. The brief's richer "test_battery field type inside note templates" framing is deferred to Phase C polish — v1 delivers the data outcome (note ↔ session) without a template-editor change.
+- **P1-2 Run-battery hook in note templates** — closed in [435aedb](https://github.com/Scottyhb19/client-platform/commit/435aedb). `clinical_notes.test_session_id` FK lands in B.1; the v1 UI is a "+ Capture test session" panel inside the create-note form (mode = 'create' only — edit preserves whatever link is already on the row). Captures via TestCaptureModal with an `onCaptured` callback that returns the new session_id; clicking Save submits both the note and the link in a single server-action call. The brief's richer "test_battery field type inside note templates" framing is deferred to Phase C polish — v1 delivers the data outcome (note ↔ session) without a template-editor change.
 - **Server action surface**: `createClinicalNoteAction` and `updateClinicalNoteAction` now accept an optional `testSessionId`. `undefined` keeps the existing value on update; explicit `null` clears it.
 
-### Phase B.5 — Three-entry-points pgTAP (closed pending push)
+### Phase B.5 — Three-entry-points pgTAP (closed)
 
-- **Brief §8 Test 2** — `supabase/tests/database/04_three_entry_points.sql`. Asserts that note-template capture, Reports-modal capture, and a simulated VALD import all produce structurally-identical test_results rows distinguishable only by `test_sessions.source` (and the FK on the path-a clinical_note). Confirms the data layer is ready for the future VALD parser without a separate RPC.
+- **Brief §8 Test 2** — closed in [435aedb](https://github.com/Scottyhb19/client-platform/commit/435aedb). `supabase/tests/database/04_three_entry_points.sql` asserts that note-template capture, Reports-modal capture, and a simulated VALD import all produce structurally-identical test_results rows distinguishable only by `test_sessions.source` (and the FK on the path-a clinical_note). Confirms the data layer is ready for the future VALD parser without a separate RPC.
 
-### Phase C — Settings UI (next)
+### Phase B.6 — pgTAP test 03 stabilisation (closed)
 
-- P1-4 Settings → Tests page. Per-metric override editor, custom-test builder, disable-test toggle, batteries builder. Resolver already plumbed; this phase adds the UI to read/write the underlying tables.
+- **Test 03 (baseline immutability)** — verified 8/8 green on 2026-04-30 after the test-04-pattern refactor sequence ([0714145](https://github.com/Scottyhb19/client-platform/commit/0714145), [2530356](https://github.com/Scottyhb19/client-platform/commit/2530356), [588b2c7](https://github.com/Scottyhb19/client-platform/commit/588b2c7), [b904470](https://github.com/Scottyhb19/client-platform/commit/b904470), [a23be95](https://github.com/Scottyhb19/client-platform/commit/a23be95)). Phase A pgTAP suite (01, 02, 03, 04) all passing on staging.
 
-### Phase D — Reports rendering (after C)
+### Phase C — Settings UI (closed)
+
+- **P1-4 §3.1 per-metric override editor** — closed in [7b1d4b5](https://github.com/Scottyhb19/client-platform/commit/7b1d4b5). New route `/settings/tests` with multi-open category accordions (last-opened state in localStorage, multi-open per Q1 sign-off so the EP can compare across categories). 5-column dense rows per metric (per Q5); native `<select>` per cell with the schema default in the placeholder option; green border + dot on overridden fields; row-level Reset DELETEs the practice_test_settings row entirely. Optimistic state updates with rollback on server-action error. Action layer handles UPSERT, single-field clear-to-NULL UPDATE, and the all-NULL hygiene case (DELETE rather than leaving a ghost row). Three new bulk loaders: `loadAllOverridesForOrg`, `loadAllDisabledTests`, `loadCustomTestsForOrg`.
+- **P1-4 §3.2 custom test builder** — closed in [e83eed0](https://github.com/Scottyhb19/client-platform/commit/e83eed0). Auto-slugify test_id from name with Edit-ID escape hatch and collision suffixing (per Q2 sign-off). Auto-slugify metric_id from each metric's label, collision-checked within the test. CategoryPicker primitive — styled `<select>` populated from the schema with an "＋ Type a new id…" sentinel that morphs the control into a free-text input (replacing an initial `<input list>+<datalist>` that rendered the browser's native autofill popup). 1–30 metrics per test (DB CHECK), decimal/integer input types only (test_results.value is `numeric NOT NULL`), bilateral toggle, 5 rendering hints. Edit locks test_id and existing metric_ids — past test_results FK them by string. Archive routes through `soft_delete_practice_custom_test` RPC.
+- **P1-4 §3.3 disable-tests toggle** — closed in [4d2a1ed](https://github.com/Scottyhb19/client-platform/commit/4d2a1ed). Hard-DELETE-on-enable / hard-INSERT-on-disable on `practice_disabled_tests` dodges the `deleted_at IS NULL` SELECT-policy trap entirely. Schema tests only — server-side guard rejects `custom_…` ids per Q4 sign-off (custom tests are archived via §3.2). Same accordion shape as §3.1 with a separate localStorage key. `loadCatalog` gains `{ includeCustom?, includeDisabled? }` options; defaults preserve existing capture-flow behaviour, `/settings/tests` opts into `{ includeDisabled: true }` so the override editor can still adjust hints on disabled tests.
+- **P1-4 §3.4 saved batteries builder** — closed in [6998d9a](https://github.com/Scottyhb19/client-platform/commit/6998d9a). Cross-category by design (Q3 sign-off) — picker walks the merged catalog, search filters by metric label / test name / id and force-expands all categories while filtering. Selected-pills strip lets the EP remove a metric without re-finding it in the tree. v1 picks at the metric level with `side: null` (side-specific picks remain available in the data shape for a later iteration). Active flag is separate from soft-delete (suspend without losing). `loadAllBatteriesForOrg` returns active + inactive for the editor; `loadActiveBatteries` (existing) keeps the capture-modal filter. Archive routes through `soft_delete_test_battery` RPC.
+
+### Phase C acceptance gates
+
+- **pgTAP** — `supabase/tests/database/07_phase_c_settings_round_trip.sql` covers the data-layer halves of brief §8 Tests 6 and 7: custom-test INSERT round-trips through the metrics jsonb intact and `soft_delete_practice_custom_test` removes it from the active view; `practice_disabled_tests` INSERT works and pre-existing test_results for the disabled test_id stay queryable (the load-bearing assertion behind "past results remain queryable; only forward capture is hidden"); `test_batteries` INSERT with metric_keys spanning 8 metrics across 3 distinct test_ids round-trips intact and `soft_delete_test_battery` removes it. Test 1's data half is already covered by `01_visibility_override.sql`.
+- **Manual UI checklist** — see §8 below for the items to walk through against `/settings/tests` on a real authenticated session before declaring Phase C done. Items marked `[Phase D]` are the visual halves of brief §8 Tests 1, 6 — they are gated on the Reports rendering work and not testable until Phase D lands.
+
+### Phase D — Reports rendering (next)
 
 - P1-5/6/7 + P2-1: chart library decision, test cards, comparison view, publish flow.
+
+---
+
+## 8. Phase C manual UI acceptance checklist
+
+Per Q6 sign-off (acceptance test runner: pgTAP for the data assertions, manual checklist for the UI workflows). Walk through each item against `/settings/tests` on a real authenticated session. Items marked `[Phase D]` are the visual halves that depend on the reports rendering work and are not testable until Phase D lands — they're listed here so they're not forgotten.
+
+### Test 1 — Schema-driven rendering
+
+- [ ] Settings → Tests → Per-metric overrides. Expand Range of motion → Hip → Hip IR / ER (supine and prone). Override `er_supine` direction-of-good from "context" to "higher = good". Cell border turns green; small dot appears.
+- [ ] Reload the page. Override persists. Category header reads "1 override".
+- [ ] Click the Reset icon at the row's right end. All five fields revert to their "Default (...)" placeholder. Category header reads "no overrides".
+- [ ] **[Phase D]** Capture a `+5°` result against the metric and view in the staff Reports tab. Chart paints positive deltas green when the override is set, neutral grey on reset. **No code change permitted during the test.**
+
+### Test 6 — Custom test parity
+
+- [ ] Settings → Tests → Custom tests → + Add custom test. Name "Test 6 isokinetic", category "custom_isok", subcategory "custom_knee". Add 2 metrics with full rendering hints (e.g., Peak torque · Nm · decimal · bilateral; H/Q ratio · ratio · decimal · unilateral). Save.
+- [ ] On a client → Reports tab → + Record test. The custom test appears in the catalog tree under custom_isok / custom_knee with a Custom badge.
+- [ ] Capture a result and save. Session appears in the Reports list.
+- [ ] **[Phase D]** Custom-test results render in the Reports tab with full feature parity to schema tests (delta, chart, etc.). They surface in the publish-flow panel like any other on_publish metric.
+- [ ] Settings → Tests → Disable schema tests. Disable `rom_hip_flexion`. Toggle reads "Disabled" with red dot; category header updates.
+- [ ] On a client → + Record test. `rom_hip_flexion` does NOT appear in the catalog tree.
+- [ ] **[Phase D]** Past test_results captured against `rom_hip_flexion` before the disable still render in the Reports tab.
+- [ ] Re-enable. The test reappears in the capture flow.
+
+### Test 7 — Battery one-click
+
+- [ ] Settings → Tests → Saved batteries → + New battery. Name "Test 7 cross-category". Pick 8 metrics across at least 3 different test_ids (suggested: 2 from rom_hip_flexion + 4 from rom_hip_ir_er + 2 from pts_koos). Save.
+- [ ] On a client → + Record test. Battery dropdown shows "Test 7 cross-category".
+- [ ] Pick the battery. The capture modal pre-ticks all 8 metric inputs across their respective category accordions.
+- [ ] Capture a result and save. Session has `applied_battery_id` set; the per-client "last used" hint surfaces above the dropdown on the next capture for the same client.
