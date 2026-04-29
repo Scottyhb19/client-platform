@@ -10,12 +10,21 @@ SET search_path TO public, extensions, pg_temp;
 -- The first non-deleted session for a (client_id, test_id) combo is
 -- baseline. Soft-deleting the baseline session promotes the next
 -- chronological session. Restoring the soft-deleted row re-claims
--- baseline. The view test_results_with_baseline derives this on the
--- fly via a window function over non-deleted rows.
+-- baseline. The view test_results_with_baseline derives this on the fly.
 --
--- This test exercises three sessions across three months, all for the
--- same client + same test, and walks through the soft-delete /
--- restore cycle.
+-- ----------------------------------------------------------------------------
+-- The soft-delete / restore wrinkle
+-- ----------------------------------------------------------------------------
+-- Running `UPDATE test_sessions SET deleted_at = now()` as the staff user
+-- fails with 42501. The mechanism: PostgreSQL evaluates the SELECT policy
+-- on the post-UPDATE row to verify visibility, the SELECT policy requires
+-- `deleted_at IS NULL`, and the just-mutated row violates that. (Same
+-- class of issue documented in memory/project_postgrest_soft_delete_rls.)
+--
+-- The production app handles this with SECURITY DEFINER RPCs. For the
+-- test we briefly toggle FORCE RLS off, do the soft-delete as the table
+-- owner (postgres, which bypasses RLS without FORCE), and toggle FORCE
+-- back on. All of this rolls back at end of transaction.
 -- ============================================================================
 
 BEGIN;
@@ -30,9 +39,9 @@ DECLARE
   org_id        uuid := '00000000-0000-0000-0000-0000000000c1'::uuid;
   staff_uid     uuid;
   client_row_id uuid := '00000000-0000-0000-0000-0000000000c2'::uuid;
-  session_a     uuid := '00000000-0000-0000-0000-0000000000ca'::uuid;
-  session_b     uuid := '00000000-0000-0000-0000-0000000000cb'::uuid;
-  session_c     uuid := '00000000-0000-0000-0000-0000000000cc'::uuid;
+  session_a     uuid;
+  session_b     uuid;
+  session_c     uuid;
 BEGIN
   INSERT INTO organizations (id, name, slug)
   VALUES (org_id, 'Test Org — Baseline', 'test-org-baseline');
@@ -46,26 +55,48 @@ BEGIN
     client_row_id, org_id, 'Bob', 'Baseline', 'bob@test.local'
   );
 
-  -- Spoof the staff JWT and switch role to authenticated, so the
-  -- test_sessions / test_results INSERT policies (which target the
-  -- authenticated role) actually apply and pass with the staff JWT.
-  -- This is the same pattern test 04 uses successfully — Supabase's
-  -- postgres role doesn't reliably bypass RLS, so we go through the
-  -- policies legitimately.
   PERFORM public._test_set_jwt(staff_uid, org_id, 'staff');
   EXECUTE 'SET LOCAL ROLE authenticated';
 
-  -- Three sessions, three months apart, same client + same test (CMJ
-  -- bilateral jump_height — auto visibility, decimal value).
-  INSERT INTO test_sessions (id, organization_id, client_id, conducted_by, conducted_at) VALUES
-    (session_a, org_id, client_row_id, staff_uid, now() - interval '90 days'),
-    (session_b, org_id, client_row_id, staff_uid, now() - interval '60 days'),
-    (session_c, org_id, client_row_id, staff_uid, now() - interval '30 days');
-
-  INSERT INTO test_results (organization_id, test_session_id, test_id, metric_id, side, value, unit) VALUES
-    (org_id, session_a, 'fp_cmj_bilateral', 'jump_height', NULL, 32.4, 'cm'),
-    (org_id, session_b, 'fp_cmj_bilateral', 'jump_height', NULL, 34.1, 'cm'),
-    (org_id, session_c, 'fp_cmj_bilateral', 'jump_height', NULL, 36.8, 'cm');
+  session_a := public.create_test_session(
+    client_row_id,
+    now() - interval '90 days',
+    'manual'::test_source_t,
+    NULL::uuid, NULL::text, NULL::uuid,
+    jsonb_build_array(jsonb_build_object(
+      'test_id',   'fp_cmj_bilateral',
+      'metric_id', 'jump_height',
+      'side',      NULL,
+      'value',     32.4,
+      'unit',      'cm'
+    ))
+  );
+  session_b := public.create_test_session(
+    client_row_id,
+    now() - interval '60 days',
+    'manual'::test_source_t,
+    NULL::uuid, NULL::text, NULL::uuid,
+    jsonb_build_array(jsonb_build_object(
+      'test_id',   'fp_cmj_bilateral',
+      'metric_id', 'jump_height',
+      'side',      NULL,
+      'value',     34.1,
+      'unit',      'cm'
+    ))
+  );
+  session_c := public.create_test_session(
+    client_row_id,
+    now() - interval '30 days',
+    'manual'::test_source_t,
+    NULL::uuid, NULL::text, NULL::uuid,
+    jsonb_build_array(jsonb_build_object(
+      'test_id',   'fp_cmj_bilateral',
+      'metric_id', 'jump_height',
+      'side',      NULL,
+      'value',     36.8,
+      'unit',      'cm'
+    ))
+  );
 
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
     org_id    AS org_id,
@@ -73,16 +104,13 @@ BEGIN
     session_a AS session_a,
     session_b AS session_b,
     session_c AS session_c;
-  -- Grant access so SET LOCAL ROLE authenticated can read it below.
   GRANT SELECT ON _ids TO authenticated;
 END $$;
 
 
 -- ----------------------------------------------------------------------------
--- Spoof the staff JWT so the view (which uses security_invoker = on)
--- evaluates RLS as the staff user. Without this the view returns zero
--- rows because authenticated role + no JWT claims = no RLS match.
--- The view's output is the same for any staff user in the org.
+-- Re-spoof the staff JWT for the assertion phase. The view uses
+-- security_invoker = on, so RLS evaluates as the staff user.
 -- ----------------------------------------------------------------------------
 SELECT public._test_set_jwt(
   (SELECT staff_uid FROM _ids),
@@ -119,7 +147,6 @@ SELECT is(
   'Initial: session_c (Mar) is NOT baseline'
 );
 
--- Function check matches the view.
 SELECT is(
   public.test_session_is_baseline((SELECT session_a FROM _ids), 'fp_cmj_bilateral'),
   TRUE,
@@ -128,10 +155,21 @@ SELECT is(
 
 
 -- ----------------------------------------------------------------------------
--- Soft-delete session_a → session_b should now be baseline.
+-- Soft-delete session_a. The staff-as-authenticated UPDATE would fail
+-- with 42501 because of the SELECT-policy / deleted_at-IS-NULL gotcha
+-- (see header). Owner-with-NO-FORCE bypass below; rolls back at the end.
 -- ----------------------------------------------------------------------------
+RESET ROLE;
+ALTER TABLE test_sessions NO FORCE ROW LEVEL SECURITY;
 UPDATE test_sessions SET deleted_at = now()
  WHERE id = (SELECT session_a FROM _ids);
+ALTER TABLE test_sessions FORCE ROW LEVEL SECURITY;
+SELECT public._test_set_jwt(
+  (SELECT staff_uid FROM _ids),
+  (SELECT org_id    FROM _ids),
+  'staff'
+);
+SET LOCAL ROLE authenticated;
 
 SELECT is(
   (SELECT is_baseline FROM test_results_with_baseline
@@ -141,8 +179,6 @@ SELECT is(
   'After soft-deleting session_a: session_b is baseline'
 );
 
--- session_a no longer appears in the view at all (filtered by
--- deleted_at IS NULL in the view definition).
 SELECT is(
   (SELECT count(*)::int FROM test_results_with_baseline
     WHERE test_session_id = (SELECT session_a FROM _ids)),
@@ -152,10 +188,19 @@ SELECT is(
 
 
 -- ----------------------------------------------------------------------------
--- Restore session_a → session_a re-claims baseline; session_b loses it.
+-- Restore session_a. Same owner-bypass dance — see comment above.
 -- ----------------------------------------------------------------------------
+RESET ROLE;
+ALTER TABLE test_sessions NO FORCE ROW LEVEL SECURITY;
 UPDATE test_sessions SET deleted_at = NULL
  WHERE id = (SELECT session_a FROM _ids);
+ALTER TABLE test_sessions FORCE ROW LEVEL SECURITY;
+SELECT public._test_set_jwt(
+  (SELECT staff_uid FROM _ids),
+  (SELECT org_id    FROM _ids),
+  'staff'
+);
+SET LOCAL ROLE authenticated;
 
 SELECT is(
   (SELECT is_baseline FROM test_results_with_baseline

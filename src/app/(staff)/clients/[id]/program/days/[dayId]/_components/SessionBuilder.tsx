@@ -1,11 +1,11 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
   ArrowUp,
-  Link2,
-  Link2Off,
+  GripVertical,
   Play,
   Search,
   Trash2,
@@ -21,15 +21,23 @@ import {
 } from '../actions'
 
 /*
- * Session Builder design constants (match .design-ref SessionBuilder.jsx).
- * Page stays on warm parchment; exercise cards are dark slabs that read
- * as strong horizontal objects on the page.
+ * Session Builder — light/cream skeleton.
+ *
+ * Design tokens lifted from .design-ref/odyssey SessionBuilder.jsx.
+ * Cards are white on warm parchment. The ONE harsh-black element is the
+ * sequencing pill that floats on the left of each card (solo = single
+ * rounded pill; superset = a continuous black spine with green B1/B2
+ * letters running down it). Everything else uses softer charcoal.
  */
-const CARD_BG = '#1E1A18'
-const CARD_INSET = '#15110F'
-const CARD_BORDER = '#2A2522'
-const CREAM = '#EDE8E2'
+const INK = '#1E1A18'
+const INK_SOFT = '#2A2522'
+const CREAM = '#F5F0EA'
+const CREAM_DEEP = '#EDE8E2'
+const BORDER = '#E2DDD7'
 const MUTED = '#78746F'
+const FAINT = '#A09890'
+const GREEN = '#2DB24C'
+const ALERT = '#D64045'
 
 export type ProgramExercise = {
   id: string
@@ -87,8 +95,6 @@ export function SessionBuilder({
 }: SessionBuilderProps) {
   const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('library')
 
-  // Group exercises: rendered as flat list for C11a; supersets + section
-  // headers wire in C11c.
   return (
     <div
       style={{
@@ -99,39 +105,22 @@ export function SessionBuilder({
       }}
     >
       <div>
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: 11,
+            letterSpacing: '.1em',
+            textTransform: 'uppercase',
+            color: FAINT,
+            marginBottom: 14,
+          }}
+        >
+          Session Exercises
+        </div>
+
         {programExercises.length === 0 ? (
-          <div
-            style={{
-              border: '1px dashed var(--color-border-subtle)',
-              borderRadius: 14,
-              padding: '40px 24px',
-              textAlign: 'center',
-              color: 'var(--color-text-light)',
-            }}
-          >
-            <div
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontWeight: 800,
-                fontSize: '1.1rem',
-                color: 'var(--color-charcoal)',
-                marginBottom: 4,
-              }}
-            >
-              No exercises yet
-            </div>
-            <p
-              style={{
-                fontSize: '.86rem',
-                lineHeight: 1.55,
-                margin: '0 auto',
-                maxWidth: 360,
-              }}
-            >
-              Pick exercises from the Library panel on the right. Defaults
-              are copied in; you can tweak them per exercise inline.
-            </p>
-          </div>
+          <EmptyState />
         ) : (
           renderGroupedExercises(programExercises, clientId, dayId)
         )}
@@ -142,7 +131,7 @@ export function SessionBuilder({
           style={{
             display: 'flex',
             gap: 4,
-            background: '#E2DDD7',
+            background: CREAM_DEEP,
             padding: 3,
             borderRadius: 7,
             marginBottom: 14,
@@ -162,7 +151,7 @@ export function SessionBuilder({
                 fontWeight: 600,
                 cursor: 'pointer',
                 background: tab === k ? '#fff' : 'transparent',
-                color: tab === k ? 'var(--color-primary)' : 'var(--color-text-light)',
+                color: tab === k ? INK : MUTED,
                 boxShadow: tab === k ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
                 textTransform: 'capitalize',
               }}
@@ -186,21 +175,51 @@ export function SessionBuilder({
   )
 }
 
-/* ====================== Left column: exercise slab ====================== */
+function EmptyState() {
+  return (
+    <div
+      style={{
+        background: '#fff',
+        border: `1px dashed ${BORDER}`,
+        borderRadius: 14,
+        padding: '40px 24px',
+        textAlign: 'center',
+        color: MUTED,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 800,
+          fontSize: '1.1rem',
+          color: INK,
+          marginBottom: 4,
+        }}
+      >
+        No exercises yet
+      </div>
+      <p
+        style={{
+          fontSize: '.86rem',
+          lineHeight: 1.55,
+          margin: '0 auto',
+          maxWidth: 360,
+        }}
+      >
+        Pick exercises from the Library panel on the right. Defaults are
+        copied in; you can tweak them per exercise inline.
+      </p>
+    </div>
+  )
+}
+
+/* ====================== Left column: grouped exercise list ====================== */
 
 /**
- * Renders program_exercises with section headers + superset grouping.
- *
- * Letter assignment walks the ordered list once:
- *   - Standalone exercise (no superset_group_id, or a "new" group) →
- *     advance the group letter (A → B → C…) and label the card with
- *     just that letter.
- *   - Exercise continuing the current superset → keep the group letter,
- *     increment the sub-index so the card reads "B2", "B3" etc.
- *
- * Grouping also shrinks the bottom margin between consecutive superset
- * cards so they read as one unit, and inserts a small "Superset B"
- * chip above the first card of each multi-member group.
+ * Walks the ordered list once and decides per-card layout:
+ *   - Standalone exercise → solo card with single floating black pill (A, B…)
+ *   - Group of 2+ exercises → one wrapper containing stacked white cards
+ *     with a continuous black spine carrying green B1, B2… letters.
  */
 function renderGroupedExercises(
   exercises: ProgramExercise[],
@@ -209,12 +228,8 @@ function renderGroupedExercises(
 ) {
   const nodes: React.ReactNode[] = []
   let lastSection: string | null | undefined = undefined
-  let groupLetterIndex = -1
-  let currentGroupId: string | null = null
-  let subIndex = 0
 
-  // First pass: figure out which groups have >1 member so we know when
-  // to label as "Superset" vs just a regular lettered exercise.
+  // Letter assignment + group counts
   const groupCounts = new Map<string, number>()
   for (const pe of exercises) {
     if (pe.superset_group_id) {
@@ -225,7 +240,10 @@ function renderGroupedExercises(
     }
   }
 
-  exercises.forEach((pe, i) => {
+  let groupLetterIndex = -1
+  let i = 0
+  while (i < exercises.length) {
+    const pe = exercises[i]!
     const section = pe.section_title?.trim() || null
     if (section && section !== lastSection) {
       nodes.push(<SectionStrip key={`sec-${i}`}>{section}</SectionStrip>)
@@ -233,77 +251,51 @@ function renderGroupedExercises(
     lastSection = section ?? null
 
     const groupId = pe.superset_group_id
-    const groupMembers = groupId ? (groupCounts.get(groupId) ?? 1) : 1
-    const isSuperset = groupMembers > 1
+    const memberCount = groupId ? (groupCounts.get(groupId) ?? 1) : 1
+    groupLetterIndex += 1
+    const baseLetter = String.fromCharCode(65 + groupLetterIndex)
 
-    let letter: string
-    let showSupersetHeader = false
+    if (groupId && memberCount > 1) {
+      // Collect contiguous group members
+      const members: ProgramExercise[] = []
+      let j = i
+      while (j < exercises.length && exercises[j]!.superset_group_id === groupId) {
+        members.push(exercises[j]!)
+        j += 1
+      }
 
-    if (!groupId || groupId !== currentGroupId) {
-      // New group starts (or standalone after group).
-      groupLetterIndex += 1
-      currentGroupId = groupId
-      subIndex = 1
-      const baseLetter = String.fromCharCode(65 + groupLetterIndex)
-      letter = isSuperset ? `${baseLetter}1` : baseLetter
-      showSupersetHeader = isSuperset
-    } else {
-      // Continuing the current superset.
-      subIndex += 1
-      const baseLetter = String.fromCharCode(65 + groupLetterIndex)
-      letter = `${baseLetter}${subIndex}`
-    }
+      const isFirstOverall = i === 0
+      const isLastOverall = j === exercises.length
 
-    if (showSupersetHeader) {
       nodes.push(
-        <div
-          key={`ss-${i}`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            background: 'rgba(45,178,76,0.12)',
-            borderRadius: 20,
-            padding: '3px 10px',
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#4A7A5A',
-            letterSpacing: '.02em',
-            marginBottom: 6,
-          }}
-        >
-          Superset {String.fromCharCode(65 + groupLetterIndex)}
-        </div>,
+        <SupersetBlock
+          key={`grp-${groupId}`}
+          baseLetter={baseLetter}
+          members={members}
+          clientId={clientId}
+          dayId={dayId}
+          isFirstOverall={isFirstOverall}
+          isLastOverall={isLastOverall}
+        />,
       )
+      i = j
+    } else {
+      const isFirstOverall = i === 0
+      const isLastOverall = i === exercises.length - 1
+      nodes.push(
+        <SoloExercise
+          key={pe.id}
+          pe={pe}
+          letter={baseLetter}
+          clientId={clientId}
+          dayId={dayId}
+          isFirst={isFirstOverall}
+          isLast={isLastOverall}
+        />,
+      )
+      i += 1
     }
-
-    const sharesGroupWithPrev =
-      i > 0 && groupId && exercises[i - 1]!.superset_group_id === groupId
-    const sharesGroupWithNext =
-      i < exercises.length - 1 &&
-      groupId &&
-      exercises[i + 1]!.superset_group_id === groupId
-
-    nodes.push(
-      <ExerciseSlab
-        key={pe.id}
-        pe={pe}
-        letter={letter}
-        clientId={clientId}
-        dayId={dayId}
-        isFirst={i === 0}
-        isLast={i === exercises.length - 1}
-        supersetFlow={
-          sharesGroupWithPrev && sharesGroupWithNext
-            ? 'middle'
-            : sharesGroupWithPrev
-              ? 'bottom'
-              : sharesGroupWithNext
-                ? 'top'
-                : 'solo'
-        }
-      />,
-    )
-  })
+  }
 
   return nodes
 }
@@ -343,16 +335,105 @@ function SectionStrip({ children }: { children: React.ReactNode }) {
   )
 }
 
-type SupersetFlow = 'solo' | 'top' | 'middle' | 'bottom'
+/* ====================== Sequencing pills ====================== */
 
-function ExerciseSlab({
+function SoloPill({ letter }: { letter: string }) {
+  return (
+    <div
+      style={{
+        width: 34,
+        minHeight: 34,
+        background: '#000',
+        color: GREEN,
+        fontFamily: 'var(--font-display)',
+        fontWeight: 800,
+        fontSize: 13,
+        letterSpacing: '.02em',
+        display: 'grid',
+        placeItems: 'center',
+        borderRadius: 18,
+        alignSelf: 'center',
+        flexShrink: 0,
+        userSelect: 'none',
+      }}
+    >
+      {letter}
+    </div>
+  )
+}
+
+function SupersetSpine({
+  baseLetter,
+  count,
+}: {
+  baseLetter: string
+  count: number
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        width: 34,
+        position: 'relative',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: 34,
+          background: '#000',
+          borderRadius: 17,
+        }}
+      />
+      {Array.from({ length: count }).map((_, idx) => (
+        <div
+          key={idx}
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            position: 'relative',
+            zIndex: 1,
+            padding: '12px 0',
+          }}
+        >
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontSize: 12,
+              color: GREEN,
+            }}
+          >
+            {`${baseLetter}${idx + 1}`}
+          </span>
+          {idx < count - 1 && (
+            <span style={{ color: GREEN, fontSize: 16, lineHeight: 1 }}>−</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ====================== Solo exercise wrapper ====================== */
+
+function SoloExercise({
   pe,
   letter,
   clientId,
   dayId,
   isFirst,
   isLast,
-  supersetFlow,
 }: {
   pe: ProgramExercise
   letter: string
@@ -360,99 +441,174 @@ function ExerciseSlab({
   dayId: string
   isFirst: boolean
   isLast: boolean
-  supersetFlow: SupersetFlow
 }) {
-  const rx = buildRxString(pe)
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+        <SoloPill letter={letter} />
+        <div
+          style={{
+            flex: 1,
+            background: '#fff',
+            borderRadius: 12,
+            border: `1px solid ${BORDER}`,
+            display: 'flex',
+          }}
+        >
+          <ExerciseBody
+            pe={pe}
+            clientId={clientId}
+            dayId={dayId}
+            isFirst={isFirst}
+            isLast={isLast}
+          />
+        </div>
+      </div>
+      <CardActions
+        clientId={clientId}
+        dayId={dayId}
+        peId={pe.id}
+        grouped={false}
+        isFirst={isFirst}
+      />
+    </div>
+  )
+}
+
+/* ====================== Superset wrapper ====================== */
+
+function SupersetBlock({
+  baseLetter,
+  members,
+  clientId,
+  dayId,
+  isFirstOverall,
+  isLastOverall,
+}: {
+  baseLetter: string
+  members: ProgramExercise[]
+  clientId: string
+  dayId: string
+  isFirstOverall: boolean
+  isLastOverall: boolean
+}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 10,
+          alignItems: 'stretch',
+          position: 'relative',
+        }}
+      >
+        <SupersetSpine baseLetter={baseLetter} count={members.length} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {members.map((pe, idx) => (
+            <div
+              key={pe.id}
+              style={{
+                background: '#fff',
+                borderRadius: 12,
+                border: `1px solid ${BORDER}`,
+                display: 'flex',
+              }}
+            >
+              <ExerciseBody
+                pe={pe}
+                clientId={clientId}
+                dayId={dayId}
+                isFirst={isFirstOverall && idx === 0}
+                isLast={isLastOverall && idx === members.length - 1}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+      <CardActions
+        clientId={clientId}
+        dayId={dayId}
+        peId={members[members.length - 1]!.id}
+        grouped={true}
+        isFirst={false}
+      />
+    </div>
+  )
+}
+
+/* ====================== Card body (left + right grid) ====================== */
+
+function ExerciseBody({
+  pe,
+  clientId,
+  dayId,
+  isFirst,
+  isLast,
+}: {
+  pe: ProgramExercise
+  clientId: string
+  dayId: string
+  isFirst: boolean
+  isLast: boolean
+}) {
   const [pending, startTransition] = useTransition()
-  const grouped = !!pe.superset_group_id
+  const router = useRouter()
+
+  // Server actions invalidate the route cache via revalidatePath; the
+  // client component still needs router.refresh() to actually re-fetch
+  // and re-render the page with the new data.
 
   function handleRemove() {
     if (!confirm(`Remove ${pe.exercise_name} from this session?`)) return
     startTransition(async () => {
-      await removeProgramExerciseAction(clientId, dayId, pe.id)
+      const res = await removeProgramExerciseAction(clientId, dayId, pe.id)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
     })
   }
 
   function handleMove(direction: 'up' | 'down') {
     startTransition(async () => {
-      await moveProgramExerciseAction(clientId, dayId, pe.id, direction)
+      const res = await moveProgramExerciseAction(clientId, dayId, pe.id, direction)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
     })
   }
-
-  function handleGroup() {
-    startTransition(async () => {
-      const res = await groupWithAboveAction(clientId, dayId, pe.id)
-      if (res.error) alert(res.error)
-    })
-  }
-
-  function handleUngroup() {
-    startTransition(async () => {
-      const res = await ungroupFromSupersetAction(clientId, dayId, pe.id)
-      if (res.error) alert(res.error)
-    })
-  }
-
-  // Superset visuals: tight margins within a group, slightly inset left
-  // border to read as a connected spine.
-  const marginBottom =
-    supersetFlow === 'top' || supersetFlow === 'middle' ? 6 : 14
-  const borderLeftAccent =
-    supersetFlow !== 'solo'
-      ? { borderLeft: '3px solid var(--color-accent)' }
-      : undefined
 
   return (
     <div
       style={{
-        background: CARD_BG,
-        border: `1px solid ${CARD_BORDER}`,
-        borderRadius: 14,
-        padding: '18px 20px',
-        marginBottom,
-        color: '#fff',
         display: 'grid',
-        gridTemplateColumns: '1fr 1.2fr',
-        gap: 22,
-        opacity: pending ? 0.5 : 1,
+        gridTemplateColumns: '1.1fr 1.2fr',
+        gap: 20,
+        flex: 1,
+        padding: '16px 20px',
+        opacity: pending ? 0.55 : 1,
         transition: 'opacity 150ms',
-        ...borderLeftAccent,
       }}
     >
-      {/* LEFT: badge, name, instructions, media */}
+      {/* LEFT: name, instructions, demo video */}
       <div>
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 12,
+            gap: 8,
             marginBottom: 10,
           }}
         >
           <span
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: '50%',
-              background: CARD_INSET,
-              border: `1px solid ${CARD_BORDER}`,
-              display: 'grid',
-              placeItems: 'center',
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: 13,
-              color: 'var(--color-accent)',
-              flexShrink: 0,
-            }}
-          >
-            {letter}
-          </span>
-          <span
-            style={{
               fontFamily: 'var(--font-sans)',
               fontWeight: 600,
-              fontSize: 17,
-              color: '#fff',
+              fontSize: 15,
+              color: INK,
               flex: 1,
             }}
           >
@@ -472,30 +628,18 @@ function ExerciseSlab({
           >
             <ArrowDown size={14} aria-hidden />
           </IconButton>
-          {grouped ? (
-            <IconButton
-              disabled={pending}
-              onClick={handleUngroup}
-              label="Ungroup from superset"
-            >
-              <Link2Off size={14} aria-hidden />
-            </IconButton>
-          ) : (
-            <IconButton
-              disabled={isFirst || pending}
-              onClick={handleGroup}
-              label="Group with above (superset)"
-            >
-              <Link2 size={14} aria-hidden />
-            </IconButton>
-          )}
           <IconButton
             disabled={pending}
             onClick={handleRemove}
             label="Remove exercise"
           >
-            <Trash2 size={16} aria-hidden />
+            <Trash2 size={14} aria-hidden />
           </IconButton>
+          <GripVertical
+            size={14}
+            aria-hidden
+            style={{ color: FAINT, marginLeft: 2 }}
+          />
         </div>
 
         <SectionTitleField
@@ -507,11 +651,11 @@ function ExerciseSlab({
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
-            fontSize: 11,
+            fontSize: 10,
             letterSpacing: '.08em',
             textTransform: 'uppercase',
-            color: MUTED,
-            marginBottom: 8,
+            color: FAINT,
+            marginBottom: 6,
           }}
         >
           Instructions
@@ -520,182 +664,279 @@ function ExerciseSlab({
           programExerciseId={pe.id}
           field="instructions"
           initialValue={pe.instructions ?? ''}
-          placeholder="No cues — inherits from the library."
+          placeholder="Add a coaching cue…"
         />
-        <div style={{ marginBottom: 14 }} />
 
-        {pe.exercise_video_url ? (
-          <a
-            href={pe.exercise_video_url}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              background: CARD_INSET,
-              border: `1px solid ${CARD_BORDER}`,
-              borderRadius: 10,
-              height: 140,
-              display: 'grid',
-              placeItems: 'center',
-              position: 'relative',
-              textDecoration: 'none',
-            }}
-          >
-            <span
+        <div style={{ marginTop: 12 }}>
+          {pe.exercise_video_url ? (
+            <a
+              href={pe.exercise_video_url}
+              target="_blank"
+              rel="noreferrer"
               style={{
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.9)',
+                display: 'block',
+                background: INK,
+                borderRadius: 8,
+                height: 140,
+                position: 'relative',
+                overflow: 'hidden',
+                textDecoration: 'none',
+              }}
+            >
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.92)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: INK,
+                }}
+              >
+                <Play size={16} aria-hidden fill="currentColor" />
+              </span>
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: 8,
+                  left: 12,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.65)',
+                }}
+              >
+                Demo
+              </span>
+            </a>
+          ) : (
+            <div
+              style={{
+                background: INK,
+                borderRadius: 8,
+                height: 140,
                 display: 'grid',
                 placeItems: 'center',
-                color: '#1E1A18',
-              }}
-            >
-              <Play size={20} aria-hidden fill="currentColor" />
-            </span>
-            <span
-              style={{
-                position: 'absolute',
-                bottom: 10,
-                left: 14,
+                color: 'rgba(255,255,255,0.5)',
                 fontSize: 12,
-                color: MUTED,
+                position: 'relative',
               }}
             >
-              Demo video
-            </span>
-          </a>
-        ) : (
-          <div
-            style={{
-              background: CARD_INSET,
-              border: `1px dashed ${CARD_BORDER}`,
-              borderRadius: 10,
-              height: 64,
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: 12,
-              color: MUTED,
-            }}
-          >
-            No demo video linked
-          </div>
-        )}
+              <span
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.12)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: 'rgba(255,255,255,0.5)',
+                }}
+              >
+                <Play size={16} aria-hidden />
+              </span>
+              <span
+                style={{
+                  position: 'absolute',
+                  bottom: 8,
+                  left: 12,
+                  fontSize: 11,
+                  color: 'rgba(255,255,255,0.5)',
+                }}
+              >
+                No demo
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* RIGHT: prescription */}
-      <div>
-        <div
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: 18,
-            color: '#fff',
-            marginBottom: 12,
-            letterSpacing: '.02em',
-          }}
-        >
-          {rx}
-        </div>
-
-        <PrescriptionGrid pe={pe} />
-
-        <div style={{ marginTop: 10 }}>
-          <EditableRow pe={pe} />
-        </div>
+      {/* RIGHT: set table + stepper */}
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <SetTable pe={pe} />
+        <SetStepper pe={pe} />
+        <ExtrasRow pe={pe} />
       </div>
     </div>
   )
 }
 
-function PrescriptionGrid({ pe }: { pe: ProgramExercise }) {
+/* ====================== Set table (skeleton) ====================== */
+
+function ColHeader({
+  children,
+  narrow,
+}: {
+  children: React.ReactNode
+  narrow?: boolean
+}) {
   return (
     <div
       style={{
+        background: INK,
+        color: '#fff',
+        fontFamily: 'var(--font-display)',
+        fontWeight: 700,
+        fontSize: 11,
+        letterSpacing: '.08em',
+        textTransform: 'uppercase',
+        height: 30,
         display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
-        gap: 6,
+        placeItems: 'center',
+        borderRadius: 8,
+        padding: narrow ? '0 6px' : '0 12px',
       }}
     >
-      <EditableCell
-        programExerciseId={pe.id}
-        field="sets"
-        label="Sets"
-        kind="number"
-        initialValue={pe.sets?.toString() ?? ''}
-        placeholder="—"
-      />
-      <EditableCell
-        programExerciseId={pe.id}
-        field="reps"
-        label="Reps"
-        kind="text"
-        initialValue={pe.reps ?? ''}
-        placeholder="—"
-      />
-      <EditableCell
-        programExerciseId={pe.id}
-        field="optional_value"
-        label="Load"
-        kind="text"
-        initialValue={pe.optional_value ?? ''}
-        placeholder="—"
-      />
-      <EditableCell
-        programExerciseId={pe.id}
-        field="rpe"
-        label="RPE"
-        kind="number"
-        initialValue={pe.rpe?.toString() ?? ''}
-        placeholder="—"
-      />
-      <EditableCell
-        programExerciseId={pe.id}
-        field="rest_seconds"
-        label="Rest (s)"
-        kind="number"
-        initialValue={pe.rest_seconds?.toString() ?? ''}
-        placeholder="—"
-      />
+      {children}
     </div>
   )
 }
 
-function EditableRow({ pe }: { pe: ProgramExercise }) {
+function StaticCell({
+  value,
+  placeholder,
+}: {
+  value: string
+  placeholder?: string
+}) {
+  const empty = !value
   return (
     <div
       style={{
+        background: CREAM,
+        borderRadius: 8,
+        height: 32,
         display: 'grid',
-        gridTemplateColumns: '1fr',
-        gap: 8,
+        placeItems: 'center',
+        fontFamily: 'var(--font-sans)',
+        fontSize: 13,
+        fontWeight: 500,
+        color: empty ? FAINT : INK,
+        padding: '0 10px',
       }}
     >
-      <EditableInlineField
-        programExerciseId={pe.id}
-        field="tempo"
-        label="Tempo"
-        initialValue={pe.tempo ?? ''}
-        placeholder="e.g. 3-1-1-0"
-      />
+      {value || placeholder || '—'}
     </div>
   )
 }
 
-/* ====================== Editable primitives ====================== */
+/**
+ * Renders one row per set. Row 1 is editable and writes to the master
+ * pe.reps / pe.optional_value fields. Rows 2..N display the same value
+ * as static text — they become independent inputs once per-set storage
+ * lands.
+ */
+function SetTable({ pe }: { pe: ProgramExercise }) {
+  const setCount = Math.max(1, pe.sets ?? 1)
+  const reps = pe.reps ?? ''
+  const load = pe.optional_value ?? ''
+  const rpe = pe.rpe ? `RPE ${pe.rpe}` : ''
+  const loadDisplay = load || rpe
 
-type EditableField = keyof ProgramExercisePatch
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '48px 1fr 1.4fr',
+        columnGap: 6,
+        rowGap: 6,
+      }}
+    >
+      <ColHeader narrow>Set</ColHeader>
+      <ColHeader>Reps</ColHeader>
+      <ColHeader>Load / Notes</ColHeader>
 
-function EditableCell({
+      {Array.from({ length: setCount }).map((_, idx) => (
+        <SetRow
+          key={idx}
+          rowIndex={idx}
+          pe={pe}
+          reps={reps}
+          load={load}
+          loadPlaceholder={rpe || '—'}
+          loadDisplay={loadDisplay}
+        />
+      ))}
+    </div>
+  )
+}
+
+function SetRow({
+  rowIndex,
+  pe,
+  reps,
+  load,
+  loadPlaceholder,
+  loadDisplay,
+}: {
+  rowIndex: number
+  pe: ProgramExercise
+  reps: string
+  load: string
+  loadPlaceholder: string
+  loadDisplay: string
+}) {
+  const setLabel = String(rowIndex + 1)
+  // Row 1 is the editable "master" row. Other rows display the same
+  // values as static text until per-set data lands.
+  const editable = rowIndex === 0
+
+  return (
+    <>
+      <div
+        style={{
+          height: 32,
+          display: 'grid',
+          placeItems: 'center',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 13,
+          fontWeight: 600,
+          color: INK,
+          background: CREAM_DEEP,
+          borderRadius: 8,
+        }}
+      >
+        {setLabel}
+      </div>
+      {editable ? (
+        <>
+          <InlineCell
+            programExerciseId={pe.id}
+            field="reps"
+            kind="text"
+            initialValue={reps}
+            placeholder="—"
+          />
+          <InlineCell
+            programExerciseId={pe.id}
+            field="optional_value"
+            kind="text"
+            initialValue={load}
+            placeholder={loadPlaceholder}
+          />
+        </>
+      ) : (
+        <>
+          <StaticCell value={reps} />
+          <StaticCell value={loadDisplay} />
+        </>
+      )}
+    </>
+  )
+}
+
+function InlineCell({
   programExerciseId,
   field,
-  label,
   kind,
   initialValue,
   placeholder,
 }: {
   programExerciseId: string
-  field: EditableField
-  label: string
+  field: keyof ProgramExercisePatch
   kind: 'number' | 'text'
   initialValue: string
   placeholder?: string
@@ -714,54 +955,203 @@ function EditableCell({
     }
     setStatus('saving')
     startTransition(async () => {
-      const res = await updateProgramExerciseAction(
-        programExerciseId,
-        patch,
-      )
+      const res = await updateProgramExerciseAction(programExerciseId, patch)
       setStatus(res.error ? 'error' : 'idle')
+    })
+  }
+
+  return (
+    <input
+      type={kind === 'number' ? 'number' : 'text'}
+      inputMode={kind === 'number' ? 'numeric' : undefined}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+      }}
+      style={{
+        background: CREAM,
+        borderRadius: 8,
+        height: 32,
+        textAlign: 'center',
+        fontFamily: 'var(--font-sans)',
+        fontSize: 13,
+        fontWeight: 500,
+        color: empty ? FAINT : INK,
+        border:
+          status === 'error' ? '1px solid #B04040' : '1px solid transparent',
+        outline: 'none',
+        padding: '0 10px',
+        width: '100%',
+        boxSizing: 'border-box',
+      }}
+    />
+  )
+}
+
+function SetStepper({ pe }: { pe: ProgramExercise }) {
+  const [pending, startTransition] = useTransition()
+  const current = pe.sets ?? 1
+
+  function bump(delta: number) {
+    const next = Math.max(1, current + delta)
+    if (next === current) return
+    startTransition(async () => {
+      await updateProgramExerciseAction(pe.id, { sets: next })
     })
   }
 
   return (
     <div
       style={{
-        background: CARD_INSET,
-        border: `1px solid ${
-          status === 'error' ? '#B04040' : CARD_BORDER
-        }`,
-        borderRadius: 8,
-        padding: '8px 6px',
-        textAlign: 'center',
-        transition: 'border-color 120ms',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 8,
+        alignSelf: 'flex-end',
+        opacity: pending ? 0.5 : 1,
       }}
     >
+      <button
+        type="button"
+        onClick={() => bump(-1)}
+        disabled={current <= 1 || pending}
+        aria-label="Remove set"
+        style={{
+          width: 22,
+          height: 22,
+          border: 'none',
+          background: 'transparent',
+          color: MUTED,
+          cursor: current <= 1 ? 'not-allowed' : 'pointer',
+          fontSize: 16,
+          lineHeight: 1,
+        }}
+      >
+        −
+      </button>
+      <span style={{ fontSize: 12, color: MUTED, fontWeight: 500 }}>
+        {current} {current === 1 ? 'set' : 'sets'}
+      </span>
+      <button
+        type="button"
+        onClick={() => bump(1)}
+        disabled={pending}
+        aria-label="Add set"
+        style={{
+          width: 22,
+          height: 22,
+          border: 'none',
+          background: 'transparent',
+          color: MUTED,
+          cursor: 'pointer',
+          fontSize: 16,
+          lineHeight: 1,
+        }}
+      >
+        +
+      </button>
+    </div>
+  )
+}
+
+/* ====================== Extras row (RPE / Rest / Tempo) ====================== */
+
+/**
+ * Less-prominent extras kept accessible without crowding the table. The
+ * RPE input is duplicated visually inside the Load/Notes column when
+ * there's no load value (matches the design's "RPE 8" placeholder
+ * pattern), and stays editable here as the source of truth.
+ */
+function ExtrasRow({ pe }: { pe: ProgramExercise }) {
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(3, 1fr)',
+        gap: 6,
+        marginTop: 12,
+      }}
+    >
+      <SmallField
+        programExerciseId={pe.id}
+        field="rpe"
+        label="RPE"
+        kind="number"
+        initialValue={pe.rpe?.toString() ?? ''}
+      />
+      <SmallField
+        programExerciseId={pe.id}
+        field="rest_seconds"
+        label="Rest (s)"
+        kind="number"
+        initialValue={pe.rest_seconds?.toString() ?? ''}
+      />
+      <SmallField
+        programExerciseId={pe.id}
+        field="tempo"
+        label="Tempo"
+        kind="text"
+        initialValue={pe.tempo ?? ''}
+      />
+    </div>
+  )
+}
+
+function SmallField({
+  programExerciseId,
+  field,
+  label,
+  kind,
+  initialValue,
+}: {
+  programExerciseId: string
+  field: keyof ProgramExercisePatch
+  label: string
+  kind: 'number' | 'text'
+  initialValue: string
+}) {
+  const [value, setValue] = useState(initialValue)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  const [, startTransition] = useTransition()
+  const empty = value.trim() === ''
+
+  function handleBlur() {
+    if (value === initialValue) return
+    const patch = buildPatch(field, value, kind)
+    if (patch === null) {
+      setStatus('error')
+      return
+    }
+    setStatus('saving')
+    startTransition(async () => {
+      const res = await updateProgramExerciseAction(programExerciseId, patch)
+      setStatus(res.error ? 'error' : 'idle')
+    })
+  }
+
+  return (
+    <label style={{ display: 'block' }}>
       <div
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
-          fontSize: 10,
+          fontSize: 9,
           letterSpacing: '.08em',
           textTransform: 'uppercase',
-          color: MUTED,
+          color: FAINT,
           marginBottom: 3,
         }}
       >
         {label}
-        {status === 'saving' && (
-          <span
-            aria-hidden
-            style={{ color: '#6B7A6B', marginLeft: 4 }}
-            title="Saving"
-          >
-            •
-          </span>
-        )}
       </div>
       <input
         type={kind === 'number' ? 'number' : 'text'}
         inputMode={kind === 'number' ? 'numeric' : undefined}
         value={value}
-        placeholder={placeholder}
+        placeholder="—"
         onChange={(e) => setValue(e.target.value)}
         onBlur={handleBlur}
         onKeyDown={(e) => {
@@ -769,110 +1159,124 @@ function EditableCell({
         }}
         style={{
           width: '100%',
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
-          textAlign: 'center',
+          height: 28,
+          padding: '0 8px',
+          background: CREAM,
+          border:
+            status === 'error' ? '1px solid #B04040' : '1px solid transparent',
+          borderRadius: 6,
           fontFamily: 'var(--font-sans)',
-          fontSize: 14,
-          fontWeight: 600,
-          color: empty ? MUTED : CREAM,
-          padding: 0,
-        }}
-      />
-    </div>
-  )
-}
-
-function EditableInlineField({
-  programExerciseId,
-  field,
-  label,
-  initialValue,
-  placeholder,
-}: {
-  programExerciseId: string
-  field: EditableField
-  label: string
-  initialValue: string
-  placeholder?: string
-}) {
-  const [value, setValue] = useState(initialValue)
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
-  const [, startTransition] = useTransition()
-
-  function handleBlur() {
-    if (value === initialValue) return
-    const patch: ProgramExercisePatch = {
-      [field]: value.trim() === '' ? null : value.trim(),
-    } as ProgramExercisePatch
-    setStatus('saving')
-    startTransition(async () => {
-      const res = await updateProgramExerciseAction(
-        programExerciseId,
-        patch,
-      )
-      setStatus(res.error ? 'error' : 'idle')
-    })
-  }
-
-  return (
-    <label
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '60px 1fr',
-        gap: 10,
-        alignItems: 'center',
-      }}
-    >
-      <span
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: 10,
-          letterSpacing: '.08em',
-          textTransform: 'uppercase',
-          color: MUTED,
-        }}
-      >
-        {label}
-        {status === 'saving' && (
-          <span
-            aria-hidden
-            style={{ color: '#6B7A6B', marginLeft: 4 }}
-            title="Saving"
-          >
-            •
-          </span>
-        )}
-      </span>
-      <input
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={handleBlur}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        }}
-        style={{
-          background: CARD_INSET,
-          border: `1px solid ${
-            status === 'error' ? '#B04040' : CARD_BORDER
-          }`,
-          borderRadius: 8,
-          padding: '6px 10px',
-          outline: 'none',
-          fontFamily: 'var(--font-sans)',
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: 500,
-          color: value ? CREAM : MUTED,
-          transition: 'border-color 120ms',
+          color: empty ? FAINT : INK,
+          textAlign: 'center',
+          outline: 'none',
+          boxSizing: 'border-box',
         }}
       />
     </label>
   )
 }
+
+/* ====================== Card actions (under each card) ====================== */
+
+function CardActions({
+  clientId,
+  dayId,
+  peId,
+  grouped,
+  isFirst,
+}: {
+  clientId: string
+  dayId: string
+  peId: string
+  grouped: boolean
+  isFirst: boolean
+}) {
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+
+  function handleSuperset() {
+    if (grouped) {
+      startTransition(async () => {
+        const res = await ungroupFromSupersetAction(clientId, dayId, peId)
+        if (res.error) {
+          alert(res.error)
+          return
+        }
+        router.refresh()
+      })
+    } else {
+      startTransition(async () => {
+        const res = await groupWithAboveAction(clientId, dayId, peId)
+        if (res.error) {
+          alert(res.error)
+          return
+        }
+        router.refresh()
+      })
+    }
+  }
+
+  function focusLibrarySearch() {
+    const el = document.querySelector<HTMLInputElement>(
+      'input[aria-label="Search exercises"]',
+    )
+    el?.focus()
+  }
+
+  const supersetDisabled = !grouped && isFirst
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 8,
+        justifyContent: 'center',
+        marginTop: 10,
+      }}
+    >
+      <button
+        type="button"
+        onClick={handleSuperset}
+        disabled={pending || supersetDisabled}
+        title={
+          supersetDisabled
+            ? 'Add this below another exercise to superset them'
+            : grouped
+              ? 'Remove from superset'
+              : 'Group with the exercise above'
+        }
+        style={pillButtonStyle(pending || supersetDisabled)}
+      >
+        {grouped ? 'Remove superset' : 'Superset'}
+      </button>
+      <button
+        type="button"
+        onClick={focusLibrarySearch}
+        style={pillButtonStyle(false)}
+      >
+        + Add exercise
+      </button>
+    </div>
+  )
+}
+
+function pillButtonStyle(disabled: boolean): React.CSSProperties {
+  return {
+    padding: '7px 14px',
+    background: '#fff',
+    border: `1px solid ${BORDER}`,
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 500,
+    color: disabled ? FAINT : INK,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontFamily: 'var(--font-sans)',
+  }
+}
+
+/* ====================== Editable bits shared across the card ====================== */
 
 function EditableTextarea({
   programExerciseId,
@@ -881,7 +1285,7 @@ function EditableTextarea({
   placeholder,
 }: {
   programExerciseId: string
-  field: EditableField
+  field: keyof ProgramExercisePatch
   initialValue: string
   placeholder?: string
 }) {
@@ -896,10 +1300,7 @@ function EditableTextarea({
     } as ProgramExercisePatch
     setStatus('saving')
     startTransition(async () => {
-      const res = await updateProgramExerciseAction(
-        programExerciseId,
-        patch,
-      )
+      const res = await updateProgramExerciseAction(programExerciseId, patch)
       setStatus(res.error ? 'error' : 'idle')
     })
   }
@@ -912,22 +1313,21 @@ function EditableTextarea({
       onBlur={handleBlur}
       rows={3}
       style={{
-        background: CARD_INSET,
-        border: `1px solid ${
-          status === 'error' ? '#B04040' : CARD_BORDER
-        }`,
-        borderRadius: 10,
-        padding: '12px 14px',
+        background: CREAM,
+        border:
+          status === 'error' ? '1px solid #B04040' : '1px solid transparent',
+        borderRadius: 8,
+        padding: '10px 12px',
         fontFamily: 'var(--font-sans)',
-        fontSize: 14,
+        fontSize: 13,
         lineHeight: 1.5,
-        color: value ? 'rgba(255,255,255,0.92)' : MUTED,
-        fontWeight: 300,
+        color: value ? INK : FAINT,
+        fontWeight: 400,
         width: '100%',
-        minHeight: 72,
+        minHeight: 64,
         resize: 'vertical',
         outline: 'none',
-        transition: 'border-color 120ms',
+        boxSizing: 'border-box',
       }}
     />
   )
@@ -954,7 +1354,7 @@ function IconButton({
       style={{
         background: 'transparent',
         border: 'none',
-        color: disabled ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.55)',
+        color: disabled ? '#D6D0C8' : MUTED,
         cursor: disabled ? 'not-allowed' : 'pointer',
         padding: 4,
         display: 'grid',
@@ -1002,24 +1402,23 @@ function SectionTitleField({
         width: '100%',
         background: 'transparent',
         border: 'none',
-        borderBottom: `1px dashed ${CARD_BORDER}`,
+        borderBottom: `1px dashed ${BORDER}`,
         padding: '4px 0',
         fontFamily: 'var(--font-display)',
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: 700,
         letterSpacing: '.08em',
         textTransform: 'uppercase',
-        color: value ? 'rgba(255,255,255,0.7)' : MUTED,
+        color: value ? MUTED : FAINT,
         outline: 'none',
-        marginBottom: 14,
+        marginBottom: 12,
       }}
     />
   )
 }
 
-/** Build a type-safe patch for the right field, with sensible empty handling. */
 function buildPatch(
-  field: EditableField,
+  field: keyof ProgramExercisePatch,
   raw: string,
   kind: 'number' | 'text',
 ): ProgramExercisePatch | null {
@@ -1035,7 +1434,7 @@ function buildPatch(
   return { [field]: trimmed } as ProgramExercisePatch
 }
 
-/* ====================== Right column: Library panel ====================== */
+/* ====================== Right column: Library / Notes / Reports ====================== */
 
 function LibraryPanel({
   options,
@@ -1060,31 +1459,21 @@ function LibraryPanel({
     setAdding(exerciseId)
     startTransition(async () => {
       const res = await addExerciseToDayAction(clientId, dayId, exerciseId)
-      if (res.error) {
-        alert(res.error)
-      }
+      if (res.error) alert(res.error)
       setAdding(null)
     })
   }
 
   return (
     <div className="card" style={{ padding: 14 }}>
-      <div
-        className="eyebrow"
-        style={{ fontSize: '.66rem', marginBottom: 10 }}
-      >
+      <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
         Library — pick to add
       </div>
       <div style={{ position: 'relative', marginBottom: 10 }}>
         <Search
           size={14}
           aria-hidden
-          style={{
-            position: 'absolute',
-            left: 10,
-            top: 9,
-            color: 'var(--color-muted)',
-          }}
+          style={{ position: 'absolute', left: 10, top: 9, color: MUTED }}
         />
         <input
           value={query}
@@ -1095,12 +1484,13 @@ function LibraryPanel({
             width: '100%',
             height: 32,
             padding: '0 12px 0 30px',
-            border: '1px solid var(--color-border-subtle)',
+            border: `1px solid ${BORDER}`,
             borderRadius: 7,
             fontFamily: 'var(--font-sans)',
             fontSize: '.82rem',
-            background: 'var(--color-surface)',
+            background: CREAM,
             outline: 'none',
+            boxSizing: 'border-box',
           }}
         />
       </div>
@@ -1109,7 +1499,7 @@ function LibraryPanel({
         <div
           style={{
             fontSize: '.82rem',
-            color: 'var(--color-muted)',
+            color: MUTED,
             padding: '12px 0',
             lineHeight: 1.5,
           }}
@@ -1118,13 +1508,7 @@ function LibraryPanel({
           then come back here.
         </div>
       ) : filtered.length === 0 ? (
-        <div
-          style={{
-            fontSize: '.82rem',
-            color: 'var(--color-muted)',
-            padding: '12px 0',
-          }}
-        >
+        <div style={{ fontSize: '.82rem', color: MUTED, padding: '12px 0' }}>
           No matches.
         </div>
       ) : (
@@ -1139,7 +1523,7 @@ function LibraryPanel({
                 display: 'block',
                 width: '100%',
                 padding: '8px 0',
-                borderTop: '1px solid var(--color-border-subtle)',
+                borderTop: `1px solid ${BORDER}`,
                 borderLeft: 'none',
                 borderRight: 'none',
                 borderBottom: 'none',
@@ -1156,7 +1540,7 @@ function LibraryPanel({
                 <div
                   style={{
                     fontSize: '.72rem',
-                    color: 'var(--color-muted)',
+                    color: MUTED,
                     marginTop: 1,
                   }}
                 >
@@ -1172,25 +1556,14 @@ function LibraryPanel({
   )
 }
 
-/* ====================== Right column: Reports panel ====================== */
-
 function ReportsPanel({ reports }: { reports: SessionReport[] }) {
   return (
     <div className="card" style={{ padding: 18 }}>
-      <div
-        className="eyebrow"
-        style={{ fontSize: '.66rem', marginBottom: 10 }}
-      >
+      <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
         Client reports
       </div>
       {reports.length === 0 ? (
-        <div
-          style={{
-            fontSize: '.82rem',
-            color: 'var(--color-muted)',
-            lineHeight: 1.5,
-          }}
-        >
+        <div style={{ fontSize: '.82rem', color: MUTED, lineHeight: 1.5 }}>
           No reports filed for this client yet. Force-plate profiles,
           ForceFrame results, and movement reassessments will land here once
           the VALD integration is wired.
@@ -1201,7 +1574,7 @@ function ReportsPanel({ reports }: { reports: SessionReport[] }) {
             key={r.id}
             style={{
               padding: '10px 0',
-              borderBottom: '1px solid var(--color-border-subtle)',
+              borderBottom: `1px solid ${BORDER}`,
               fontSize: '.82rem',
             }}
           >
@@ -1214,9 +1587,7 @@ function ReportsPanel({ reports }: { reports: SessionReport[] }) {
                 marginBottom: 2,
               }}
             >
-              <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>
-                {r.title}
-              </span>
+              <span style={{ fontWeight: 600, color: INK }}>{r.title}</span>
               {!r.is_published && (
                 <span
                   style={{
@@ -1237,7 +1608,7 @@ function ReportsPanel({ reports }: { reports: SessionReport[] }) {
             <div
               style={{
                 fontSize: '.72rem',
-                color: 'var(--color-muted)',
+                color: MUTED,
                 display: 'flex',
                 gap: 8,
               }}
@@ -1265,25 +1636,14 @@ function formatDateShort(iso: string): string {
   }
 }
 
-/* ====================== Right column: Notes panel ====================== */
-
 function NotesPanel({ notes }: { notes: PinnedNote[] }) {
   return (
     <div className="card" style={{ padding: 18 }}>
-      <div
-        className="eyebrow"
-        style={{ fontSize: '.66rem', marginBottom: 10 }}
-      >
+      <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
         Pinned clinical notes
       </div>
       {notes.length === 0 ? (
-        <div
-          style={{
-            fontSize: '.82rem',
-            color: 'var(--color-muted)',
-            lineHeight: 1.5,
-          }}
-        >
+        <div style={{ fontSize: '.82rem', color: MUTED, lineHeight: 1.5 }}>
           No pinned notes for this client. Pin a note from the profile to
           have it visible here while you build the session.
         </div>
@@ -1293,7 +1653,7 @@ function NotesPanel({ notes }: { notes: PinnedNote[] }) {
             key={n.id}
             style={{
               background: 'rgba(214,64,69,.05)',
-              borderLeft: '3px solid var(--color-alert)',
+              borderLeft: `3px solid ${ALERT}`,
               padding: '8px 12px',
               borderRadius: '0 6px 6px 0',
               fontSize: '.78rem',
@@ -1306,7 +1666,7 @@ function NotesPanel({ notes }: { notes: PinnedNote[] }) {
                 style={{
                   fontSize: '.62rem',
                   fontWeight: 700,
-                  color: 'var(--color-alert)',
+                  color: ALERT,
                   textTransform: 'uppercase',
                   letterSpacing: '.04em',
                   marginBottom: 2,
@@ -1322,16 +1682,3 @@ function NotesPanel({ notes }: { notes: PinnedNote[] }) {
     </div>
   )
 }
-
-/* ====================== Helpers ====================== */
-
-function buildRxString(pe: ProgramExercise): string {
-  const parts: string[] = []
-  if (pe.sets && pe.reps) parts.push(`${pe.sets} × ${pe.reps}`)
-  else if (pe.sets) parts.push(`${pe.sets} sets`)
-  else if (pe.reps) parts.push(pe.reps)
-  if (pe.optional_value) parts.push(pe.optional_value)
-  if (pe.rpe) parts.push(`RPE ${pe.rpe}`)
-  return parts.join(' · ') || 'No prescription yet'
-}
-
