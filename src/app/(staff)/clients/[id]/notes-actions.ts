@@ -2,10 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
-import {
-  createSupabaseServerClient,
-  createSupabaseServiceRoleClient,
-} from '@/lib/supabase/server'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
 type FieldType = Database['public']['Enums']['note_template_field_type']
@@ -162,62 +159,51 @@ export async function createClinicalNoteAction(
 /* ====================== Archive ====================== */
 
 /**
- * Soft-archive a clinical note: sets `deleted_at` so the note drops out
- * of the active timeline (the page query and the SELECT policy both
- * filter `deleted_at IS NULL`). The row itself stays in the database for
- * the AHPRA / APP retention obligation — restorable by clearing
- * `deleted_at` if we ever wire that up.
+ * Soft-archive a clinical note via the soft_delete_clinical_note RPC.
  *
- * Author-only (the migration's UPDATE policy enforces `author_user_id =
- * auth.uid()`). Owner has no override — clinical-record integrity.
+ * The RPC is SECURITY DEFINER and replicates the author-only check
+ * inside the database (org match + role IN (owner, staff) + author
+ * matches caller). Practice owner has no override — clinical-record
+ * integrity. Migration 20260429120000_soft_delete_rpcs.sql owns the gate.
  *
- * No `.select()` on the update so PostgREST stays in `return=minimal`
- * mode — otherwise the post-update re-SELECT trips the SELECT policy's
- * `deleted_at IS NULL` clause and surfaces as "violates RLS" (the
- * documented soft-delete RETURNING gotcha).
+ * Why an RPC and not a direct UPDATE: the SELECT policy filters
+ * `deleted_at IS NULL`, so an UPDATE that sets it fails 42501 on the
+ * post-update SELECT-policy re-evaluation. The RPC bypasses RLS for the
+ * single mutation while keeping the auth check authoritative.
+ *
+ * The previous service-role workaround re-implemented the author check
+ * in TypeScript and wrote with the service-role client. Routing through
+ * the RPC moves the gate into the database and removes one
+ * service-role-bypass surface.
  */
 export async function archiveClinicalNoteAction(
   noteId: string,
 ): Promise<{ error: string | null }> {
-  const { userId, organizationId } = await requireRole(['owner', 'staff'])
+  const { userId } = await requireRole(['owner', 'staff'])
 
-  // Lookup via the user-scoped (RLS-respecting) client so we can confirm
-  // the row is visible to this caller — defence-in-depth before the
-  // service-role write below.
   const supabase = await createSupabaseServerClient()
-  const { data: note, error: lookupError } = await supabase
+
+  // Look up the note for client_id (we need it for revalidatePath after).
+  // Visibility is RLS-gated, so a not-found result here also covers
+  // cross-org and not-archived; the RPC will give the canonical error
+  // shape if its preconditions aren't met.
+  const { data: note } = await supabase
     .from('clinical_notes')
-    .select('id, client_id, author_user_id, organization_id')
+    .select('id, client_id, author_user_id')
     .eq('id', noteId)
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (lookupError) return { error: `Could not find note: ${lookupError.message}` }
   if (!note) return { error: 'Note not found.' }
-
-  // Explicit app-level authorisation — author-only, same-org. Mirrors the
-  // RLS contract verbatim. Owner has no override (clinical-record
-  // integrity).
-  if (note.organization_id !== organizationId) {
-    return { error: 'Not authorised to archive this note.' }
-  }
   if (note.author_user_id !== userId) {
     return {
       error: `Only the practitioner who wrote this note can archive it. This note's author was user ${note.author_user_id.slice(0, 8)}…; you are signed in as ${userId.slice(0, 8)}…. If you have multiple practitioner accounts, sign in with the one that wrote this note.`,
     }
   }
 
-  // Service-role for the actual soft-delete. Same workaround used by
-  // archiveClientAction: PostgREST's default `return=representation`
-  // re-SELECTs the row after the UPDATE, which trips the SELECT policy's
-  // `deleted_at IS NULL` clause and surfaces as "violates RLS" (the
-  // documented soft-delete RETURNING gotcha). Service-role bypasses RLS
-  // — safe here because we've just verified author + org above.
-  const admin = createSupabaseServiceRoleClient()
-  const { error } = await admin
-    .from('clinical_notes')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', noteId)
+  const { error } = await supabase.rpc('soft_delete_clinical_note', {
+    p_id: noteId,
+  })
 
   if (error) {
     return { error: `Could not archive note: ${error.message}` }

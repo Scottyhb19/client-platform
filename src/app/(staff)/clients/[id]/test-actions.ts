@@ -189,6 +189,11 @@ export async function createTestSessionAction(
 /**
  * Soft-delete a test session. Keeps results queryable for staff via the
  * audit trail; removes it from active views.
+ *
+ * Routes through the soft_delete_test_session SECURITY DEFINER RPC.
+ * Direct UPDATE setting deleted_at fails 42501 because the SELECT policy
+ * filters deleted_at IS NULL — see migration
+ * 20260429120000_soft_delete_rpcs.sql for the bug + fix.
  */
 export async function softDeleteTestSessionAction(
   sessionId: string,
@@ -197,11 +202,9 @@ export async function softDeleteTestSessionAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const { error } = await supabase
-    .from('test_sessions')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', sessionId)
-    .is('deleted_at', null)
+  const { error } = await supabase.rpc('soft_delete_test_session', {
+    p_id: sessionId,
+  })
 
   if (error) {
     return { data: null, error: error.message }

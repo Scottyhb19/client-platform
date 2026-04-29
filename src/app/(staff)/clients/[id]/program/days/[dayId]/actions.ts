@@ -71,8 +71,11 @@ export async function addExerciseToDayAction(
 }
 
 /**
- * Soft-delete a program_exercise row (sets deleted_at=now()).
- * RLS enforces scope; we just need the id.
+ * Soft-delete a program_exercise row via the soft_delete_program_exercise
+ * RPC (migration 20260429130000). Direct UPDATE setting deleted_at fails
+ * 42501 because the SELECT policy filters deleted_at IS NULL; the RPC
+ * bypasses RLS for the UPDATE and re-implements the org check inside via
+ * the parent walk (program_days → program_weeks → programs).
  */
 export async function removeProgramExerciseAction(
   clientId: string,
@@ -82,10 +85,9 @@ export async function removeProgramExerciseAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const { error } = await supabase
-    .from('program_exercises')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', programExerciseId)
+  const { error } = await supabase.rpc('soft_delete_program_exercise', {
+    p_id: programExerciseId,
+  })
 
   if (error) return { error: `Remove failed: ${error.message}` }
 

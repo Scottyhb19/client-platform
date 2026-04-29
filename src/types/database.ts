@@ -3161,6 +3161,52 @@ export type Database = {
       }
     }
     Functions: {
+      _test_clear_jwt: { Args: never; Returns: undefined }
+      _test_grant_membership: {
+        Args: {
+          p_org_id: string
+          p_role: Database["public"]["Enums"]["user_role"]
+          p_user_id: string
+        }
+        Returns: undefined
+      }
+      _test_insert_client_publication: {
+        Args: {
+          p_framing_text?: string
+          p_org: string
+          p_published_by: string
+          p_session: string
+        }
+        Returns: string
+      }
+      _test_insert_test_result: {
+        Args: {
+          p_metric_id: string
+          p_org: string
+          p_session: string
+          p_side: Database["public"]["Enums"]["test_side_t"]
+          p_test_id: string
+          p_unit: string
+          p_value: number
+        }
+        Returns: undefined
+      }
+      _test_insert_test_session: {
+        Args: {
+          p_client: string
+          p_conducted_at: string
+          p_conducted_by: string
+          p_id: string
+          p_org: string
+          p_source?: Database["public"]["Enums"]["test_source_t"]
+        }
+        Returns: string
+      }
+      _test_make_user: { Args: { p_email: string }; Returns: string }
+      _test_set_jwt: {
+        Args: { p_organization_id: string; p_role: string; p_user_id: string }
+        Returns: undefined
+      }
       audit_diff_fields: {
         Args: { p_new: Json; p_old: Json }
         Returns: string[]
@@ -3249,6 +3295,10 @@ export type Database = {
         }
         Returns: string
       }
+      client_owns_test_session: {
+        Args: { p_session_id: string }
+        Returns: boolean
+      }
       client_start_session: {
         Args: { p_program_day_id: string }
         Returns: string
@@ -3274,12 +3324,40 @@ export type Database = {
         }
         Returns: string
       }
+      restore_client: { Args: { p_id: string }; Returns: undefined }
+      restore_client_publication: { Args: { p_id: string }; Returns: undefined }
+      restore_clinical_note: { Args: { p_id: string }; Returns: undefined }
+      restore_practice_custom_test: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      restore_program_exercise: { Args: { p_id: string }; Returns: undefined }
+      restore_test_battery: { Args: { p_id: string }; Returns: undefined }
+      restore_test_result: { Args: { p_id: string }; Returns: undefined }
+      restore_test_session: { Args: { p_id: string }; Returns: undefined }
       seed_organization_defaults: {
         Args: { p_org_id: string }
         Returns: undefined
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      soft_delete_client: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_client_publication: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_clinical_note: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_practice_custom_test: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_program_exercise: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_test_battery: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_test_result: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_test_session: { Args: { p_id: string }; Returns: undefined }
       staff_create_client_invite: {
         Args: {
           p_category_id?: string
@@ -3299,6 +3377,18 @@ export type Database = {
           p_test_id: string
         }
         Returns: Database["public"]["Enums"]["client_portal_visibility_t"]
+      }
+      test_session_has_active_publication: {
+        Args: { p_session_id: string }
+        Returns: boolean
+      }
+      test_session_has_auto_visible_metric: {
+        Args: { p_org_id: string; p_session_id: string }
+        Returns: boolean
+      }
+      test_session_in_org: {
+        Args: { p_org_id: string; p_session_id: string }
+        Returns: boolean
       }
       test_session_is_baseline: {
         Args: { p_session_id: string; p_test_id: string }
