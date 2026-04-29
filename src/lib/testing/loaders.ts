@@ -110,11 +110,25 @@ interface CustomTestRow {
  * Builds the capture-modal catalog: schema seed + custom tests, with
  * disabled tests filtered out. Sort order matches the schema's
  * display_order at every level.
+ *
+ * Options (default = current capture-flow behaviour):
+ * - includeCustom (default true): merge practice_custom_tests rows into
+ *   the tree alongside schema tests. Set false for the disable-tests
+ *   surface, which only manages schema tests (custom tests have their
+ *   own Archive action in 3.2 per Q4 sign-off).
+ * - includeDisabled (default false): include schema and custom tests
+ *   that are listed in practice_disabled_tests. Set true for
+ *   /settings/tests so the override editor can still be used on
+ *   disabled tests and the disable-tests toggle list shows everything.
  */
 export async function loadCatalog(
   supabase: SupabaseClient,
   organizationId: string,
+  options: { includeCustom?: boolean; includeDisabled?: boolean } = {},
 ): Promise<CatalogCategory[]> {
+  const includeCustom = options.includeCustom !== false
+  const includeDisabled = options.includeDisabled === true
+
   const [seedQ, customQ, disabledQ] = await Promise.all([
     supabase.from('physical_markers_schema_seed').select('*'),
     supabase
@@ -138,7 +152,7 @@ export async function loadCatalog(
   // Group seed rows by category > subcategory > test.
   const catMap = new Map<string, CatalogCategory>()
   for (const row of (seedQ.data ?? []) as SeedRow[]) {
-    if (disabled.has(row.test_id)) continue
+    if (!includeDisabled && disabled.has(row.test_id)) continue
 
     let cat = catMap.get(row.category_id)
     if (!cat) {
@@ -189,8 +203,25 @@ export async function loadCatalog(
 
   // Custom tests: append into the appropriate subcategory if it exists,
   // otherwise create a "Custom" subcategory under the named category.
+  if (!includeCustom) {
+    // Skip the custom-tests merge entirely.
+    for (const cat of catMap.values()) {
+      cat.subcategories.sort(
+        (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name),
+      )
+      for (const sub of cat.subcategories) {
+        sub.tests.sort(
+          (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name),
+        )
+      }
+    }
+    return Array.from(catMap.values()).sort(
+      (a, b) => a.display_order - b.display_order || a.name.localeCompare(b.name),
+    )
+  }
+
   for (const ct of customs) {
-    if (disabled.has(ct.test_id)) continue
+    if (!includeDisabled && disabled.has(ct.test_id)) continue
     let cat = catMap.get(ct.category_id)
     if (!cat) {
       // Custom category that isn't in the schema — create with a high

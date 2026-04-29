@@ -10,6 +10,7 @@ import {
   type OverrideMapEntry,
 } from '@/lib/testing'
 import { CustomTestBuilder } from './_components/CustomTestBuilder'
+import { DisableTestsList } from './_components/DisableTestsList'
 import { OverrideEditor } from './_components/OverrideEditor'
 
 export const dynamic = 'force-dynamic'
@@ -18,12 +19,21 @@ export default async function SettingsTestsPage() {
   const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const [catalog, overrides, disabled, customTests] = await Promise.all([
-    loadCatalog(supabase, organizationId),
-    loadAllOverridesForOrg(supabase, organizationId),
-    loadAllDisabledTests(supabase, organizationId),
-    loadCustomTestsForOrg(supabase, organizationId),
-  ])
+  const [catalog, schemaCatalog, overrides, disabled, customTests] =
+    await Promise.all([
+      // Default load: includes custom tests, excludes disabled. Used by the
+      // override editor (3.1) so the EP can adjust hints on enabled tests.
+      loadCatalog(supabase, organizationId),
+      // Schema-only, includes-disabled load: used by the disable-tests
+      // list (3.3). Custom tests are managed via the Custom Tests section.
+      loadCatalog(supabase, organizationId, {
+        includeCustom: false,
+        includeDisabled: true,
+      }),
+      loadAllOverridesForOrg(supabase, organizationId),
+      loadAllDisabledTests(supabase, organizationId),
+      loadCustomTestsForOrg(supabase, organizationId),
+    ])
 
   // Maps don't survive the Server → Client component boundary cleanly.
   // Plain objects do.
@@ -79,9 +89,9 @@ export default async function SettingsTestsPage() {
 
       <Section
         title="Disable schema tests"
-        desc="Hide a standard test from forward capture. Past results remain queryable."
+        desc="Hide a standard schema test from forward capture for this practice. Past results remain queryable. Custom tests are archived via the Custom Tests section."
       >
-        <ComingNext label="3.3 — disable-tests toggle" />
+        <DisableTestsList schemaCatalog={schemaCatalog} disabled={disabledArray} />
       </Section>
 
       <Section

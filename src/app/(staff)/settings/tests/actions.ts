@@ -368,6 +368,56 @@ export async function archiveCustomTestAction(
   return { error: null }
 }
 
+/* ============================================================================
+   3.3 — Disable schema tests
+   ============================================================================
+   practice_disabled_tests follows the hard-DELETE-on-enable / hard-INSERT-
+   on-disable pattern (no deleted_at column). This dodges the 42501 SELECT-
+   policy trap entirely — there's no soft-delete UPDATE to worry about.
+
+   Per Q4 sign-off: only schema tests use this surface. Custom tests are
+   archived via archiveCustomTestAction. Server-side guard rejects
+   `custom_…` ids defensively even though the UI never sends them.
+   ============================================================================ */
+
+export async function setTestEnabledAction(
+  testId: string,
+  enabled: boolean,
+): Promise<{ error: string | null }> {
+  if (!TEST_ID_RE.test(testId)) {
+    return { error: 'Invalid test id.' }
+  }
+  if (testId.startsWith('custom_')) {
+    return {
+      error: 'Custom tests are managed via the Custom Tests section, not Disable.',
+    }
+  }
+
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  if (enabled) {
+    // Re-enable: hard DELETE the practice_disabled_tests row.
+    const { error } = await supabase
+      .from('practice_disabled_tests')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('test_id', testId)
+    if (error) return { error: `Enable failed: ${error.message}` }
+  } else {
+    // Disable: INSERT. 23505 (duplicate) is treated as success — already disabled.
+    const { error } = await supabase
+      .from('practice_disabled_tests')
+      .insert({ organization_id: organizationId, test_id: testId })
+    if (error && error.code !== '23505') {
+      return { error: `Disable failed: ${error.message}` }
+    }
+  }
+
+  revalidatePath('/settings/tests')
+  return { error: null }
+}
+
 // ----------------------------------------------------------------------------
 // Type-safe payload builders. Per-field switches let TS narrow each branch
 // to the exact column type — avoids dynamic-key updates which the strict
