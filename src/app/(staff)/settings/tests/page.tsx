@@ -6,8 +6,10 @@ import {
   loadAllDisabledTests,
   loadAllOverridesForOrg,
   loadCatalog,
+  loadCustomTestsForOrg,
   type OverrideMapEntry,
 } from '@/lib/testing'
+import { CustomTestBuilder } from './_components/CustomTestBuilder'
 import { OverrideEditor } from './_components/OverrideEditor'
 
 export const dynamic = 'force-dynamic'
@@ -16,10 +18,11 @@ export default async function SettingsTestsPage() {
   const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const [catalog, overrides, disabled] = await Promise.all([
+  const [catalog, overrides, disabled, customTests] = await Promise.all([
     loadCatalog(supabase, organizationId),
     loadAllOverridesForOrg(supabase, organizationId),
     loadAllDisabledTests(supabase, organizationId),
+    loadCustomTestsForOrg(supabase, organizationId),
   ])
 
   // Maps don't survive the Server → Client component boundary cleanly.
@@ -69,9 +72,9 @@ export default async function SettingsTestsPage() {
 
       <Section
         title="Custom tests"
-        desc="Tests not in the schema. Custom tests appear alongside standard tests in the capture flow."
+        desc="Tests not in the schema. Custom tests appear alongside standard tests in the capture flow with a Custom badge. Past results stay queryable after a test is archived."
       >
-        <ComingNext label="3.2 — custom test builder" />
+        <CustomTestBuilder customTests={customTests} catalog={catalog} />
       </Section>
 
       <Section

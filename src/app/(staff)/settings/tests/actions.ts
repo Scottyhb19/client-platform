@@ -161,6 +161,213 @@ export async function resetOverrideRowAction(
   return { error: null }
 }
 
+/* ============================================================================
+   3.2 — Custom tests
+   ============================================================================
+   Per Q2 sign-off: client auto-slugifies the test name to a `custom_…` id
+   and surfaces the result. The server validates against the DB CHECK
+   regex but does not slugify itself — the client is the single owner of
+   the slug logic.
+
+   Per Q4 sign-off: archive lives on this surface (not on the Disable
+   list). Archive routes through the soft_delete_practice_custom_test RPC
+   from migration 20260429120000 to dodge the deleted_at-IS-NULL SELECT-
+   policy trap.
+
+   Edit invariants:
+   - test_id is immutable. Past test_results reference it by string.
+   - metric_id slugs already in the metrics array are immutable. Removing
+     a metric is permitted (past results stay queryable but won't appear
+     in new captures).
+   - Adding a new metric is permitted; the new id must be unique within
+     the test.
+   ============================================================================ */
+
+const CATEGORY_ID_RE = /^[a-z0-9_]{1,80}$/
+const SUBCATEGORY_ID_RE = /^[a-z0-9_]{1,80}$/
+const TEST_ID_FULL_RE = /^custom_[a-z0-9_]{1,73}$/
+
+const VALID_INPUT_TYPES: readonly string[] = ['decimal', 'integer']
+
+export interface CustomTestMetricInput {
+  id: string
+  label: string
+  unit: string
+  input_type: 'decimal' | 'integer'
+  bilateral: boolean
+  direction_of_good: string
+  default_chart: string
+  comparison_mode: string
+  client_portal_visibility: string
+  client_view_chart: string
+}
+
+export interface CreateCustomTestInput {
+  category_id: string
+  subcategory_id: string
+  test_id: string
+  name: string
+  display_order: number
+  metrics: CustomTestMetricInput[]
+}
+
+export interface UpdateCustomTestInput {
+  category_id: string
+  subcategory_id: string
+  name: string
+  display_order: number
+  metrics: CustomTestMetricInput[]
+}
+
+function validateInput(
+  input: CreateCustomTestInput | UpdateCustomTestInput,
+  options: { requireTestId: boolean },
+): string | null {
+  if (!CATEGORY_ID_RE.test(input.category_id)) {
+    return 'Category id must be 1–80 lowercase letters, digits, or underscores.'
+  }
+  if (!SUBCATEGORY_ID_RE.test(input.subcategory_id)) {
+    return 'Subcategory id must be 1–80 lowercase letters, digits, or underscores.'
+  }
+  if (options.requireTestId) {
+    const create = input as CreateCustomTestInput
+    if (!TEST_ID_FULL_RE.test(create.test_id)) {
+      return 'Test id must start with "custom_" and use only lowercase letters, digits, or underscores (max 80 chars).'
+    }
+  }
+  const trimmedName = input.name.trim()
+  if (trimmedName.length === 0 || trimmedName.length > 200) {
+    return 'Name must be 1–200 characters.'
+  }
+  if (input.metrics.length < 1 || input.metrics.length > 30) {
+    return 'A test needs between 1 and 30 metrics.'
+  }
+  const seen = new Set<string>()
+  for (const m of input.metrics) {
+    if (!METRIC_ID_RE.test(m.id)) {
+      return `Metric id "${m.id}" must be 1–80 lowercase letters, digits, or underscores.`
+    }
+    if (seen.has(m.id)) {
+      return `Duplicate metric id "${m.id}".`
+    }
+    seen.add(m.id)
+    if (m.label.trim().length === 0 || m.label.length > 200) {
+      return `Metric "${m.id}" label must be 1–200 chars.`
+    }
+    if (m.unit.trim().length === 0 || m.unit.length > 30) {
+      return `Metric "${m.id}" unit must be 1–30 chars.`
+    }
+    if (!VALID_INPUT_TYPES.includes(m.input_type)) {
+      return `Metric "${m.id}" input type must be decimal or integer.`
+    }
+    if (
+      !VALID_VALUES.direction_of_good.includes(m.direction_of_good) ||
+      !VALID_VALUES.default_chart.includes(m.default_chart) ||
+      !VALID_VALUES.comparison_mode.includes(m.comparison_mode) ||
+      !VALID_VALUES.client_portal_visibility.includes(m.client_portal_visibility) ||
+      !VALID_VALUES.client_view_chart.includes(m.client_view_chart)
+    ) {
+      return `Metric "${m.id}" has an invalid rendering-hint value.`
+    }
+  }
+  return null
+}
+
+function buildMetricsJson(metrics: CustomTestMetricInput[]) {
+  return metrics.map((m) => ({
+    id: m.id,
+    label: m.label.trim(),
+    unit: m.unit.trim(),
+    input_type: m.input_type,
+    side: m.bilateral ? ['left', 'right'] : null,
+    direction_of_good: m.direction_of_good,
+    default_chart: m.default_chart,
+    comparison_mode: m.comparison_mode,
+    client_portal_visibility: m.client_portal_visibility,
+    client_view_chart: m.client_view_chart,
+  }))
+}
+
+export async function createCustomTestAction(
+  input: CreateCustomTestInput,
+): Promise<{ error: string | null; id: string | null }> {
+  const validationError = validateInput(input, { requireTestId: true })
+  if (validationError) return { error: validationError, id: null }
+
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase
+    .from('practice_custom_tests')
+    .insert({
+      organization_id: organizationId,
+      category_id: input.category_id,
+      subcategory_id: input.subcategory_id,
+      test_id: input.test_id,
+      name: input.name.trim(),
+      display_order: input.display_order,
+      metrics: buildMetricsJson(input.metrics),
+    })
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    if (error.code === '23505') {
+      return { error: `A custom test with id "${input.test_id}" already exists.`, id: null }
+    }
+    return { error: `Save failed: ${error.message}`, id: null }
+  }
+
+  revalidatePath('/settings/tests')
+  return { error: null, id: data?.id ?? null }
+}
+
+export async function updateCustomTestAction(
+  id: string,
+  input: UpdateCustomTestInput,
+): Promise<{ error: string | null }> {
+  const validationError = validateInput(input, { requireTestId: false })
+  if (validationError) return { error: validationError }
+
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('practice_custom_tests')
+    .update({
+      category_id: input.category_id,
+      subcategory_id: input.subcategory_id,
+      name: input.name.trim(),
+      display_order: input.display_order,
+      metrics: buildMetricsJson(input.metrics),
+    })
+    .eq('id', id)
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+
+  if (error) return { error: `Save failed: ${error.message}` }
+
+  revalidatePath('/settings/tests')
+  return { error: null }
+}
+
+export async function archiveCustomTestAction(
+  id: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  // soft_delete_practice_custom_test is SECURITY DEFINER — the function
+  // body re-checks org + role inside, so the RPC IS the security boundary.
+  const { error } = await supabase.rpc('soft_delete_practice_custom_test', {
+    p_id: id,
+  })
+  if (error) return { error: `Archive failed: ${error.message}` }
+
+  revalidatePath('/settings/tests')
+  return { error: null }
+}
+
 // ----------------------------------------------------------------------------
 // Type-safe payload builders. Per-field switches let TS narrow each branch
 // to the exact column type — avoids dynamic-key updates which the strict
