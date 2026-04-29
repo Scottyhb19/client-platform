@@ -222,9 +222,12 @@ Running record of what's closed, in order. Each entry references the commit on m
 - **pgTAP** — `supabase/tests/database/07_phase_c_settings_round_trip.sql` covers the data-layer halves of brief §8 Tests 6 and 7: custom-test INSERT round-trips through the metrics jsonb intact and `soft_delete_practice_custom_test` removes it from the active view; `practice_disabled_tests` INSERT works and pre-existing test_results for the disabled test_id stay queryable (the load-bearing assertion behind "past results remain queryable; only forward capture is hidden"); `test_batteries` INSERT with metric_keys spanning 8 metrics across 3 distinct test_ids round-trips intact and `soft_delete_test_battery` removes it. Test 1's data half is already covered by `01_visibility_override.sql`.
 - **Manual UI checklist** — see §8 below for the items to walk through against `/settings/tests` on a real authenticated session before declaring Phase C done. Items marked `[Phase D]` are the visual halves of brief §8 Tests 1, 6 — they are gated on the Reports rendering work and not testable until Phase D lands.
 
-### Phase D — Reports rendering (next)
+### Phase D — Reports rendering (in progress)
 
-- P1-5/6/7 + P2-1: chart library decision, test cards, comparison view, publish flow.
+- **D.1 — Decisions locked.** Q1–Q9 signed off ([docs/decisions.md](../decisions.md) D-001 to D-005). Headlines: Recharts as the chart library; folder-model IA (category tiles → drill in to per-test cards); per-test card with per-metric charts inside (KOOS-style same-shape metrics combined); baseline + %-change as a numeric badge above each chart with direction-of-good colouring; dedicated `?tab=publish` surface; full-page comparison overlay defaulting to all sessions checked. Recharts 2.15+ installed (React 19 compatible).
+- **D.2 — Staff Reports tab full build (next).** Replace ReportsTab placeholder with category tiles → per-test cards → per-metric charts.
+- D.3 — Comparison overlay.
+- D.4 — Publish flow + pgTAP 08.
 
 ---
 
