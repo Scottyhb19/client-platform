@@ -373,3 +373,112 @@ export async function loadCapturedSessionsForClient(
     }
   })
 }
+
+// ---------------------------------------------------------------------------
+// Settings → Tests: per-org override map, disabled-test set, custom-test list
+// ---------------------------------------------------------------------------
+
+export interface OverrideMapEntry {
+  direction_of_good: DirectionOfGood | null
+  default_chart: DefaultChart | null
+  comparison_mode: ComparisonMode | null
+  client_portal_visibility: ClientPortalVisibility | null
+  client_view_chart: ClientViewChart | null
+}
+
+const overrideKey = (testId: string, metricId: string): string =>
+  `${testId}::${metricId}`
+
+/**
+ * Load every practice_test_settings row for the org as a Map keyed by
+ * `${test_id}::${metric_id}`. Used by the Settings → Tests override editor
+ * to render the entire catalog in one round-trip instead of one
+ * resolveMetricSettings call per metric.
+ *
+ * This is the single permitted direct-read of practice_test_settings —
+ * the runtime-config rule (see /docs/testing-module-schema.md §0) routes
+ * all per-metric reads through the resolver. The override editor must
+ * read every row, so it gets a dedicated bulk loader.
+ */
+export async function loadAllOverridesForOrg(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<Map<string, OverrideMapEntry>> {
+  const { data, error } = await supabase
+    .from('practice_test_settings')
+    .select(
+      'test_id, metric_id, direction_of_good, default_chart, ' +
+        'comparison_mode, client_portal_visibility, client_view_chart',
+    )
+    .eq('organization_id', organizationId)
+  if (error) throw new Error(`Load practice_test_settings: ${error.message}`)
+  const map = new Map<string, OverrideMapEntry>()
+  // PostgREST's typed union ('successful row' | 'error string') trips a
+  // direct cast — go through unknown the same way loadActiveBatteries does.
+  const rows = ((data ?? []) as unknown) as Array<
+    OverrideMapEntry & { test_id: string; metric_id: string }
+  >
+  for (const row of rows) {
+    map.set(overrideKey(row.test_id, row.metric_id), {
+      direction_of_good: row.direction_of_good,
+      default_chart: row.default_chart,
+      comparison_mode: row.comparison_mode,
+      client_portal_visibility: row.client_portal_visibility,
+      client_view_chart: row.client_view_chart,
+    })
+  }
+  return map
+}
+
+/** Set of disabled test_ids for the org. Empty set if none disabled. */
+export async function loadAllDisabledTests(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('practice_disabled_tests')
+    .select('test_id')
+    .eq('organization_id', organizationId)
+  if (error) throw new Error(`Load practice_disabled_tests: ${error.message}`)
+  return new Set((data ?? []).map((d) => d.test_id))
+}
+
+/** Editable view of a custom test for the Settings → Tests builder. */
+export interface PracticeCustomTest {
+  id: string
+  test_id: string
+  category_id: string
+  subcategory_id: string
+  name: string
+  display_order: number
+  metrics: Array<{
+    id: string
+    label: string
+    unit: string
+    input_type: InputType
+    side: ['left', 'right'] | null
+    direction_of_good: DirectionOfGood
+    default_chart: DefaultChart
+    comparison_mode: ComparisonMode
+    client_portal_visibility: ClientPortalVisibility
+    client_view_chart: ClientViewChart
+  }>
+}
+
+export async function loadCustomTestsForOrg(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<PracticeCustomTest[]> {
+  const { data, error } = await supabase
+    .from('practice_custom_tests')
+    .select(
+      'id, test_id, category_id, subcategory_id, name, display_order, metrics',
+    )
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+    .order('category_id', { ascending: true })
+    .order('subcategory_id', { ascending: true })
+    .order('display_order', { ascending: true })
+  if (error) throw new Error(`Load practice_custom_tests: ${error.message}`)
+  return (data ?? []) as unknown as PracticeCustomTest[]
+}

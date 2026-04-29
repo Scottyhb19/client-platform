@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { logout } from '../../login/actions'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -181,6 +182,29 @@ export default async function SettingsPage() {
         desc="Custom shapes for clinical notes. Each template is a list of labelled fields you fill in when writing a note. Edit, reorder, or build new ones — historical notes keep the labels they were saved with."
       >
         <NoteTemplatesEditor initialTemplates={noteTemplates} />
+      </Section>
+
+      <Section
+        title="Tests"
+        desc="Per-metric defaults, custom tests, disabled tests, and saved batteries. Schema overrides survive upgrades."
+      >
+        <div
+          style={{
+            padding: '14px 22px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 14,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ fontSize: '.85rem', color: 'var(--color-text-light)' }}>
+            Customise the testing module — direction-of-good, charts, visibility, batteries.
+          </div>
+          <Link href="/settings/tests" className="btn outline">
+            Manage tests
+          </Link>
+        </div>
       </Section>
 
       <Section title="Account" desc="Signed in as you.">

@@ -1,0 +1,150 @@
+import Link from 'next/link'
+import { ChevronLeft } from 'lucide-react'
+import { requireRole } from '@/lib/auth/require-role'
+import { createSupabaseServerClient } from '@/lib/supabase/server'
+import {
+  loadAllDisabledTests,
+  loadAllOverridesForOrg,
+  loadCatalog,
+  type OverrideMapEntry,
+} from '@/lib/testing'
+import { OverrideEditor } from './_components/OverrideEditor'
+
+export const dynamic = 'force-dynamic'
+
+export default async function SettingsTestsPage() {
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const [catalog, overrides, disabled] = await Promise.all([
+    loadCatalog(supabase, organizationId),
+    loadAllOverridesForOrg(supabase, organizationId),
+    loadAllDisabledTests(supabase, organizationId),
+  ])
+
+  // Maps don't survive the Server → Client component boundary cleanly.
+  // Plain objects do.
+  const overridesObject: Record<string, OverrideMapEntry> = Object.fromEntries(overrides)
+  const disabledArray = Array.from(disabled)
+
+  return (
+    <div className="page">
+      <div style={{ marginBottom: 12 }}>
+        <Link
+          href="/settings"
+          style={{
+            fontSize: '.78rem',
+            color: 'var(--color-text-light)',
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <ChevronLeft size={14} /> Settings
+        </Link>
+      </div>
+
+      <div className="page-head">
+        <div>
+          <div className="eyebrow">Practice configuration</div>
+          <h1>Tests</h1>
+          <div className="sub">
+            Per-metric defaults, custom tests, disabled tests, and saved
+            batteries. Overrides survive schema upgrades.
+          </div>
+        </div>
+      </div>
+
+      <Section
+        title="Per-metric overrides"
+        desc="Adjust direction-of-good, chart, comparison, and visibility per metric. A green border marks an overridden field; hover any cell to see the schema default. The reset icon clears all five fields for that metric."
+      >
+        <OverrideEditor
+          catalog={catalog}
+          initialOverrides={overridesObject}
+          disabled={disabledArray}
+        />
+      </Section>
+
+      <Section
+        title="Custom tests"
+        desc="Tests not in the schema. Custom tests appear alongside standard tests in the capture flow."
+      >
+        <ComingNext label="3.2 — custom test builder" />
+      </Section>
+
+      <Section
+        title="Disable schema tests"
+        desc="Hide a standard test from forward capture. Past results remain queryable."
+      >
+        <ComingNext label="3.3 — disable-tests toggle" />
+      </Section>
+
+      <Section
+        title="Saved batteries"
+        desc="Pre-defined sets of metrics for one-click capture. Apply from the capture modal or from inside a clinical note."
+      >
+        <ComingNext label="3.4 — battery builder" />
+      </Section>
+    </div>
+  )
+}
+
+function Section({
+  title,
+  desc,
+  children,
+}: {
+  title: string
+  desc: string
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      className="card"
+      style={{ marginBottom: 18, padding: 0, overflow: 'hidden' }}
+    >
+      <div
+        style={{
+          padding: '16px 22px',
+          borderBottom: '1px solid var(--color-border-subtle)',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '1rem',
+          }}
+        >
+          {title}
+        </div>
+        <div
+          style={{
+            fontSize: '.78rem',
+            color: 'var(--color-text-light)',
+            marginTop: 2,
+          }}
+        >
+          {desc}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function ComingNext({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        padding: '32px 22px',
+        color: 'var(--color-text-light)',
+        fontSize: '.85rem',
+      }}
+    >
+      {label} — wired in the next polish-pass turn.
+    </div>
+  )
+}

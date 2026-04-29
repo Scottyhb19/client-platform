@@ -25,6 +25,9 @@ export {
   loadActiveBatteries,
   loadLastUsedBatteryForClient,
   loadCapturedSessionsForClient,
+  loadAllOverridesForOrg,
+  loadAllDisabledTests,
+  loadCustomTestsForOrg,
   type CatalogCategory,
   type CatalogSubcategory,
   type CatalogTest,
@@ -32,6 +35,8 @@ export {
   type BatteryRow,
   type LastUsedBatteryHint,
   type CapturedSessionRow,
+  type OverrideMapEntry,
+  type PracticeCustomTest,
 } from './loaders'
 export type {
   ClientPortalVisibility,
