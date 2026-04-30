@@ -45,7 +45,7 @@ import type {
   BatteryRow,
   CatalogCategory,
   LastUsedBatteryHint,
-} from '@/lib/testing'
+} from '@/lib/testing/loader-types'
 
 type SidebarTab = 'previous' | 'reports' | 'files'
 type LeftMode =

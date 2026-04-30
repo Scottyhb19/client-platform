@@ -1,33 +1,46 @@
 'use client'
 
 /**
- * ReportsTab — staff-side view of structured test sessions for one client.
+ * ReportsTab — staff-side view of structured test history for one client.
  *
- * Replaces the placeholder ReportsTab() that was inline in ClientProfile.tsx.
- * Renders a list of captured sessions with a "+ Record test" button that
- * opens TestCaptureModal. Charts and per-test cards arrive in Phase D —
- * for now this is a list + capture entry only.
+ * Phase D.2 IA per docs/decisions.md D-002 (folder model):
+ *   /clients/[id]?tab=reports
+ *     → CategoryGrid (default)
+ *       → CategoryDetail (drilled in, subcategory chips + per-test cards)
  *
- * The legacy `reports` table (rendered HTML reports) is unchanged and
- * lives elsewhere. This tab is the new structured-data surface.
+ * The "+ Record test" button is always visible in the header. After a
+ * successful capture the modal triggers router.refresh() so the new
+ * session lands in the right test card without a manual reload.
+ *
+ * Charts use Recharts via the per-metric ChartFactory; baseline +
+ * %-change colour-coded by direction_of_good lives in MetricBadge.
+ *
+ * Per CLAUDE.md the runtime-config rule: rendering hints are read
+ * exclusively via resolveMetricSettingsBulk (called server-side inside
+ * loadTestHistoryForClient) — this client component never reads schema
+ * defaults or overrides directly.
  */
 
 import { Plus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { TestCaptureModal } from './TestCaptureModal'
+import { CategoryDetail } from './reports/CategoryDetail'
+import { CategoryGrid } from './reports/CategoryGrid'
+import type { TimeWindow } from './reports/helpers'
 import type {
   BatteryRow,
-  CapturedSessionRow,
   CatalogCategory,
+  ClientTestHistory,
   LastUsedBatteryHint,
-} from '@/lib/testing'
+} from '@/lib/testing/loader-types'
 
 interface ReportsTabProps {
   clientId: string
   catalog: CatalogCategory[]
   batteries: BatteryRow[]
   lastUsedBattery: LastUsedBatteryHint | null
-  capturedSessions: CapturedSessionRow[]
+  testHistory: ClientTestHistory
 }
 
 export function ReportsTab({
@@ -35,139 +48,88 @@ export function ReportsTab({
   catalog,
   batteries,
   lastUsedBattery,
-  capturedSessions,
+  testHistory,
 }: ReportsTabProps) {
-  // Defensive: during HMR transitions or if a loader returns nothing,
-  // these can briefly arrive undefined. The page-level loaders normally
-  // guarantee arrays.
-  const sessions = capturedSessions ?? []
+  const router = useRouter()
+  const history = testHistory ?? { tests: [], categories: [] }
   const cat = catalog ?? []
   const bs = batteries ?? []
+
   const [open, setOpen] = useState(false)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
+  const [window, setWindow] = useState<TimeWindow>('all')
+
+  const selectedCategory =
+    selectedCategoryId !== null
+      ? history.categories.find((c) => c.category_id === selectedCategoryId) ?? null
+      : null
+
+  const testsForCategory =
+    selectedCategoryId !== null
+      ? history.tests.filter((t) => t.category_id === selectedCategoryId)
+      : []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div className="panel">
-        <div className="panel-head">
-          <div className="panel-title">Test sessions</div>
-          <button
-            type="button"
-            className="btn outline"
-            onClick={() => setOpen(true)}
-            style={{ fontSize: '.78rem', padding: '6px 12px' }}
-          >
-            <Plus size={13} aria-hidden /> Record test
-          </button>
-        </div>
-        {sessions.length === 0 ? (
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
-              padding: '32px 24px',
-              textAlign: 'center',
-              color: 'var(--color-text-light)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '1.25rem',
+              color: 'var(--color-charcoal)',
+              letterSpacing: '-0.01em',
             }}
           >
+            Test history
+          </div>
+          {history.categories.length > 0 && (
             <div
               style={{
-                fontFamily: 'var(--font-display)',
-                fontWeight: 700,
-                fontSize: '1rem',
-                color: 'var(--color-charcoal)',
-                marginBottom: 4,
+                fontSize: '.78rem',
+                color: 'var(--color-text-light)',
+                marginTop: 2,
               }}
             >
-              No test sessions yet
+              {history.categories.length} categor
+              {history.categories.length === 1 ? 'y' : 'ies'} ·{' '}
+              {history.tests.length} test
+              {history.tests.length === 1 ? '' : 's'}
             </div>
-            <p
-              style={{
-                fontSize: '.84rem',
-                lineHeight: 1.6,
-                margin: '0 auto',
-                maxWidth: 440,
-              }}
-            >
-              Capture force plate, dynamometry, range of motion, and
-              patient-reported outcomes here. Charts will populate as
-              sessions accumulate.
-            </p>
-          </div>
-        ) : (
-          <ul
-            style={{
-              listStyle: 'none',
-              margin: 0,
-              padding: 0,
-              borderTop: '1px solid var(--color-border-subtle)',
-            }}
-          >
-            {sessions.map((s) => (
-              <li
-                key={s.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr auto auto',
-                  gap: 14,
-                  alignItems: 'center',
-                  padding: '12px 18px',
-                  borderBottom: '1px solid var(--color-border-subtle)',
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      fontSize: '.86rem',
-                      color: 'var(--color-text)',
-                    }}
-                  >
-                    {formatLongDate(s.conducted_at)}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '.76rem',
-                      color: 'var(--color-text-light)',
-                      marginTop: 2,
-                      display: 'flex',
-                      gap: 8,
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span>
-                      {s.result_count} metric{s.result_count === 1 ? '' : 's'}
-                    </span>
-                    {s.battery_name && (
-                      <>
-                        <span style={{ color: 'var(--color-muted)' }}>·</span>
-                        <span>{s.battery_name}</span>
-                      </>
-                    )}
-                    {s.source !== 'manual' && (
-                      <span className="tag muted" style={{ fontSize: '.66rem' }}>
-                        {s.source}
-                      </span>
-                    )}
-                  </div>
-                  {s.notes && (
-                    <div
-                      style={{
-                        fontSize: '.78rem',
-                        color: 'var(--color-text-light)',
-                        marginTop: 4,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {s.notes}
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn outline"
+          onClick={() => setOpen(true)}
+          style={{ fontSize: '.82rem' }}
+        >
+          <Plus size={14} aria-hidden /> Record test
+        </button>
+      </header>
+
+      {selectedCategory && selectedCategoryId !== null ? (
+        <CategoryDetail
+          categoryName={selectedCategory.category_name}
+          tests={testsForCategory}
+          window={window}
+          onWindowChange={setWindow}
+          onBack={() => setSelectedCategoryId(null)}
+        />
+      ) : (
+        <CategoryGrid
+          categories={history.categories}
+          onOpenCategory={(id) => setSelectedCategoryId(id)}
+        />
+      )}
 
       <TestCaptureModal
         open={open}
@@ -176,20 +138,11 @@ export function ReportsTab({
         catalog={cat}
         batteries={bs}
         lastUsedBattery={lastUsedBattery}
+        onCaptured={() => {
+          // Refresh server data so the new session shows up in test history.
+          router.refresh()
+        }}
       />
     </div>
   )
-}
-
-function formatLongDate(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
 }

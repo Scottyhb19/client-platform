@@ -16,9 +16,9 @@ import {
 } from './_components/ClientProfile'
 import {
   loadActiveBatteries,
-  loadCapturedSessionsForClient,
   loadCatalog,
   loadLastUsedBatteryForClient,
+  loadTestHistoryForClient,
 } from '@/lib/testing'
 
 export const dynamic = 'force-dynamic'
@@ -67,7 +67,7 @@ export default async function ClientProfilePage({
     testCatalog,
     testBatteries,
     lastUsedBattery,
-    capturedSessions,
+    testHistory,
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -157,7 +157,7 @@ export default async function ClientProfilePage({
     loadCatalog(supabase, organizationId),
     loadActiveBatteries(supabase, organizationId),
     loadLastUsedBatteryForClient(supabase, id),
-    loadCapturedSessionsForClient(supabase, id),
+    loadTestHistoryForClient(supabase, organizationId, id),
   ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
@@ -313,7 +313,7 @@ export default async function ClientProfilePage({
       testCatalog={testCatalog}
       testBatteries={testBatteries}
       lastUsedBattery={lastUsedBattery}
-      capturedSessions={capturedSessions}
+      testHistory={testHistory}
     />
   )
 }

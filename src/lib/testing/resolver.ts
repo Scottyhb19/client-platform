@@ -103,6 +103,144 @@ export async function resolveMetricSettings(
 }
 
 // ---------------------------------------------------------------------------
+// Bulk variant — for surfaces that need to resolve many metrics at once
+// (e.g. the Reports tab, which wants all metrics ever captured for a client).
+// Same merge semantics as resolveMetricSettings; one trip for the seed,
+// one for all custom tests in the org, one for all overrides in the org.
+// ---------------------------------------------------------------------------
+
+const bulkKey = (testId: string, metricId: string): string =>
+  `${testId}::${metricId}`
+
+export async function resolveMetricSettingsBulk(
+  supabase: SupabaseClient,
+  organizationId: string,
+  metricKeys: Array<{ testId: string; metricId: string }>,
+): Promise<Map<string, ResolvedMetricSettings>> {
+  if (metricKeys.length === 0) return new Map()
+
+  // Deduplicate — callers commonly pass a key per row of test_results.
+  const dedup = new Map<string, { testId: string; metricId: string }>()
+  for (const k of metricKeys) {
+    dedup.set(bulkKey(k.testId, k.metricId), k)
+  }
+
+  // Determine which keys hit the seed vs. custom-tests path.
+  const customTestIds = new Set<string>()
+  let needSeed = false
+  for (const { testId } of dedup.values()) {
+    if (testId.startsWith(CUSTOM_TEST_PREFIX)) {
+      customTestIds.add(testId)
+    } else {
+      needSeed = true
+    }
+  }
+
+  const [seedMap, customMap, overrideRows] = await Promise.all([
+    needSeed
+      ? loadSchemaSeed(supabase)
+      : Promise.resolve(new Map()) as Promise<Map<string, never>>,
+    customTestIds.size > 0
+      ? loadCustomTestsBulk(supabase, organizationId, customTestIds)
+      : Promise.resolve(new Map<string, CustomTestRow>()),
+    loadAllOverridesBulk(supabase, organizationId),
+  ])
+
+  const out = new Map<string, ResolvedMetricSettings>()
+  for (const { testId, metricId } of dedup.values()) {
+    let base: BaseMetric | null = null
+    if (testId.startsWith(CUSTOM_TEST_PREFIX)) {
+      const ct = customMap.get(testId)
+      if (ct) {
+        const m = ct.metrics.find((x) => x.id === metricId)
+        if (m) {
+          base = {
+            category_id: ct.category_id,
+            category_name: ct.category_id,
+            subcategory_id: ct.subcategory_id,
+            subcategory_name: ct.subcategory_id,
+            test_id: ct.test_id,
+            test_name: ct.name,
+            metric_id: m.id,
+            metric_label: m.label,
+            unit: m.unit,
+            input_type: m.input_type,
+            side_left_right:
+              Array.isArray(m.side) &&
+              m.side.includes('left') &&
+              m.side.includes('right'),
+            direction_of_good: m.direction_of_good,
+            default_chart: m.default_chart,
+            comparison_mode: m.comparison_mode,
+            client_portal_visibility: m.client_portal_visibility,
+            client_view_chart: m.client_view_chart,
+            is_custom: true,
+          }
+        }
+      }
+    } else {
+      const row = seedMap.get(bulkKey(testId, metricId))
+      if (row) {
+        base = { ...row, is_custom: false }
+      }
+    }
+    if (!base) continue
+    const override = overrideRows.get(bulkKey(testId, metricId)) ?? null
+    out.set(bulkKey(testId, metricId), merge(base, override))
+  }
+  return out
+}
+
+async function loadCustomTestsBulk(
+  supabase: SupabaseClient,
+  organizationId: string,
+  testIds: Set<string>,
+): Promise<Map<string, CustomTestRow>> {
+  const { data, error } = await supabase
+    .from('practice_custom_tests')
+    .select('test_id, name, category_id, subcategory_id, metrics')
+    .eq('organization_id', organizationId)
+    .in('test_id', Array.from(testIds))
+    .is('deleted_at', null)
+  if (error) {
+    throw new Error(`Failed to load practice_custom_tests bulk: ${error.message}`)
+  }
+  const map = new Map<string, CustomTestRow>()
+  for (const row of (data ?? []) as unknown as CustomTestRow[]) {
+    map.set(row.test_id, row)
+  }
+  return map
+}
+
+async function loadAllOverridesBulk(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<Map<string, OverrideRow>> {
+  const { data, error } = await supabase
+    .from('practice_test_settings')
+    .select(
+      'test_id, metric_id, direction_of_good, default_chart, ' +
+        'comparison_mode, client_portal_visibility, client_view_chart',
+    )
+    .eq('organization_id', organizationId)
+  if (error) {
+    throw new Error(`Failed to load practice_test_settings bulk: ${error.message}`)
+  }
+  const map = new Map<string, OverrideRow>()
+  type RowWithKey = OverrideRow & { test_id: string; metric_id: string }
+  for (const row of (data ?? []) as unknown as RowWithKey[]) {
+    map.set(bulkKey(row.test_id, row.metric_id), {
+      direction_of_good: row.direction_of_good,
+      default_chart: row.default_chart,
+      comparison_mode: row.comparison_mode,
+      client_portal_visibility: row.client_portal_visibility,
+      client_view_chart: row.client_view_chart,
+    })
+  }
+  return map
+}
+
+// ---------------------------------------------------------------------------
 // Base resolution: schema seed (or custom test for 'custom_*' IDs)
 // ---------------------------------------------------------------------------
 

@@ -21,10 +21,10 @@ import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
 import type {
   BatteryRow,
-  CapturedSessionRow,
   CatalogCategory,
+  ClientTestHistory,
   LastUsedBatteryHint,
-} from '@/lib/testing'
+} from '@/lib/testing/loader-types'
 
 type NoteType = Database['public']['Enums']['note_type']
 type NoteFieldType = Database['public']['Enums']['note_template_field_type']
@@ -158,7 +158,7 @@ interface ClientProfileProps {
   testCatalog: CatalogCategory[]
   testBatteries: BatteryRow[]
   lastUsedBattery: LastUsedBatteryHint | null
-  capturedSessions: CapturedSessionRow[]
+  testHistory: ClientTestHistory
 }
 
 const VALID_TABS: Tab[] = [
@@ -217,7 +217,7 @@ export function ClientProfile({
   testCatalog,
   testBatteries,
   lastUsedBattery,
-  capturedSessions,
+  testHistory,
 }: ClientProfileProps) {
   const [tab, setTab] = useTab(initialTab)
 
@@ -260,7 +260,7 @@ export function ClientProfile({
             catalog={testCatalog}
             batteries={testBatteries}
             lastUsedBattery={lastUsedBattery}
-            capturedSessions={capturedSessions}
+            testHistory={testHistory}
           />
         )}
         {tab === 'files' && (

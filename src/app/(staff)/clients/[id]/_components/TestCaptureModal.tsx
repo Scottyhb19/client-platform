@@ -39,7 +39,7 @@ import type {
   CatalogCategory,
   CatalogMetric,
   LastUsedBatteryHint,
-} from '@/lib/testing'
+} from '@/lib/testing/loader-types'
 
 // ---------------------------------------------------------------------------
 // Types

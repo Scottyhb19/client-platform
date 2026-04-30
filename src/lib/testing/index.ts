@@ -8,7 +8,7 @@
  * of the runtime-config rule.
  */
 
-export { resolveMetricSettings } from './resolver'
+export { resolveMetricSettings, resolveMetricSettingsBulk } from './resolver'
 export {
   loadSchemaFile,
   getSchemaFileVersion,
@@ -26,6 +26,7 @@ export {
   loadAllBatteriesForOrg,
   loadLastUsedBatteryForClient,
   loadCapturedSessionsForClient,
+  loadTestHistoryForClient,
   loadAllOverridesForOrg,
   loadAllDisabledTests,
   loadCustomTestsForOrg,
@@ -37,6 +38,11 @@ export {
   type EditableBatteryRow,
   type LastUsedBatteryHint,
   type CapturedSessionRow,
+  type ClientTestHistory,
+  type TestHistory,
+  type MetricHistory,
+  type MetricSeriesPoint,
+  type CategorySummary,
   type OverrideMapEntry,
   type PracticeCustomTest,
 } from './loaders'
@@ -55,3 +61,11 @@ export type {
   SchemaSeedRow,
   Side,
 } from './types'
+export {
+  DIRECTION_TOKENS,
+  verdictFor,
+  colourFor,
+  formatPctChange,
+  formatDelta,
+  type DirectionVerdict,
+} from './direction'
