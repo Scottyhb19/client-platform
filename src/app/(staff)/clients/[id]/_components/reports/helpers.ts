@@ -285,142 +285,153 @@ export function rowBaselineLatest(
 }
 
 // ---------------------------------------------------------------------------
-// Phase D.4 — publish-flow helpers
+// Phase D.5 — per-test publish helpers
 //
-// Pivot ClientTestHistory + PublicationRow[] into a per-session view that
-// the publish tab can render directly:
-//   - Sessions that contain at least one on_publish metric
-//   - Per-session list of those on_publish metrics + the values captured
-//     in this specific session
-//   - Per-session publication state (live publication row, or null)
+// The Phase D.4 PublishTab IA was replaced by an inline per-test publish
+// button on each TestCard. The data model is now per-(session, test): one
+// publication targets one test inside a session, with its own framing.
 //
-// Test grouping happens inside the card renderer; this layer just gives
-// "for session X, here are the on_publish metrics with their this-session
-// values."
+// Helpers below answer the questions a TestCard asks at render time:
+//   - "Does this test have any on_publish metrics?" (controls whether
+//      the publish UI surfaces at all)
+//   - "What's the latest unpublished session for this test?" (the
+//      session the Publish button targets)
+//   - "What's the live publication for this test, if any?" (controls
+//      whether to show the Published badge + Unpublish action)
+//   - "Which on_publish metrics captured values in a given session?"
+//      (drives the dialog's preview)
 // ---------------------------------------------------------------------------
 
-export interface PublishMetricEntry {
-  /** The full metric history — needed to render line/milestone charts
-   *  with prior-session context. */
-  metric: MetricHistory
-  /** Values captured in THIS session, keyed by side ('left' | 'right' |
-   *  'unilateral'). Empty if the metric was not captured this session. */
-  thisSessionValues: {
-    left?: number
-    right?: number
-    unilateral?: number
+/** Metric in a test that has client_portal_visibility = 'on_publish'. */
+export function isOnPublishMetric(m: MetricHistory): boolean {
+  return m.settings.client_portal_visibility === 'on_publish'
+}
+
+/** True if this test has at least one on_publish metric — gate for
+ *  showing the Publish button on the test card at all. */
+export function testHasOnPublishMetrics(test: TestHistory): boolean {
+  return test.metrics.some(isOnPublishMetric)
+}
+
+/** All distinct session_ids in which this test captured an on_publish
+ *  metric, sorted ascending by conducted_at. Used to walk publication
+ *  state per session. */
+export function onPublishSessionIdsForTest(test: TestHistory): string[] {
+  const seen = new Map<string, string>() // session_id -> conducted_at
+  for (const m of test.metrics) {
+    if (!isOnPublishMetric(m)) continue
+    for (const p of m.points) {
+      if (!seen.has(p.session_id)) seen.set(p.session_id, p.conducted_at)
+    }
   }
-}
-
-export interface PublishSessionEntry {
-  session: SessionInfo
-  /** All on_publish metrics this session captured. Empty entries are
-   *  omitted (no this-session value AND no prior history wouldn't make
-   *  sense — though by construction this session captured them). */
-  metrics: PublishMetricEntry[]
-  /** Live client_publications row, if one exists. null = pending review. */
-  publication: PublicationRow | null
-}
-
-export interface PublishView {
-  /** Sessions awaiting decision: contain at least one on_publish metric
-   *  but have no live publication. Sorted descending by conducted_at —
-   *  freshest captures at the top. */
-  pending: PublishSessionEntry[]
-  /** Sessions with a live publication. Sorted descending by published_at. */
-  published: PublishSessionEntry[]
+  return Array.from(seen.entries())
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([id]) => id)
 }
 
 /**
- * Build a PublishView from history + live publications.
+ * Find the latest session that captured this test's on_publish metrics
+ * AND has no live publication for this test. This is the session the
+ * Publish button on the test card publishes when clicked.
  *
- * A "session of interest" for the publish flow is one that captured at
- * least one metric whose resolved client_portal_visibility === 'on_publish'.
- * Sessions whose only metrics are `auto` (always visible) or `never`
- * (never visible — RLS-enforced hard wall) skip this surface entirely.
+ * Returns null when every on_publish session for this test is already
+ * published (or there are none).
  */
-export function buildPublishView(
+export function latestUnpublishedSessionForTest(
+  test: TestHistory,
   history: ClientTestHistory | null | undefined,
   publications: PublicationRow[] | null | undefined,
-): PublishView {
-  // Defensive: history and publications can briefly arrive null/undefined
-  // during HMR transitions. Treat as empty rather than crashing.
-  const safeHistory: ClientTestHistory = history ?? {
-    tests: [],
-    categories: [],
-    sessions: [],
-  }
-  const safePublications: PublicationRow[] = publications ?? []
-
-  // Index publications by session_id for O(1) lookup.
-  const pubBySession = new Map<string, PublicationRow>()
-  for (const p of safePublications) {
-    pubBySession.set(p.test_session_id, p)
-  }
-
-  // For each session, collect the on_publish metrics that captured a
-  // value in that session. Walk every metric in every test, then group.
-  const sessionEntries = new Map<string, PublishSessionEntry>()
-  for (const t of safeHistory.tests) {
-    for (const m of t.metrics) {
-      if (m.settings.client_portal_visibility !== 'on_publish') continue
-      // Group this metric's points by session_id.
-      const byPoint = new Map<
-        string,
-        { left?: number; right?: number; unilateral?: number }
-      >()
-      for (const p of m.points) {
-        let bucket = byPoint.get(p.session_id)
-        if (!bucket) {
-          bucket = {}
-          byPoint.set(p.session_id, bucket)
-        }
-        if (p.side === 'left') bucket.left = p.value
-        else if (p.side === 'right') bucket.right = p.value
-        else bucket.unilateral = p.value
-      }
-      for (const [sessionId, values] of byPoint) {
-        // Look up the SessionInfo for this session.
-        const sessionInfo = safeHistory.sessions.find(
-          (s) => s.session_id === sessionId,
-        )
-        if (!sessionInfo) continue
-        let entry = sessionEntries.get(sessionId)
-        if (!entry) {
-          entry = {
-            session: sessionInfo,
-            metrics: [],
-            publication: pubBySession.get(sessionId) ?? null,
-          }
-          sessionEntries.set(sessionId, entry)
-        }
-        entry.metrics.push({ metric: m, thisSessionValues: values })
-      }
+): SessionInfo | null {
+  const safeHistory = history ?? { tests: [], categories: [], sessions: [] }
+  const safePubs = publications ?? []
+  // Set of session_ids where THIS test is already published live.
+  const publishedSessions = new Set<string>()
+  for (const p of safePubs) {
+    if (p.test_id === test.test_id) {
+      publishedSessions.add(p.test_session_id)
     }
   }
-
-  const all = Array.from(sessionEntries.values())
-  const pending = all
-    .filter((e) => e.publication === null)
-    .sort((a, b) =>
-      b.session.conducted_at.localeCompare(a.session.conducted_at),
-    )
-  const published = all
-    .filter((e) => e.publication !== null)
-    .sort((a, b) => {
-      // Sort by published_at desc — most-recently-published first.
-      const ap = a.publication?.published_at ?? ''
-      const bp = b.publication?.published_at ?? ''
-      return bp.localeCompare(ap)
-    })
-
-  return { pending, published }
+  const sessionIds = onPublishSessionIdsForTest(test)
+  // Walk newest first.
+  for (let i = sessionIds.length - 1; i >= 0; i--) {
+    const sid = sessionIds[i]
+    if (publishedSessions.has(sid)) continue
+    const info = safeHistory.sessions.find((s) => s.session_id === sid)
+    if (info) return info
+  }
+  return null
 }
 
-/** Returns true if this client has any pending or published on_publish
- *  sessions — the gate for showing the Publish tab in the IA. */
-export function hasPublishWorkflow(view: PublishView): boolean {
-  return view.pending.length > 0 || view.published.length > 0
+/**
+ * Find the most recent live publication for this test (across all the
+ * test's sessions). Used to render the "Published" badge and the
+ * Unpublish action on the test card.
+ */
+export function latestLivePublicationForTest(
+  test: TestHistory,
+  publications: PublicationRow[] | null | undefined,
+): PublicationRow | null {
+  const safePubs = publications ?? []
+  let latest: PublicationRow | null = null
+  for (const p of safePubs) {
+    if (p.test_id !== test.test_id) continue
+    if (latest === null || p.published_at > latest.published_at) {
+      latest = p
+    }
+  }
+  return latest
+}
+
+/** All on_publish metrics for this test that captured a value in the
+ *  given session, with the per-side values from that session. Drives
+ *  the publish dialog's chart preview. */
+export function onPublishMetricsForTestInSession(
+  test: TestHistory,
+  sessionId: string,
+): Array<{
+  metric: MetricHistory
+  thisSessionValues: { left?: number; right?: number; unilateral?: number }
+}> {
+  const out: Array<{
+    metric: MetricHistory
+    thisSessionValues: {
+      left?: number
+      right?: number
+      unilateral?: number
+    }
+  }> = []
+  for (const m of test.metrics) {
+    if (!isOnPublishMetric(m)) continue
+    const values: { left?: number; right?: number; unilateral?: number } = {}
+    let captured = false
+    for (const p of m.points) {
+      if (p.session_id !== sessionId) continue
+      captured = true
+      if (p.side === 'left') values.left = p.value
+      else if (p.side === 'right') values.right = p.value
+      else values.unilateral = p.value
+    }
+    if (captured) out.push({ metric: m, thisSessionValues: values })
+  }
+  return out
+}
+
+/** True if any session captured an on_publish metric for any test that
+ *  hasn't been published yet — used by the eventual dashboard
+ *  needs-attention panel. The tab-strip visibility check from Phase D.4
+ *  is no longer relevant; this helper is kept for the dashboard. */
+export function hasPendingPublishWorkflow(
+  history: ClientTestHistory | null | undefined,
+  publications: PublicationRow[] | null | undefined,
+): boolean {
+  const safeHistory = history ?? { tests: [], categories: [], sessions: [] }
+  for (const t of safeHistory.tests) {
+    if (!testHasOnPublishMetrics(t)) continue
+    if (latestUnpublishedSessionForTest(t, safeHistory, publications)) {
+      return true
+    }
+  }
+  return false
 }
 
 /** Relative-time-ago — "9 days ago", "3 weeks ago". */

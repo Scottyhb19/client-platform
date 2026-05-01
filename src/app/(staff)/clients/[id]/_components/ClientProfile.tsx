@@ -19,7 +19,6 @@ import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { NotesTab } from './NotesTab'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
-import { PublishTab } from './PublishTab'
 import type {
   BatteryRow,
   CatalogCategory,
@@ -27,7 +26,6 @@ import type {
   LastUsedBatteryHint,
   PublicationRow,
 } from '@/lib/testing/loader-types'
-import { buildPublishView, hasPublishWorkflow } from './reports/helpers'
 
 type NoteType = Database['public']['Enums']['note_type']
 type NoteFieldType = Database['public']['Enums']['note_template_field_type']
@@ -130,7 +128,6 @@ export type Tab =
   | 'notes'
   | 'program'
   | 'reports'
-  | 'publish'
   | 'files'
   | 'invoices'
 
@@ -139,7 +136,6 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'notes', label: 'Session notes' },
   { key: 'program', label: 'Programs' },
   { key: 'reports', label: 'Reports' },
-  { key: 'publish', label: 'Publish' },
   { key: 'files', label: 'Files' },
   { key: 'invoices', label: 'Invoices' },
 ]
@@ -172,7 +168,6 @@ const VALID_TABS: Tab[] = [
   'notes',
   'program',
   'reports',
-  'publish',
   'files',
   'invoices',
 ]
@@ -228,10 +223,6 @@ export function ClientProfile({
   publications,
 }: ClientProfileProps) {
   const [tab, setTab] = useTab(initialTab)
-  // Publish tab is only meaningful when there are on_publish sessions
-  // for this client. Hide it otherwise to keep the tab strip tight.
-  const publishView = buildPublishView(testHistory, publications)
-  const showPublishTab = hasPublishWorkflow(publishView)
 
   return (
     <div style={{ background: 'var(--color-surface)', minHeight: '100%' }}>
@@ -242,8 +233,6 @@ export function ClientProfile({
         statusKind={statusKind}
         tab={tab}
         onTab={setTab}
-        showPublishTab={showPublishTab}
-        pendingPublishCount={publishView.pending.length}
       />
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 32px 60px' }}>
@@ -276,12 +265,6 @@ export function ClientProfile({
             batteries={testBatteries}
             lastUsedBattery={lastUsedBattery}
             testHistory={testHistory}
-          />
-        )}
-        {tab === 'publish' && showPublishTab && (
-          <PublishTab
-            clientId={client.id}
-            testHistory={testHistory}
             publications={publications}
           />
         )}
@@ -305,8 +288,6 @@ function ClientHeader({
   statusKind,
   tab,
   onTab,
-  showPublishTab,
-  pendingPublishCount,
 }: {
   client: ProfileClient
   conditions: ProfileCondition[]
@@ -314,8 +295,6 @@ function ClientHeader({
   statusKind: 'active' | 'new' | 'archived'
   tab: Tab
   onTab: (t: Tab) => void
-  showPublishTab: boolean
-  pendingPublishCount: number
 }) {
   const fullName = `${client.first_name} ${client.last_name}`
   const activeFlags = conditions.filter((c) => c.is_active).slice(0, 2)
@@ -495,7 +474,6 @@ function ClientHeader({
           }}
         >
           {TABS.map((t) => {
-            if (t.key === 'publish' && !showPublishTab) return null
             const on = tab === t.key
             return (
               <button
@@ -518,32 +496,9 @@ function ClientHeader({
                   marginBottom: -1,
                   cursor: 'pointer',
                   transition: 'color 150ms cubic-bezier(0.4,0,0.2,1)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
                 }}
               >
                 {t.label}
-                {t.key === 'publish' && pendingPublishCount > 0 && (
-                  <span
-                    aria-label={`${pendingPublishCount} pending`}
-                    style={{
-                      display: 'inline-grid',
-                      placeItems: 'center',
-                      minWidth: 18,
-                      height: 18,
-                      padding: '0 5px',
-                      borderRadius: 999,
-                      background: 'var(--color-warning)',
-                      color: '#fff',
-                      fontSize: '.62rem',
-                      fontWeight: 700,
-                      lineHeight: 1,
-                    }}
-                  >
-                    {pendingPublishCount}
-                  </span>
-                )}
               </button>
             )
           })}

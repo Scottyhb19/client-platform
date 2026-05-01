@@ -243,6 +243,39 @@ Running record of what's closed, in order. Each entry references the commit on m
   - Trigger: "Compare sessions" button added to `ReportsTab` header, visible only when ≥2 sessions exist. Opens overlay; client name threaded through `ClientProfile`.
   - Type-check clean; dev server compiles staff routes with no new warnings.
   - Manual UI walkthrough required: open the comparison overlay against a client with multiple sessions; confirm all sessions pre-selected; confirm metrics-with-no-value cells render em-dash; confirm direction-of-good colouring on the rightmost column matches per-metric MetricBadge; confirm Escape and the Close button both dismiss.
+- **D.5 — Per-test publish redesign (closed, gated on migration apply + types regen).**
+  - **Why this exists.** D.4 shipped a dedicated `?tab=publish` surface with per-session publication semantics — one publication per session, one framing covering all on_publish metrics in that session. Polish-pass review concluded the UX should be inline-with-data: each test card on the Reports tab carries its own Publish button, and each test gets its own publication row + framing. Q1/Q2/Q3 sign-off resolved the redesign details.
+  - **Schema migration** `20260501120000_per_test_publications.sql`:
+    - Pre-launch flush of `client_publications` (rows pre-date this redesign and can't be auto-expanded from per-session to per-test).
+    - `ADD COLUMN test_id text NOT NULL` — discriminates which test inside a session this publication targets. No FK; test_id may point to schema seed or `practice_custom_tests`.
+    - Replace unique-active partial index with `(test_session_id, test_id) WHERE deleted_at IS NULL`. A session may now host multiple live publications — one per test.
+    - **LOAD-BEARING RLS update**: the `select test_results via session and visibility` policy gains `AND cp.test_id = test_results.test_id` inside the publication-existence check. Without this, a CMJ publication would still leak KOOS results in the same session. pgTAP 08 verifies the isolation explicitly.
+  - **Test helpers** updated: `_test_insert_client_publication` signature is now `(uuid, uuid, uuid, text, text)` with `p_test_id` required. Old signature dropped to avoid arity overload (per project memory). `02_never_hard_wall.sql` updated to pass `'pts_koos'` as the published test.
+  - **Server actions**: `publishSessionAction` renamed to `publishTestAction(clientId, sessionId, testId, framingText)`. Insert includes `test_id`. 23505 message rewritten ("This test is already published for this session"). `unpublishPublicationAction` unchanged — it operates on a publication by id, agnostic to schema shape. Pending types regen, the insert object goes through a contained `as any` cast — comment in the file points at the cleanup once `npm run supabase:types` runs.
+  - **Loader + types**: `PublicationRow.test_id` field added. `loadPublicationsForClient` selects it.
+  - **Helpers (replaces D.4 `buildPublishView`)**:
+    - `testHasOnPublishMetrics(test)` — gate for showing the Publish UI on a test card at all.
+    - `latestUnpublishedSessionForTest(test, history, publications)` — the session the Publish button targets (newest unpublished, per Q2). Returns null when all on_publish sessions for this test are published.
+    - `latestLivePublicationForTest(test, publications)` — newest live publication for the badge.
+    - `onPublishMetricsForTestInSession(test, sessionId)` — drives the dialog's chart preview.
+    - `hasPendingPublishWorkflow(history, publications)` — kept for the future dashboard attention panel.
+  - **IA changes**: `'publish'` removed from `Tab` union, `VALID_TABS`, `TABS`. `PublishTab.tsx` and `PublishCard.tsx` deleted. `ClientProfile` no longer computes `showPublishTab` / `pendingPublishCount`. `publications` now flow `page → ClientProfile → ReportsTab → CategoryDetail → TestCard`.
+  - **Per-test publish UI**:
+    - `TestPublishButton` — top-right of each TestCard. Hidden if the test has no on_publish metrics. "Publish" pill (warning tone) when there's a pending session; "Published" pill (accent tone, with count if >1) when all on_publish sessions are published. Click opens the dialog.
+    - `TestPublishDialog` — modal with two sections: "Publish next session" (latest unpublished, with chart preview via `ClientChartFactory` + framing input + Publish button) and "Currently published" (one row per live publication for this test, latest first, each with framing read-only + Unpublish action). Editing framing on a live publication is intentionally not supported (per schema: no `updated_at`); EP unpublishes then re-publishes to change framing. Escape + click-outside dismiss; body scroll locked.
+  - **pgTAP `08_publish_gate.sql` rewritten** (13 assertions across 3 scenarios):
+    - Scenario A — single-test lifecycle: capture → no publication (0 visible) → publish + framing (1 visible, framing round-trip) → unpublish via RPC (0 visible).
+    - Scenario B — per-test isolation (LOAD-BEARING): one session captures KOOS + Tampa. Publishing KOOS visible while Tampa stays hidden (publication doesn't leak across test_id). Then publish KOOS on a SECOND session — client sees BOTH KOOS sessions in the time series (Q2 progression).
+    - Scenario C — re-publish after unpublish + audit-trail spot check: unique-active index allows fresh insert on same (session, test) pair after soft-delete; final row count proves both events preserved.
+  - **Pre-merge checklist for the user** (this is gated on these three steps because the DB doesn't have `test_id` until the migration applies):
+    1. `cd "C:\Users\scott\Desktop\Client Software Platform"` then `npx supabase db push` — applies the migration.
+    2. Apply `00_test_helpers.sql` via the Supabase SQL Editor — drops the old helper overload and installs the new signature.
+    3. `npm run supabase:types` — regenerates `src/types/database.ts` with the new `test_id` column. After this, the contained `as any` cast in `publish-actions.ts` can come out (left in for now so type-check passes pre-migration).
+  - **Manual UI walkthrough** (after the three steps above):
+    - Open a client with on_publish captures → Reports tab → drill into a category → see Publish pills on each test card.
+    - Click "Publish" on a card with an unpublished on_publish session → modal shows the latest unpublished session's metrics + chart preview + framing input → type framing → Publish → modal closes, badge becomes "Published".
+    - Re-open the same card's button → modal now shows "Currently published" section with framing read-only + Unpublish.
+    - **Per-test isolation**: capture KOOS + CMJ (both on_publish) in one session, publish CMJ. KOOS card still shows "Publish". Confirm KOOS isn't leaked to client portal (eventual Phase E test).
 - **D.4 — Publish flow (closed, pending manual UI walkthrough).**
   - Server actions: `publish-actions.ts` adds `publishSessionAction(clientId, sessionId, framingText)` (raw INSERT into client_publications, RLS enforces `published_by = auth.uid()` and the unique-active partial index ensures one live publication per session) and `unpublishPublicationAction(clientId, publicationId)` (routes through the `soft_delete_client_publication` RPC). Both call `revalidatePath` so the staff client page picks up the new state.
   - Loader: `loadPublicationsForClient(supabase, clientId)` returns the live `client_publications` rows for this client (joined to test_sessions for the client_id filter; live-only filter applied). New `PublicationRow` type in `loader-types.ts`, exported via the index.

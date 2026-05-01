@@ -75,9 +75,12 @@ BEGIN
     org_id, session_id, 'pts_koos', 'pain', NULL, 72, '0–100'
   );
 
-  -- Publish the session.
+  -- Publish KOOS for this session (per-test granularity, Phase D.5).
+  -- Tampa is intentionally NOT published — even if it were, the never
+  -- hard wall would still hide it.
   PERFORM public._test_insert_client_publication(
     org_id, session_id, staff_uid,
+    'pts_koos',
     'Initial baseline — your starting point.'
   );
 

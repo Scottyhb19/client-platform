@@ -10,22 +10,32 @@
 
 import { ChevronLeft } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import type { TestHistory } from '@/lib/testing/loader-types'
+import type {
+  ClientTestHistory,
+  PublicationRow,
+  TestHistory,
+} from '@/lib/testing/loader-types'
 import { TestCard } from './TestCard'
 import { TimeWindowSelector } from './TimeWindowSelector'
 import { sortTestsByRecency, type TimeWindow } from './helpers'
 
 interface CategoryDetailProps {
+  clientId: string
   categoryName: string
   tests: TestHistory[]
+  history: ClientTestHistory
+  publications: PublicationRow[]
   window: TimeWindow
   onWindowChange: (next: TimeWindow) => void
   onBack: () => void
 }
 
 export function CategoryDetail({
+  clientId,
   categoryName,
   tests,
+  history,
+  publications,
   window,
   onWindowChange,
   onBack,
@@ -133,7 +143,14 @@ export function CategoryDetail({
           }}
         >
           {filteredTests.map((t) => (
-            <TestCard key={t.test_id} test={t} window={window} />
+            <TestCard
+              key={t.test_id}
+              clientId={clientId}
+              test={t}
+              history={history}
+              publications={publications}
+              window={window}
+            />
           ))}
         </div>
       )}

@@ -691,7 +691,7 @@ export async function loadPublicationsForClient(
   const { data, error } = await supabase
     .from('client_publications')
     .select(
-      `id, test_session_id, framing_text, published_at, published_by, created_at,
+      `id, test_session_id, test_id, framing_text, published_at, published_by, created_at,
        session:test_sessions!inner(client_id, deleted_at)`,
     )
     .is('deleted_at', null)
@@ -704,6 +704,7 @@ export async function loadPublicationsForClient(
   type Joined = {
     id: string
     test_session_id: string
+    test_id: string
     framing_text: string | null
     published_at: string
     published_by: string
@@ -715,6 +716,7 @@ export async function loadPublicationsForClient(
     return {
       id: r.id,
       test_session_id: r.test_session_id,
+      test_id: r.test_id,
       framing_text: r.framing_text,
       published_at: r.published_at,
       published_by: r.published_by,

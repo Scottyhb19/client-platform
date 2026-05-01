@@ -29,7 +29,6 @@ const VALID_TABS: Tab[] = [
   'notes',
   'program',
   'reports',
-  'publish',
   'files',
   'invoices',
 ]

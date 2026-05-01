@@ -12,9 +12,15 @@
  *   per direction_of_good
  */
 
-import type { MetricHistory, TestHistory } from '@/lib/testing/loader-types'
+import type {
+  ClientTestHistory,
+  MetricHistory,
+  PublicationRow,
+  TestHistory,
+} from '@/lib/testing/loader-types'
 import { ChartFactory } from './charts/ChartFactory'
 import { MetricBadge } from './MetricBadge'
+import { TestPublishButton } from './TestPublishButton'
 import {
   groupMetricsByShape,
   timeAgo,
@@ -22,11 +28,20 @@ import {
 } from './helpers'
 
 interface TestCardProps {
+  clientId: string
   test: TestHistory
+  history: ClientTestHistory
+  publications: PublicationRow[]
   window: TimeWindow
 }
 
-export function TestCard({ test, window }: TestCardProps) {
+export function TestCard({
+  clientId,
+  test,
+  history,
+  publications,
+  window,
+}: TestCardProps) {
   const groups = groupMetricsByShape(test.metrics)
 
   return (
@@ -42,7 +57,7 @@ export function TestCard({ test, window }: TestCardProps) {
       <header
         style={{
           display: 'flex',
-          alignItems: 'baseline',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: 12,
           flexWrap: 'wrap',
@@ -87,6 +102,12 @@ export function TestCard({ test, window }: TestCardProps) {
             {test.total_sessions === 1 ? '' : 's'} · last {timeAgo(test.most_recent_conducted_at)}
           </div>
         </div>
+        <TestPublishButton
+          clientId={clientId}
+          test={test}
+          history={history}
+          publications={publications}
+        />
       </header>
 
       {groups.map((group) => {

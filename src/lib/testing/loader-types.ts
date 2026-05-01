@@ -166,10 +166,15 @@ export interface ClientTestHistory {
  * One row from client_publications — the publish-gate audit trail.
  * Mirrors the DB shape directly (deleted_at omitted because the
  * loader filters to live rows).
+ *
+ * Phase D.5: `test_id` is required. Each publication targets one test
+ * within a session — publishing CMJ in a session does not affect the
+ * KOOS visibility for the same session.
  */
 export interface PublicationRow {
   id: string
   test_session_id: string
+  test_id: string
   framing_text: string | null
   published_at: string // ISO timestamp
   published_by: string // user id

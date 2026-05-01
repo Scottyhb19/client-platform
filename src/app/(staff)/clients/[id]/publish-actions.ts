@@ -1,14 +1,20 @@
 'use server'
 
 /**
- * Server actions for the testing-module publish flow (Phase D.4).
+ * Server actions for the testing-module publish flow.
+ *
+ * Phase D.5: per-test granularity. A publication targets one (session,
+ * test) pair, not the whole session. Publishing CMJ in a session that
+ * also captured KOOS does NOT make KOOS visible — that requires a
+ * separate publishTestAction call.
  *
  * Two actions:
- *   - publishSession: insert a row into client_publications. RLS enforces
- *     organization scope and the published_by = auth.uid() check; the
- *     unique-active partial index enforces "one live publication per
- *     session." A previously soft-deleted publication for the same
- *     session does NOT block a fresh insert — the partial index excludes
+ *   - publishTestAction: insert a row into client_publications. RLS
+ *     enforces organization scope and the published_by = auth.uid()
+ *     check; the unique-active partial index on (test_session_id,
+ *     test_id) enforces "one live publication per (session, test) pair."
+ *     A previously soft-deleted publication for the same (session, test)
+ *     pair does NOT block a fresh insert — the partial index excludes
  *     deleted rows.
  *   - unpublishPublication: routes through the soft_delete_client_publication
  *     RPC (SECURITY DEFINER, role-gated, audited). Sets deleted_at.
@@ -25,15 +31,16 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 const FRAMING_TEXT_MAX = 280
 
-export type PublishSessionResult =
+export type PublishTestResult =
   | { data: { publicationId: string }; error: null }
   | { data: null; error: string }
 
-export async function publishSessionAction(args: {
+export async function publishTestAction(args: {
   clientId: string
   sessionId: string
+  testId: string
   framingText: string | null
-}): Promise<PublishSessionResult> {
+}): Promise<PublishTestResult> {
   if (
     args.framingText !== null &&
     args.framingText.length > FRAMING_TEXT_MAX
@@ -52,11 +59,19 @@ export async function publishSessionAction(args: {
       ? args.framingText.trim()
       : null
 
-  const { data, error } = await supabase
+  // Database typegen (src/types/database.ts) doesn't know about test_id
+  // until `npm run supabase:types` is re-run after the migration
+  // applies. Until then, the typed insert rejects test_id as an excess
+  // property. The `any` cast is a contained escape hatch; remove it
+  // once types have been regenerated.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabaseAny = supabase as any
+  const { data, error } = await supabaseAny
     .from('client_publications')
     .insert({
       organization_id: organizationId,
       test_session_id: args.sessionId,
+      test_id: args.testId,
       published_by: userId,
       framing_text: trimmed,
     })
@@ -70,14 +85,14 @@ export async function publishSessionAction(args: {
       return {
         data: null,
         error:
-          'This session already has a live publication. Unpublish it first to change the framing.',
+          'This test is already published for this session. Unpublish it first to change the framing.',
       }
     }
     return { data: null, error: `Publish failed: ${error.message}` }
   }
 
-  // Refresh the staff client page so the publish tab + dashboard
-  // attention panel both pick up the new state.
+  // Refresh the staff client page so the per-test card state and the
+  // (eventual) dashboard attention panel both pick up the new state.
   revalidatePath(`/clients/${args.clientId}`)
 
   return { data: { publicationId: data.id }, error: null }

@@ -34,6 +34,7 @@ import type {
   CatalogCategory,
   ClientTestHistory,
   LastUsedBatteryHint,
+  PublicationRow,
 } from '@/lib/testing/loader-types'
 
 interface ReportsTabProps {
@@ -43,6 +44,7 @@ interface ReportsTabProps {
   batteries: BatteryRow[]
   lastUsedBattery: LastUsedBatteryHint | null
   testHistory: ClientTestHistory
+  publications: PublicationRow[]
 }
 
 export function ReportsTab({
@@ -52,6 +54,7 @@ export function ReportsTab({
   batteries,
   lastUsedBattery,
   testHistory,
+  publications,
 }: ReportsTabProps) {
   const router = useRouter()
   const history = testHistory ?? { tests: [], categories: [], sessions: [] }
@@ -139,8 +142,11 @@ export function ReportsTab({
 
       {selectedCategory && selectedCategoryId !== null ? (
         <CategoryDetail
+          clientId={clientId}
           categoryName={selectedCategory.category_name}
           tests={testsForCategory}
+          history={history}
+          publications={publications ?? []}
           window={window}
           onWindowChange={setWindow}
           onBack={() => setSelectedCategoryId(null)}

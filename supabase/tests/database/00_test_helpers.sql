@@ -209,10 +209,17 @@ COMMENT ON FUNCTION public._test_insert_test_result(uuid, uuid, text, text, test
 -- ----------------------------------------------------------------------------
 -- _test_insert_client_publication — bypass-RLS helper for fixture creation.
 -- ----------------------------------------------------------------------------
+-- Per-test granularity (Phase D.5): test_id is required. Drop the old
+-- (uuid, uuid, uuid, text) signature first so the overloaded versions
+-- don't coexist — see project memory `plpgsql function arity evolution`
+-- for the consequences (supabase-js silently calls the wrong overload).
+DROP FUNCTION IF EXISTS public._test_insert_client_publication(uuid, uuid, uuid, text);
+
 CREATE OR REPLACE FUNCTION public._test_insert_client_publication(
   p_org           uuid,
   p_session       uuid,
   p_published_by  uuid,
+  p_test_id       text,
   p_framing_text  text DEFAULT NULL
 ) RETURNS uuid
 LANGUAGE plpgsql
@@ -223,13 +230,13 @@ DECLARE
   pub_id uuid;
 BEGIN
   INSERT INTO client_publications (
-    organization_id, test_session_id, published_by, framing_text
+    organization_id, test_session_id, published_by, test_id, framing_text
   ) VALUES (
-    p_org, p_session, p_published_by, p_framing_text
+    p_org, p_session, p_published_by, p_test_id, p_framing_text
   ) RETURNING id INTO pub_id;
   RETURN pub_id;
 END;
 $$;
 
-COMMENT ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text) IS
-  'pgTAP helper: insert a client_publication bypassing RLS. Test-only.';
+COMMENT ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text, text) IS
+  'pgTAP helper: insert a client_publication bypassing RLS. Test-only. Phase D.5: test_id is required (per-test publication granularity).';
