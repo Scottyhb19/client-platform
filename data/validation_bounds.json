@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0.0",
-  "description": "Outlier detection bounds for the testing-module capture flow. Resolution order: by_metric → defaults_by_unit → fallback (non-negative). min/max are hard bounds (reject); warn_below/warn_above are soft bounds (confirm dialog). Loaded at runtime via src/lib/testing/validation-bounds.ts; never hardcoded elsewhere.",
+  "description": "Outlier detection bounds for the testing-module capture flow. Resolution order: by_metric → (custom-test escape hatch: permissive) → defaults_by_unit → fallback (permissive). min/max are hard bounds (reject); warn_below/warn_above are soft bounds (confirm dialog). Loaded at runtime via src/lib/testing/validation-bounds.ts; never hardcoded elsewhere. Custom-test metrics (test_id prefixed `custom_`) skip defaults_by_unit — the EP authored both the metric and the unit, so schema-shaped unit defaults don't apply. Pin bounds for a specific custom metric by adding a `custom_xxx::metric_id` entry in by_metric.",
   "defaults_by_unit": {
     "deg":  { "min": 0, "max": 360 },
     "cm":   { "min": 0, "max": 500 },

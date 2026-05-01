@@ -23,6 +23,8 @@ import { join } from 'node:path'
 import 'server-only'
 import type { InputType } from './types'
 
+const CUSTOM_TEST_PREFIX = 'custom_'
+
 interface MetricBounds {
   min?: number
   max?: number
@@ -54,7 +56,25 @@ export function _clearValidationBoundsCache(): void {
 
 /**
  * Returns the bounds that apply to a given metric. Resolution falls
- * through metric → unit default → permissive fallback.
+ * through metric → custom-test escape hatch → unit default → permissive
+ * fallback.
+ *
+ * Custom-test metrics intentionally skip the `defaults_by_unit` step:
+ * the EP authored both the metric AND its unit in the custom-test
+ * builder, so the JSON's schema-shaped unit defaults (which assume
+ * non-negative for length/time/force/etc.) don't apply. Authors can
+ * still pin explicit bounds by adding a `custom_…::metric_id` entry in
+ * validation_bounds.json `by_metric`. Phase E will add a per-metric
+ * bounds field in the custom-test builder UI to make this configurable
+ * without editing JSON.
+ *
+ * The final fallback was historically `{ min: 0 }` — defensive against
+ * accidental negatives — but this rejected legitimate negative metrics
+ * (eccentric peak velocity, centred bilateral asymmetries, signed
+ * deviations). Schema metrics that need non-negative bounds carry them
+ * via `by_metric` or `defaults_by_unit`; the fallback is now permissive
+ * (any finite number passes — `validateMetricValue` still rejects
+ * NaN / non-finite / non-integer-when-required).
  */
 export function getMetricBounds(
   testId: string,
@@ -64,8 +84,9 @@ export function getMetricBounds(
   const file = load()
   const key = `${testId}::${metricId}`
   if (file.by_metric[key]) return file.by_metric[key]
+  if (testId.startsWith(CUSTOM_TEST_PREFIX)) return {}
   if (file.defaults_by_unit[unit]) return file.defaults_by_unit[unit]
-  return { min: 0 } // permissive: non-negative, no upper bound
+  return {}
 }
 
 export type ValidationVerdict =
