@@ -72,7 +72,8 @@ ALTER TABLE practice_test_settings
 
 
 -- ----------------------------------------------------------------------------
--- 3. Recreate test_metric_visibility() without the override step.
+-- 3. Replace test_metric_visibility() with a version that doesn't read the
+--    override column.
 --
 --    Resolution order (post-D.6):
 --      1. Custom test in practice_custom_tests?
@@ -83,9 +84,13 @@ ALTER TABLE practice_test_settings
 --         → return 'never' (fail-closed).
 --
 --    STABLE / SECURITY DEFINER preserved from the original.
+--
+--    NOTE: We use CREATE OR REPLACE FUNCTION (not DROP + CREATE) because
+--    test_results' "select test_results via session and visibility" RLS
+--    policy depends on this function. DROP would fail with 2BP01. The
+--    signature (uuid, text, text) → client_portal_visibility_t is
+--    unchanged, so REPLACE preserves the policy dependency.
 -- ----------------------------------------------------------------------------
-DROP FUNCTION IF EXISTS public.test_metric_visibility(uuid, text, text);
-
 CREATE OR REPLACE FUNCTION public.test_metric_visibility(
   p_organization_id uuid,
   p_test_id         text,
