@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type {
-  ClientPortalVisibility,
   ClientViewChart,
   ComparisonMode,
   DefaultChart,
@@ -32,7 +31,6 @@ export type OverrideField =
   | 'direction_of_good'
   | 'default_chart'
   | 'comparison_mode'
-  | 'client_portal_visibility'
   | 'client_view_chart'
 
 const TEST_ID_RE = /^[a-z0-9_]{1,80}$/
@@ -42,7 +40,6 @@ const VALID_VALUES: Record<OverrideField, readonly string[]> = {
   direction_of_good: ['higher', 'lower', 'target_range', 'context_dependent'],
   default_chart: ['line', 'bar', 'radar', 'asymmetry_bar', 'target_zone'],
   comparison_mode: ['absolute', 'bilateral_lsi', 'vs_baseline', 'vs_normative'],
-  client_portal_visibility: ['auto', 'on_publish', 'never'],
   client_view_chart: ['line', 'milestone', 'bar', 'narrative_only', 'hidden'],
 }
 
@@ -81,8 +78,7 @@ export async function setOverrideFieldAction(
   const { data: existing, error: readErr } = await supabase
     .from('practice_test_settings')
     .select(
-      'direction_of_good, default_chart, comparison_mode, ' +
-        'client_portal_visibility, client_view_chart',
+      'direction_of_good, default_chart, comparison_mode, client_view_chart',
     )
     .eq('organization_id', organizationId)
     .eq('test_id', testId)
@@ -101,7 +97,6 @@ export async function setOverrideFieldAction(
     direction_of_good: DirectionOfGood | null
     default_chart: DefaultChart | null
     comparison_mode: ComparisonMode | null
-    client_portal_visibility: ClientPortalVisibility | null
     client_view_chart: ClientViewChart | null
   }
 
@@ -111,7 +106,6 @@ export async function setOverrideFieldAction(
     field === 'direction_of_good' ? null : row.direction_of_good,
     field === 'default_chart' ? null : row.default_chart,
     field === 'comparison_mode' ? null : row.comparison_mode,
-    field === 'client_portal_visibility' ? null : row.client_portal_visibility,
     field === 'client_view_chart' ? null : row.client_view_chart,
   ]
   if (remaining.every((v) => v === null)) {
@@ -198,7 +192,6 @@ export interface CustomTestMetricInput {
   direction_of_good: string
   default_chart: string
   comparison_mode: string
-  client_portal_visibility: string
   client_view_chart: string
 }
 
@@ -264,7 +257,6 @@ function validateInput(
       !VALID_VALUES.direction_of_good.includes(m.direction_of_good) ||
       !VALID_VALUES.default_chart.includes(m.default_chart) ||
       !VALID_VALUES.comparison_mode.includes(m.comparison_mode) ||
-      !VALID_VALUES.client_portal_visibility.includes(m.client_portal_visibility) ||
       !VALID_VALUES.client_view_chart.includes(m.client_view_chart)
     ) {
       return `Metric "${m.id}" has an invalid rendering-hint value.`
@@ -274,6 +266,11 @@ function validateInput(
 }
 
 function buildMetricsJson(metrics: CustomTestMetricInput[]) {
+  // D.6: client_portal_visibility is no longer EP-configurable per metric.
+  // Custom-test metrics default to 'on_publish' so they get a publish
+  // button on the staff Reports tab and require an explicit publication
+  // for client visibility — same model as schema metrics. The custom-test
+  // builder UI no longer exposes this field.
   return metrics.map((m) => ({
     id: m.id,
     label: m.label.trim(),
@@ -283,7 +280,7 @@ function buildMetricsJson(metrics: CustomTestMetricInput[]) {
     direction_of_good: m.direction_of_good,
     default_chart: m.default_chart,
     comparison_mode: m.comparison_mode,
-    client_portal_visibility: m.client_portal_visibility,
+    client_portal_visibility: 'on_publish',
     client_view_chart: m.client_view_chart,
   }))
 }
@@ -607,8 +604,6 @@ function buildUpsertPayload(
       return { ...base, default_chart: value as DefaultChart }
     case 'comparison_mode':
       return { ...base, comparison_mode: value as ComparisonMode }
-    case 'client_portal_visibility':
-      return { ...base, client_portal_visibility: value as ClientPortalVisibility }
     case 'client_view_chart':
       return { ...base, client_view_chart: value as ClientViewChart }
   }
@@ -622,8 +617,6 @@ function buildSingleFieldUpdate(field: OverrideField, value: string | null) {
       return { default_chart: value as DefaultChart | null }
     case 'comparison_mode':
       return { comparison_mode: value as ComparisonMode | null }
-    case 'client_portal_visibility':
-      return { client_portal_visibility: value as ClientPortalVisibility | null }
     case 'client_view_chart':
       return { client_view_chart: value as ClientViewChart | null }
   }

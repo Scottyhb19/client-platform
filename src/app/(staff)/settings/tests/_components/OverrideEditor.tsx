@@ -79,7 +79,6 @@ export function OverrideEditor({ catalog, initialOverrides, disabled }: Props) {
       direction_of_good: null,
       default_chart: null,
       comparison_mode: null,
-      client_portal_visibility: null,
       client_view_chart: null,
     }
     const next: OverrideMapEntry = { ...baseline, [field]: value }
@@ -87,7 +86,6 @@ export function OverrideEditor({ catalog, initialOverrides, disabled }: Props) {
       next.direction_of_good === null &&
       next.default_chart === null &&
       next.comparison_mode === null &&
-      next.client_portal_visibility === null &&
       next.client_view_chart === null
 
     setOverrides((prev) => {
@@ -324,11 +322,13 @@ function TestBlock({
         )}
       </div>
 
-      {/* Column headers — same grid as OverrideRow so they line up. */}
+      {/* Column headers — same grid as OverrideRow so they line up.
+          D.6: Visibility column removed; the schema default is the only
+          source for client_portal_visibility. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '180px repeat(5, 1fr) 36px',
+          gridTemplateColumns: '180px repeat(4, 1fr) 36px',
           gap: 8,
           padding: '0 8px 4px',
           fontFamily: 'var(--font-display)',
@@ -343,7 +343,6 @@ function TestBlock({
         <span>Direction</span>
         <span>Chart</span>
         <span>Compare</span>
-        <span>Visibility</span>
         <span>Client view</span>
         <span></span>
       </div>

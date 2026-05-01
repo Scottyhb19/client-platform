@@ -102,7 +102,6 @@ export interface ResolvedMetricSettings
     direction_of_good: boolean
     default_chart: boolean
     comparison_mode: boolean
-    client_portal_visibility: boolean
     client_view_chart: boolean
   }
 }

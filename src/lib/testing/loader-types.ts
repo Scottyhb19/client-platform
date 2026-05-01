@@ -189,7 +189,6 @@ export interface OverrideMapEntry {
   direction_of_good: DirectionOfGood | null
   default_chart: DefaultChart | null
   comparison_mode: ComparisonMode | null
-  client_portal_visibility: ClientPortalVisibility | null
   client_view_chart: ClientViewChart | null
 }
 

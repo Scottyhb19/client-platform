@@ -27,11 +27,6 @@ const FIELD_OPTIONS: Record<
     ['vs_baseline', 'vs baseline'],
     ['vs_normative', 'vs normative'],
   ],
-  client_portal_visibility: [
-    ['auto', 'auto'],
-    ['on_publish', 'on publish'],
-    ['never', 'never'],
-  ],
   client_view_chart: [
     ['line', 'line'],
     ['milestone', 'milestone'],
@@ -67,7 +62,7 @@ export function OverrideRow({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: '180px repeat(5, 1fr) 36px',
+        gridTemplateColumns: '180px repeat(4, 1fr) 36px',
         gap: 8,
         alignItems: 'center',
         padding: '4px 8px',
@@ -125,14 +120,6 @@ export function OverrideRow({
         onChange={(v) => onSetField(testId, metric.id, 'comparison_mode', v)}
       />
       <Cell
-        field="client_portal_visibility"
-        value={override?.client_portal_visibility ?? null}
-        defaultValue={metric.client_portal_visibility}
-        onChange={(v) =>
-          onSetField(testId, metric.id, 'client_portal_visibility', v)
-        }
-      />
-      <Cell
         field="client_view_chart"
         value={override?.client_view_chart ?? null}
         defaultValue={metric.client_view_chart}
@@ -142,7 +129,7 @@ export function OverrideRow({
       <button
         type="button"
         onClick={() => onResetRow(testId, metric.id)}
-        title={hasAnyOverride ? 'Reset all five fields' : 'No overrides set'}
+        title={hasAnyOverride ? 'Reset all four fields' : 'No overrides set'}
         disabled={!hasAnyOverride}
         style={{
           background: 'transparent',

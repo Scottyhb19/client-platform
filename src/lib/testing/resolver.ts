@@ -15,6 +15,12 @@
  *      - Read from practice_test_settings for (org, test, metric)
  *      - Each NULL field falls through to the base
  *
+ * D.6 note: client_portal_visibility is no longer overrideable per-EP —
+ * the dropped column means the schema (or custom-test definition) is the
+ * only source. The four remaining override fields (direction_of_good,
+ * default_chart, comparison_mode, client_view_chart) still merge override
+ * over base.
+ *
  * If the test or metric doesn't exist anywhere, returns null.
  *
  * This is the ONLY path application code uses to read these values.
@@ -56,7 +62,6 @@ interface OverrideRow {
   direction_of_good: DirectionOfGood | null
   default_chart: DefaultChart | null
   comparison_mode: ComparisonMode | null
-  client_portal_visibility: ClientPortalVisibility | null
   client_view_chart: ClientViewChart | null
 }
 
@@ -220,7 +225,7 @@ async function loadAllOverridesBulk(
     .from('practice_test_settings')
     .select(
       'test_id, metric_id, direction_of_good, default_chart, ' +
-        'comparison_mode, client_portal_visibility, client_view_chart',
+        'comparison_mode, client_view_chart',
     )
     .eq('organization_id', organizationId)
   if (error) {
@@ -233,7 +238,6 @@ async function loadAllOverridesBulk(
       direction_of_good: row.direction_of_good,
       default_chart: row.default_chart,
       comparison_mode: row.comparison_mode,
-      client_portal_visibility: row.client_portal_visibility,
       client_view_chart: row.client_view_chart,
     })
   }
@@ -329,7 +333,7 @@ async function loadOverride(
   const { data, error } = await supabase
     .from('practice_test_settings')
     .select(
-      'direction_of_good, default_chart, comparison_mode, client_portal_visibility, client_view_chart',
+      'direction_of_good, default_chart, comparison_mode, client_view_chart',
     )
     .eq('organization_id', organizationId)
     .eq('test_id', testId)
@@ -356,7 +360,6 @@ function merge(
     direction_of_good: null,
     default_chart: null,
     comparison_mode: null,
-    client_portal_visibility: null,
     client_view_chart: null,
   }
   return {
@@ -375,14 +378,12 @@ function merge(
     direction_of_good: o.direction_of_good ?? base.direction_of_good,
     default_chart: o.default_chart ?? base.default_chart,
     comparison_mode: o.comparison_mode ?? base.comparison_mode,
-    client_portal_visibility:
-      o.client_portal_visibility ?? base.client_portal_visibility,
+    client_portal_visibility: base.client_portal_visibility,
     client_view_chart: o.client_view_chart ?? base.client_view_chart,
     overrides: {
       direction_of_good: o.direction_of_good !== null,
       default_chart: o.default_chart !== null,
       comparison_mode: o.comparison_mode !== null,
-      client_portal_visibility: o.client_portal_visibility !== null,
       client_view_chart: o.client_view_chart !== null,
     },
   }

@@ -22,7 +22,7 @@ import { TestPublishDialog } from './TestPublishDialog'
 import {
   latestLivePublicationForTest,
   latestUnpublishedSessionForTest,
-  testHasOnPublishMetrics,
+  testIsPublishable,
 } from './helpers'
 import type {
   ClientTestHistory,
@@ -45,7 +45,7 @@ export function TestPublishButton({
 }: TestPublishButtonProps) {
   const [open, setOpen] = useState(false)
 
-  if (!testHasOnPublishMetrics(test)) return null
+  if (!testIsPublishable(test)) return null
 
   const pendingSession = latestUnpublishedSessionForTest(
     test,

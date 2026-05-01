@@ -422,8 +422,9 @@ export async function loadCapturedSessionsForClient(
 // regardless of history size (seed cache + custom tests + overrides).
 //
 // Only the fields the staff Reports tab needs are returned. The publish
-// surface (Phase D.4) will reuse this loader and lean on
-// settings.client_portal_visibility to filter.
+// surface (Phase D.5 per-test) reuses this loader and leans on
+// settings.client_portal_visibility (resolved from schema/custom only —
+// no per-EP override since D.6) to filter.
 // ---------------------------------------------------------------------------
 
 interface RawHistoryRow {
@@ -751,7 +752,7 @@ export async function loadAllOverridesForOrg(
     .from('practice_test_settings')
     .select(
       'test_id, metric_id, direction_of_good, default_chart, ' +
-        'comparison_mode, client_portal_visibility, client_view_chart',
+        'comparison_mode, client_view_chart',
     )
     .eq('organization_id', organizationId)
   if (error) throw new Error(`Load practice_test_settings: ${error.message}`)
@@ -766,7 +767,6 @@ export async function loadAllOverridesForOrg(
       direction_of_good: row.direction_of_good,
       default_chart: row.default_chart,
       comparison_mode: row.comparison_mode,
-      client_portal_visibility: row.client_portal_visibility,
       client_view_chart: row.client_view_chart,
     })
   }

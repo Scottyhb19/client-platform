@@ -434,7 +434,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -446,7 +446,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -458,7 +458,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -470,7 +470,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -482,7 +482,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -494,7 +494,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -520,7 +520,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -546,7 +546,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -575,7 +575,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 },
                 {
@@ -587,7 +587,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -609,7 +609,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 },
                 {
@@ -624,7 +624,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -650,7 +650,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -676,7 +676,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -688,7 +688,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -700,7 +700,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -726,7 +726,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -738,7 +738,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -760,7 +760,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -796,7 +796,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 },
                 {
@@ -808,7 +808,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -820,8 +820,8 @@
                   "direction_of_good": "context_dependent",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "never",
-                  "client_view_chart": "hidden"
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
                 }
               ]
             }
@@ -849,7 +849,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -871,7 +871,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -915,7 +915,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 },
                 {
@@ -930,7 +930,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 },
                 {
@@ -967,7 +967,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -989,7 +989,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -1018,7 +1018,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -1040,7 +1040,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -1062,7 +1062,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -1084,7 +1084,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -1203,8 +1203,8 @@
                   "direction_of_good": "context_dependent",
                   "default_chart": "line",
                   "comparison_mode": "absolute",
-                  "client_portal_visibility": "never",
-                  "client_view_chart": "hidden"
+                  "client_portal_visibility": "on_publish",
+                  "client_view_chart": "narrative_only"
                 },
                 {
                   "id": "waist_circ",
@@ -1349,7 +1349,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1368,7 +1368,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -1380,7 +1380,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1399,7 +1399,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -1411,7 +1411,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1430,7 +1430,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -1442,7 +1442,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1468,7 +1468,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 },
                 {
@@ -1480,7 +1480,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1609,7 +1609,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 },
                 {
@@ -1624,7 +1624,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]
@@ -1657,7 +1657,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1690,7 +1690,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1709,7 +1709,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1728,7 +1728,7 @@
                   "direction_of_good": "lower",
                   "default_chart": "line",
                   "comparison_mode": "vs_baseline",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "line"
                 }
               ]
@@ -1757,7 +1757,7 @@
                   "direction_of_good": "higher",
                   "default_chart": "asymmetry_bar",
                   "comparison_mode": "bilateral_lsi",
-                  "client_portal_visibility": "auto",
+                  "client_portal_visibility": "on_publish",
                   "client_view_chart": "milestone"
                 }
               ]

@@ -43,16 +43,17 @@ interface MetricRow {
   directionOfGood: string
   defaultChart: string
   comparisonMode: string
-  clientPortalVisibility: string
   clientViewChart: string
   isExisting: boolean // metric was in the test before edit (id is locked)
 }
 
+// D.6: client_portal_visibility is no longer EP-configurable. Custom-test
+// metrics default to 'on_publish' on the server side (see actions.ts
+// buildMetricsJson). Settings page no longer surfaces a Visibility control.
 const DEFAULT_METRIC_HINTS = {
   directionOfGood: 'higher',
   defaultChart: 'bar',
   comparisonMode: 'absolute',
-  clientPortalVisibility: 'on_publish',
   clientViewChart: 'milestone',
 } as const
 
@@ -77,7 +78,6 @@ function buildInitialMetrics(test: PracticeCustomTest | undefined): MetricRow[] 
     directionOfGood: m.direction_of_good,
     defaultChart: m.default_chart,
     comparisonMode: m.comparison_mode,
-    clientPortalVisibility: m.client_portal_visibility,
     clientViewChart: m.client_view_chart,
     isExisting: true,
   }))
@@ -95,7 +95,6 @@ function emptyMetric(): MetricRow {
     directionOfGood: DEFAULT_METRIC_HINTS.directionOfGood,
     defaultChart: DEFAULT_METRIC_HINTS.defaultChart,
     comparisonMode: DEFAULT_METRIC_HINTS.comparisonMode,
-    clientPortalVisibility: DEFAULT_METRIC_HINTS.clientPortalVisibility,
     clientViewChart: DEFAULT_METRIC_HINTS.clientViewChart,
     isExisting: false,
   }
@@ -186,7 +185,6 @@ export function CustomTestForm(props: Props) {
       direction_of_good: m.directionOfGood,
       default_chart: m.defaultChart,
       comparison_mode: m.comparisonMode,
-      client_portal_visibility: m.clientPortalVisibility,
       client_view_chart: m.clientViewChart,
     }))
 
@@ -619,18 +617,6 @@ function MetricRowEditor({
               ['bilateral_lsi', 'bilateral LSI'],
               ['vs_baseline', 'vs baseline'],
               ['vs_normative', 'vs normative'],
-            ]}
-          />
-        </Field>
-        <Field label="Visibility">
-          <Select
-            value={row.clientPortalVisibility}
-            onChange={(v) => onChange({ clientPortalVisibility: v })}
-            disabled={disabled}
-            options={[
-              ['auto', 'auto'],
-              ['on_publish', 'on publish'],
-              ['never', 'never'],
             ]}
           />
         </Field>

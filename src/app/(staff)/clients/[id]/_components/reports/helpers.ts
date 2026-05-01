@@ -307,9 +307,16 @@ export function isOnPublishMetric(m: MetricHistory): boolean {
   return m.settings.client_portal_visibility === 'on_publish'
 }
 
-/** True if this test has at least one on_publish metric — gate for
- *  showing the Publish button on the test card at all. */
-export function testHasOnPublishMetrics(test: TestHistory): boolean {
+/**
+ * True if this test surfaces a Publish button on the staff Reports tab.
+ *
+ * D.6 redesigned the visibility model — every non-`never` test gets a
+ * publish button so the EP curates exactly what reaches the client. A
+ * test is publishable when at least one of its metrics is on_publish
+ * (the only non-`never` value used post-D.6). Tests where every metric
+ * is `never` (currently only Tampa Scale) hide the publish UI entirely.
+ */
+export function testIsPublishable(test: TestHistory): boolean {
   return test.metrics.some(isOnPublishMetric)
 }
 
@@ -426,7 +433,7 @@ export function hasPendingPublishWorkflow(
 ): boolean {
   const safeHistory = history ?? { tests: [], categories: [], sessions: [] }
   for (const t of safeHistory.tests) {
-    if (!testHasOnPublishMetrics(t)) continue
+    if (!testIsPublishable(t)) continue
     if (latestUnpublishedSessionForTest(t, safeHistory, publications)) {
       return true
     }

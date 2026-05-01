@@ -183,3 +183,63 @@ For traceability, the nine decisions made in the Phase D opening session, in the
 | Q7 | Baseline as numeric badge above chart with green/red %-change colouring per `direction_of_good` (D-003) |
 | Q8 | Global time-window selector at top of category view; default All time (D-001) |
 | Q9 | Comparison overlay defaults to all sessions checked, %-change column always present (D-005) |
+
+---
+
+## D-006 — Visibility model: collapse to per-test publish, keep `never` as a single hard wall
+
+**Date:** 2026-05-01
+**Phase:** Testing module D.6
+**Status:** Decided
+**Reversibility:** Easy at the schema-seed level (re-flip JSON values), moderate for the column drop and resolver simplification (would require a recreate-with-data migration to undo). Pre-launch — no production overrides exist on the dropped column, so the drop carries no data loss.
+
+### Context
+
+D.5 shipped per-test publish UI but kept the three-value visibility model the brief introduced: `auto` (always client-visible), `on_publish` (publication-gated), `never` (clinically walled off). In practice, this meant some test cards (CMJ, IMTP — tests whose metrics defaulted to `auto`) had no publish button at all, while others (KOOS, PROMs — `on_publish` defaults) did. The asymmetry was confusing: the user expected to be able to attach framing context to *any* result before it reached the client, not just the ones the schema happened to mark as `on_publish`.
+
+The user's framing: "all card tiles should have the publish button — but per-metric overrides would be overkill."
+
+Two interpretations were on the table:
+- **Option A — UI-only flip.** Keep the three-value enum and seed defaults. Just expand the predicate behind the publish button to include `auto` metrics, so every non-`never` test card gets a publish button. For `auto` metrics the publication adds framing decoration without gating visibility.
+- **Option B — collapse the model.** Flip every `auto` metric to `on_publish`. The publish button now means "this becomes client-visible the moment you press it; if you don't press it, the client sees nothing." Stricter, simpler mental model.
+
+### Decision
+
+**Option B.** Every non-Tampa metric is `on_publish`. The publish button is the on/off switch for client visibility — not a framing-decoration layer.
+
+Concretely:
+- **Schema seed** (`data/physical_markers_schema_v1.1.json`): 47 `auto` metrics flip to `on_publish`. Two `never` metrics (NordBord force_angle_curve, body composition height) flip to `on_publish` with `client_view_chart` raised from `hidden` to `narrative_only` so the EP's framing reaches the client. Tampa Scale `total_score` keeps `never`.
+- **`practice_test_settings.client_portal_visibility` column dropped.** Per-EP overrides for visibility no longer exist; the schema (or custom-test definition) is the single source.
+- **`test_metric_visibility()` simplified.** Resolution path is custom → schema → never. The override step is removed.
+- **Custom-test builder** hides the Visibility control. New custom-test metrics are saved with `client_portal_visibility: 'on_publish'` server-side.
+- **Settings → Tests override editor** drops the Visibility column. Four columns remain: direction, chart, compare, client view.
+- **Helper rename**: `testHasOnPublishMetrics` → `testIsPublishable` to match what it gates (the publish button on a test card).
+
+### What this preserves and what it changes
+
+**Preserved:**
+- The Tampa Scale hard wall. `never` remains in the enum and the resolver and the RLS policies. Tampa results are not client-visible; no publish button surfaces on the Tampa test card.
+- The publish-flow UI. `TestPublishButton` and `TestPublishDialog` from D.5 are unchanged in behaviour — they now just appear on more test cards.
+- pgTAP 02 (`never_hard_wall`) — the load-bearing security gate still passes.
+
+**Changed:**
+- Capture flow now requires an explicit publish step before the client sees any result. Pre-D.6, capturing a CMJ flowed straight to the client portal (the metrics were `auto`). Post-D.6, capture without publish leaves the result hidden. The trade is one extra click per capture for guaranteed EP-curated visibility.
+- Existing per-EP overrides on `practice_test_settings.client_portal_visibility` are dropped via the column-DROP in migration `20260501130000`. Pre-launch — no real data loss.
+
+### Alternatives considered
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Option A — UI-only flip, keep `auto` semantics | Rejected | Doesn't match "EP pure control" — `auto` metrics still bypass the publish step. Two coexisting semantics for the publish button (gate vs. decorate) make the model harder to reason about. |
+| Drop `never` entirely, replace with separate `client_safe: boolean` column | Rejected | Tampa is the only metric that needs the wall; adding a boolean column is more schema surface for one row's worth of behaviour. The existing enum value is load-bearing already and the migration cost of dropping it is non-trivial (Postgres `ALTER TYPE … DROP VALUE` is unsupported; recreating the enum is high-risk). |
+| Drop `auto` from the enum at the same time | Rejected | Same Postgres-enum recreate-cost objection. No metric uses `auto` post-D.6, so the value is dead but harmless. Cleanup can happen later if it bothers anyone. |
+
+### pgTAP coverage
+
+- `01_visibility_override.sql` (renamed in spirit, filename unchanged) is rewritten to assert the new resolver semantics: schema-seed value for schema test_ids, custom-jsonb value for custom_-prefixed test_ids, fail-closed on unknown tuples, Tampa wall preserved.
+- `02_never_hard_wall.sql` continues to gate the Tampa-Scale RLS wall — unchanged.
+- `08_publish_gate.sql` continues to gate the per-test publish lifecycle and isolation guarantees — unchanged.
+
+### Reversibility note
+
+Re-flipping the schema-seed JSON to restore `auto` defaults is a one-PR change. Re-introducing the per-EP override column requires a migration to add the column back and a resolver-function rewrite. None of this is destructive pre-launch; once real client data accumulates, a future override mechanism would need to live alongside the publish gate rather than inside it.
