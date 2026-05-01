@@ -59,14 +59,7 @@ export async function publishTestAction(args: {
       ? args.framingText.trim()
       : null
 
-  // Database typegen (src/types/database.ts) doesn't know about test_id
-  // until `npm run supabase:types` is re-run after the migration
-  // applies. Until then, the typed insert rejects test_id as an excess
-  // property. The `any` cast is a contained escape hatch; remove it
-  // once types have been regenerated.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const supabaseAny = supabase as any
-  const { data, error } = await supabaseAny
+  const { data, error } = await supabase
     .from('client_publications')
     .insert({
       organization_id: organizationId,

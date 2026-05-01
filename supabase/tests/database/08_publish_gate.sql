@@ -36,7 +36,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(13);
+SELECT plan(14);
 
 -- ----------------------------------------------------------------------------
 -- Fixture setup

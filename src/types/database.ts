@@ -596,6 +596,7 @@ export type Database = {
           organization_id: string
           published_at: string
           published_by: string
+          test_id: string
           test_session_id: string
         }
         Insert: {
@@ -606,6 +607,7 @@ export type Database = {
           organization_id: string
           published_at?: string
           published_by: string
+          test_id: string
           test_session_id: string
         }
         Update: {
@@ -616,6 +618,7 @@ export type Database = {
           organization_id?: string
           published_at?: string
           published_by?: string
+          test_id?: string
           test_session_id?: string
         }
         Relationships: [
@@ -3176,6 +3179,7 @@ export type Database = {
           p_org: string
           p_published_by: string
           p_session: string
+          p_test_id: string
         }
         Returns: string
       }
