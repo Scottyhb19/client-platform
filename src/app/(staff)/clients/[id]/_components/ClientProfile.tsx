@@ -257,6 +257,7 @@ export function ClientProfile({
         {tab === 'reports' && (
           <ReportsTab
             clientId={client.id}
+            clientName={`${client.first_name} ${client.last_name}`}
             catalog={testCatalog}
             batteries={testBatteries}
             lastUsedBattery={lastUsedBattery}

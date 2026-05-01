@@ -7,11 +7,13 @@
  */
 
 import type {
+  ClientTestHistory,
   MetricHistory,
   MetricSeriesPoint,
+  SessionInfo,
   TestHistory,
 } from '@/lib/testing/loader-types'
-import type { Side } from '@/lib/testing/types'
+import type { DirectionOfGood, Side } from '@/lib/testing/types'
 
 // ---------------------------------------------------------------------------
 // Time window
@@ -182,6 +184,103 @@ export function formatCompactDate(iso: string): string {
   } catch {
     return iso
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase D.3 — comparison overlay helpers
+//
+// Pivot ClientTestHistory into a row-per-(test, metric, side) view across
+// the selected sessions. Empty rows (no value in any selected session)
+// are filtered out so the table stays tight when the EP narrows their
+// session selection.
+// ---------------------------------------------------------------------------
+
+export interface ComparisonRow {
+  test_id: string
+  test_name: string
+  metric_id: string
+  metric_label: string
+  side: Side
+  unit: string
+  direction_of_good: DirectionOfGood
+  is_custom: boolean
+  /** session_id → value for selected sessions only. Missing keys mean
+   *  the metric wasn't captured in that session. */
+  values: Record<string, number | undefined>
+}
+
+export interface ComparisonView {
+  /** Selected sessions in chronological ascending order. */
+  sessions: SessionInfo[]
+  /** Rows: one per (test, metric, side). Bilateral metrics produce
+   *  two rows; unilateral metrics produce one. Empty rows (no value
+   *  in any selected session) are excluded. */
+  rows: ComparisonRow[]
+}
+
+/**
+ * Build a ComparisonView from the full history filtered to the
+ * selected session ids. Rows with no value across all selected
+ * sessions are dropped.
+ */
+export function buildComparisonRows(
+  history: ClientTestHistory,
+  selectedSessionIds: Set<string>,
+): ComparisonView {
+  const sessions = history.sessions.filter((s) =>
+    selectedSessionIds.has(s.session_id),
+  )
+
+  const rows: ComparisonRow[] = []
+  for (const t of history.tests) {
+    for (const m of t.metrics) {
+      const sides: Side[] = m.settings.side_left_right
+        ? ['left', 'right']
+        : [null]
+      for (const sideKey of sides) {
+        const values: Record<string, number | undefined> = {}
+        let hasAny = false
+        for (const p of m.points) {
+          if (p.side !== sideKey) continue
+          if (!selectedSessionIds.has(p.session_id)) continue
+          values[p.session_id] = p.value
+          hasAny = true
+        }
+        if (!hasAny) continue
+        rows.push({
+          test_id: t.test_id,
+          test_name: t.test_name,
+          metric_id: m.settings.metric_id,
+          metric_label: m.settings.metric_label,
+          side: sideKey,
+          unit: m.settings.unit,
+          direction_of_good: m.settings.direction_of_good,
+          is_custom: t.is_custom,
+          values,
+        })
+      }
+    }
+  }
+  return { sessions, rows }
+}
+
+/**
+ * For one ComparisonRow, find the earliest and latest values across
+ * the selected sessions. Returns nulls if the row has no values.
+ */
+export function rowBaselineLatest(
+  row: ComparisonRow,
+  sessions: SessionInfo[],
+): { baseline: number | null; latest: number | null } {
+  let baseline: number | null = null
+  let latest: number | null = null
+  for (const s of sessions) {
+    const v = row.values[s.session_id]
+    if (v === undefined) continue
+    if (baseline === null) baseline = v
+    latest = v
+  }
+  return { baseline, latest }
 }
 
 /** Relative-time-ago — "9 days ago", "3 weeks ago". */

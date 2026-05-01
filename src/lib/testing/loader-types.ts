@@ -143,9 +143,23 @@ export interface CategorySummary {
   most_recent_conducted_at: string
 }
 
+/**
+ * One captured session for this client — enough metadata for the
+ * Phase D.3 comparison-overlay session picker. Result count is the
+ * number of test_results rows attached to this session.
+ */
+export interface SessionInfo {
+  session_id: string
+  conducted_at: string // ISO timestamp
+  battery_name: string | null
+  result_count: number
+}
+
 export interface ClientTestHistory {
   tests: TestHistory[]
   categories: CategorySummary[]
+  /** All sessions for this client, ascending by conducted_at. */
+  sessions: SessionInfo[]
 }
 
 // ---------------------------------------------------------------------------

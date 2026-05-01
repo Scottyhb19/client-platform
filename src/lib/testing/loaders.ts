@@ -38,6 +38,7 @@ import type {
   MetricSeriesPoint,
   OverrideMapEntry,
   PracticeCustomTest,
+  SessionInfo,
   TestHistory,
 } from './loader-types'
 
@@ -60,6 +61,7 @@ export type {
   MetricSeriesPoint,
   OverrideMapEntry,
   PracticeCustomTest,
+  SessionInfo,
   TestHistory,
 }
 
@@ -425,6 +427,7 @@ export async function loadCapturedSessionsForClient(
 interface RawHistoryRow {
   session_id: string
   conducted_at: string
+  battery_name: string | null
   test_id: string
   metric_id: string
   side: Side
@@ -434,6 +437,9 @@ interface RawHistoryRow {
 /**
  * Loads every captured test_result for one client, grouped by
  * test → metric → time-series, with resolved rendering hints attached.
+ *
+ * Also returns the per-session metadata list (date + battery name +
+ * result count) used by the Phase D.3 comparison-overlay session picker.
  *
  * RLS already filters to this client's organisation. Soft-deleted
  * sessions and results are excluded.
@@ -447,7 +453,10 @@ export async function loadTestHistoryForClient(
     .from('test_results')
     .select(
       `test_id, metric_id, side, value,
-       session:test_sessions!inner(id, conducted_at, deleted_at, client_id)`,
+       session:test_sessions!inner(
+         id, conducted_at, deleted_at, client_id,
+         battery:test_batteries(name)
+       )`,
     )
     .is('deleted_at', null)
     .eq('session.client_id', clientId)
@@ -455,20 +464,28 @@ export async function loadTestHistoryForClient(
 
   if (error) throw new Error(`Load test history: ${error.message}`)
 
-  // Flatten to RawHistoryRow shape.
+  // Flatten to RawHistoryRow shape. The PostgREST *-1 cast is the same
+  // shape used by loadLastUsedBatteryForClient — runtime is one object,
+  // typegen-emitted as an array.
   type Joined = {
     test_id: string
     metric_id: string
     side: Side
     value: number
-    session: { id: string; conducted_at: string } | null
+    session: {
+      id: string
+      conducted_at: string
+      battery: { name: string } | null
+    } | null
   }
   const rows: RawHistoryRow[] = []
   for (const row of (data ?? []) as unknown as Joined[]) {
     if (!row.session) continue
+    const battery = row.session.battery as unknown as { name: string } | null
     rows.push({
       session_id: row.session.id,
       conducted_at: row.session.conducted_at,
+      battery_name: battery?.name ?? null,
       test_id: row.test_id,
       metric_id: row.metric_id,
       side: row.side,
@@ -477,7 +494,7 @@ export async function loadTestHistoryForClient(
   }
 
   if (rows.length === 0) {
-    return { tests: [], categories: [] }
+    return { tests: [], categories: [], sessions: [] }
   }
 
   // Resolve every (test_id, metric_id) once.
@@ -623,7 +640,37 @@ export async function loadTestHistoryForClient(
     }))
     .sort((a, b) => a.category_name.localeCompare(b.category_name))
 
-  return { tests: testList, categories }
+  // Per-session metadata for the comparison-overlay picker. result_count
+  // counts every test_results row for the session — bilateral metrics
+  // contribute two rows (L + R), which mirrors how the picker should
+  // describe a session ("8 results captured" not "4 metrics" — closer
+  // to what the EP physically did).
+  const sessionBuckets = new Map<
+    string,
+    { conducted_at: string; battery_name: string | null; count: number }
+  >()
+  for (const r of rows) {
+    let s = sessionBuckets.get(r.session_id)
+    if (!s) {
+      s = {
+        conducted_at: r.conducted_at,
+        battery_name: r.battery_name,
+        count: 0,
+      }
+      sessionBuckets.set(r.session_id, s)
+    }
+    s.count += 1
+  }
+  const sessions: SessionInfo[] = Array.from(sessionBuckets.entries())
+    .map(([sid, s]) => ({
+      session_id: sid,
+      conducted_at: s.conducted_at,
+      battery_name: s.battery_name,
+      result_count: s.count,
+    }))
+    .sort((a, b) => a.conducted_at.localeCompare(b.conducted_at))
+
+  return { tests: testList, categories, sessions }
 }
 
 // ---------------------------------------------------------------------------

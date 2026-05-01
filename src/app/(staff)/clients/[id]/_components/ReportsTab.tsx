@@ -21,12 +21,13 @@
  * defaults or overrides directly.
  */
 
-import { Plus } from 'lucide-react'
+import { GitCompare, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { TestCaptureModal } from './TestCaptureModal'
 import { CategoryDetail } from './reports/CategoryDetail'
 import { CategoryGrid } from './reports/CategoryGrid'
+import { ComparisonOverlay } from './reports/ComparisonOverlay'
 import type { TimeWindow } from './reports/helpers'
 import type {
   BatteryRow,
@@ -37,6 +38,7 @@ import type {
 
 interface ReportsTabProps {
   clientId: string
+  clientName: string
   catalog: CatalogCategory[]
   batteries: BatteryRow[]
   lastUsedBattery: LastUsedBatteryHint | null
@@ -45,19 +47,26 @@ interface ReportsTabProps {
 
 export function ReportsTab({
   clientId,
+  clientName,
   catalog,
   batteries,
   lastUsedBattery,
   testHistory,
 }: ReportsTabProps) {
   const router = useRouter()
-  const history = testHistory ?? { tests: [], categories: [] }
+  const history = testHistory ?? { tests: [], categories: [], sessions: [] }
   const cat = catalog ?? []
   const bs = batteries ?? []
 
   const [open, setOpen] = useState(false)
+  const [compareOpen, setCompareOpen] = useState(false)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [window, setWindow] = useState<TimeWindow>('all')
+
+  // Compare button only makes sense when there's at least 2 sessions to
+  // diff between. With 0 it's nonsense; with 1 the table is just one
+  // column. Hide the button until there's something to compare.
+  const canCompare = history.sessions.length >= 2
 
   const selectedCategory =
     selectedCategoryId !== null
@@ -106,14 +115,26 @@ export function ReportsTab({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          className="btn outline"
-          onClick={() => setOpen(true)}
-          style={{ fontSize: '.82rem' }}
-        >
-          <Plus size={14} aria-hidden /> Record test
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canCompare && (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setCompareOpen(true)}
+              style={{ fontSize: '.82rem' }}
+            >
+              <GitCompare size={14} aria-hidden /> Compare sessions
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn outline"
+            onClick={() => setOpen(true)}
+            style={{ fontSize: '.82rem' }}
+          >
+            <Plus size={14} aria-hidden /> Record test
+          </button>
+        </div>
       </header>
 
       {selectedCategory && selectedCategoryId !== null ? (
@@ -143,6 +164,14 @@ export function ReportsTab({
           router.refresh()
         }}
       />
+
+      {compareOpen && (
+        <ComparisonOverlay
+          history={history}
+          clientName={clientName}
+          onClose={() => setCompareOpen(false)}
+        />
+      )}
     </div>
   )
 }
