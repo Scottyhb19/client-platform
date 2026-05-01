@@ -38,6 +38,7 @@ import type {
   MetricSeriesPoint,
   OverrideMapEntry,
   PracticeCustomTest,
+  PublicationRow,
   SessionInfo,
   TestHistory,
 } from './loader-types'
@@ -61,6 +62,7 @@ export type {
   MetricSeriesPoint,
   OverrideMapEntry,
   PracticeCustomTest,
+  PublicationRow,
   SessionInfo,
   TestHistory,
 }
@@ -671,6 +673,54 @@ export async function loadTestHistoryForClient(
     .sort((a, b) => a.conducted_at.localeCompare(b.conducted_at))
 
   return { tests: testList, categories, sessions }
+}
+
+// ---------------------------------------------------------------------------
+// Live publications for the Phase D.4 publish flow.
+//
+// Returns one row per LIVE client_publications entry for this client
+// (deleted_at IS NULL). Filtering to a specific client requires a join
+// on test_sessions because client_publications doesn't carry client_id
+// directly (the org → session → client chain is the source of truth).
+// ---------------------------------------------------------------------------
+
+export async function loadPublicationsForClient(
+  supabase: SupabaseClient,
+  clientId: string,
+): Promise<PublicationRow[]> {
+  const { data, error } = await supabase
+    .from('client_publications')
+    .select(
+      `id, test_session_id, framing_text, published_at, published_by, created_at,
+       session:test_sessions!inner(client_id, deleted_at)`,
+    )
+    .is('deleted_at', null)
+    .eq('session.client_id', clientId)
+    .is('session.deleted_at', null)
+    .order('published_at', { ascending: false })
+
+  if (error) throw new Error(`Load publications: ${error.message}`)
+
+  type Joined = {
+    id: string
+    test_session_id: string
+    framing_text: string | null
+    published_at: string
+    published_by: string
+    created_at: string
+    session: { client_id: string; deleted_at: string | null } | null
+  }
+  return (data ?? []).map((row) => {
+    const r = row as unknown as Joined
+    return {
+      id: r.id,
+      test_session_id: r.test_session_id,
+      framing_text: r.framing_text,
+      published_at: r.published_at,
+      published_by: r.published_by,
+      created_at: r.created_at,
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------

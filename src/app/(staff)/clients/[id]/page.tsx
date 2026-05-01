@@ -18,6 +18,7 @@ import {
   loadActiveBatteries,
   loadCatalog,
   loadLastUsedBatteryForClient,
+  loadPublicationsForClient,
   loadTestHistoryForClient,
 } from '@/lib/testing'
 
@@ -28,6 +29,7 @@ const VALID_TABS: Tab[] = [
   'notes',
   'program',
   'reports',
+  'publish',
   'files',
   'invoices',
 ]
@@ -68,6 +70,7 @@ export default async function ClientProfilePage({
     testBatteries,
     lastUsedBattery,
     testHistory,
+    publications,
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -158,6 +161,7 @@ export default async function ClientProfilePage({
     loadActiveBatteries(supabase, organizationId),
     loadLastUsedBatteryForClient(supabase, id),
     loadTestHistoryForClient(supabase, organizationId, id),
+    loadPublicationsForClient(supabase, id),
   ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
@@ -314,6 +318,7 @@ export default async function ClientProfilePage({
       testBatteries={testBatteries}
       lastUsedBattery={lastUsedBattery}
       testHistory={testHistory}
+      publications={publications}
     />
   )
 }

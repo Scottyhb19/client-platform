@@ -162,6 +162,20 @@ export interface ClientTestHistory {
   sessions: SessionInfo[]
 }
 
+/**
+ * One row from client_publications — the publish-gate audit trail.
+ * Mirrors the DB shape directly (deleted_at omitted because the
+ * loader filters to live rows).
+ */
+export interface PublicationRow {
+  id: string
+  test_session_id: string
+  framing_text: string | null
+  published_at: string // ISO timestamp
+  published_by: string // user id
+  created_at: string
+}
+
 // ---------------------------------------------------------------------------
 // Settings → Tests
 // ---------------------------------------------------------------------------

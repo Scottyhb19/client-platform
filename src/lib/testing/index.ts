@@ -27,6 +27,7 @@ export {
   loadLastUsedBatteryForClient,
   loadCapturedSessionsForClient,
   loadTestHistoryForClient,
+  loadPublicationsForClient,
   loadAllOverridesForOrg,
   loadAllDisabledTests,
   loadCustomTestsForOrg,
@@ -43,6 +44,8 @@ export {
   type MetricHistory,
   type MetricSeriesPoint,
   type CategorySummary,
+  type SessionInfo,
+  type PublicationRow,
   type OverrideMapEntry,
   type PracticeCustomTest,
 } from './loaders'
