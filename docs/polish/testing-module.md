@@ -309,7 +309,7 @@ Running record of what's closed, in order. Each entry references the commit on m
   - **Type-check clean** post-edits. Migration applied to staging (`npx supabase db push`) + types regenerated (`npm run supabase:types`) + pgTAP 01 (5/5), 02 (Tampa wall), 04 (three entry points), 08 (14/14 publish lifecycle + per-test isolation) all green on 2026-05-02. Manual UI walkthrough still pending: confirm publish buttons appear on every non-Tampa test card, settings → tests no longer shows the Visibility column, custom-test builder no longer shows the Visibility field.
 - **D.6.1 — Migration fix (closed).** Initial `npx supabase db push` of D.6 failed: `DROP FUNCTION IF EXISTS test_metric_visibility(...)` blocked by SQLSTATE 2BP01 because the test_results RLS policy depended on it. Whole migration rolled back (transactional). Fix: drop the DROP statement; `CREATE OR REPLACE FUNCTION` alone replaces the body in place because the signature `(uuid, text, text) → client_portal_visibility_t` is unchanged. Committed as [5be444f](https://github.com/Scottyhb19/client-platform/commit/5be444f). Lesson logged: prefer CREATE OR REPLACE over DROP+CREATE for body-only function changes; only DROP when the signature itself changes.
 
-### Phase E — Client portal redesign (in progress)
+### Phase E — Client portal redesign (closed; pgTAP 02 green on staging 2026-05-03)
 
 **Audit date:** 2026-05-02. Phase D manual UI walkthroughs completed by user same day; checklists ticked in §8 above.
 
@@ -338,7 +338,7 @@ The implementation is one focused commit:
    - `PortalTestCard.tsx` — per-test card. Header (test name + most-recent date). `PortalFramingBlock` if a live publication exists for this test. One chart per metric via `ClientChartFactory`, with `thisSessionValues` and `thisSessionDate` derived from each metric's latest published point.
    - `PortalFramingBlock.tsx` — clinician's framing text styled per design-system §02 voice.
 3. **Tone-pass copy** — empty-state and any chart wrappers get §6.4 voice ("Your jump height has improved" not "Δ = +12.4%"). No data-layer changes here, just labels.
-4. **Re-run pgTAP 02** (`02_never_hard_wall.sql`) post-commit. Brief §3 Phase E gate. Tampa wall must still pass — the new portal queries are fresh chances to leak.
+4. **Re-run pgTAP 02** (`02_never_hard_wall.sql`) post-commit. Brief §3 Phase E gate. ✓ Green on staging 2026-05-03 — the new portal queries do not bypass the Tampa wall. RLS-level filtering on `test_results` continues to hold.
 
 #### Open follow-ups (deferred)
 
