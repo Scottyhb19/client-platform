@@ -1,79 +1,85 @@
-import { ChevronRight } from 'lucide-react'
+import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import {
+  loadPublicationsForClient,
+  loadTestHistoryForClient,
+} from '@/lib/testing'
 import { PortalEmpty, PortalTop } from '../_components/PortalTop'
+import { ReportsTabs } from './_components/ReportsTabs'
+import { DataView } from './_components/DataView'
+import { LegacyView, type LegacyReport } from './_components/LegacyView'
 
 export const dynamic = 'force-dynamic'
 
-export default async function PortalReportsPage() {
+type ActiveTab = 'data' | 'files'
+
+export default async function PortalReportsPage(props: {
+  searchParams: Promise<{ tab?: string }>
+}) {
+  const sp = await props.searchParams
+  const active: ActiveTab = sp.tab === 'files' ? 'files' : 'data'
+
   const supabase = await createSupabaseServerClient()
 
-  // RLS: clients see reports where is_published=true AND it's their row.
-  const { data: reports } = await supabase
+  // The portal layout already gates auth + role, but the page needs the
+  // client.id and organization_id to drive the loaders. Re-resolve here
+  // rather than threading through context — this is a single round-trip
+  // alongside the data load.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) redirect('/login')
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, organization_id')
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!client) redirect('/welcome')
+
+  if (active === 'data') {
+    // Load both halves in parallel — RLS scopes test_results to the
+    // client's own published rows; loadPublicationsForClient filters to
+    // live publications. DataView handles its own empty state (catches
+    // both "no captures yet" and "everything is hidden").
+    const [history, publications] = await Promise.all([
+      loadTestHistoryForClient(supabase, client.organization_id, client.id),
+      loadPublicationsForClient(supabase, client.id),
+    ])
+
+    return (
+      <>
+        <PortalTop title="Reports" greeting="Shared by your EP" />
+        <ReportsTabs active={active} />
+        <DataView history={history} publications={publications} />
+      </>
+    )
+  }
+
+  // Files tab — the legacy HTML report flow. RLS: clients see reports
+  // where is_published=true AND it's their row.
+  const { data: legacy } = await supabase
     .from('reports')
     .select('id, title, report_type, test_date, published_at')
     .eq('is_published', true)
     .is('deleted_at', null)
     .order('test_date', { ascending: false })
 
+  const reports: LegacyReport[] = legacy ?? []
+
   return (
     <>
       <PortalTop title="Reports" greeting="Shared by your EP" />
-      {!reports || reports.length === 0 ? (
+      <ReportsTabs active={active} />
+      {reports.length === 0 ? (
         <PortalEmpty
-          title="No reports yet"
-          message="Your EP will publish assessment results, testing summaries and program reviews here."
+          title="No files yet"
+          message="When your EP shares an assessment file or summary, it will land here."
         />
       ) : (
-        <div style={{ padding: '0 16px' }}>
-          {reports.map((r) => (
-            <div
-              key={r.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '14px 16px',
-                background: '#fff',
-                border: '1px solid var(--color-border-subtle)',
-                borderRadius: 10,
-                marginBottom: 8,
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 600, fontSize: '.88rem' }}>
-                  {r.title}
-                </div>
-                <div
-                  style={{
-                    fontSize: '.74rem',
-                    color: 'var(--color-muted)',
-                    marginTop: 2,
-                  }}
-                >
-                  {formatShort(r.test_date)} · {r.report_type}
-                </div>
-              </div>
-              <ChevronRight
-                size={16}
-                aria-hidden
-                style={{ color: 'var(--color-muted)' }}
-              />
-            </div>
-          ))}
-        </div>
+        <LegacyView reports={reports} />
       )}
     </>
   )
-}
-
-function formatShort(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
 }

@@ -309,6 +309,42 @@ Running record of what's closed, in order. Each entry references the commit on m
   - **Type-check clean** post-edits. Migration applied to staging (`npx supabase db push`) + types regenerated (`npm run supabase:types`) + pgTAP 01 (5/5), 02 (Tampa wall), 04 (three entry points), 08 (14/14 publish lifecycle + per-test isolation) all green on 2026-05-02. Manual UI walkthrough still pending: confirm publish buttons appear on every non-Tampa test card, settings → tests no longer shows the Visibility column, custom-test builder no longer shows the Visibility field.
 - **D.6.1 — Migration fix (closed).** Initial `npx supabase db push` of D.6 failed: `DROP FUNCTION IF EXISTS test_metric_visibility(...)` blocked by SQLSTATE 2BP01 because the test_results RLS policy depended on it. Whole migration rolled back (transactional). Fix: drop the DROP statement; `CREATE OR REPLACE FUNCTION` alone replaces the body in place because the signature `(uuid, text, text) → client_portal_visibility_t` is unchanged. Committed as [5be444f](https://github.com/Scottyhb19/client-platform/commit/5be444f). Lesson logged: prefer CREATE OR REPLACE over DROP+CREATE for body-only function changes; only DROP when the signature itself changes.
 
+### Phase E — Client portal redesign (in progress)
+
+**Audit date:** 2026-05-02. Phase D manual UI walkthroughs completed by user same day; checklists ticked in §8 above.
+
+#### Sign-offs (locked before code changes)
+
+| Q | Decision | Reason |
+|---|---|---|
+| Q1 | Legacy HTML reports → **sub-tabs at the top of `/portal/reports/`** ("Your data" + "Files"). | Smallest IA change; no BottomNav reshuffle; preserves both surfaces in one URL. Brief §9 says the Cowork-skill HTML flow continues in parallel — sub-tab respects that. |
+| Q2 | Inside the per-metric view: **flat list of test cards, sorted by `most_recent_conducted_at` descending**. | Behavioural framing — "what's new about your data" first. Avoids clinical-density category folders; the staff side has those. |
+| Q3 | Framing text: **once at the top of each test card, drawn from the most recent live publication for that test**. | Clean visual hierarchy: framing → charts. KOOS publication carries one framing covering 5 subscales — repeating it per chart would clutter. |
+
+Plus three suggestions accepted without dispute:
+- No time-window selector on the client side (analytics surface, not a behaviour-change surface).
+- No comparison overlay (clinical analysis tool).
+- Defer specialised client `line`/`bar` charts; v1 reuses staff Recharts components inside `ClientChartFactory`.
+
+#### Plan
+
+The implementation is one focused commit:
+
+1. **Replace `/portal/reports/page.tsx`.** Server component reads `?tab=` (default `data`), resolves `clients.id` + `clients.organization_id`, parallel-loads either the new structured view OR the legacy HTML report list, dispatches.
+2. **New components in `src/app/portal/reports/_components/`:**
+   - `ReportsTabs.tsx` — sub-tab navigation. Server-rendered Link pattern; no client state.
+   - `DataView.tsx` — receives `ClientTestHistory` + `PublicationRow[]`, renders the per-test cards.
+   - `LegacyView.tsx` — lifts the existing HTML-reports list from the current page body unchanged.
+   - `PortalTestCard.tsx` — per-test card. Header (test name + most-recent date). `PortalFramingBlock` if a live publication exists for this test. One chart per metric via `ClientChartFactory`, with `thisSessionValues` and `thisSessionDate` derived from each metric's latest published point.
+   - `PortalFramingBlock.tsx` — clinician's framing text styled per design-system §02 voice.
+3. **Tone-pass copy** — empty-state and any chart wrappers get §6.4 voice ("Your jump height has improved" not "Δ = +12.4%"). No data-layer changes here, just labels.
+4. **Re-run pgTAP 02** (`02_never_hard_wall.sql`) post-commit. Brief §3 Phase E gate. Tampa wall must still pass — the new portal queries are fresh chances to leak.
+
+#### Open follow-ups (deferred)
+
+- Specialised client variants of `LineChartCard` / `BarChartCard` — defer until visual fit on a 480px column proves wrong.
+- Tone-pass on chart tooltips and date formatters — bundled into the existing component-copy pass.
+
 ---
 
 ## 8. Phase C manual UI acceptance checklist
@@ -319,23 +355,29 @@ Per Q6 sign-off (acceptance test runner: pgTAP for the data assertions, manual c
 
 - [ ] Settings → Tests → Per-metric overrides. Expand Range of motion → Hip → Hip IR / ER (supine and prone). Override `er_supine` direction-of-good from "context" to "higher = good". Cell border turns green; small dot appears.
 - [ ] Reload the page. Override persists. Category header reads "1 override".
-- [ ] Click the Reset icon at the row's right end. All four fields (direction, chart, compare, client view) revert to their "Default (...)" placeholder. Category header reads "no overrides". Visibility is no longer overrideable post-D.6.
-- [ ] **[Phase D]** Capture a `+5°` result against the metric and view in the staff Reports tab. Chart paints positive deltas green when the override is set, neutral grey on reset. **No code change permitted during the test.**
+- [x] Click the Reset icon at the row's right end. All four fields (direction, chart, compare, client view) revert to their "Default (...)" placeholder. Category header reads "no overrides". Visibility is no longer overrideable post-D.6.
+- [x] **[Phase D]** Capture a `+5°` result against the metric and view in the staff Reports tab. Chart paints positive deltas green when the override is set, neutral grey on reset. **No code change permitted during the test.**
 
 ### Test 6 — Custom test parity
 
-- [ ] Settings → Tests → Custom tests → + Add custom test. Name "Test 6 isokinetic", category "custom_isok", subcategory "custom_knee". Add 2 metrics with full rendering hints (e.g., Peak torque · Nm · decimal · bilateral; H/Q ratio · ratio · decimal · unilateral). Save.
-- [ ] On a client → Reports tab → + Record test. The custom test appears in the catalog tree under custom_isok / custom_knee with a Custom badge.
-- [ ] Capture a result and save. Session appears in the Reports list.
-- [ ] **[Phase D]** Custom-test results render in the Reports tab with full feature parity to schema tests (delta, chart, etc.). They surface in the publish-flow panel like any other on_publish metric.
-- [ ] Settings → Tests → Disable schema tests. Disable `rom_hip_flexion`. Toggle reads "Disabled" with red dot; category header updates.
-- [ ] On a client → + Record test. `rom_hip_flexion` does NOT appear in the catalog tree.
-- [ ] **[Phase D]** Past test_results captured against `rom_hip_flexion` before the disable still render in the Reports tab.
-- [ ] Re-enable. The test reappears in the capture flow.
+- [x] Settings → Tests → Custom tests → + Add custom test. Name "Test 6 isokinetic", category "custom_isok", subcategory "custom_knee". Add 2 metrics with full rendering hints (e.g., Peak torque · Nm · decimal · bilateral; H/Q ratio · ratio · decimal · unilateral). Save.
+- [x] On a client → Reports tab → + Record test. The custom test appears in the catalog tree under custom_isok / custom_knee with a Custom badge.
+- [x] Capture a result and save. Session appears in the Reports list.
+- [x] **[Phase D]** Custom-test results render in the Reports tab with full feature parity to schema tests (delta, chart, etc.). They surface in the publish-flow panel like any other on_publish metric.
+- [x] Settings → Tests → Disable schema tests. Disable `rom_hip_flexion`. Toggle reads "Disabled" with red dot; category header updates.
+- [x] On a client → + Record test. `rom_hip_flexion` does NOT appear in the catalog tree.
+- [x] **[Phase D]** Past test_results captured against `rom_hip_flexion` before the disable still render in the Reports tab.
+- [x] Re-enable. The test reappears in the capture flow.
 
 ### Test 7 — Battery one-click
 
-- [ ] Settings → Tests → Saved batteries → + New battery. Name "Test 7 cross-category". Pick 8 metrics across at least 3 different test_ids (suggested: 2 from rom_hip_flexion + 4 from rom_hip_ir_er + 2 from pts_koos). Save.
-- [ ] On a client → + Record test. Battery dropdown shows "Test 7 cross-category".
-- [ ] Pick the battery. The capture modal pre-ticks all 8 metric inputs across their respective category accordions.
-- [ ] Capture a result and save. Session has `applied_battery_id` set; the per-client "last used" hint surfaces above the dropdown on the next capture for the same client.
+- [x] Settings → Tests → Saved batteries → + New battery. Name "Test 7 cross-category". Pick 8 metrics across at least 3 different test_ids (suggested: 2 from rom_hip_flexion + 4 from rom_hip_ir_er + 2 from pts_koos). Save.
+- [x] On a client → + Record test. Battery dropdown shows "Test 7 cross-category".
+- [x] Pick the battery. The capture modal pre-ticks all 8 metric inputs across their respective category accordions.
+- [x] Capture a result and save. Session has `applied_battery_id` set; the per-client "last used" hint surfaces above the dropdown on the next capture for the same client.
+
+### D.6 — Visibility model walkthrough (closed 2026-05-02)
+
+- [x] Reports tab on a client: every non-Tampa test card shows a Publish button. Tampa Scale shows none.
+- [x] Settings → Tests → Overrides: 4-column grid (direction, chart, compare, client view). No Visibility column.
+- [x] Settings → Tests → + Add custom test: no Visibility field in the per-metric editor.
