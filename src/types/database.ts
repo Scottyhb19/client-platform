@@ -1887,9 +1887,6 @@ export type Database = {
       }
       practice_test_settings: {
         Row: {
-          client_portal_visibility:
-            | Database["public"]["Enums"]["client_portal_visibility_t"]
-            | null
           client_view_chart:
             | Database["public"]["Enums"]["client_view_chart_t"]
             | null
@@ -1908,9 +1905,6 @@ export type Database = {
           updated_at: string
         }
         Insert: {
-          client_portal_visibility?:
-            | Database["public"]["Enums"]["client_portal_visibility_t"]
-            | null
           client_view_chart?:
             | Database["public"]["Enums"]["client_view_chart_t"]
             | null
@@ -1929,9 +1923,6 @@ export type Database = {
           updated_at?: string
         }
         Update: {
-          client_portal_visibility?:
-            | Database["public"]["Enums"]["client_portal_visibility_t"]
-            | null
           client_view_chart?:
             | Database["public"]["Enums"]["client_view_chart_t"]
             | null
