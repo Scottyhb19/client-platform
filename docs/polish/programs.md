@@ -32,7 +32,7 @@ Pre-launch advantages apply to both schema changes: no real client data to migra
 |---|----------|--------|-------|
 | 1 | Calendar months and program spanning | **A** — every month in range is its own collapsible section, including months with no program days | |
 | 1b | Source for the month-picker UX | The existing Cliniko-style scheduler in this repo | Reference: `WeekView.tsx` `MonthYearPicker` |
-| 2 | Side panel availability | **C** — both calendar page and session builder, sharing the same panel component | |
+| 2 | Side panel availability | **C** — same `NotesPanel` + `ReportsPanel` components used in both surfaces. **Session builder keeps Library + Notes + Reports as in-builder tabs (the load-bearing differentiator per CLAUDE.md — protected).** Calendar page gets a toggle-able side panel (default closed) using the same Notes + Reports components. | Corrected 2026-05-03 after Q9 sign-off — see §4 Q9. |
 | 2b | Files tab | **C** — skip Files for now, ship Notes + Reports first | |
 | 3 | Day click behaviour | **A** — inline summary expansion, "Open" button takes you to the full builder | |
 | 3b | Collapse granularity | **A** — both whole weeks AND individual day summaries collapse independently | |
@@ -62,11 +62,15 @@ The hierarchy itself is the right shape. What needs to change is how `program_da
 ### 1.2 New mesocycle creation flow
 [`NewProgramForm.tsx`](../../src/app/(staff)/clients/[id]/program/new/_components/NewProgramForm.tsx) + [`createProgramAction`](../../src/app/(staff)/clients/[id]/program/new/actions.ts) handles split-pattern defaults (`defaultDaysOfWeek`), letter labels (A, B, C…), and pre-creates all weeks and days in a single transaction. The auto-archive of the prior active program (lines 59–71 of actions.ts) is precisely the wrong shape under the new model — that logic comes out — but the rest of the flow stays.
 
-### 1.3 Session builder side panels (existing tabs)
+### 1.3 Session builder side panels (existing tabs — protected)
 [`SessionBuilder.tsx`](../../src/app/(staff)/clients/[id]/program/days/[dayId]/_components/SessionBuilder.tsx) already contains:
-- `LibraryPanel` (lines 1439–1557) — searchable exercise library, click-to-add. **Stays in the session builder; not part of the shared side panel** (it's specific to editing exercises).
-- `NotesPanel` (lines 1639–1684) — pinned clinical notes for the client. **Lifts out into the shared side panel.**
-- `ReportsPanel` (lines 1559–1625) — recent test sessions / publications. **Lifts out into the shared side panel.**
+- `LibraryPanel` (lines 1439–1557) — searchable exercise library, click-to-add.
+- `NotesPanel` (lines 1639–1684) — pinned clinical notes for the client.
+- `ReportsPanel` (lines 1559–1625) — recent test sessions / publications.
+
+**All three stay exactly where they are.** Library + Notes + Reports as tabs in the right panel of the session builder is the load-bearing differentiator called out in CLAUDE.md ("the session builder with clinical notes adjacent to the programming calendar is the single most important screen in this platform"). Phase E does not remove or relocate any of these.
+
+What Phase E does do: extract `NotesPanel` and `ReportsPanel` into their own files (out of the SessionBuilder.tsx monolith) so the calendar page can import the same components. The session builder still renders all three in its right panel as it does today. The calendar page renders just Notes + Reports inside a toggle-able side panel. Same components, two deployments.
 
 Notes and Reports already query the right shape — `clinical_notes` filtered by `is_pinned = true`, `test_sessions` joined with publications. The components are panel-shaped; extracting them is a refactor, not a rebuild.
 
@@ -104,7 +108,7 @@ Each item must close before any UI work in Phase B can land. These are non-negot
 | **P1-2** | **Inline day-cell expansion.** Click a programmed day → cell expands to show: exercise sequencing badges (A1, A2, B1…), exercise names, sets×reps. Top-right corner of the expanded summary: an "Open" button linking to `/clients/[id]/program/days/[dayId]` (the existing session builder). Day cells AND week rows collapse independently (Q3b=A). | Q3, Q3b |
 | **P1-3** | **Day-level copy + repeat icons in the expanded summary.** Two icons next to "Open": copy and repeat. **Copy:** clicking enters target-pick mode; EP clicks any day on the calendar to paste; pasted day inherits all exercises with same prescription (Q4c=C, exact duplicate). **Repeat:** clicking opens a mini-calendar; EP picks an end date; system creates copies on the **same weekday every week** between source and end (Q4b). | Q4a, Q4b, Q4c |
 | **P1-4** | **Block-level toolbar.** Replace the current "Copy week" / "Clinical notes" / "New mesocycle" buttons with: **Copy current block** (clones whole program, EP picks new start date — Q5b=A), **Repeat current block** (clones whole program back-to-back, start_date = current_end_date + 1 — Q5c=B), **New training block** (existing `/program/new` flow — Q5a=A). The "Clinical notes" button moves into the side panel (P1-5). | Q5a, Q5b, Q5c |
-| **P1-5** | **Shared side panel — Notes + Reports.** Extract `NotesPanel` and `ReportsPanel` from `SessionBuilder.tsx` into a shared `_components/ClientSidePanel/` directory. Toggle button (top right of either page) opens/closes; default closed (per Q answer "default is just the calendar view"). State persists per-client in URL param `?panel=notes` (or `?panel=reports`) so it survives navigation between calendar and session builder. **No Files tab in v1** (Q2b=C). | Q2, Q2b |
+| **P1-5** | **Shared `NotesPanel` + `ReportsPanel` components, two deployments.** Extract from `SessionBuilder.tsx` into their own files under `src/app/(staff)/clients/[id]/_components/`. **Session builder unchanged** — still renders Library + Notes + Reports as tabs in its right panel (the differentiator). **Calendar page gains a new toggle-able side panel** with just Notes + Reports tabs; toggle button (`PanelRight` icon, top right of header), default closed (per Q answer "default is just the calendar view"). State persists in URL param `?panel=notes` (or `?panel=reports`) so it survives a refresh. **No Files tab in v1** (Q2b=C). | Q2, Q2b, Q9 |
 | **P1-6** | **Cross-program day rendering.** When a month spans two programs, the calendar must render days from both, with a subtle visual separator at the boundary (e.g., a different-coloured background tint). Source-of-truth: the `scheduled_date` filter on the loader query. | Q1, Q5c |
 | **P1-7** | **Conflict handling on copy / repeat.** When a target date already has a programmed day, the operation must not silently overwrite. Recommended UX: confirm dialog showing the source day, the existing destination day, and per-conflict choice (overwrite / skip / cancel). For repeat-weekly with multiple conflicts, show all conflicts together in a single dialog. | — (open Q5 below) |
 | **P1-8** | **"Current block" determination across multiple programs.** "Copy current block" / "Repeat current block" need an unambiguous current. Recommended definition: the program where today's date falls within `[start_date, start_date + duration_weeks*7)`. Tie-break: most recently created. If no program contains today: most recent past program. | — (open Q3 below) |
@@ -255,21 +259,24 @@ Architecture before features, features before polish. Each phase ends with a gat
 
 **Gate:** Phase D ends when toolbar actions work end-to-end and pgTAP for block RPCs green.
 
-### Phase E — Side panel (P1-5)
+### Phase E — Side panel on calendar (P1-5)
 
-20. **Extract panel components.**
-    - Create `src/app/(staff)/clients/[id]/_components/ClientSidePanel/`.
-    - Move `NotesPanel` body from `SessionBuilder.tsx` lines 1639–1684 to `ClientSidePanel/NotesTab.tsx`.
-    - Move `ReportsPanel` body from `SessionBuilder.tsx` lines 1559–1625 to `ClientSidePanel/ReportsTab.tsx`.
-    - Compose into `<ClientSidePanel client={...} pinnedNotes={...} reports={...} />` — one tab strip, two tabs, content area.
-21. **Toggle button + URL state.**
-    - Add toggle button (`PanelRight` icon) to the header on both calendar page and session builder.
-    - Click toggles `?panel=notes` ↔ no param. Persists across navigation.
-    - Calendar page reads `searchParams.panel`; loader fetches notes/reports only when panel is open (avoids wasted queries on the common case).
-    - Session builder loader is unchanged — it still fetches notes/reports for the existing in-builder panels (LibraryPanel stays in the builder, NotesPanel/ReportsPanel are now in the side panel — open Q9 on whether to remove the in-builder versions or keep both).
-22. **Wire data.** Both pages forward `pinnedNotes` and `reports` to the side panel component. Empty states preserved from existing panels.
+The session builder is **not modified** in this phase. It keeps Library + Notes + Reports tabs in its right panel exactly as today.
 
-**Gate:** Phase E ends when panel renders with content on both surfaces and the toggle round-trips via URL.
+20. **Extract `NotesPanel` and `ReportsPanel` into their own files.**
+    - Create `src/app/(staff)/clients/[id]/_components/NotesPanel.tsx` — body lifted from `SessionBuilder.tsx` lines 1639–1684, props unchanged.
+    - Create `src/app/(staff)/clients/[id]/_components/ReportsPanel.tsx` — body lifted from `SessionBuilder.tsx` lines 1559–1625, props unchanged.
+    - Update `SessionBuilder.tsx` to import from the new locations. Behaviour identical — this is a pure refactor for code reuse.
+    - Type-check + smoke-test the session builder to confirm no regression.
+21. **Calendar side panel component.**
+    - Create `src/app/(staff)/clients/[id]/program/_components/CalendarSidePanel.tsx` — wraps the extracted `NotesPanel` and `ReportsPanel` in a tab strip, fixed-width column on the right side of the calendar page.
+22. **Toggle + URL state on the calendar page only.**
+    - Add toggle button (`PanelRight` icon) to the calendar page header.
+    - Click toggles `?panel=notes` ↔ no param. Default state: closed (no param).
+    - Calendar page loader reads `searchParams.panel`; fetches `pinnedNotes` and `reports` only when panel is open (avoids wasted queries when the EP isn't using the panel).
+    - Empty states preserved from the existing panels (no copy changes).
+
+**Gate:** Phase E ends when (a) the session builder still works exactly as it did before — Library + Notes + Reports tabs all functional, no regressions; (b) the calendar page's toggle button opens a side panel containing the same Notes + Reports content; (c) URL param round-trips on refresh.
 
 ### Phase F — Polish + acceptance
 
@@ -289,6 +296,8 @@ Architecture before features, features before polish. Each phase ends with a gat
 ---
 
 ## 4. Open questions to resolve before Phase A
+
+**Sign-off status (2026-05-03):** All recommendations approved by user, with one explicit override: Q9 corrected — keep Library + Notes + Reports tabs in the session builder (the load-bearing differentiator). Phase A may begin.
 
 1. **Schema authority — sign-off needed (overrides chat Q6=A).** The chat answer was "keep schema, presentation only." After auditing the schema I recommend overriding: add `program_days.scheduled_date date NOT NULL` as authoritative. **Reason:** every copy/repeat code path will translate dates ↔ (week_number, day_of_week) otherwise, and the translation is ambiguous as soon as a target date falls outside the existing program weeks. Pre-launch advantage applies — migration is cheap, no client data to lose. **Recommend: approve schema change.** Confirm.
 
@@ -321,10 +330,7 @@ Architecture before features, features before polish. Each phase ends with a gat
 8. **Side panel default state.** Default open or closed on first visit?
    - **Recommend: closed** on both calendar and session builder. Matches the spec ("default is just the calendar view"). EP toggles on demand. Confirm.
 
-9. **In-builder Notes/Reports panels — keep or remove after Phase E extraction?** Right now Notes and Reports tabs live inside `SessionBuilder.tsx` alongside Library. After Phase E moves them to the shared side panel, the builder still has Library — but losing Notes/Reports from the builder's tab strip might be jarring if the EP is used to flipping tabs there.
-   - **Option (a)** Remove the in-builder Notes/Reports tabs entirely; they're only in the side panel.
-   - **Option (b)** Keep both — duplication, but maximum convenience.
-   - **Recommend (a)** — single source of truth for these panels. Library stays in the builder because it's tightly coupled to "add an exercise to this day". Confirm.
+9. **In-builder Notes/Reports panels — keep or remove after Phase E extraction?** ~~Recommended (a) remove.~~ **Closed 2026-05-03 by user override.** The original recommendation contradicted the load-bearing rule in CLAUDE.md ("the session builder with clinical notes adjacent to the programming calendar is the single most important screen in this platform"). **Decision: keep all three tabs (Library + Notes + Reports) in the session builder right panel exactly as they are today.** Phase E extracts `NotesPanel` and `ReportsPanel` into their own files purely for code reuse so the calendar page can import them; the session builder's behaviour does not change. Process note: any future recommendation that touches a CLAUDE.md "protect this" rule must call that rule out explicitly and justify the deviation before it lands in a polish doc.
 
 10. **Acceptance test runner.** pgTAP for schema + RPCs is clear. For UI workflows (P1-2 inline expansion, P1-3 copy mode, P1-4 toolbar) — Playwright? Manual checklist?
     - **Recommend: manual checklist.** Matches the testing-module pattern (see `docs/polish/testing-module.md` §8). Less infrastructure, faster iteration during the polish pass. Add Playwright in a future round if regressions become a problem. Confirm.
