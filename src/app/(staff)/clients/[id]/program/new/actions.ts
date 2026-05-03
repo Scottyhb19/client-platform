@@ -56,21 +56,14 @@ export async function createProgramAction(
 
   const supabase = await createSupabaseServerClient()
 
-  // 1. Archive existing active programs for this client.
-  const { error: archiveErr } = await supabase
-    .from('programs')
-    .update({ status: 'archived', archived_at: new Date().toISOString() })
-    .eq('client_id', clientId)
-    .eq('status', 'active')
+  // Post D-PROG-002: multiple active programs per client are allowed
+  // as long as their date ranges don't overlap. The auto-archive of
+  // the prior active program is gone — back-to-back blocks coexist.
+  // If the new program's dates DO overlap an existing active block,
+  // the EXCLUDE constraint `programs_no_active_overlap` catches it
+  // and the insert below surfaces a clear error.
 
-  if (archiveErr) {
-    return {
-      error: `Couldn't archive existing active program: ${archiveErr.message}`,
-      fieldErrors: {},
-    }
-  }
-
-  // 2. Insert the new program.
+  // 1. Insert the new program.
   const { data: program, error: progErr } = await supabase
     .from('programs')
     .insert({
@@ -94,7 +87,9 @@ export async function createProgramAction(
     }
   }
 
-  // 3. Insert weeks.
+  // 2. Insert weeks. Periodisation grouping (D-PROG-003) — week_number
+  // remains a stable integer label per program; the calendar UI doesn't
+  // surface weeks but the EP can attach periodisation notes here.
   const weekRows = Array.from({ length: duration }, (_, i) => ({
     program_id: program.id,
     week_number: i + 1,
@@ -112,15 +107,51 @@ export async function createProgramAction(
     }
   }
 
-  // 4. Insert days per week (A/B/C labels, sensible weekday defaults).
+  // 3. Insert days per week with concrete scheduled_date (D-PROG-001).
+  //
+  // defaultDaysOfWeek() returns JS-convention day-of-week values
+  // (0=Sunday, 1=Monday, ..., 6=Saturday). The schema stores
+  // scheduled_date as a real calendar date, so we have to map each
+  // (week_number, day_of_week) pair to a date offset from start_date.
+  //
+  // The convention the previous calendar UI used: start_date is treated
+  // as the Monday of week 1, days within the week order Mon..Sun.
+  // To convert JS dow to a Mon-first offset (Mon=0, Sun=6):
+  //   monOffset = (dow + 6) % 7
+  // and then scheduledDate = start_date + (week_number - 1) * 7 + monOffset.
+  //
+  // If start_date is null (open-ended program — duration_weeks may still
+  // be set but there's no calendar anchor) we skip the day inserts.
+  // The EP can backfill via the calendar later.
+  if (startDate === null) {
+    revalidatePath(`/clients/${clientId}/program`)
+    redirect(`/clients/${clientId}/program`)
+  }
+
+  const startDateObj = parseStartDate(startDate)
+  if (startDateObj === null) {
+    return {
+      error: `Program created but start_date '${startDate}' couldn't be parsed.`,
+      fieldErrors: {},
+    }
+  }
+
   const daysOfWeek = defaultDaysOfWeek(daysPerWeek)
   const dayRows = weeks.flatMap((w) =>
-    daysOfWeek.map((dow, i) => ({
-      program_week_id: w.id,
-      day_label: letterLabel(i),
-      day_of_week: dow,
-      sort_order: i,
-    })),
+    daysOfWeek.map((dow, i) => {
+      const monOffset = (dow + 6) % 7
+      const scheduledDate = addDaysIso(
+        startDateObj,
+        (w.week_number - 1) * 7 + monOffset,
+      )
+      return {
+        program_id: program.id,
+        program_week_id: w.id,
+        day_label: letterLabel(i),
+        scheduled_date: scheduledDate,
+        sort_order: i,
+      }
+    }),
   )
 
   const { error: daysErr } = await supabase
@@ -136,6 +167,23 @@ export async function createProgramAction(
 
   revalidatePath(`/clients/${clientId}/program`)
   redirect(`/clients/${clientId}/program`)
+}
+
+function parseStartDate(iso: string): Date | null {
+  // Local-time interpretation; avoids the UTC-shift `new Date(iso)` can
+  // introduce for date-only strings near midnight.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return null
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+}
+
+function addDaysIso(base: Date, days: number): string {
+  const d = new Date(base)
+  d.setDate(d.getDate() + days)
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const da = String(d.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${da}`
 }
 
 /**

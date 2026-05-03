@@ -36,21 +36,21 @@ export default async function SessionBuilderPage({
   const { id, dayId } = await params
   const supabase = await createSupabaseServerClient()
 
-  // Day + parent chain — fail if the day belongs to a different client.
+  // Day + parent program — fail if the day belongs to a different client.
+  // Post D-PROG-001: program_days carries program_id directly, so the
+  // join is one hop; program_week_id may be NULL (optional periodisation
+  // grouping) and is no longer required for the breadcrumb.
   const { data: day } = await supabase
     .from('program_days')
     .select(
-      `id, day_label, day_of_week, sort_order, published_at,
-       program_week:program_weeks(
-         week_number,
-         program:programs(id, name, client_id)
-       )`,
+      `id, day_label, scheduled_date, sort_order, published_at,
+       program:programs(id, name, client_id)`,
     )
     .eq('id', dayId)
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (!day || day.program_week?.program?.client_id !== id) notFound()
+  if (!day || day.program?.client_id !== id) notFound()
 
   // Client for header context.
   const { data: client } = await supabase
@@ -145,8 +145,14 @@ export default async function SessionBuilderPage({
     is_published: r.is_published,
   }))
 
-  const programName = day.program_week?.program?.name ?? ''
-  const weekNumber = day.program_week?.week_number ?? 0
+  const programName = day.program?.name ?? ''
+  const dayDateLabel = day.scheduled_date
+    ? new Intl.DateTimeFormat('en-AU', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+      }).format(new Date(day.scheduled_date))
+    : ''
 
   return (
     <div className="page" style={{ maxWidth: 1320 }}>
@@ -174,8 +180,8 @@ export default async function SessionBuilderPage({
           </Link>
           <div>
             <div className="eyebrow" style={{ marginBottom: 0 }}>
-              {client.first_name} {client.last_name} · {programName} · Week{' '}
-              {weekNumber} · Day {day.day_label}
+              {client.first_name} {client.last_name} · {programName}
+              {dayDateLabel && ` · ${dayDateLabel}`} · Day {day.day_label}
             </div>
             <h1
               style={{

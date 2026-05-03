@@ -6,20 +6,27 @@ import {
   initialsFor,
   toneFor,
 } from '../../_lib/client-helpers'
-import {
-  ProgramCalendar,
-  type DayData,
-  type WeekData,
-} from './_components/ProgramCalendar'
+import { MonthCalendar } from './_components/MonthCalendar'
+import type {
+  ProgramSummary,
+  ProgramDayWithExercises,
+  ProgramExerciseWithMeta,
+} from './_components/MonthCalendar'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * 08 Program Calendar — per client.
  *
- * Fetches client + active program + weeks + days in parallel. If no
- * active program: empty state with CTA to /program/new. Otherwise, the
- * ProgramCalendar client component renders collapsible week strips.
+ * Phase B (D-PROG-001..003): the loader now fetches ALL active programs
+ * for the client (D-PROG-002 — multiple back-to-back blocks coexist),
+ * plus every program_day across them keyed by scheduled_date (D-PROG-001),
+ * plus every program_exercise in bulk so the inline day summary renders
+ * without an extra round-trip.
+ *
+ * The MonthCalendar component computes the visible month range from
+ * the programs' date ranges and renders one collapsible section per
+ * month, current month at top.
  */
 export default async function ClientProgramPage({
   params,
@@ -42,7 +49,10 @@ export default async function ClientProgramPage({
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
   if (!client) notFound()
 
-  const { data: program, error: progErr } = await supabase
+  // All active programs for this client. D-PROG-002 lifted the
+  // single-active-per-client rule; back-to-back blocks coexist as long
+  // as their date ranges don't overlap.
+  const { data: programsRaw, error: progErr } = await supabase
     .from('programs')
     .select(
       `id, name, status, duration_weeks, start_date, notes, created_at`,
@@ -50,37 +60,93 @@ export default async function ClientProgramPage({
     .eq('client_id', id)
     .eq('status', 'active')
     .is('deleted_at', null)
-    .maybeSingle()
+    .order('start_date', { ascending: true, nullsFirst: false })
 
-  if (progErr) throw new Error(`Load program: ${progErr.message}`)
+  if (progErr) throw new Error(`Load programs: ${progErr.message}`)
 
-  let weeks: WeekData[] = []
-  let daysPerWeek = 0
-
-  if (program) {
-    const { data: weeksRaw, error: weeksErr } = await supabase
-      .from('program_weeks')
-      .select(
-        `id, week_number,
-         program_days(id, day_label, day_of_week, sort_order)`,
-      )
-      .eq('program_id', program.id)
-      .is('deleted_at', null)
-      .order('week_number')
-
-    if (weeksErr) throw new Error(`Load weeks: ${weeksErr.message}`)
-
-    weeks = (weeksRaw ?? []).map((w) => ({
-      id: w.id,
-      week_number: w.week_number,
-      days: (w.program_days ?? [])
-        .filter((d) => d.day_label !== null)
-        .sort((a, b) => a.sort_order - b.sort_order) as DayData[],
+  const programs: ProgramSummary[] = (programsRaw ?? [])
+    .filter(
+      (p): p is typeof p & { start_date: string; duration_weeks: number } =>
+        p.start_date !== null && p.duration_weeks !== null,
+    )
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      start_date: p.start_date,
+      duration_weeks: p.duration_weeks,
     }))
 
-    // Days per week: max across all weeks (handles uneven weeks fine).
-    daysPerWeek = weeks.reduce((m, w) => Math.max(m, w.days.length), 0)
+  let days: ProgramDayWithExercises[] = []
+
+  if (programs.length > 0) {
+    const programIds = programs.map((p) => p.id)
+
+    // Days across every active program. Each carries scheduled_date
+    // directly post-D-PROG-001; no week walk required.
+    const { data: daysRaw, error: daysErr } = await supabase
+      .from('program_days')
+      .select(
+        `id, program_id, scheduled_date, day_label, sort_order`,
+      )
+      .in('program_id', programIds)
+      .is('deleted_at', null)
+      .order('scheduled_date', { ascending: true })
+
+    if (daysErr) throw new Error(`Load days: ${daysErr.message}`)
+
+    // Bulk-fetch all exercises for those days. Single round-trip; the
+    // calendar renders each day's summary inline without lazy-loading.
+    let exercisesByDayId = new Map<string, ProgramExerciseWithMeta[]>()
+    if ((daysRaw ?? []).length > 0) {
+      const dayIds = (daysRaw ?? []).map((d) => d.id)
+
+      const { data: exRaw, error: exErr } = await supabase
+        .from('program_exercises')
+        .select(
+          `id, program_day_id, sort_order, sets, reps, optional_value,
+           optional_metric, rpe, rest_seconds, tempo, instructions,
+           section_title, superset_group_id,
+           exercise:exercises(name, video_url)`,
+        )
+        .in('program_day_id', dayIds)
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true })
+
+      if (exErr) throw new Error(`Load exercises: ${exErr.message}`)
+
+      for (const e of exRaw ?? []) {
+        const list = exercisesByDayId.get(e.program_day_id) ?? []
+        list.push({
+          id: e.id,
+          sort_order: e.sort_order,
+          sets: e.sets,
+          reps: e.reps,
+          optional_value: e.optional_value,
+          optional_metric: e.optional_metric,
+          rpe: e.rpe,
+          rest_seconds: e.rest_seconds,
+          tempo: e.tempo,
+          instructions: e.instructions,
+          section_title: e.section_title,
+          superset_group_id: e.superset_group_id,
+          exercise: e.exercise,
+        })
+        exercisesByDayId.set(e.program_day_id, list)
+      }
+    }
+
+    days = (daysRaw ?? []).map((d) => ({
+      id: d.id,
+      program_id: d.program_id,
+      scheduled_date: d.scheduled_date,
+      day_label: d.day_label,
+      sort_order: d.sort_order,
+      exercises: exercisesByDayId.get(d.id) ?? [],
+    }))
   }
+
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const currentBlock = resolveCurrentBlock(programs, todayIso)
 
   return (
     <div className="page">
@@ -114,7 +180,7 @@ export default async function ClientProgramPage({
           <div className="eyebrow" style={{ marginBottom: 0 }}>
             {client.first_name} {client.last_name}
             {client.category?.name && ` · ${client.category.name}`}
-            {program && ` · ${program.name}`}
+            {currentBlock && ` · ${currentBlock.name}`}
           </div>
           <h1
             style={{
@@ -127,7 +193,7 @@ export default async function ClientProgramPage({
           >
             Program Calendar
           </h1>
-          {program && (
+          {currentBlock && (
             <div
               style={{
                 fontSize: '.86rem',
@@ -135,15 +201,16 @@ export default async function ClientProgramPage({
                 marginTop: 4,
               }}
             >
-              {program.duration_weeks
-                ? `${program.duration_weeks} week block`
-                : 'Open-ended'}
-              {daysPerWeek > 0 && ` · ${daysPerWeek} day split`}
-              {program.start_date && ` · starts ${formatDate(program.start_date)}`}
+              {currentBlock.duration_weeks} week block · starts{' '}
+              {formatDate(currentBlock.start_date)}
+              {programs.length > 1 && ` · ${programs.length} blocks total`}
             </div>
           )}
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          {/* Phase D will replace these with: Copy current block, Repeat
+              current block, New training block. Phase B preserves the
+              existing buttons (disabled where they were). */}
           <button type="button" className="btn outline" disabled>
             <Copy size={14} aria-hidden />
             Copy week
@@ -162,20 +229,51 @@ export default async function ClientProgramPage({
         </div>
       </div>
 
-      {!program ? (
+      {programs.length === 0 ? (
         <EmptyProgram clientId={client.id} />
       ) : (
-        <ProgramCalendar
+        <MonthCalendar
           clientId={client.id}
-          programName={program.name}
-          daysPerWeek={daysPerWeek}
-          weeks={weeks}
-          startDateIso={program.start_date}
-          todayIso={new Date().toISOString().slice(0, 10)}
+          programs={programs}
+          days={days}
+          todayIso={todayIso}
         />
       )}
     </div>
   )
+}
+
+/**
+ * "Current block" determination per gap doc P1-8 / §4 Q3:
+ *   1. The program containing today.
+ *   2. Else the most recent past program.
+ *   3. Else null.
+ */
+function resolveCurrentBlock(
+  programs: ProgramSummary[],
+  todayIso: string,
+): ProgramSummary | null {
+  if (programs.length === 0) return null
+  const today = todayIso
+
+  for (const p of programs) {
+    const end = addDaysIso(p.start_date, p.duration_weeks * 7)
+    if (today >= p.start_date && today < end) return p
+  }
+
+  // Most recent past (sorted ascending in the loader; iterate from end).
+  for (let i = programs.length - 1; i >= 0; i--) {
+    const p = programs[i]!
+    if (p.start_date <= today) return p
+  }
+
+  return null
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(iso)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 function EmptyProgram({ clientId }: { clientId: string }) {

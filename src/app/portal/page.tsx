@@ -32,59 +32,74 @@ export default async function PortalTodayPage() {
     .maybeSingle()
   if (!client) notFound()
 
-  // Active program + weeks + days + exercises.
-  // NOTE: program_days carry a `published_at` timestamp — the portal
-  // filters below so clients only see days the EP has explicitly
-  // assigned. Unpublished/draft days stay server-side.
+  // Active program (lightweight — for header / week-number context).
   const { data: program } = await supabase
     .from('programs')
-    .select(
-      `id, name, duration_weeks, start_date,
-       program_weeks(
-         id, week_number,
-         program_days(
-           id, day_label, day_of_week, sort_order, published_at,
-           program_exercises(
-             id, sort_order, section_title, superset_group_id,
-             sets, reps, optional_value, rpe,
-             exercise:exercises(name)
-           )
-         )
-       )`,
-    )
+    .select(`id, name, duration_weeks, start_date`)
     .eq('client_id', client.id)
     .eq('status', 'active')
     .is('deleted_at', null)
     .maybeSingle()
 
   const weekStart = mondayOfCurrentWeek()
+  const weekStartIso = isoFromDate(weekStart)
+  const weekEndIso = isoFromDate(addDaysTo(weekStart, 7)) // exclusive end
   const now = new Date()
+  const todayIso = isoFromDate(now)
   const todayDow = weekdayIndex(now)
 
-  // Which program_week falls on THIS calendar week?
-  const currentWeekRow = program?.program_weeks?.find((w) => {
-    if (!program.start_date) return false
-    const pStart = new Date(program.start_date)
-    const diff = Math.floor(
-      (weekStart.getTime() - pStart.getTime()) / (7 * 24 * 60 * 60 * 1000),
-    )
-    return w.week_number === diff + 1
-  })
+  // Days for THIS calendar week, post D-PROG-001 — query by date range
+  // directly. Only published days surface to the client (RLS + the
+  // explicit published_at filter below).
+  let weekDays: Array<{
+    id: string
+    day_label: string
+    scheduled_date: string
+    sort_order: number
+    published_at: string | null
+    program_exercises: Array<{
+      id: string
+      sort_order: number
+      section_title: string | null
+      superset_group_id: string | null
+      sets: number | null
+      reps: string | null
+      optional_value: string | null
+      rpe: number | null
+      exercise: { name: string } | null
+    }>
+  }> = []
 
-  // Map weekday → programmed day for the week strip. Only published
-  // days surface to the client; unpublished ones are invisible.
-  const publishedDays =
-    currentWeekRow?.program_days?.filter(
-      (d) => d.published_at !== null,
-    ) ?? []
+  if (program) {
+    const { data: daysRaw } = await supabase
+      .from('program_days')
+      .select(
+        `id, day_label, scheduled_date, sort_order, published_at,
+         program_exercises(
+           id, sort_order, section_title, superset_group_id,
+           sets, reps, optional_value, rpe,
+           exercise:exercises(name)
+         )`,
+      )
+      .eq('program_id', program.id)
+      .gte('scheduled_date', weekStartIso)
+      .lt('scheduled_date', weekEndIso)
+      .not('published_at', 'is', null)
+      .is('deleted_at', null)
+      .order('scheduled_date', { ascending: true })
 
+    weekDays = daysRaw ?? []
+  }
+
+  // Map weekday → programmed day for the week strip. Derive the
+  // weekday locally from scheduled_date.
   const programmedByWeekday = new Map<
     number,
     { dayLabel: string | null; done: boolean }
   >()
-  for (const d of publishedDays) {
-    if (d.day_of_week === null) continue
-    programmedByWeekday.set(d.day_of_week, {
+  for (const d of weekDays) {
+    const dow = parseIso(d.scheduled_date).getDay()
+    programmedByWeekday.set(dow, {
       dayLabel: d.day_label,
       done: false, // "done" wires in once sessions table is populated
     })
@@ -92,8 +107,8 @@ export default async function PortalTodayPage() {
 
   const weekDots: WeekDot[] = buildWeekDots(weekStart, programmedByWeekday)
 
-  // Today's session, if any (and only if published).
-  const todayDay = publishedDays.find((d) => d.day_of_week === todayDow)
+  // Today's session, if any.
+  const todayDay = weekDays.find((d) => d.scheduled_date === todayIso)
   const session: TodaySession | null = todayDay
     ? {
         dayId: todayDay.id,
@@ -102,14 +117,14 @@ export default async function PortalTodayPage() {
         metaLine: composeMetaLine(
           todayDay.program_exercises?.length ?? 0,
           program?.name ?? '',
-          currentWeekRow?.week_number,
+          weekNumberFor(program, todayIso),
           program?.duration_weeks ?? null,
         ),
         exercises: buildExerciseList(todayDay.program_exercises ?? []),
       }
     : null
 
-  const weekNumber = currentWeekRow?.week_number ?? null
+  const weekNumber = weekNumberFor(program, todayIso)
 
   return (
     <TodayScreen
@@ -126,8 +141,7 @@ export default async function PortalTodayPage() {
       session={session}
       weekStats={{
         completed: 0, // wires to sessions table
-        remaining:
-          (currentWeekRow?.program_days?.length ?? 0) - 0,
+        remaining: weekDays.length - 0,
         avgRpe: null,
       }}
     />
@@ -239,4 +253,46 @@ function buildRx(e: RawExercise): string {
   if (e.optional_value) bits.push(e.optional_value)
   if (e.rpe) bits.push(`RPE ${e.rpe}`)
   return bits.join(' · ') || '—'
+}
+
+// Date helpers — local-time interpretation to dodge UTC shift on
+// date-only ISO strings.
+function parseIso(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y!, (m ?? 1) - 1, d ?? 1)
+}
+
+function isoFromDate(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const da = String(d.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${da}`
+}
+
+function addDaysTo(d: Date, days: number): Date {
+  const r = new Date(d)
+  r.setDate(r.getDate() + days)
+  return r
+}
+
+// Compute which week-of-program contains the given ISO date. Returns
+// undefined for clients with no active program or with a program that
+// hasn't started yet. Post D-PROG-001 weeks are derived from dates on
+// the fly; week_number is no longer the addressing field, so we compute
+// from start_date.
+function weekNumberFor(
+  program: { start_date: string | null; duration_weeks: number | null } | null | undefined,
+  todayIso: string,
+): number | undefined {
+  if (!program?.start_date) return undefined
+  const start = parseIso(program.start_date)
+  const today = parseIso(todayIso)
+  const diffMs = today.getTime() - start.getTime()
+  if (diffMs < 0) return undefined
+  const dayDiff = Math.floor(diffMs / (24 * 60 * 60 * 1000))
+  const weekIdx = Math.floor(dayDiff / 7) + 1
+  if (program.duration_weeks && weekIdx > program.duration_weeks) {
+    return undefined
+  }
+  return weekIdx
 }
