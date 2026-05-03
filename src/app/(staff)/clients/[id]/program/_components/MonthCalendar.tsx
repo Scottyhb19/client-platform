@@ -286,6 +286,26 @@ function MonthGrid({
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthCells(year, month), [year, month])
 
+  // Six week rows of seven cells each. Each row collapses
+  // independently so the EP can hide weeks they don't care about
+  // and focus on the active one. Default: all weeks expanded.
+  const weeks = useMemo(() => {
+    const rows: { ord: number; cells: typeof cells }[] = []
+    for (let i = 0; i < cells.length; i += 7) {
+      rows.push({ ord: i / 7, cells: cells.slice(i, i + 7) })
+    }
+    return rows
+  }, [cells])
+
+  const [collapsedWeeks, setCollapsedWeeks] = useState<Set<number>>(new Set())
+
+  // Reset collapsed state when the month changes.
+  useEffect(() => {
+    setCollapsedWeeks(new Set())
+  }, [year, month])
+
+  const gridTemplate = '24px repeat(7, 1fr)'
+
   return (
     <div
       className="card"
@@ -295,15 +315,17 @@ function MonthGrid({
         background: '#f5f0ea',
       }}
     >
-      {/* Weekday header row */}
+      {/* Weekday header — left-padded by the chevron column so labels
+          align with the cells below. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
+          gridTemplateColumns: gridTemplate,
           gap: 6,
           marginBottom: 6,
         }}
       >
+        <div /> {/* spacer to align with the chevron column */}
         {WEEKDAY_LABELS.map((label) => (
           <div
             key={label}
@@ -322,38 +344,120 @@ function MonthGrid({
         ))}
       </div>
 
-      {/* Date grid */}
+      {/* One row per calendar week. Chevron in col 1; cells (or
+          collapsed-summary span) in cols 2–8. */}
       <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
-          gap: 6,
-        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
       >
-        {cells.map((c, i) => (
-          <DateCell
-            key={c.iso}
-            cell={c}
-            today={today}
-            day={c.inMonth ? daysByDate.get(c.iso) ?? null : null}
-            isOpen={
-              openDayId !== null && daysByDate.get(c.iso)?.id === openDayId
-            }
-            onToggle={onToggleDay}
-            program={
-              c.inMonth
-                ? programsById.get(daysByDate.get(c.iso)?.program_id ?? '')
-                  ?? null
-                : null
-            }
-            clientId={clientId}
-            onClose={() => onToggleDay(openDayId!)}
-            // Anchor the popover toward the LEFT edge of the cell when the
-            // cell is in the rightmost columns; otherwise anchor toward the
-            // RIGHT edge so the popover doesn't overflow horizontally.
-            anchorRight={(i % 7) >= 4}
-          />
-        ))}
+        {weeks.map((week) => {
+          const collapsed = collapsedWeeks.has(week.ord)
+          const inMonthCells = week.cells.filter((c) => c.inMonth)
+          const programmedThisWeek = inMonthCells.filter(
+            (c) => daysByDate.get(c.iso),
+          ).length
+          const firstInMonth = inMonthCells[0]
+          const lastInMonth = inMonthCells[inMonthCells.length - 1]
+
+          return (
+            <div
+              key={`week-${week.ord}`}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: gridTemplate,
+                gap: 6,
+                alignItems: 'stretch',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  setCollapsedWeeks((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(week.ord)) next.delete(week.ord)
+                    else next.add(week.ord)
+                    return next
+                  })
+                }
+                aria-label={collapsed ? 'Expand week' : 'Collapse week'}
+                aria-expanded={!collapsed}
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: 'var(--color-muted)',
+                  alignSelf: 'flex-start',
+                  marginTop: collapsed ? 0 : 4,
+                  height: collapsed ? 28 : 'auto',
+                }}
+              >
+                <ChevronRight
+                  size={14}
+                  aria-hidden
+                  style={{
+                    transition:
+                      'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                    transform: collapsed ? 'none' : 'rotate(90deg)',
+                  }}
+                />
+              </button>
+
+              {collapsed ? (
+                <div
+                  style={{
+                    gridColumn: '2 / -1',
+                    background: 'var(--color-card)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: 7,
+                    padding: '6px 12px',
+                    fontSize: '.74rem',
+                    color: 'var(--color-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}
+                >
+                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-charcoal)' }}>
+                    {firstInMonth && lastInMonth
+                      ? `${firstInMonth.date} – ${lastInMonth.date}`
+                      : 'Adjacent month'}
+                  </span>
+                  <span>
+                    {programmedThisWeek}{' '}
+                    {programmedThisWeek === 1 ? 'session' : 'sessions'}
+                  </span>
+                </div>
+              ) : (
+                week.cells.map((c, i) => (
+                  <DateCell
+                    key={c.iso}
+                    cell={c}
+                    today={today}
+                    day={c.inMonth ? daysByDate.get(c.iso) ?? null : null}
+                    isOpen={
+                      openDayId !== null && daysByDate.get(c.iso)?.id === openDayId
+                    }
+                    onToggle={onToggleDay}
+                    program={
+                      c.inMonth
+                        ? programsById.get(daysByDate.get(c.iso)?.program_id ?? '')
+                          ?? null
+                        : null
+                    }
+                    clientId={clientId}
+                    onClose={() => onToggleDay(openDayId!)}
+                    // Anchor popover toward the LEFT for cells in the left
+                    // half of the row; toward the RIGHT for cells in the
+                    // right half. Avoids overflowing the calendar's edge.
+                    anchorRight={i >= 4}
+                  />
+                ))
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -511,8 +615,11 @@ function DaySummaryPopover({
         top: 'calc(100% + 6px)',
         // Width matches the day cell (the wrapper around DateCell).
         // Anchored either to the left or right edge of that wrapper.
+        // box-sizing keeps padding INSIDE the 100% width so the popover
+        // stays exactly the cell's width and doesn't overflow.
         ...(anchorRight ? { right: 0 } : { left: 0 }),
         width: '100%',
+        boxSizing: 'border-box',
         background: 'var(--color-card)',
         border: '1px solid var(--color-border-subtle)',
         borderRadius: 10,
