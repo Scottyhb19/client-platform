@@ -17,6 +17,7 @@ import {
   Copy,
   ExternalLink,
   Repeat,
+  Trash2,
   X,
 } from 'lucide-react'
 import {
@@ -26,6 +27,7 @@ import {
 } from '../../../../_components/MonthYearPicker'
 import {
   copyDayAction,
+  removeProgramDayAction,
   repeatDayWeeklyAction,
   type ConflictEntry,
 } from '../day-actions'
@@ -71,6 +73,10 @@ interface MonthCalendarProps {
   programs: ProgramSummary[]
   days: ProgramDayWithExercises[]
   todayIso: string
+  // When true (panel open / cells narrower), the day popover stacks
+  // its header — icons row on top, Day label beneath — to keep
+  // everything inside the cell.
+  compactPopover?: boolean
 }
 
 // ============================================================================
@@ -120,12 +126,19 @@ type CalendarMode =
       noProgramDates: string[]
     }
   | { kind: 'no-program-toast'; targetDate: string }
+  | {
+      kind: 'confirm-delete'
+      sourceDayId: string
+      sourceLabel: string
+      sourceDate: string
+    }
 
 export function MonthCalendar({
   clientId,
   programs,
   days,
   todayIso,
+  compactPopover = false,
 }: MonthCalendarProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
@@ -255,6 +268,27 @@ export function MonthCalendar({
             setMode({ kind: 'idle' })
             break
         }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [clientId, router],
+  )
+
+  const runDelete = useCallback(
+    async (sourceDayId: string) => {
+      setBusy(true)
+      try {
+        const result = await removeProgramDayAction(clientId, sourceDayId)
+        if ('error' in result) {
+          // eslint-disable-next-line no-console
+          console.error('soft_delete_program_day error:', result.error)
+          setMode({ kind: 'idle' })
+          return
+        }
+        setOpenDayId(null)
+        setMode({ kind: 'idle' })
+        startTransition(() => router.refresh())
       } finally {
         setBusy(false)
       }
@@ -420,6 +454,7 @@ export function MonthCalendar({
         clientId={clientId}
         openDayId={openDayId}
         mode={mode}
+        compactPopover={compactPopover}
         onCellClick={handleDayCellClick}
         onCloseDay={() => setOpenDayId(null)}
         onCopyDay={(dayId, label, date) => {
@@ -429,6 +464,10 @@ export function MonthCalendar({
         onRepeatDay={(dayId, label, date) => {
           setOpenDayId(null)
           setMode({ kind: 'repeat-pick', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
+        }}
+        onDeleteDay={(dayId, label, date) => {
+          setOpenDayId(null)
+          setMode({ kind: 'confirm-delete', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
         }}
       />
 
@@ -485,6 +524,19 @@ export function MonthCalendar({
           busy={false}
         />
       )}
+
+      {mode.kind === 'confirm-delete' && (
+        <ConflictDialog
+          title="Delete this session?"
+          description={`Day ${mode.sourceLabel} on ${formatLongDate(mode.sourceDate)} will be removed from the calendar along with its exercises. This can be undone manually if needed.`}
+          conflicts={[]}
+          noProgramDates={[]}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() => runDelete(mode.sourceDayId)}
+          confirmLabel="Delete"
+          busy={busy}
+        />
+      )}
     </div>
   )
 }
@@ -511,6 +563,8 @@ interface MonthGridProps {
   onCloseDay: () => void
   onCopyDay: (dayId: string, label: string, date: string) => void
   onRepeatDay: (dayId: string, label: string, date: string) => void
+  onDeleteDay: (dayId: string, label: string, date: string) => void
+  compactPopover: boolean
 }
 
 function MonthGrid({
@@ -527,6 +581,8 @@ function MonthGrid({
   onCloseDay,
   onCopyDay,
   onRepeatDay,
+  onDeleteDay,
+  compactPopover,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthCells(year, month), [year, month])
 
@@ -708,7 +764,11 @@ function MonthGrid({
                       onRepeat={() =>
                         day && onRepeatDay(day.id, day.day_label, day.scheduled_date)
                       }
+                      onDelete={() =>
+                        day && onDeleteDay(day.id, day.day_label, day.scheduled_date)
+                      }
                       anchorRight={i >= 4}
+                      compactPopover={compactPopover}
                       copyMode={
                         isCopyTarget
                           ? 'target'
@@ -747,7 +807,9 @@ interface DateCellProps {
   onClose: () => void
   onCopy: () => void
   onRepeat: () => void
+  onDelete: () => void
   anchorRight: boolean
+  compactPopover: boolean
   // Visual mode for cells while a copy-pick is in progress.
   // 'target' — clickable destination; 'source' — the day being copied;
   // 'past' — past dates dimmed unclickable; 'none' — normal mode.
@@ -765,7 +827,9 @@ function DateCell({
   onClose,
   onCopy,
   onRepeat,
+  onDelete,
   anchorRight,
+  compactPopover,
   copyMode,
 }: DateCellProps) {
   const isToday = cell.iso === isoFromDate(today)
@@ -864,7 +928,9 @@ function DateCell({
           onClose={onClose}
           onCopy={onCopy}
           onRepeat={onRepeat}
+          onDelete={onDelete}
           anchorRight={anchorRight}
+          compact={compactPopover}
         />
       )}
     </div>
@@ -885,7 +951,12 @@ interface DaySummaryPopoverProps {
   onClose: () => void
   onCopy: () => void
   onRepeat: () => void
+  onDelete: () => void
   anchorRight: boolean
+  // When true, stack the header so action icons sit above the
+  // "Day {label}" caption (saves horizontal room when the side
+  // panel is open and cells are narrower).
+  compact: boolean
 }
 
 function DaySummaryPopover({
@@ -895,7 +966,9 @@ function DaySummaryPopover({
   onClose,
   onCopy,
   onRepeat,
+  onDelete,
   anchorRight,
+  compact,
 }: DaySummaryPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
   const sequence = useMemo(() => buildSequence(day.exercises), [day.exercises])
@@ -942,34 +1015,33 @@ function DaySummaryPopover({
         border: '1px solid var(--color-border-subtle)',
         borderRadius: 10,
         boxShadow: '0 12px 28px rgba(0,0,0,.12)',
-        padding: 10,
+        padding: 8,
         zIndex: 25,
       }}
     >
-      {/* Header: Day badge on the left, action icons + close on the right.
-          The action icons sit inline so the popover stays as compact as
-          the day cell underneath. */}
+      {/* Header. Default layout: Day badge on the left, action icons on
+          the right (single row). Compact layout (when the side panel is
+          open and cells are narrow): icons row on top, Day badge below
+          — keeps the trash icon inside the cell instead of overflowing. */}
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 4,
+          flexDirection: compact ? 'column' : 'row',
+          justifyContent: compact ? 'flex-start' : 'space-between',
+          alignItems: compact ? 'stretch' : 'center',
+          gap: compact ? 6 : 4,
           marginBottom: 8,
         }}
       >
-        <span
+        <div
           style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: '.85rem',
-            color: 'var(--color-charcoal)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            justifyContent: compact ? 'flex-end' : 'flex-end',
+            order: compact ? 0 : 1,
           }}
         >
-          Day {day.day_label}
-        </span>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Link
             href={`/clients/${clientId}/program/days/${day.id}`}
             aria-label="Open session builder"
@@ -998,13 +1070,26 @@ function DaySummaryPopover({
           </button>
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Close summary"
-            style={iconCloseStyle}
+            onClick={onDelete}
+            title="Delete this session"
+            aria-label="Delete this session"
+            style={iconDeleteStyle}
           >
-            <X size={12} aria-hidden />
+            <Trash2 size={12} aria-hidden />
           </button>
         </div>
+
+        <span
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '.85rem',
+            color: 'var(--color-charcoal)',
+            order: compact ? 1 : 0,
+          }}
+        >
+          Day {day.day_label}
+        </span>
       </div>
 
       {day.exercises.length === 0 ? (
@@ -1035,14 +1120,14 @@ function DaySummaryPopover({
               key={exercise.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '20px 1fr',
-                gap: 6,
+                gridTemplateColumns: '16px 1fr',
+                gap: 4,
                 alignItems: 'baseline',
                 padding: '3px 0',
                 borderLeft: isSupersetMember
                   ? '2px solid var(--color-accent)'
                   : '2px solid transparent',
-                paddingLeft: isSupersetMember ? 6 : 0,
+                paddingLeft: isSupersetMember ? 4 : 0,
               }}
             >
               <span
@@ -1128,6 +1213,16 @@ const iconCloseStyle: React.CSSProperties = {
   border: 'none',
   background: 'transparent',
   color: 'var(--color-muted)',
+}
+
+// Destructive variant for the day-popover delete button — red bin icon
+// in place of the redundant close-X (the popover already closes on
+// outside-click, Esc, and clicking the same day cell again).
+const iconDeleteStyle: React.CSSProperties = {
+  ...iconBtnBase,
+  border: '1px solid rgba(214, 64, 69, 0.4)',
+  background: 'rgba(214, 64, 69, 0.06)',
+  color: '#D64045',
 }
 
 

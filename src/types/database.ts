@@ -3389,6 +3389,7 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
+      soft_delete_program_day: { Args: { p_id: string }; Returns: undefined }
       soft_delete_program_exercise: {
         Args: { p_id: string }
         Returns: undefined

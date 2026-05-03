@@ -35,6 +35,10 @@ export type RepeatDayActionResult =
     }
   | { status: 'invalid_end_date' }
 
+export type RemoveDayActionResult =
+  | { error: string }
+  | { status: 'removed' }
+
 
 /**
  * Copy one program_day to a target date. The destination program is
@@ -148,4 +152,28 @@ export async function repeatDayWeeklyAction(
     default:
       return { error: `Unknown status: ${obj.status}` }
   }
+}
+
+
+/**
+ * Soft-delete a program_day (the EP "delete session" action from the
+ * calendar popover). Cascades to its program_exercises via the
+ * soft_delete_program_day RPC (SECURITY DEFINER + manual org gate;
+ * see migration 20260503140000).
+ */
+export async function removeProgramDayAction(
+  clientId: string,
+  dayId: string,
+): Promise<RemoveDayActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc('soft_delete_program_day', {
+    p_id: dayId,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/clients/${clientId}/program`)
+  return { status: 'removed' }
 }

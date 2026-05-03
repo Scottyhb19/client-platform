@@ -466,3 +466,80 @@ Closed. Schema is in the target shape; downstream phases (B–F) can proceed aga
 - **Reusable dialog primitives** in the same file (`DialogShell`, `DialogHeader`, `DialogActions`, `ErrorDialog`) — kept colocated since they're tightly bound to the toolbar's three modals; can extract later if reused.
 - **Esc handling**: any open modal dismisses on Esc keydown. `useTransition` + `router.refresh()` on success.
 - **Type-check clean**, dev server compiles `/clients/.../program` with consistent 200 OK responses (10 in a row in the logs). Visual walkthrough pending user refresh.
+
+### Phase E — Shared Notes + Reports side panel on calendar (closed; type-check + dev-server green; visual walkthrough pending)
+
+- **P1-5 — Pure code-reuse extraction (no behavioural change to session builder).** `NotesPanel` and `ReportsPanel` lifted out of `SessionBuilder.tsx` into their own files under [`src/app/(staff)/clients/[id]/_components/`](../../src/app/(staff)/clients/[id]/_components/):
+  - [`NotesPanel.tsx`](../../src/app/(staff)/clients/[id]/_components/NotesPanel.tsx) — exports the `NotesPanel` component and the `PinnedNote` type. Body unchanged from the session-builder version (red left-border accent banner pattern preserved).
+  - [`ReportsPanel.tsx`](../../src/app/(staff)/clients/[id]/_components/ReportsPanel.tsx) — exports the `ReportsPanel` component, the `SessionReport` type, and contains the local `formatDateShort` helper. Body unchanged.
+  - Both files inline only the design-token constants they actually use (`MUTED + ALERT` for Notes; `INK + MUTED + BORDER` for Reports). No shared color-tokens module created — that consolidation belongs to a future pass that touches the design-system layer broadly, not Phase E.
+  - [`SessionBuilder.tsx`](../../src/app/(staff)/clients/[id]/program/days/[dayId]/_components/SessionBuilder.tsx) imports both from the new locations and continues to render Library + Notes + Reports as the three tabs in its right panel — **the load-bearing differentiator (CLAUDE.md "protect this") is intact**. File shrank from 1684 → 1549 lines (135 lines of duplicated component bodies removed).
+  - [`days/[dayId]/page.tsx`](../../src/app/(staff)/clients/[id]/program/days/[dayId]/page.tsx) imports `PinnedNote` and `SessionReport` directly from the new files instead of re-exporting through SessionBuilder — cleaner dependency graph.
+- **P1-5 — Calendar-side deployment.** Three new files added under [`src/app/(staff)/clients/[id]/program/_components/`](../../src/app/(staff)/clients/[id]/program/_components/):
+  - [`CalendarSidePanel.tsx`](../../src/app/(staff)/clients/[id]/program/_components/CalendarSidePanel.tsx) — wraps the extracted `NotesPanel` + `ReportsPanel` in a two-tab strip mirroring the session-builder tab styling (cream-deep background, white selected state, single subtle shadow). Notes is the default-open tab on first mount; tab choice is local client state, not URL-tracked. Files tab is OUT (Q2b=C — deferred until a real Files use case lands).
+  - [`CalendarPanelToggle.tsx`](../../src/app/(staff)/clients/[id]/program/_components/CalendarPanelToggle.tsx) — `PanelRight` Lucide icon button. Uses `router.replace` (not `<Link>`) on toggle so MonthCalendar's local state (visible month, open day, copy/repeat modes) is preserved across the URL flip. Open state shows accent-green border + faint accent-tinted background. Closed → no `panel` param. Open → `?panel=notes`.
+- **Conditional fetch in the page loader.** [`page.tsx`](../../src/app/(staff)/clients/[id]/program/page.tsx) reads `searchParams.panel` and only runs the `clinical_notes` (where `is_pinned=true`) + `reports` (limit 20) queries when the panel is open — closed-state path (the common case) stays cheap. Empty arrays are passed to `CalendarSidePanel` when closed (it isn't rendered).
+- **Layout stability.** The calendar + side-panel are always wrapped in a CSS grid (`grid-template-columns: 1fr` when closed, `1fr 340px` when open). The conditional `<CalendarSidePanel>` is the second child only when open. MonthCalendar stays at index 0 of the same parent in both states, so React preserves its internal state across the toggle (no remount, no calendar reset).
+- **Type-check clean** (`npm run type-check` returns no errors). Dev server compiles `/clients/.../program`, `/clients/.../program?panel=notes`, and `/clients/.../program/days/<id>` — all three return 307 to /login under unauth curl (correct middleware behavior; no 500s = no compile errors). Visual walkthrough pending user refresh in their authenticated browser.
+
+### Phase E acceptance gate
+
+Closed pending visual walkthrough. The session builder right panel is unchanged (Library + Notes + Reports tabs all present and rendering — verified by reading [SessionBuilder.tsx:155-163](../../src/app/(staff)/clients/[id]/program/days/[dayId]/_components/SessionBuilder.tsx:155)). The calendar page gains a toggle button next to `<ProgramToolbar>` that opens a sticky right-side panel with the same Notes + Reports content the session builder serves. URL state survives refresh. No regressions to the protected differentiator surface.
+
+### Phase E.0a — Calendar layout tuned for popover-fit (closed; visual confirmation green 2026-05-03)
+
+Problem surfaced during the visual walkthrough: with the side panel open, the calendar collapsed to ~140px-wide cells. The day-summary popover (sized 100% of cell width) overflowed visibly into the adjacent column and exercise names wrapped awkwardly across multiple lines.
+
+Sequence of tuning landed in `page.tsx`:
+- **Conditional wide-page styling.** When `panelOpen` is `false`, the page renders with the standard `.page` container (max-width 1200px, padding 32×40, single-column layout). When `true`, the wrapper switches to `maxWidth: min(2000px, 98vw)`, horizontal padding 8px, and a `1fr 260px` grid with 16px gap. Default-closed view is identical to before this round.
+- **Side panel column width** sat at 340px in the initial Phase E build → reduced to 300px → finally 260px. User explicitly approved each step ("happy for the notes panel to be slightly smaller"). Beyond 260px would compromise Notes/Reports readability.
+- **Popover internal trim** in `MonthCalendar.tsx`'s `DaySummaryPopover`:
+  - Padding reduced 10 → 8.
+  - Exercise label column 20px → 16px.
+  - Label/content gap 6 → 4.
+  - Superset-member left padding 6 → 4.
+  - Net effect: ~19px more horizontal room for the exercise name + prescription on each line.
+- **End-state cell widths** on a 1920px display: ~227px with panel open (was 165px pre-tuning), ~257px without panel (unchanged from pre-Phase-E).
+
+Acceptance: user-confirmed "perfect" with the popover sitting cleanly inside the cell. The layout-conditional wiring means the closed-state default looks exactly as it did before any of this round's changes; only the popover internal trim is a permanent improvement (smaller content area is needed in narrower cells, but in wider cells it just means slightly more whitespace — no visible regression).
+
+### Phase E.0b — Day-popover restack when panel is open (closed; visual confirmation green 2026-05-03)
+
+Final residual problem: even at 227px cells, the four icons (Open/Copy/Repeat/Delete) plus the "Day {label}" caption laid out in a single header row pushed the rightmost icon (the new red Trash2) just outside the visible cell.
+
+Fix: pass a `compactPopover` boolean from `page.tsx` (= `panelOpen`) through `MonthCalendar` → `MonthGrid` → `DateCell` → `DaySummaryPopover` (as `compact`). When `compact` is `true`, the popover header switches:
+- `flexDirection: row` → `column`.
+- Icons row sits on top (right-aligned, `order: 0`).
+- "Day {label}" caption moves below (`order: 1`).
+- Exercise list renders below the header as before.
+
+When `compact` is `false`, the original single-row header (`Day A` left, icons right) renders unchanged.
+
+This gives a vertical-first compact layout in narrow cells without changing the popover's overall footprint — and zero visual change to the default-closed state.
+
+### Phase E.0c — Delete session from popover (closed; type-check + dev-server green; pgTAP pending)
+
+The popover's close-X was redundant: the popover already closes on Esc, outside-click, and clicking the same day cell again. User asked for it to be repurposed as a destructive delete-session action.
+
+- **Migration** [`20260503140000_program_day_soft_delete.sql`](../../supabase/migrations/20260503140000_program_day_soft_delete.sql):
+  - `soft_delete_program_day(p_id uuid)` SECURITY DEFINER RPC. Same pattern as the rest of the soft-delete RPC family (org gate via `user_organization_id()` + `user_role()`, parent-walk to verify the row belongs to the caller's org).
+  - **Cascade soft-delete** to all program_exercises on the day inside the same function — keeps the database consistent (no orphan exercises pointing at a deleted day). Restoring the day later would need explicit restore of the exercises too, but that's a deliberate decision for then.
+  - Org-walk uses the post-D-PROG-001 direct `pd.program_id` FK (single hop — no `program_weeks` traversal needed).
+  - REVOKE from PUBLIC, GRANT to `authenticated`.
+- **TypeScript types regenerated** via `npm run supabase:types` after the user pushed the migration. The new RPC's signature is in [`src/types/database.ts:3392`](../../src/types/database.ts:3392).
+- **Server action** `removeProgramDayAction(clientId, dayId)` in [`day-actions.ts`](../../src/app/(staff)/clients/[id]/program/day-actions.ts):
+  - `RemoveDayActionResult` is `{ status: 'removed' } | { error: string }`.
+  - `requireRole(['owner', 'staff'])` + `revalidatePath` on success.
+- **UI:**
+  - New `Trash2` import. New `iconDeleteStyle` constant (red border-tint + faint red bg + `#D64045` icon colour — the established alert/destructive token).
+  - `MonthCalendar` state machine grew a `confirm-delete` mode kind (sourceDayId, sourceLabel, sourceDate).
+  - New `runDelete(sourceDayId)` callback that calls `removeProgramDayAction`, closes the popover, fires `router.refresh()` on success.
+  - `onDeleteDay` prop threaded through `MonthCalendar` → `MonthGrid` → `DateCell` → `DaySummaryPopover` mirroring the Copy/Repeat plumbing.
+  - Popover X button removed; replaced with a red Trash2 button calling `onDelete`.
+  - Reuses the existing `ConflictDialog` component for the confirm modal: title "Delete this session?", body warns about the cascade, confirm label "Delete", busy state preserved.
+- **Type-check clean**, dev-server compiles. End-to-end click-through verified by the user (popover delete works; calendar refreshes; deleted day disappears).
+- **pgTAP `12_program_day_soft_delete.sql` — 5/5 green on staging 2026-05-03.** Coverage: §A1 day's deleted_at is set after the call; §A2 cascade — every program_exercise on the day has deleted_at set; §B1 re-call on an already-deleted day raises an error; §C1 cross-org staff caller cannot soft-delete (the EXISTS-walk filters the row → no_data_found from caller's POV); §D1 client-role caller (not owner|staff) is rejected with SQLSTATE 42501. Note: the §A verification SELECT had to RESET ROLE to bypass the program_days SELECT policy's `deleted_at IS NULL` filter — same gotcha that required SECURITY DEFINER on the RPC itself.
+
+### Phase E.0a–E.0c acceptance gate
+
+Closed. Layout-conditional, popover-restack, and delete-session changes all live, visually approved, and pgTAP green.

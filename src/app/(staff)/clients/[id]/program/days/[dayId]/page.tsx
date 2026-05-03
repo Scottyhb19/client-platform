@@ -5,10 +5,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   SessionBuilder,
   type LibraryPick,
-  type PinnedNote,
   type ProgramExercise,
-  type SessionReport,
 } from './_components/SessionBuilder'
+import { type PinnedNote } from '../../../_components/NotesPanel'
+import { type SessionReport } from '../../../_components/ReportsPanel'
 import { AssignButton } from './_components/AssignButton'
 
 export const dynamic = 'force-dynamic'

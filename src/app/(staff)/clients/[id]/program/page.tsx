@@ -13,6 +13,10 @@ import type {
   ProgramExerciseWithMeta,
 } from './_components/MonthCalendar'
 import { ProgramToolbar } from './_components/ProgramToolbar'
+import { CalendarPanelToggle } from './_components/CalendarPanelToggle'
+import { CalendarSidePanel } from './_components/CalendarSidePanel'
+import { type PinnedNote } from '../_components/NotesPanel'
+import { type SessionReport } from '../_components/ReportsPanel'
 
 export const dynamic = 'force-dynamic'
 
@@ -31,10 +35,14 @@ export const dynamic = 'force-dynamic'
  */
 export default async function ClientProgramPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ panel?: string }>
 }) {
   const { id } = await params
+  const { panel } = await searchParams
+  const panelOpen = panel === 'notes'
   const supabase = await createSupabaseServerClient()
 
   const { data: client, error: clientErr } = await supabase
@@ -149,8 +157,56 @@ export default async function ClientProgramPage({
   const todayIso = new Date().toISOString().slice(0, 10)
   const currentBlock = resolveCurrentBlock(programs, todayIso)
 
+  // Side panel content (Phase E). Only fetched when the panel is open
+  // — closed-state path stays cheap (the common case).
+  let pinnedNotes: PinnedNote[] = []
+  let reports: SessionReport[] = []
+  if (panelOpen) {
+    const [{ data: notesRaw }, { data: reportsRaw }] = await Promise.all([
+      supabase
+        .from('clinical_notes')
+        .select(`id, body_rich, subjective, flag_body_region`)
+        .eq('client_id', id)
+        .eq('is_pinned', true)
+        .is('deleted_at', null)
+        .order('note_date', { ascending: false }),
+      supabase
+        .from('reports')
+        .select('id, title, report_type, test_date, is_published')
+        .eq('client_id', id)
+        .is('deleted_at', null)
+        .order('test_date', { ascending: false })
+        .limit(20),
+    ])
+
+    pinnedNotes = (notesRaw ?? []).map((n) => ({
+      id: n.id,
+      body: (n.body_rich ?? n.subjective ?? '').trim(),
+      flag_body_region: n.flag_body_region,
+    }))
+
+    reports = (reportsRaw ?? []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      report_type: r.report_type,
+      test_date: r.test_date,
+      is_published: r.is_published,
+    }))
+  }
+
+  // When the side panel is open the calendar needs more horizontal room
+  // so the day popover (which sizes to cell width) stays comfortable.
+  // Closed state keeps the standard .page width — default looks unchanged.
+  const widePageStyle = panelOpen
+    ? {
+        maxWidth: 'min(2000px, 98vw)',
+        paddingLeft: 8,
+        paddingRight: 8,
+      }
+    : undefined
+
   return (
-    <div className="page">
+    <div className="page" style={widePageStyle}>
       <div
         style={{
           display: 'flex',
@@ -222,18 +278,32 @@ export default async function ClientProgramPage({
           }
           todayIso={todayIso}
         />
+        <CalendarPanelToggle />
       </div>
 
-      {programs.length === 0 ? (
-        <EmptyProgram clientId={client.id} />
-      ) : (
-        <MonthCalendar
-          clientId={client.id}
-          programs={programs}
-          days={days}
-          todayIso={todayIso}
-        />
-      )}
+      <div
+        style={{
+          display: panelOpen ? 'grid' : 'block',
+          gridTemplateColumns: panelOpen ? '1fr 260px' : undefined,
+          gap: panelOpen ? 16 : undefined,
+          alignItems: panelOpen ? 'start' : undefined,
+        }}
+      >
+        {programs.length === 0 ? (
+          <EmptyProgram clientId={client.id} />
+        ) : (
+          <MonthCalendar
+            clientId={client.id}
+            programs={programs}
+            days={days}
+            todayIso={todayIso}
+            compactPopover={panelOpen}
+          />
+        )}
+        {panelOpen && (
+          <CalendarSidePanel notes={pinnedNotes} reports={reports} />
+        )}
+      </div>
     </div>
   )
 }

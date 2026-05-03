@@ -19,6 +19,11 @@ import {
   updateProgramExerciseAction,
   type ProgramExercisePatch,
 } from '../actions'
+import { NotesPanel, type PinnedNote } from '../../../../_components/NotesPanel'
+import {
+  ReportsPanel,
+  type SessionReport,
+} from '../../../../_components/ReportsPanel'
 
 /*
  * Session Builder — light/cream skeleton.
@@ -60,20 +65,6 @@ export type LibraryPick = {
   id: string
   name: string
   movement_pattern_name: string | null
-}
-
-export type PinnedNote = {
-  id: string
-  body: string
-  flag_body_region: string | null
-}
-
-export type SessionReport = {
-  id: string
-  title: string
-  report_type: string
-  test_date: string
-  is_published: boolean
 }
 
 interface SessionBuilderProps {
@@ -1556,129 +1547,3 @@ function LibraryPanel({
   )
 }
 
-function ReportsPanel({ reports }: { reports: SessionReport[] }) {
-  return (
-    <div className="card" style={{ padding: 18 }}>
-      <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
-        Client reports
-      </div>
-      {reports.length === 0 ? (
-        <div style={{ fontSize: '.82rem', color: MUTED, lineHeight: 1.5 }}>
-          No reports filed for this client yet. Force-plate profiles,
-          ForceFrame results, and movement reassessments will land here once
-          the VALD integration is wired.
-        </div>
-      ) : (
-        reports.map((r) => (
-          <div
-            key={r.id}
-            style={{
-              padding: '10px 0',
-              borderBottom: `1px solid ${BORDER}`,
-              fontSize: '.82rem',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 2,
-              }}
-            >
-              <span style={{ fontWeight: 600, color: INK }}>{r.title}</span>
-              {!r.is_published && (
-                <span
-                  style={{
-                    fontSize: '.6rem',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.04em',
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    background: 'rgba(232,163,23,.1)',
-                    color: '#9A7A0E',
-                  }}
-                >
-                  Draft
-                </span>
-              )}
-            </div>
-            <div
-              style={{
-                fontSize: '.72rem',
-                color: MUTED,
-                display: 'flex',
-                gap: 8,
-              }}
-            >
-              <span>{formatDateShort(r.test_date)}</span>
-              <span>·</span>
-              <span>{r.report_type}</span>
-            </div>
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
-
-function formatDateShort(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
-}
-
-function NotesPanel({ notes }: { notes: PinnedNote[] }) {
-  return (
-    <div className="card" style={{ padding: 18 }}>
-      <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
-        Pinned clinical notes
-      </div>
-      {notes.length === 0 ? (
-        <div style={{ fontSize: '.82rem', color: MUTED, lineHeight: 1.5 }}>
-          No pinned notes for this client. Pin a note from the profile to
-          have it visible here while you build the session.
-        </div>
-      ) : (
-        notes.map((n) => (
-          <div
-            key={n.id}
-            style={{
-              background: 'rgba(214,64,69,.05)',
-              borderLeft: `3px solid ${ALERT}`,
-              padding: '8px 12px',
-              borderRadius: '0 6px 6px 0',
-              fontSize: '.78rem',
-              lineHeight: 1.45,
-              marginBottom: 6,
-            }}
-          >
-            {n.flag_body_region && (
-              <div
-                style={{
-                  fontSize: '.62rem',
-                  fontWeight: 700,
-                  color: ALERT,
-                  textTransform: 'uppercase',
-                  letterSpacing: '.04em',
-                  marginBottom: 2,
-                }}
-              >
-                {n.flag_body_region}
-              </div>
-            )}
-            {n.body}
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
