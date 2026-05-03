@@ -126,21 +126,25 @@ export function MonthCalendar({
 
   return (
     <div>
-      {/* ─── Top header: prev / month label / next + Today ─── */}
+      {/* ─── Top header: month label centered with prev/next; Today
+          tucked to the right edge so the centered group stays visually
+          balanced. ─── */}
       <div
         style={{
+          position: 'relative',
+          marginBottom: 16,
+          minHeight: 44,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 16,
-          gap: 12,
         }}
       >
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'center',
             gap: 8,
+            margin: '0 auto',
           }}
         >
           <button
@@ -173,8 +177,7 @@ export function MonthCalendar({
                 color: 'var(--color-charcoal)',
                 letterSpacing: '-0.005em',
                 transition: 'background 120ms',
-                minWidth: 220,
-                textAlign: 'left',
+                textAlign: 'center',
               }}
             >
               {FULL_MONTH_LABELS[visibleMonth]} {visibleYear}
@@ -208,7 +211,17 @@ export function MonthCalendar({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
           {!isViewingThisMonth && (
             <button
               type="button"
@@ -496,71 +509,85 @@ function DaySummaryPopover({
       style={{
         position: 'absolute',
         top: 'calc(100% + 6px)',
+        // Width matches the day cell (the wrapper around DateCell).
+        // Anchored either to the left or right edge of that wrapper.
         ...(anchorRight ? { right: 0 } : { left: 0 }),
-        width: 360,
+        width: '100%',
         background: 'var(--color-card)',
         border: '1px solid var(--color-border-subtle)',
-        borderRadius: 12,
+        borderRadius: 10,
         boxShadow: '0 12px 28px rgba(0,0,0,.12)',
-        padding: '14px 16px',
+        padding: 10,
         zIndex: 25,
       }}
     >
+      {/* Header: Day badge on the left, action icons + close on the right.
+          The action icons sit inline so the popover stays as compact as
+          the day cell underneath. */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          gap: 8,
-          marginBottom: 12,
+          gap: 4,
+          marginBottom: 8,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: '1rem',
-              color: 'var(--color-charcoal)',
-            }}
-          >
-            Day {day.day_label}
-          </span>
-          <span style={{ fontSize: '.74rem', color: 'var(--color-muted)' }}>
-            {formatLongDate(day.scheduled_date)}
-          </span>
-          {program && (
-            <span style={{ fontSize: '.7rem', color: 'var(--color-muted)' }}>
-              · {program.name}
-            </span>
-          )}
-        </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close summary"
+        <span
           style={{
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: 4,
-            color: 'var(--color-muted)',
-            display: 'grid',
-            placeItems: 'center',
-            borderRadius: 6,
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '.85rem',
+            color: 'var(--color-charcoal)',
           }}
         >
-          <X size={14} aria-hidden />
-        </button>
+          Day {day.day_label}
+        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Link
+            href={`/clients/${clientId}/program/days/${day.id}`}
+            aria-label="Open session builder"
+            title="Open"
+            style={iconLinkStyle}
+          >
+            <ExternalLink size={12} aria-hidden />
+          </Link>
+          <button
+            type="button"
+            disabled
+            title="Copy session — coming in Phase C"
+            aria-label="Copy session"
+            style={iconBtnStyle}
+          >
+            <Copy size={12} aria-hidden />
+          </button>
+          <button
+            type="button"
+            disabled
+            title="Repeat weekly — coming in Phase C"
+            aria-label="Repeat weekly"
+            style={iconBtnStyle}
+          >
+            <Repeat size={12} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close summary"
+            style={iconCloseStyle}
+          >
+            <X size={12} aria-hidden />
+          </button>
+        </div>
       </div>
 
       {day.exercises.length === 0 ? (
         <div
           style={{
-            fontSize: '.85rem',
+            fontSize: '.74rem',
             color: 'var(--color-muted)',
-            padding: '4px 0 12px',
+            padding: '2px 0 4px',
           }}
         >
           No exercises programmed yet.
@@ -570,11 +597,11 @@ function DaySummaryPopover({
           style={{
             listStyle: 'none',
             padding: 0,
-            margin: '0 0 12px',
+            margin: 0,
             display: 'flex',
             flexDirection: 'column',
             gap: 4,
-            maxHeight: 320,
+            maxHeight: 280,
             overflowY: 'auto',
           }}
         >
@@ -583,21 +610,21 @@ function DaySummaryPopover({
               key={exercise.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '28px 1fr',
-                gap: 8,
+                gridTemplateColumns: '20px 1fr',
+                gap: 6,
                 alignItems: 'baseline',
-                padding: '4px 0',
+                padding: '3px 0',
                 borderLeft: isSupersetMember
                   ? '2px solid var(--color-accent)'
                   : '2px solid transparent',
-                paddingLeft: isSupersetMember ? 8 : 0,
+                paddingLeft: isSupersetMember ? 6 : 0,
               }}
             >
               <span
                 style={{
                   fontFamily: 'var(--font-display)',
                   fontWeight: 700,
-                  fontSize: '.74rem',
+                  fontSize: '.66rem',
                   color: isSupersetMember
                     ? 'var(--color-primary)'
                     : 'var(--color-text-light)',
@@ -609,17 +636,16 @@ function DaySummaryPopover({
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 2,
+                  gap: 1,
                   minWidth: 0,
                 }}
               >
                 <span
                   style={{
-                    fontSize: '.86rem',
+                    fontSize: '.74rem',
+                    lineHeight: 1.25,
                     color: 'var(--color-text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    overflowWrap: 'break-word',
                   }}
                   title={exercise.exercise?.name ?? 'Exercise'}
                 >
@@ -627,7 +653,7 @@ function DaySummaryPopover({
                 </span>
                 <span
                   style={{
-                    fontSize: '.74rem',
+                    fontSize: '.66rem',
                     color: 'var(--color-text-light)',
                     fontVariantNumeric: 'tabular-nums',
                   }}
@@ -639,59 +665,44 @@ function DaySummaryPopover({
           ))}
         </ol>
       )}
-
-      {/* Action row: Open is the primary; Copy / Repeat disabled until Phase C */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          paddingTop: 8,
-          borderTop: '1px solid var(--color-border-subtle)',
-        }}
-      >
-        <Link
-          href={`/clients/${clientId}/program/days/${day.id}`}
-          className="btn primary"
-          style={{ padding: '6px 12px', fontSize: '.78rem', gap: 6, flex: 1, justifyContent: 'center' }}
-        >
-          <ExternalLink size={14} aria-hidden />
-          Open
-        </Link>
-        <button
-          type="button"
-          disabled
-          title="Copy this session — coming in Phase C"
-          aria-label="Copy this session"
-          style={iconBtnStyle}
-        >
-          <Copy size={14} aria-hidden />
-        </button>
-        <button
-          type="button"
-          disabled
-          title="Repeat weekly — coming in Phase C"
-          aria-label="Repeat weekly"
-          style={iconBtnStyle}
-        >
-          <Repeat size={14} aria-hidden />
-        </button>
-      </div>
     </div>
   )
 }
 
-const iconBtnStyle: React.CSSProperties = {
-  width: 32,
-  height: 32,
-  border: '1px solid var(--color-border-subtle)',
-  background: 'var(--color-card)',
-  borderRadius: 7,
-  cursor: 'not-allowed',
+// Compact icon-button styles tuned for the popover header — sized so
+// four icons + the day-label badge fit within a single calendar cell.
+const iconBtnBase: React.CSSProperties = {
+  width: 22,
+  height: 22,
+  borderRadius: 5,
   display: 'grid',
   placeItems: 'center',
+  cursor: 'pointer',
+  transition: 'background 120ms, color 120ms',
+}
+
+const iconLinkStyle: React.CSSProperties = {
+  ...iconBtnBase,
+  color: 'var(--color-charcoal)',
+  background: 'transparent',
+  border: '1px solid var(--color-border-subtle)',
+  textDecoration: 'none',
+}
+
+const iconBtnStyle: React.CSSProperties = {
+  ...iconBtnBase,
+  border: '1px solid var(--color-border-subtle)',
+  background: 'var(--color-card)',
+  cursor: 'not-allowed',
   color: 'var(--color-muted)',
-  opacity: 0.55,
+  opacity: 0.5,
+}
+
+const iconCloseStyle: React.CSSProperties = {
+  ...iconBtnBase,
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--color-muted)',
 }
 
 
@@ -790,18 +801,6 @@ function addDaysTo(d: Date, days: number): Date {
   const r = new Date(d)
   r.setDate(r.getDate() + days)
   return r
-}
-
-function formatLongDate(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-    }).format(parseIso(iso))
-  } catch {
-    return iso
-  }
 }
 
 // Re-exports for any consumer that needs the picker from here.
