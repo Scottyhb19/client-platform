@@ -3165,6 +3165,10 @@ export type Database = {
       }
     }
     Functions: {
+      _program_for_date: {
+        Args: { p_client_id: string; p_date: string }
+        Returns: string
+      }
       _test_clear_jwt: { Args: never; Returns: undefined }
       _test_grant_membership: {
         Args: {
@@ -3308,6 +3312,14 @@ export type Database = {
         Args: { p_program_day_id: string }
         Returns: string
       }
+      copy_program_day: {
+        Args: {
+          p_force?: boolean
+          p_source_day_id: string
+          p_target_date: string
+        }
+        Returns: Json
+      }
       create_organization_with_owner: {
         Args: {
           p_first_name: string
@@ -3328,6 +3340,10 @@ export type Database = {
           p_source: Database["public"]["Enums"]["test_source_t"]
         }
         Returns: string
+      }
+      repeat_program_day_weekly: {
+        Args: { p_end_date: string; p_force?: boolean; p_source_day_id: string }
+        Returns: Json
       }
       restore_client: { Args: { p_id: string }; Returns: undefined }
       restore_client_publication: { Args: { p_id: string }; Returns: undefined }

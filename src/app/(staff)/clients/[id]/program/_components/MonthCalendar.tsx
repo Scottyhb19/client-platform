@@ -1,8 +1,17 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react'
+import {
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -15,6 +24,11 @@ import {
   monthArrowStyle,
   MONTH_LABELS_SHORT,
 } from '../../../../_components/MonthYearPicker'
+import {
+  copyDayAction,
+  repeatDayWeeklyAction,
+  type ConflictEntry,
+} from '../day-actions'
 
 // ============================================================================
 // Types
@@ -74,12 +88,47 @@ const FULL_MONTH_LABELS = [
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+// Top-level state machine for day-level operations. Each mode shapes
+// the UI: copy-pick changes the click semantics on day cells; repeat-
+// pick swaps the day-summary popover for a mini date picker; the
+// confirm-* modes show a modal and pause everything else.
+type CalendarMode =
+  | { kind: 'idle' }
+  | {
+      kind: 'copy-pick'
+      sourceDayId: string
+      sourceLabel: string
+      sourceDate: string
+    }
+  | {
+      kind: 'repeat-pick'
+      sourceDayId: string
+      sourceLabel: string
+      sourceDate: string
+    }
+  | {
+      kind: 'confirm-copy'
+      sourceDayId: string
+      targetDate: string
+      conflicts: ConflictEntry[]
+    }
+  | {
+      kind: 'confirm-repeat'
+      sourceDayId: string
+      endDate: string
+      conflicts: ConflictEntry[]
+      noProgramDates: string[]
+    }
+  | { kind: 'no-program-toast'; targetDate: string }
+
 export function MonthCalendar({
   clientId,
   programs,
   days,
   todayIso,
 }: MonthCalendarProps) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const today = parseIso(todayIso)
   const todayMonth = today.getMonth()
   const todayYear = today.getFullYear()
@@ -106,6 +155,19 @@ export function MonthCalendar({
 
   // Single open day at a time keeps focus on one summary popover.
   const [openDayId, setOpenDayId] = useState<string | null>(null)
+  const [mode, setMode] = useState<CalendarMode>({ kind: 'idle' })
+  const [busy, setBusy] = useState(false)
+
+  // Esc cancels any non-idle mode.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && mode.kind !== 'idle') {
+        setMode({ kind: 'idle' })
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mode.kind])
 
   function gotoMonth(direction: 'prev' | 'next') {
     const delta = direction === 'prev' ? -1 : 1
@@ -124,8 +186,117 @@ export function MonthCalendar({
   const isViewingThisMonth =
     visibleYear === todayYear && visibleMonth === todayMonth
 
+  // ── Action runners ──────────────────────────────────────────────
+
+  const runCopy = useCallback(
+    async (sourceDayId: string, targetDate: string, force: boolean) => {
+      setBusy(true)
+      try {
+        const result = await copyDayAction(clientId, sourceDayId, targetDate, force)
+        if ('error' in result) {
+          // Surface as a no-program toast for now — same one-liner shape.
+          setMode({ kind: 'no-program-toast', targetDate })
+          // eslint-disable-next-line no-console
+          console.error('copy_program_day error:', result.error)
+          return
+        }
+        switch (result.status) {
+          case 'created':
+            setMode({ kind: 'idle' })
+            startTransition(() => router.refresh())
+            break
+          case 'conflict':
+            setMode({
+              kind: 'confirm-copy',
+              sourceDayId,
+              targetDate,
+              conflicts: result.conflicts,
+            })
+            break
+          case 'no_program':
+            setMode({ kind: 'no-program-toast', targetDate: result.targetDate })
+            break
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [clientId, router],
+  )
+
+  const runRepeat = useCallback(
+    async (sourceDayId: string, endDate: string, force: boolean) => {
+      setBusy(true)
+      try {
+        const result = await repeatDayWeeklyAction(clientId, sourceDayId, endDate, force)
+        if ('error' in result) {
+          // eslint-disable-next-line no-console
+          console.error('repeat_program_day_weekly error:', result.error)
+          setMode({ kind: 'idle' })
+          return
+        }
+        switch (result.status) {
+          case 'created':
+            setMode({ kind: 'idle' })
+            startTransition(() => router.refresh())
+            break
+          case 'conflict':
+            setMode({
+              kind: 'confirm-repeat',
+              sourceDayId,
+              endDate,
+              conflicts: result.conflicts,
+              noProgramDates: result.noProgramDates,
+            })
+            break
+          case 'invalid_end_date':
+            // UI-side validation should prevent this; if it slips
+            // through, fall back to idle.
+            setMode({ kind: 'idle' })
+            break
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [clientId, router],
+  )
+
+  // ── Day-cell click handler — branches on mode ──────────────────
+
+  const handleDayCellClick = useCallback(
+    (cellIso: string, day: ProgramDayWithExercises | null) => {
+      if (mode.kind === 'copy-pick') {
+        // Don't allow copying onto the source itself.
+        if (cellIso === mode.sourceDate) {
+          setMode({ kind: 'idle' })
+          return
+        }
+        // Don't allow copying onto past dates.
+        if (cellIso < todayIso) return
+        runCopy(mode.sourceDayId, cellIso, false)
+        return
+      }
+      // Default: toggle the day summary popover.
+      if (day) {
+        setOpenDayId((prev) => (prev === day.id ? null : day.id))
+      }
+    },
+    [mode, runCopy, todayIso],
+  )
+
   return (
     <div>
+      {/* ─── Copy-pick banner: shown while the EP is choosing a
+          destination day for a copy. ─── */}
+      {mode.kind === 'copy-pick' && (
+        <CopyPickBanner
+          sourceLabel={mode.sourceLabel}
+          sourceDate={mode.sourceDate}
+          onCancel={() => setMode({ kind: 'idle' })}
+        />
+      )}
+
       {/* ─── Top header: month label centered with prev/next; Today
           tucked to the right edge so the centered group stays visually
           balanced. ─── */}
@@ -243,14 +414,77 @@ export function MonthCalendar({
         year={visibleYear}
         month={visibleMonth}
         today={today}
+        todayIso={todayIso}
         daysByDate={daysByDate}
         programsById={programsById}
         clientId={clientId}
         openDayId={openDayId}
-        onToggleDay={(dayId) =>
-          setOpenDayId((prev) => (prev === dayId ? null : dayId))
-        }
+        mode={mode}
+        onCellClick={handleDayCellClick}
+        onCloseDay={() => setOpenDayId(null)}
+        onCopyDay={(dayId, label, date) => {
+          setOpenDayId(null)
+          setMode({ kind: 'copy-pick', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
+        }}
+        onRepeatDay={(dayId, label, date) => {
+          setOpenDayId(null)
+          setMode({ kind: 'repeat-pick', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
+        }}
       />
+
+      {/* ─── Repeat mini-calendar picker (anchored, full-screen) ─── */}
+      {mode.kind === 'repeat-pick' && (
+        <RepeatEndDatePicker
+          sourceDate={mode.sourceDate}
+          sourceLabel={mode.sourceLabel}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={(endDate) => runRepeat(mode.sourceDayId, endDate, false)}
+          busy={busy}
+        />
+      )}
+
+      {/* ─── Conflict confirm dialog ─── */}
+      {mode.kind === 'confirm-copy' && (
+        <ConflictDialog
+          title="Day already exists"
+          description={`A session is already scheduled for ${formatLongDate(mode.targetDate)}. Overwrite it with the copy?`}
+          conflicts={mode.conflicts}
+          noProgramDates={[]}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() =>
+            runCopy(mode.sourceDayId, mode.targetDate, true)
+          }
+          busy={busy}
+        />
+      )}
+
+      {mode.kind === 'confirm-repeat' && (
+        <ConflictDialog
+          title="Some dates already have sessions"
+          description={`${mode.conflicts.length} of the target dates already have programmed sessions. Overwrite all of them?`}
+          conflicts={mode.conflicts}
+          noProgramDates={mode.noProgramDates}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() =>
+            runRepeat(mode.sourceDayId, mode.endDate, true)
+          }
+          busy={busy}
+        />
+      )}
+
+      {mode.kind === 'no-program-toast' && (
+        <ConflictDialog
+          title="No active block on that date"
+          description={`No active training block covers ${formatLongDate(mode.targetDate)}. Create or extend a block first, then try again.`}
+          conflicts={[]}
+          noProgramDates={[]}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() => setMode({ kind: 'idle' })}
+          confirmLabel="OK"
+          hideCancel
+          busy={false}
+        />
+      )}
     </div>
   )
 }
@@ -267,22 +501,32 @@ interface MonthGridProps {
   year: number
   month: number
   today: Date
+  todayIso: string
   daysByDate: Map<string, ProgramDayWithExercises>
   programsById: Map<string, ProgramSummary>
   clientId: string
   openDayId: string | null
-  onToggleDay: (dayId: string) => void
+  mode: CalendarMode
+  onCellClick: (cellIso: string, day: ProgramDayWithExercises | null) => void
+  onCloseDay: () => void
+  onCopyDay: (dayId: string, label: string, date: string) => void
+  onRepeatDay: (dayId: string, label: string, date: string) => void
 }
 
 function MonthGrid({
   year,
   month,
   today,
+  todayIso,
   daysByDate,
   programsById,
   clientId,
   openDayId,
-  onToggleDay,
+  mode,
+  onCellClick,
+  onCloseDay,
+  onCopyDay,
+  onRepeatDay,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthCells(year, month), [year, month])
 
@@ -430,30 +674,53 @@ function MonthGrid({
                   </span>
                 </div>
               ) : (
-                week.cells.map((c, i) => (
-                  <DateCell
-                    key={c.iso}
-                    cell={c}
-                    today={today}
-                    day={c.inMonth ? daysByDate.get(c.iso) ?? null : null}
-                    isOpen={
-                      openDayId !== null && daysByDate.get(c.iso)?.id === openDayId
-                    }
-                    onToggle={onToggleDay}
-                    program={
-                      c.inMonth
-                        ? programsById.get(daysByDate.get(c.iso)?.program_id ?? '')
-                          ?? null
-                        : null
-                    }
-                    clientId={clientId}
-                    onClose={() => onToggleDay(openDayId!)}
-                    // Anchor popover toward the LEFT for cells in the left
-                    // half of the row; toward the RIGHT for cells in the
-                    // right half. Avoids overflowing the calendar's edge.
-                    anchorRight={i >= 4}
-                  />
-                ))
+                week.cells.map((c, i) => {
+                  const day = c.inMonth ? daysByDate.get(c.iso) ?? null : null
+                  const isOpen =
+                    openDayId !== null && day?.id === openDayId
+                  // In copy-pick mode, the source cell and past dates
+                  // dim out and become unclickable; everything else
+                  // shows a copy-cursor on hover.
+                  const inCopyPick = mode.kind === 'copy-pick'
+                  const isCopySource =
+                    inCopyPick && c.iso === mode.sourceDate
+                  const isPastInCopy = inCopyPick && c.iso < todayIso
+                  const isCopyTarget =
+                    inCopyPick && !isCopySource && !isPastInCopy
+                  return (
+                    <DateCell
+                      key={c.iso}
+                      cell={c}
+                      today={today}
+                      day={day}
+                      isOpen={isOpen}
+                      onClick={() => onCellClick(c.iso, day)}
+                      program={
+                        c.inMonth
+                          ? programsById.get(day?.program_id ?? '') ?? null
+                          : null
+                      }
+                      clientId={clientId}
+                      onClose={onCloseDay}
+                      onCopy={() =>
+                        day && onCopyDay(day.id, day.day_label, day.scheduled_date)
+                      }
+                      onRepeat={() =>
+                        day && onRepeatDay(day.id, day.day_label, day.scheduled_date)
+                      }
+                      anchorRight={i >= 4}
+                      copyMode={
+                        isCopyTarget
+                          ? 'target'
+                          : isCopySource
+                          ? 'source'
+                          : isPastInCopy
+                          ? 'past'
+                          : 'none'
+                      }
+                    />
+                  )
+                })
               )}
             </div>
           )
@@ -474,11 +741,17 @@ interface DateCellProps {
   today: Date
   day: ProgramDayWithExercises | null
   isOpen: boolean
-  onToggle: (dayId: string) => void
+  onClick: () => void
   program: ProgramSummary | null
   clientId: string
   onClose: () => void
+  onCopy: () => void
+  onRepeat: () => void
   anchorRight: boolean
+  // Visual mode for cells while a copy-pick is in progress.
+  // 'target' — clickable destination; 'source' — the day being copied;
+  // 'past' — past dates dimmed unclickable; 'none' — normal mode.
+  copyMode: 'none' | 'target' | 'source' | 'past'
 }
 
 function DateCell({
@@ -486,13 +759,20 @@ function DateCell({
   today,
   day,
   isOpen,
-  onToggle,
+  onClick,
   program,
   clientId,
   onClose,
+  onCopy,
+  onRepeat,
   anchorRight,
+  copyMode,
 }: DateCellProps) {
   const isToday = cell.iso === isoFromDate(today)
+  const inCopyPick = copyMode !== 'none'
+  const isCopyTarget = copyMode === 'target'
+  const isCopySource = copyMode === 'source'
+  const isCopyPast = copyMode === 'past'
 
   if (!cell.inMonth) {
     return (
@@ -504,9 +784,30 @@ function DateCell({
     )
   }
 
+  // Empty cells (no day): in copy-pick mode they ARE clickable as
+  // destinations. Otherwise they render as the static empty cell.
   if (!day) {
+    if (isCopyTarget) {
+      return (
+        <button
+          type="button"
+          onClick={onClick}
+          className={`day-cell empty ${isToday ? 'today' : ''}`}
+          style={{
+            cursor: 'copy',
+            font: 'inherit',
+            color: 'inherit',
+            outline: '1px dashed var(--color-primary)',
+            background: 'rgba(45, 178, 76, 0.04)',
+          }}
+        >
+          <div className="day-date">{cell.date}</div>
+        </button>
+      )
+    }
     return (
-      <div className={`day-cell empty ${isToday ? 'today' : ''}`}>
+      <div className={`day-cell empty ${isToday ? 'today' : ''}`}
+           style={isCopyPast ? { opacity: 0.4 } : undefined}>
         <div className="day-date">{cell.date}</div>
       </div>
     )
@@ -516,15 +817,26 @@ function DateCell({
     <div style={{ position: 'relative' }}>
       <button
         type="button"
-        onClick={() => onToggle(day.id)}
+        onClick={onClick}
         className={`day-cell ${isToday ? 'today' : ''}`}
+        disabled={isCopyPast || isCopySource}
         style={{
           textAlign: 'left',
-          cursor: 'pointer',
+          cursor: isCopyTarget
+            ? 'copy'
+            : isCopyPast || isCopySource
+            ? 'not-allowed'
+            : 'pointer',
           font: 'inherit',
           color: 'inherit',
           width: '100%',
-          outline: isOpen ? '2px solid var(--color-primary)' : undefined,
+          outline: isOpen
+            ? '2px solid var(--color-primary)'
+            : isCopyTarget
+            ? '1px dashed var(--color-primary)'
+            : undefined,
+          opacity: isCopyPast || isCopySource ? 0.45 : 1,
+          background: isCopyTarget ? 'rgba(45, 178, 76, 0.04)' : undefined,
         }}
         aria-expanded={isOpen}
       >
@@ -544,12 +856,14 @@ function DateCell({
         )}
       </button>
 
-      {isOpen && (
+      {isOpen && !inCopyPick && (
         <DaySummaryPopover
           day={day}
           program={program}
           clientId={clientId}
           onClose={onClose}
+          onCopy={onCopy}
+          onRepeat={onRepeat}
           anchorRight={anchorRight}
         />
       )}
@@ -569,6 +883,8 @@ interface DaySummaryPopoverProps {
   program: ProgramSummary | null
   clientId: string
   onClose: () => void
+  onCopy: () => void
+  onRepeat: () => void
   anchorRight: boolean
 }
 
@@ -577,6 +893,8 @@ function DaySummaryPopover({
   program,
   clientId,
   onClose,
+  onCopy,
+  onRepeat,
   anchorRight,
 }: DaySummaryPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
@@ -662,19 +980,19 @@ function DaySummaryPopover({
           </Link>
           <button
             type="button"
-            disabled
-            title="Copy session — coming in Phase C"
-            aria-label="Copy session"
-            style={iconBtnStyle}
+            onClick={onCopy}
+            title="Copy this session to another day"
+            aria-label="Copy this session"
+            style={iconLinkStyle}
           >
             <Copy size={12} aria-hidden />
           </button>
           <button
             type="button"
-            disabled
-            title="Repeat weekly — coming in Phase C"
+            onClick={onRepeat}
+            title="Repeat weekly until a chosen end date"
             aria-label="Repeat weekly"
-            style={iconBtnStyle}
+            style={iconLinkStyle}
           >
             <Repeat size={12} aria-hidden />
           </button>
@@ -814,8 +1132,496 @@ const iconCloseStyle: React.CSSProperties = {
 
 
 // ============================================================================
+// CopyPickBanner — top-of-calendar banner shown while the EP is
+// choosing a destination cell for a copy. Esc cancels too (handled
+// at the MonthCalendar level).
+// ============================================================================
+
+interface CopyPickBannerProps {
+  sourceLabel: string
+  sourceDate: string
+  onCancel: () => void
+}
+
+function CopyPickBanner({ sourceLabel, sourceDate, onCancel }: CopyPickBannerProps) {
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        padding: '10px 14px',
+        marginBottom: 12,
+        background: 'rgba(45, 178, 76, 0.08)',
+        border: '1px solid var(--color-primary)',
+        borderRadius: 8,
+        fontSize: '.86rem',
+        color: 'var(--color-charcoal)',
+      }}
+    >
+      <span>
+        Copying <strong>Day {sourceLabel}</strong> from{' '}
+        <strong>{formatLongDate(sourceDate)}</strong> — click any future day
+        on the calendar to paste, or press Esc to cancel.
+      </span>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="btn outline"
+        style={{ padding: '4px 12px', fontSize: '.78rem' }}
+      >
+        Cancel
+      </button>
+    </div>
+  )
+}
+
+
+// ============================================================================
+// RepeatEndDatePicker — full-screen modal with a mini date-grid for
+// picking an end date. The user clicks any future date; the system
+// repeats the source on the same weekday weekly between source+7
+// and the picked end date inclusive.
+// ============================================================================
+
+interface RepeatEndDatePickerProps {
+  sourceDate: string
+  sourceLabel: string
+  onCancel: () => void
+  onConfirm: (endDate: string) => void
+  busy: boolean
+}
+
+function RepeatEndDatePicker({
+  sourceDate,
+  sourceLabel,
+  onCancel,
+  onConfirm,
+  busy,
+}: RepeatEndDatePickerProps) {
+  const sourceParsed = parseIso(sourceDate)
+  const sourceDow = (sourceParsed.getDay() + 6) % 7  // Mon-first 0..6
+  const weekdayName = WEEKDAY_LABELS[sourceDow] ?? 'day'
+
+  // Default visible month = source's month; default end-date = source + 28 days.
+  const initialEnd = isoFromDate(addDaysTo(sourceParsed, 28))
+  const [pickedEnd, setPickedEnd] = useState<string | null>(initialEnd)
+  const [visibleYear, setVisibleYear] = useState(sourceParsed.getFullYear())
+  const [visibleMonth, setVisibleMonth] = useState(sourceParsed.getMonth())
+
+  const cells = useMemo(
+    () => buildMonthCells(visibleYear, visibleMonth),
+    [visibleYear, visibleMonth],
+  )
+
+  // Compute the list of target dates given the current pick (preview).
+  const targetDates = useMemo(() => {
+    if (!pickedEnd) return []
+    const out: string[] = []
+    let d = addDaysTo(sourceParsed, 7)
+    const end = parseIso(pickedEnd)
+    while (d <= end) {
+      out.push(isoFromDate(d))
+      d = addDaysTo(d, 7)
+    }
+    return out
+  }, [pickedEnd, sourceParsed])
+
+  function gotoMonth(direction: 'prev' | 'next') {
+    const delta = direction === 'prev' ? -1 : 1
+    const next = new Date(visibleYear, visibleMonth + delta, 1)
+    setVisibleYear(next.getFullYear())
+    setVisibleMonth(next.getMonth())
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Pick end date for repeat"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'rgba(28, 25, 23, 0.5)',
+        display: 'grid',
+        placeItems: 'center',
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel()
+      }}
+    >
+      <div
+        style={{
+          width: 360,
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 14,
+          boxShadow: '0 24px 60px rgba(0,0,0,.18)',
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: 8,
+            marginBottom: 12,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '1.1rem',
+                color: 'var(--color-charcoal)',
+              }}
+            >
+              Repeat Day {sourceLabel}
+            </div>
+            <div style={{ fontSize: '.78rem', color: 'var(--color-muted)', marginTop: 2 }}>
+              Pick an end date. Repeats on every {weekdayName} between{' '}
+              {formatLongDate(isoFromDate(addDaysTo(sourceParsed, 7)))} and the picked date.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel"
+            style={iconCloseStyle}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        </div>
+
+        {/* Month nav */}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 8,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => gotoMonth('prev')}
+            aria-label="Previous month"
+            style={monthArrowStyle}
+          >
+            <ChevronLeft size={16} aria-hidden />
+          </button>
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.95rem',
+              color: 'var(--color-charcoal)',
+              minWidth: 140,
+              textAlign: 'center',
+            }}
+          >
+            {FULL_MONTH_LABELS[visibleMonth]} {visibleYear}
+          </div>
+          <button
+            type="button"
+            onClick={() => gotoMonth('next')}
+            aria-label="Next month"
+            style={monthArrowStyle}
+          >
+            <ChevronRight size={16} aria-hidden />
+          </button>
+        </div>
+
+        {/* Weekday header */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: 2,
+            marginBottom: 4,
+          }}
+        >
+          {WEEKDAY_LABELS.map((label) => (
+            <div
+              key={label}
+              style={{
+                fontSize: '.62rem',
+                fontWeight: 600,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: 'var(--color-muted)',
+                textAlign: 'center',
+                padding: '2px 0',
+              }}
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+
+        {/* Date grid */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: 2,
+          }}
+        >
+          {cells.map((c) => {
+            const isPicked = pickedEnd === c.iso
+            const isPastSource = c.iso <= sourceDate
+            const isPotentialTarget =
+              c.inMonth &&
+              !isPastSource &&
+              ((parseIso(c.iso).getDay() + 6) % 7) === sourceDow
+            const inMonth = c.inMonth
+            const dimmed = !inMonth || isPastSource
+            return (
+              <button
+                key={c.iso}
+                type="button"
+                onClick={() => {
+                  if (isPastSource) return
+                  setPickedEnd(c.iso)
+                }}
+                disabled={isPastSource}
+                aria-label={c.iso}
+                style={{
+                  padding: '8px 0',
+                  fontSize: '.78rem',
+                  fontVariantNumeric: 'tabular-nums',
+                  color: dimmed ? 'var(--color-muted)' : 'var(--color-charcoal)',
+                  background: isPicked
+                    ? 'var(--color-primary)'
+                    : isPotentialTarget
+                    ? 'rgba(45, 178, 76, 0.06)'
+                    : 'transparent',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: isPastSource ? 'not-allowed' : 'pointer',
+                  opacity: dimmed ? 0.45 : 1,
+                  fontWeight: isPicked ? 700 : 400,
+                  ...(isPicked && { color: '#fff' }),
+                }}
+              >
+                {c.date}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Preview */}
+        <div
+          style={{
+            marginTop: 12,
+            padding: '8px 10px',
+            background: 'var(--color-surface)',
+            borderRadius: 7,
+            fontSize: '.78rem',
+            color: 'var(--color-text-light)',
+            minHeight: 36,
+          }}
+        >
+          {pickedEnd ? (
+            targetDates.length === 0 ? (
+              <span>No same-weekday occurrences between source and {formatLongDate(pickedEnd)}.</span>
+            ) : (
+              <span>
+                <strong style={{ color: 'var(--color-charcoal)' }}>
+                  {targetDates.length}
+                </strong>{' '}
+                cop{targetDates.length === 1 ? 'y' : 'ies'} on{' '}
+                {weekdayName}s — {formatLongDate(targetDates[0]!)}
+                {targetDates.length > 1 &&
+                  ` to ${formatLongDate(targetDates[targetDates.length - 1]!)}`}
+              </span>
+            )
+          ) : (
+            <span>Pick an end date.</span>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn outline"
+            style={{ padding: '6px 14px', fontSize: '.82rem' }}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => pickedEnd && onConfirm(pickedEnd)}
+            className="btn primary"
+            style={{ padding: '6px 14px', fontSize: '.82rem' }}
+            disabled={!pickedEnd || targetDates.length === 0 || busy}
+          >
+            {busy ? 'Working…' : 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+// ============================================================================
+// ConflictDialog — modal for confirming overwrites or surfacing
+// "no active block" errors. Cancel / Confirm buttons configurable;
+// confirm-only mode (hideCancel) used for read-only acknowledgements.
+// ============================================================================
+
+interface ConflictDialogProps {
+  title: string
+  description: string
+  conflicts: ConflictEntry[]
+  noProgramDates: string[]
+  onCancel: () => void
+  onConfirm: () => void
+  confirmLabel?: string
+  hideCancel?: boolean
+  busy: boolean
+}
+
+function ConflictDialog({
+  title,
+  description,
+  conflicts,
+  noProgramDates,
+  onCancel,
+  onConfirm,
+  confirmLabel = 'Overwrite',
+  hideCancel = false,
+  busy,
+}: ConflictDialogProps) {
+  return (
+    <div
+      role="dialog"
+      aria-label={title}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        background: 'rgba(28, 25, 23, 0.5)',
+        display: 'grid',
+        placeItems: 'center',
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !busy) onCancel()
+      }}
+    >
+      <div
+        style={{
+          width: 420,
+          maxWidth: '90vw',
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 14,
+          boxShadow: '0 24px 60px rgba(0,0,0,.18)',
+          padding: 20,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8 }}>
+          <AlertCircle
+            size={18}
+            aria-hidden
+            style={{ color: 'var(--color-warning, #d97706)', flexShrink: 0, marginTop: 2 }}
+          />
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              color: 'var(--color-charcoal)',
+            }}
+          >
+            {title}
+          </div>
+        </div>
+
+        <p style={{ margin: '0 0 12px 28px', fontSize: '.88rem', color: 'var(--color-text)', lineHeight: 1.5 }}>
+          {description}
+        </p>
+
+        {conflicts.length > 0 && (
+          <ul
+            style={{
+              listStyle: 'none',
+              padding: '8px 12px',
+              margin: '0 0 12px 28px',
+              background: 'var(--color-surface)',
+              borderRadius: 8,
+              fontSize: '.78rem',
+              color: 'var(--color-text-light)',
+              maxHeight: 160,
+              overflowY: 'auto',
+            }}
+          >
+            {conflicts.map((c) => (
+              <li key={c.date} style={{ padding: '2px 0' }}>
+                {formatLongDate(c.date)}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {noProgramDates.length > 0 && (
+          <p style={{ margin: '0 0 12px 28px', fontSize: '.76rem', color: 'var(--color-muted)' }}>
+            {noProgramDates.length} date{noProgramDates.length === 1 ? '' : 's'} fall outside any active block and will be skipped.
+          </p>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          {!hideCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              className="btn outline"
+              style={{ padding: '6px 14px', fontSize: '.82rem' }}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="btn primary"
+            style={{ padding: '6px 14px', fontSize: '.82rem' }}
+            disabled={busy}
+          >
+            {busy ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+
+// ============================================================================
 // Pure helpers
 // ============================================================================
+
+function formatLongDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-AU', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    }).format(parseIso(iso))
+  } catch {
+    return iso
+  }
+}
 
 function buildMonthCells(year: number, month: number) {
   // Mon-first calendar grid covering the whole month + leading/trailing

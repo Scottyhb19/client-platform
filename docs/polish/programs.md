@@ -409,3 +409,28 @@ Closed. Schema is in the target shape; downstream phases (B–F) can proceed aga
   - `DaySummaryPopover` replaces the inline full-row `DaySummary`. 360px wide, anchored to the day cell with `position: absolute`. Anchor side flips: cols 1–4 anchor left, cols 5–7 anchor right (avoids overflowing the right edge). Esc + outside-click close. Doesn't reflow the calendar grid — other days in the same week stay clickable.
   - "Open" button → session builder works (verified by 200 OK on `/clients/.../program/days/{dayId}` in the dev log after the user created a new program).
   - Visual walkthrough pending second-pass user feedback.
+
+### Phase C — Day-level copy + repeat (closed; pgTAP 10 green on staging 2026-05-03; visual walkthrough pending)
+
+- **Migration** `20260503120000_program_days_copy_repeat.sql`:
+  - `_program_for_date(p_client_id uuid, p_date date) RETURNS uuid` — internal helper that resolves the active program covering a date for the client. SECURITY DEFINER, REVOKEd from PUBLIC (only callable from the two RPCs below).
+  - `copy_program_day(p_source_day_id uuid, p_target_date date, p_force boolean DEFAULT false) RETURNS jsonb` — clones a `program_day` (and its exercises, with re-mapped superset_group_ids) onto the target date. Cross-program: the new day attaches to whichever active program covers the target date (Q6 sign-off). Returns `{ status: 'created', new_day_id }` | `{ status: 'conflict', conflicts: [...] }` | `{ status: 'no_program', target_date }`.
+  - `repeat_program_day_weekly(p_source_day_id uuid, p_end_date date, p_force boolean DEFAULT false) RETURNS jsonb` — clones the source onto every same-weekday occurrence between source.scheduled_date+7 and p_end_date inclusive. Two-pass internally (bucket targets into create / conflict / no-program; commit only if no conflict OR force=true). Returns `{ status: 'created', new_day_ids, no_program_dates }` | `{ status: 'conflict', conflicts, no_program_dates }` | `{ status: 'invalid_end_date' }`.
+  - **SECURITY DEFINER + manual org gate** on both RPCs. The conflict-overwrite path soft-deletes via `UPDATE program_days SET deleted_at = now()`, which fails RLS WITH CHECK under `SECURITY INVOKER` because the program_days SELECT policy filters `deleted_at IS NULL` (the documented soft-delete + RLS gotcha — see `20260429120000_soft_delete_rpcs.sql` for the established pattern).
+  - **Superset group remap bug caught + fixed during pgTAP development.** Initial implementation used `SELECT DISTINCT superset_group_id, gen_random_uuid()` for the remap CTE, which doesn't dedupe because `gen_random_uuid()` is volatile (every row produces a fresh "distinct" pair). Resulted in a Cartesian product on the LEFT JOIN, so a 2-exercise source produced a 4-row clone. Fixed by deduplicating in a subquery first, then assigning new uuids to the distinct rows.
+- **pgTAP `10_program_days_copy_repeat.sql`** — 11/11 green on staging. Coverage: §A clean copy + label preservation + exercise count + fresh superset_group_id; §B no_program path; §C conflict + force overwrite; §D weekly repeat creates correct number of days; §E invalid_end_date short-circuit.
+- **Server actions** `src/app/(staff)/clients/[id]/program/day-actions.ts`:
+  - `copyDayAction(clientId, sourceDayId, targetDate, force?)` → `CopyDayActionResult` tagged union (`created` | `conflict` | `no_program` | error).
+  - `repeatDayWeeklyAction(clientId, sourceDayId, endDate, force?)` → `RepeatDayActionResult` (`created` | `conflict` | `invalid_end_date` | error).
+  - Both `requireRole(['owner', 'staff'])` and `revalidatePath` on success.
+- **UI: `MonthCalendar.tsx` mode state machine** — `idle` | `copy-pick` | `repeat-pick` | `confirm-copy` | `confirm-repeat` | `no-program-toast`. Esc cancels any non-idle mode globally. `useTransition` + `router.refresh()` on success so the calendar re-fetches without a hard navigation.
+- **Copy flow:**
+  - Click Copy icon in popover → mode flips to `copy-pick`, popover closes, banner appears at the top of the calendar ("Copying Day A from Mon, 27 Apr — click any future day to paste, or press Esc to cancel").
+  - Day cells in the calendar branch on mode: in `copy-pick`, the source cell and past dates dim out (`disabled`, `cursor: not-allowed`); all other cells (programmed AND empty) become click-targets with a copy-cursor + dashed accent border; clicking fires `copyDayAction`. Conflict response → `confirm-copy` mode → modal. No-program response → `no-program-toast` mode → "OK"-only modal.
+- **Repeat flow:**
+  - Click Repeat icon in popover → mode flips to `repeat-pick`, popover closes, full-screen modal with `RepeatEndDatePicker` opens.
+  - Mini date grid (Mon-first 7×6) with prev/next month nav. Source weekday occurrences across the visible month are tinted accent-green so the EP can see candidate end-dates at a glance. Default end-date = source + 28 days (4 weeks).
+  - Live preview line: "5 copies on Mondays — Mon, 4 May to Mon, 1 Jun". Confirm button disabled when 0 copies or busy.
+  - Confirm fires `repeatDayWeeklyAction`. Conflict response → `confirm-repeat` modal listing all conflicting dates + count of skipped no-program dates → "Overwrite" or "Cancel". Force=true on confirm.
+- **`ConflictDialog`** — full-viewport modal (z-200), backdrop dismissible (when not busy), shows title + description + scrollable list of conflicting dates + (if any) "N dates fall outside any active block and will be skipped" caption. `confirmLabel` and `hideCancel` configurable so the same component handles both confirms and one-button toasts.
+- **Type-check clean**, dev server compiles `/clients/.../program` with consistent 200 OK responses (15 in a row in the logs after the wiring landed). Visual walkthrough pending user refresh + click-through.
