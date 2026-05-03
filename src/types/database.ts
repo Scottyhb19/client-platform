@@ -3165,6 +3165,14 @@ export type Database = {
       }
     }
     Functions: {
+      _clone_program: {
+        Args: {
+          p_new_name: string
+          p_new_start_date: string
+          p_source_program_id: string
+        }
+        Returns: Json
+      }
       _program_for_date: {
         Args: { p_client_id: string; p_date: string }
         Returns: string
@@ -3312,6 +3320,14 @@ export type Database = {
         Args: { p_program_day_id: string }
         Returns: string
       }
+      copy_program: {
+        Args: {
+          p_new_name?: string
+          p_new_start_date: string
+          p_source_program_id: string
+        }
+        Returns: Json
+      }
       copy_program_day: {
         Args: {
           p_force?: boolean
@@ -3341,6 +3357,7 @@ export type Database = {
         }
         Returns: string
       }
+      repeat_program: { Args: { p_source_program_id: string }; Returns: Json }
       repeat_program_day_weekly: {
         Args: { p_end_date: string; p_force?: boolean; p_source_day_id: string }
         Returns: Json

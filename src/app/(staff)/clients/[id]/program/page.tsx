@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Copy, FileText, Plus } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   initialsFor,
@@ -12,6 +12,7 @@ import type {
   ProgramDayWithExercises,
   ProgramExerciseWithMeta,
 } from './_components/MonthCalendar'
+import { ProgramToolbar } from './_components/ProgramToolbar'
 
 export const dynamic = 'force-dynamic'
 
@@ -207,26 +208,20 @@ export default async function ClientProgramPage({
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 10 }}>
-          {/* Phase D will replace these with: Copy current block, Repeat
-              current block, New training block. Phase B preserves the
-              existing buttons (disabled where they were). */}
-          <button type="button" className="btn outline" disabled>
-            <Copy size={14} aria-hidden />
-            Copy week
-          </button>
-          <button type="button" className="btn outline" disabled>
-            <FileText size={14} aria-hidden />
-            Clinical notes
-          </button>
-          <Link
-            href={`/clients/${client.id}/program/new`}
-            className="btn primary"
-          >
-            <Plus size={14} aria-hidden />
-            New mesocycle
-          </Link>
-        </div>
+        <ProgramToolbar
+          clientId={client.id}
+          currentBlock={
+            currentBlock
+              ? {
+                  id: currentBlock.id,
+                  name: currentBlock.name,
+                  start_date: currentBlock.start_date,
+                  duration_weeks: currentBlock.duration_weeks,
+                }
+              : null
+          }
+          todayIso={todayIso}
+        />
       </div>
 
       {programs.length === 0 ? (

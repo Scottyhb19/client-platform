@@ -440,3 +440,29 @@ Closed. Schema is in the target shape; downstream phases (B–F) can proceed aga
   - Why "extend then loop" vs. "loop and extend per gap": auto-extending the source is the dominant case (single block → repeat to extend it); the multi-block fallback handles the edge case correctly without forcing the EP to delete the next block first.
   - Copy semantics unchanged — copy is one-shot to a specific date; if the date is outside any block the EP gets a clear "No active block on that date" toast, which is the right behavior for an explicit single-day action.
   - pgTAP additions: F1 (single-block extend creates all 8 weekly copies past the original end), F2 (source's duration_weeks rises to ≥ 9 weeks to cover Jun 22 from Apr 27 start), G1 (multi-block fallback returns status=created without erroring when extension would overlap a second active block).
+
+### Phase D — Block-level copy + repeat (closed; pgTAP 11 9/9 green on staging 2026-05-03; visual walkthrough pending)
+
+- **Migration** `20260503130000_program_copy_repeat.sql`:
+  - `_clone_program(source, new_start_date, new_name)` — internal helper. SECURITY DEFINER, REVOKEd from PUBLIC. Inserts the new program; on `exclusion_violation` (programs_no_active_overlap) returns `{status: 'overlap'}` cleanly without partial writes. Otherwise clones weeks (week_number carried), days (scheduled_date shifted by `new_start - source.start`, program_week_id resolved by week_number match), and exercises (superset_group_ids deduplicated then remapped to fresh uuids — same Phase C subquery pattern to avoid the volatile-fn Cartesian-product trap).
+  - `copy_program(source, new_start_date, new_name?)` — public RPC. Validates org/role; defaults the new name to `<source.name> + ' (copy)'` if caller passes NULL/blank; delegates to `_clone_program`.
+  - `repeat_program(source)` — public RPC. Validates org/role; computes `new_start = source.start_date + duration_weeks * 7` (one day after source ends — matches the half-open daterange semantics of the EXCLUDE constraint); name = `<source.name> + ' (next)'`; delegates to `_clone_program`.
+  - **Status decision (overrides §4 Q11 sign-off):** both copy AND repeat create `status='active'` programs, not draft. There's no draft-activation UI in the calendar yet, so a draft would be orphaned. The EXCLUDE constraint enforces date-range non-overlap; if the EP wants to "stage" a copy, they can manually archive after creation. Drafts can come back when there's a draft-activation surface.
+- **pgTAP `11_program_copy_repeat.sql`** — 9/9 green on staging. Coverage:
+  - A1–A4 — copy clean path: status=created, name applied, day shifts correctly, exercise count = source (no Cartesian explosion).
+  - B1 — default name "<src> (copy)" when caller passes NULL.
+  - C1 — copy onto overlapping date returns status=overlap, no rows.
+  - D1–D2 — repeat clean path: status=created, new_start = source_start + duration*7, name = "<src> (next)".
+  - E1 — second repeat of same source returns status=overlap.
+- **Server actions** `src/app/(staff)/clients/[id]/program/program-actions.ts`:
+  - `copyProgramAction(clientId, sourceProgramId, newStartDate, newName?)` → `CopyProgramActionResult` tagged union (`created` | `overlap` | `invalid_source` | error).
+  - `repeatProgramAction(clientId, sourceProgramId)` → `RepeatProgramActionResult` (same union).
+  - Both `requireRole(['owner', 'staff'])` and `revalidatePath` on success. `p_new_name` argument is omitted when undefined to satisfy generated types (DEFAULT NULL on the SQL side).
+- **UI: `ProgramToolbar.tsx` client component** — replaces the inline header buttons in `page.tsx`. Three buttons:
+  - **Copy current block** — opens `CopyBlockDialog` modal: editable block name input (defaults to "<src> (copy)") + mini calendar with prev/next month nav, source-block dates dimmed for visual hint, picked-date in accent green; live preview "New block runs Mon, 4 Aug → Sun, 31 Aug". Past dates disabled. Submit fires `copyProgramAction`; on success `router.refresh()` re-renders calendar with the new block; on overlap shows `ErrorDialog` with a clear "Pick a date that doesn't fall inside another active training block" message.
+  - **Repeat current block** — opens `RepeatBlockDialog` modal: shows the computed new start date + end date + duration in a single read-only summary block; one-click "Repeat block" confirm. Same overlap handling.
+  - **New training block** — link to existing `/program/new` flow; unchanged.
+- **Hidden when `currentBlock === null`** — Copy and Repeat buttons disappear when the client has no active programs; only "New training block" stays. The calendar's `EmptyProgram` empty state already handles the no-program case.
+- **Reusable dialog primitives** in the same file (`DialogShell`, `DialogHeader`, `DialogActions`, `ErrorDialog`) — kept colocated since they're tightly bound to the toolbar's three modals; can extract later if reused.
+- **Esc handling**: any open modal dismisses on Esc keydown. `useTransition` + `router.refresh()` on success.
+- **Type-check clean**, dev server compiles `/clients/.../program` with consistent 200 OK responses (10 in a row in the logs). Visual walkthrough pending user refresh.
