@@ -131,11 +131,14 @@ export default async function SessionBuilderPage({
     movement_pattern_name: e.movement_pattern?.name ?? null,
   }))
 
-  const pinnedNotes: PinnedNote[] = (notesRaw ?? []).map((n) => ({
-    id: n.id,
-    body: (n.body_rich ?? n.subjective ?? '').trim(),
-    flag_body_region: n.flag_body_region,
-  }))
+  // Skip empty pinned notes — see program/page.tsx Phase F.6 fix.
+  const pinnedNotes: PinnedNote[] = (notesRaw ?? [])
+    .map((n) => ({
+      id: n.id,
+      body: (n.body_rich ?? n.subjective ?? '').trim(),
+      flag_body_region: n.flag_body_region,
+    }))
+    .filter((n) => n.body.length > 0)
 
   const reports: SessionReport[] = (reportsRaw ?? []).map((r) => ({
     id: r.id,

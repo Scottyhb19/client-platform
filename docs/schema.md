@@ -136,9 +136,9 @@ The repo contains `client-platform/prisma/schema.prisma` (Prisma + Clerk). That 
 | `template_weeks` | Week containers within a template. |
 | `template_days` | Training days within a template week (Day A, Day B, Day C). |
 | `template_exercises` | Exercise prescriptions within a template day. |
-| `programs` | Client-specific active program. May be cloned from a template; diverges independently. |
-| `program_weeks` | Week containers within a client program. |
-| `program_days` | Training days within a program week. |
+| `programs` | Client-specific active program. May be cloned from a template; diverges independently. Multiple active programs per client allowed (D-PROG-002); date-range non-overlap enforced by `programs_no_active_overlap` EXCLUDE. |
+| `program_weeks` | Optional periodisation grouping (D-PROG-003) — accumulation/intensification/deload labels via `program_weeks.notes`. Not load-bearing for scheduling. |
+| `program_days` | Training days. `scheduled_date` is the authoritative date (D-PROG-001); denormalised `program_id` on the row makes RLS + cross-org checks single-hop. `program_week_id` is nullable (NULL on copy/repeat-created days). |
 | `program_exercises` | Per-client exercise prescriptions (may override exercise defaults). |
 
 ### 3.5 Session logging
@@ -262,7 +262,8 @@ erDiagram
     clients ||--o{ programs : ""
     program_templates ||--o{ programs : "optional source"
     programs ||--o{ program_weeks : ""
-    program_weeks ||--o{ program_days : ""
+    program_weeks ||--o{ program_days : "optional periodisation grouping (D-PROG-003)"
+    programs ||--o{ program_days : "direct FK (D-PROG-001)"
     program_days ||--o{ program_exercises : ""
     exercises ||--o{ program_exercises : ""
 
@@ -308,8 +309,8 @@ erDiagram
 | `template_days` | `template_weeks` → `program_templates` |
 | `template_exercises` | `template_days` → ... |
 | `program_weeks` | `programs` |
-| `program_days` | `program_weeks` → `programs` |
-| `program_exercises` | `program_days` → ... |
+| `program_days` | `programs` (direct, post-D-PROG-001); `program_weeks` (optional, nullable) |
+| `program_exercises` | `program_days` → `programs` (single hop, post-D-PROG-001) |
 | `set_logs` | `exercise_logs` → `sessions` |
 | `exercise_tag_assignments` | `exercises` (and `exercise_tags`) |
 | `appointment_reminders` | `appointments` |
@@ -515,7 +516,8 @@ No table is global (shared across orgs). Every taxonomy is seeded per-organizati
 | `programs` | `template_id` | `program_templates(id)` | SET NULL | Source template may be retired without damaging active programs. |
 | `programs` | `created_by_user_id` | `user_profiles(user_id)` | SET NULL | — |
 | `program_weeks` | `program_id` | `programs(id)` | CASCADE | Program's private tree. |
-| `program_days` | `program_week_id` | `program_weeks(id)` | CASCADE | Same. |
+| `program_days` | `program_id` | `programs(id)` | CASCADE | Direct FK added in D-PROG-001. RLS + cross-org trigger walk via this single hop. |
+| `program_days` | `program_week_id` | `program_weeks(id)` | SET NULL | Optional periodisation grouping (D-PROG-003); copy/repeat-created days have NULL. |
 | `program_exercises` | `program_day_id` | `program_days(id)` | CASCADE | Same. |
 | `program_exercises` | `exercise_id` | `exercises(id)` | RESTRICT | — |
 | `sessions` | `client_id` | `clients(id)` | RESTRICT | PHI. |
@@ -725,8 +727,9 @@ AS $$
   FROM   program_exercises pe
   JOIN   exercises         e  ON e.id = pe.exercise_id
   JOIN   program_days      pd ON pd.id = pe.program_day_id
-  JOIN   program_weeks     pw ON pw.id = pd.program_week_id
-  JOIN   programs          p  ON p.id  = pw.program_id
+  -- Post-D-PROG-001: program_days carries program_id directly, so the
+  -- walk is a single hop (no program_weeks join).
+  JOIN   programs          p  ON p.id  = pd.program_id
   JOIN   clients           c  ON c.id  = p.client_id
   WHERE  pd.id = p_program_day_id
     AND  c.user_id          = auth.uid()

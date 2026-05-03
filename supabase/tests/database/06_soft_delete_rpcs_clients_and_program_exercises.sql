@@ -97,10 +97,13 @@ BEGIN
     exercise_id, org_a, 'SDR06 Test Exercise', 3, '8'
   );
 
+  -- Post-D-PROG-001: programs need start_date + duration_weeks for the
+  -- non-overlap EXCLUDE constraint and for date-based access patterns.
+  -- program_days needs scheduled_date and program_id (NOT NULL post-Phase A).
   INSERT INTO programs (
-    id, organization_id, client_id, name
+    id, organization_id, client_id, name, start_date, duration_weeks
   ) VALUES (
-    program_id, org_a, client_row, 'SDR06 Test Program'
+    program_id, org_a, client_row, 'SDR06 Test Program', '2026-04-27'::date, 4
   );
 
   INSERT INTO program_weeks (
@@ -110,9 +113,9 @@ BEGIN
   );
 
   INSERT INTO program_days (
-    id, program_week_id, day_label, sort_order
+    id, program_id, program_week_id, day_label, scheduled_date, sort_order
   ) VALUES (
-    day_id, week_id, 'Day 1', 0
+    day_id, program_id, week_id, 'Day 1', '2026-04-27'::date, 0
   );
 
   INSERT INTO program_exercises (

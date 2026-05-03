@@ -437,15 +437,35 @@ body {
   border-style: dashed;
   cursor: default;
 }
+/* P2-1: empty cells (out-of-month or in-month-no-day) carry a muted
+   date number so programmed days dominate the visual hierarchy. The
+   today ring overrides this in turn (see below). */
+.day-cell.empty .day-date {
+  color: var(--color-muted);
+}
+/* P2-2 (Phase F): today indicator is a quiet accent-green ring on the
+   date number specifically, NOT on the whole cell. Keeps the cell
+   border subtle so the day's status (programmed / empty / open) reads
+   first; today is a marker, not a primary state. Mirrors the schedule
+   view's visual emphasis on the date number itself. */
 .day-cell.today {
-  border-color: var(--color-primary);
-  background: rgba(30, 26, 24, 0.03);
+  /* No cell-level border or background override — restraint. */
 }
 .day-date {
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 0.86rem;
   color: var(--color-charcoal);
+}
+.day-cell.today .day-date {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-accent);
+  color: var(--color-accent);
+  line-height: 1;
 }
 .day-tag {
   font-size: 0.62rem;

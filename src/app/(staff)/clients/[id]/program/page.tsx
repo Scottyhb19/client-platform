@@ -179,11 +179,16 @@ export default async function ClientProgramPage({
         .limit(20),
     ])
 
-    pinnedNotes = (notesRaw ?? []).map((n) => ({
-      id: n.id,
-      body: (n.body_rich ?? n.subjective ?? '').trim(),
-      flag_body_region: n.flag_body_region,
-    }))
+    // Skip empty pinned notes — a note with is_pinned=true but blank
+    // body_rich AND subjective renders as a red strip with no content.
+    // Filtered here so the panel stays meaningful (Phase F.6).
+    pinnedNotes = (notesRaw ?? [])
+      .map((n) => ({
+        id: n.id,
+        body: (n.body_rich ?? n.subjective ?? '').trim(),
+        flag_body_region: n.flag_body_region,
+      }))
+      .filter((n) => n.body.length > 0)
 
     reports = (reportsRaw ?? []).map((r) => ({
       id: r.id,

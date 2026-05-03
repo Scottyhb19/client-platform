@@ -543,3 +543,53 @@ The popover's close-X was redundant: the popover already closes on Esc, outside-
 ### Phase E.0a–E.0c acceptance gate
 
 Closed. Layout-conditional, popover-restack, and delete-session changes all live, visually approved, and pgTAP green.
+
+### Phase F — P2 polish + acceptance + new "Add session" feature (closed; type-check + pgTAP suite green; visual walkthrough pending)
+
+Phase F bundles the remaining P2 polish items, a known-issue fix, and one feature addition surfaced during sign-off (D-PROG-004 — empty-cell "Add session"). The feature landed first so the polish steps wrapped both the existing components and the new EmptyCellPopover.
+
+- **D-PROG-004 / Phase F.0 — Empty calendar cells become "Add session" surfaces.** Logged in [`docs/decisions.md`](../decisions.md#d-prog-004--empty-calendar-cells-are-first-class-click-targets-add-session). Migration `20260504100000_create_program_day.sql` adds the SECURITY DEFINER `create_program_day(p_client_id, p_target_date)` RPC. Resolves the active program covering the date via the existing `_program_for_date` helper (no new lookup function); inserts a fresh `program_day` with `day_label='A'` and `sort_order=0`. Returns `{status: 'created', new_day_id}` | `{status: 'no_program', target_date}` | `{status: 'conflict', existing_day_id}` (defensive). pgTAP `13_create_program_day.sql` — 7/7 green (clean create, default label, no_program path, conflict path, cross-org rejection, client-role auth gate). Server action `createProgramDayAction` in [`day-actions.ts`](../../src/app/(staff)/clients/[id]/program/day-actions.ts). UI: state machine in `MonthCalendar` switches from `openDayId: string | null` to a discriminated union `openCell: { kind: 'day', id } | { kind: 'empty', iso } | null`. Empty in-month cells are now buttons that toggle a new `EmptyCellPopover` (anchored, same width/positioning as `DaySummaryPopover`); when an active block covers the date, the popover shows "Adds to <BlockName>" + a primary "Add session" button; otherwise a quiet "No active training block covers this date." caption. On create, the calendar navigates straight to the new day's session builder.
+- **P2-2 — Today indicator.** Reworked from a whole-cell green border to a quiet 22px accent-green ring on the date number itself. CSS in `globals.css`: `.day-cell.today` now has no overrides (cell border stays subtle); `.day-cell.today .day-date` carries the ring (1.5px solid `--color-accent`, accent-green text). Catch during the audit: my first attempt used `var(--color-primary)` (charcoal), not `var(--color-accent)` (green) — `--color-primary` is the warm-near-black brand colour, not green. Fixed before commit.
+- **P2-1 — Empty days styling.** Added `.day-cell.empty .day-date { color: var(--color-muted) }` so both out-of-month AND in-month-empty cells carry a muted date number (programmed days dominate the visual hierarchy). Removed the now-redundant inline `color` style on the out-of-month branch in `DateCell`. The today ring overrides via CSS source order.
+- **P2-9 — Multi-block month pill.** When the visible month has program days from ≥ 2 active programs, a quiet eyebrow ("`{N} blocks`" — Barlow Condensed, .62rem, uppercase tracked, muted) renders directly below the month-label button. Computed via `useMemo` over the loaded `days` array filtered by `YYYY-MM` prefix. Hidden when only one block has days in the month (the common case).
+- **P2-4 — Inline summary visual restraint audit.** Walked the popover and confirmed: the superset left-border uses `--color-accent` (correct); sequence labels use charcoal text + green border (grouping-via-border, not via-text — matches design system); popover shadow `0 12px 28px rgba(0,0,0,.12)` is a floating-overlay shadow, not the card-level shadow (overlays appropriately need more elevation). No changes required. Documented the green-tint background on copy-pick target cells + the copy-pick banner border as a known design-system tension (decorative-feeling green) but left untouched without sign-off.
+- **P2-8 — Motion timings audit.** Bumped the week-row chevron rotation from 200ms → 300ms (reveal action, not hover); standardised the popover icon-button transition from a bare `120ms` to `150ms cubic-bezier(0.4, 0, 0.2, 1)` (hover/press, design-system easing). Audited all `transition` declarations across `MonthCalendar.tsx`, `globals.css`, `CalendarPanelToggle.tsx`, `ProgramToolbar.tsx`, `CalendarSidePanel.tsx` — everything else already at 150ms hover / 300ms reveal with the standard easing.
+- **Phase F.6 — Empty pinned notes red strip fix.** Filtered out `pinned_note` rows where `body_rich` AND `subjective` are both blank (post-trim) in both loaders ([`program/page.tsx`](../../src/app/(staff)/clients/[id]/program/page.tsx) and [`program/days/[dayId]/page.tsx`](../../src/app/(staff)/clients/[id]/program/days/[dayId]/page.tsx)). The empty pinned note from the test client no longer renders as a red strip with no content.
+- **Phase F.7 — `soft_delete_program_exercise` + `restore_program_exercise` walk via `program_id` directly.** Migration `20260504110000_program_exercise_soft_delete_via_program_id.sql` rewrites both RPCs to walk `program_days.program_id → programs` (single hop) instead of the original `program_days → program_weeks → programs`. The original walk silently dropped exercises on copy/repeat-created days (`program_week_id = NULL`). Pre-launch fix; no real data lost. Same SECURITY DEFINER + manual org gate pattern as `soft_delete_program_day`.
+- **Test 06 fixture patched** (incidental — discovered during the F.7 verification run). `06_soft_delete_rpcs_clients_and_program_exercises.sql` predated D-PROG-001; its program_days fixture insert was missing `program_id` and `scheduled_date` (both NOT NULL post-Phase A). Patched: programs now seed `start_date='2026-04-27'` + `duration_weeks=4`; program_days carries `program_id` + `scheduled_date` matching. Test 06 now green at 13/13.
+
+**Doc rollup:**
+- [`docs/decisions.md`](../decisions.md) — D-PROG-004 appended (empty-cell click target as a first-class interaction; default day_label = 'A' rationale; alternatives considered).
+- [`docs/schema.md`](../schema.md) — `program_days` table description rewritten to call out `scheduled_date` as authoritative (D-PROG-001), `program_id` as denormalised, `program_week_id` as nullable. The FK table updated to show both `program_days` FKs (the new `program_id` + the relaxed `program_week_id` SET NULL). The `program_weeks` description marked as "optional periodisation grouping (D-PROG-003)". The Mermaid ER diagram now shows the direct `programs → program_days` edge alongside the optional `program_weeks → program_days` edge. Inline SQL example for `client_list_program_days` updated to walk via `pd.program_id` (single hop).
+- [`docs/polish/programs.md`](programs.md) — this entry.
+
+**pgTAP suite — programs:**
+- 06: 13/13 (after fixture patch)
+- 09: 7/7
+- 10: 14/14
+- 11: 9/9
+- 12: 5/5
+- 13: 7/7
+- **Total: 55/55 green on staging 2026-05-04**
+
+### Phase F acceptance gate
+
+Closed pending visual walkthrough. Code-level verification: `npm run type-check` clean; dev-server compiles `/clients/.../program` (200 OK with consistent ~100ms compile times after the changes); pgTAP 55/55 green across the programs suite. The session builder right panel still has all three tabs (Library + Notes + Reports) — verified by `grep "tab === 'library'\|tab === 'notes'\|tab === 'reports'" SessionBuilder.tsx` returning all three, the load-bearing differentiator intact.
+
+The end-to-end manual checklist from §3 Phase F step 24 covers:
+1. Calendar shows real months; current month at top; prior/next month dates greyed.
+2. Click a day → inline popover; click again → collapse.
+3. Open button → session builder.
+4. Copy day → target-pick mode → click another day → success.
+5. Repeat day → mini calendar → end date → Confirm → all dates populated. End-date past block end auto-extends source.
+6. Toolbar Copy current block → date picker → Confirm → new program in calendar.
+7. Toolbar Repeat current block → Confirm → new back-to-back program.
+8. Side panel toggle on calendar → Notes tab → Reports tab.
+9. Compact popover layout when panel is open: icons on top, Day A below, exercises below. No overflow into adjacent cells.
+10. Delete session from popover → confirm dialog → day disappears, cascade removes exercises. Verify session-builder route to the deleted day returns 404.
+11. **NEW (F.0):** Click any blank in-month cell → "Add session" popover; if covered by an active block, "Add session" button creates the day and opens the builder.
+12. **NEW (F.0):** Click a blank cell on a date outside any active block → popover shows "No active training block covers this date." with no CTA.
+13. Today's date number wears the small accent-green ring.
+14. Empty pinned notes no longer surface as a blank red strip in the side panel or session builder.
+15. Months with days from 2+ blocks show the "{N} blocks" eyebrow under the month label.
+16. Session builder still has Library + Notes + Reports as in-builder tabs (PROTECTED — must not regress).
