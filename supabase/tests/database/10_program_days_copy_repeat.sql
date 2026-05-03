@@ -23,16 +23,21 @@ SET search_path TO public, extensions, pg_temp;
 --      3 weeks ahead → 3 new Mondays created. day_ids returned.
 --   §E repeat_program_day_weekly invalid_end_date: end_date before
 --      source date → status='invalid_end_date', no inserts.
+--   §F repeat_program_day_weekly auto-extends source program's
+--      duration when end_date falls past the block end.
+--   §G repeat_program_day_weekly multi-block fallback: extension would
+--      overlap a second active block, so silently skip extension and
+--      land copies wherever blocks already cover them.
 --
 -- Output pattern: each assertion's TAP line captured into temp _tap so
 -- the supabase db query CLI returns all lines in the final SELECT.
 --
--- Test count: 11
+-- Test count: 14
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(11);
+SELECT plan(14);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -315,6 +320,91 @@ INSERT INTO _tap (n, line) VALUES (11, (
     (SELECT result ->> 'status' FROM _invalid_result),
     'invalid_end_date',
     'E1: end_date <= source date returns status=invalid_end_date'
+  )
+));
+
+
+-- ----------------------------------------------------------------------------
+-- §F. repeat_program_day_weekly auto-extends the source program's
+-- duration_weeks when the picked end_date falls past the block end.
+--
+-- Source block: Apr 27 – May 25 (4 weeks). Repeat until Jun 22.
+-- Source is Mon Apr 27. Targets: May 4, 11, 18, 25, Jun 1, 8, 15, 22.
+-- Without auto-extend: only May targets (4 dates inside the block).
+-- With auto-extend: all 8 dates created; block now 9 weeks.
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE _extend_result (result jsonb) ON COMMIT DROP;
+GRANT INSERT, SELECT ON _extend_result TO authenticated;
+
+INSERT INTO _extend_result
+  SELECT public.repeat_program_day_weekly(
+    (SELECT source_day FROM _ids),
+    '2026-06-22'::date,
+    true   -- force, since §C left a row on May 1 that would conflict on the May 4 attempt
+  );
+
+INSERT INTO _tap (n, line) VALUES (12, (
+  SELECT is(
+    (SELECT jsonb_array_length(result -> 'new_day_ids') FROM _extend_result),
+    8,
+    'F1: repeat past block end auto-extends and creates all 8 weekly copies'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT cmp_ok(
+    (SELECT duration_weeks FROM programs WHERE id = (SELECT program_a FROM _ids)),
+    '>=',
+    9::smallint,
+    'F2: source program duration_weeks extended to >= 9 (covers Jun 22)'
+  )
+));
+
+
+-- ----------------------------------------------------------------------------
+-- §G. Multi-block fallback. Insert a SECOND active program for the
+-- same client immediately after the (already-extended) first one. Then
+-- repeat from the source past the second block's end. Auto-extend
+-- can't fire on the source (would overlap block B); RPC falls through
+-- to the original behavior — copies that fall in block B land there;
+-- copies past both blocks get reported in no_program_dates.
+--
+-- After §F, source block runs Apr 27 → at least 9 weeks (end Jun 28).
+-- Make block B start Jul 6 (the Mon after) for 4 weeks (end Aug 3).
+-- Then repeat source until Aug 31. Targets: Mondays from May 4 → Aug 31.
+-- Many already exist from §F; with force=true those soft-delete + replace.
+-- Targets in block B's range (Jul 6 – Aug 3) land in block B.
+-- Targets between source-end and block B's start (if any) get skipped.
+-- Targets past Aug 3 get skipped.
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  org_a    uuid := (SELECT org_a    FROM _ids);
+  client_a uuid := (SELECT client_a FROM _ids);
+BEGIN
+  INSERT INTO programs (
+    id, organization_id, client_id, name, status, start_date, duration_weeks
+  ) VALUES (
+    '00000000-0000-0000-0000-000000000c0b'::uuid,
+    org_a, client_a, 'CR10 Block B', 'active', '2026-07-06'::date, 4
+  );
+END $$;
+
+CREATE TEMP TABLE _multi_result (result jsonb) ON COMMIT DROP;
+GRANT INSERT, SELECT ON _multi_result TO authenticated;
+
+INSERT INTO _multi_result
+  SELECT public.repeat_program_day_weekly(
+    (SELECT source_day FROM _ids),
+    '2026-08-31'::date,
+    true
+  );
+
+INSERT INTO _tap (n, line) VALUES (14, (
+  SELECT is(
+    (SELECT result ->> 'status' FROM _multi_result),
+    'created',
+    'G1: multi-block fallback completes successfully (status=created)'
   )
 ));
 

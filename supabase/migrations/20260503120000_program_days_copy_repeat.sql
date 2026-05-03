@@ -245,18 +245,21 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  caller_org        uuid := public.user_organization_id();
-  caller_role       text := public.user_role();
-  src_record        program_days%ROWTYPE;
-  src_client_id     uuid;
-  src_program_org   uuid;
-  cur_date          date;
-  target_program    uuid;
-  existing_day_id   uuid;
-  new_day_id        uuid;
-  conflicts         jsonb := '[]'::jsonb;
-  no_program_dates  jsonb := '[]'::jsonb;
-  new_day_ids       jsonb := '[]'::jsonb;
+  caller_org           uuid := public.user_organization_id();
+  caller_role          text := public.user_role();
+  src_record           program_days%ROWTYPE;
+  src_client_id        uuid;
+  src_program_org      uuid;
+  src_program_start    date;
+  src_program_duration int;
+  required_duration    int;
+  cur_date             date;
+  target_program       uuid;
+  existing_day_id      uuid;
+  new_day_id           uuid;
+  conflicts            jsonb := '[]'::jsonb;
+  no_program_dates     jsonb := '[]'::jsonb;
+  new_day_ids          jsonb := '[]'::jsonb;
 BEGIN
   IF caller_org IS NULL OR caller_role NOT IN ('owner','staff') THEN
     RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501';
@@ -276,8 +279,8 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid_end_date');
   END IF;
 
-  SELECT client_id, organization_id
-    INTO src_client_id, src_program_org
+  SELECT client_id, organization_id, start_date, duration_weeks
+    INTO src_client_id, src_program_org, src_program_start, src_program_duration
     FROM programs
    WHERE id = src_record.program_id
      AND deleted_at IS NULL;
@@ -285,6 +288,36 @@ BEGIN
   IF src_program_org IS NULL OR src_program_org <> caller_org THEN
     RAISE EXCEPTION 'Source program not in your organization'
       USING ERRCODE = '42501';
+  END IF;
+
+  -- Auto-extend the source program's duration_weeks if the picked
+  -- end date falls outside the block's current range. Without this,
+  -- target dates past the block end get silently skipped (added to
+  -- no_program_dates) and the user sees fewer copies than expected.
+  --
+  -- Extension is best-effort: if another active program for this
+  -- client would overlap the extended range, the EXCLUDE constraint
+  -- (programs_no_active_overlap) raises 23P01 and we catch it. The
+  -- loop below then falls back to the original behavior (each target
+  -- date lands in whichever active block covers it; out-of-coverage
+  -- dates skipped and reported in no_program_dates). This handles
+  -- the multi-block scenario gracefully without forcing the EP to
+  -- delete the next block before extending the current one.
+  IF src_program_start IS NOT NULL AND src_program_duration IS NOT NULL THEN
+    -- Number of weeks needed for src.start_date to cover up to and
+    -- including p_end_date. Postgres date - date returns int (days).
+    required_duration := (p_end_date - src_program_start) / 7 + 1;
+    IF required_duration > src_program_duration THEN
+      BEGIN
+        UPDATE programs
+           SET duration_weeks = required_duration
+         WHERE id = src_record.program_id;
+      EXCEPTION WHEN exclusion_violation THEN
+        -- Silent fall-through. Original behavior applies for the
+        -- dates that fall outside any block.
+        NULL;
+      END;
+    END IF;
   END IF;
 
   -- First pass: bucket every target date into {will-create, conflict,
