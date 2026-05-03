@@ -208,7 +208,7 @@ export default async function ClientProfilePage({
   }
 
   // Build program summary for the Program tab: current week (by calendar)
-  // + max days per week across the mesocycle.
+  // + max days per week across the training block.
   let programSummary: ProfileProgramSummary | null = null
   if (activeProgram) {
     const weeks = activeProgram.program_weeks ?? []

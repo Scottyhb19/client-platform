@@ -256,7 +256,7 @@ export default async function DashboardPage() {
           detail={
             programsEnding.length === 0
               ? 'None ending this week'
-              : 'Need new mesocycles'
+              : 'Need new training blocks'
           }
           tone={programsEnding.length > 0 ? 'danger' : 'neutral'}
         />

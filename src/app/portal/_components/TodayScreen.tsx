@@ -23,7 +23,7 @@ export type TodaySession = {
   dayId: string
   dayLabel: string
   dayTitle: string // e.g. "Day C — Full Body"
-  metaLine: string // e.g. "6 exercises · Mesocycle 2, Wk 3"
+  metaLine: string // e.g. "6 exercises · Block 2, Wk 3"
   exercises: TodaySessionExercise[]
 }
 

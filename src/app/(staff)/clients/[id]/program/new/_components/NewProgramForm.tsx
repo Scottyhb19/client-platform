@@ -44,7 +44,7 @@ export function NewProgramForm({
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <SectionHeader
           title="Basics"
-          desc={`Name the mesocycle and pick how long it runs for ${clientName}.`}
+          desc={`Name the training block and pick how long it runs for ${clientName}.`}
         />
         <div
           style={{
@@ -57,7 +57,7 @@ export function NewProgramForm({
             name="name"
             label="Name"
             required
-            placeholder="Mesocycle 2 · Strength block"
+            placeholder="Block 2 · Strength"
             error={state.fieldErrors.name}
           />
           <div
@@ -126,7 +126,7 @@ export function NewProgramForm({
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <SectionHeader
           title="Notes (optional)"
-          desc="Context for this mesocycle — block goal, injury considerations, load strategy."
+          desc="Context for this training block — goal, injury considerations, load strategy."
         />
         <div style={{ padding: '20px 22px' }}>
           <TextareaField
@@ -150,7 +150,7 @@ export function NewProgramForm({
           Cancel
         </Link>
         <button type="submit" className="btn primary" disabled={pending}>
-          {pending ? 'Creating…' : 'Start mesocycle'}
+          {pending ? 'Creating…' : 'Start training block'}
         </button>
       </div>
 

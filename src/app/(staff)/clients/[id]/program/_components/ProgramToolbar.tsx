@@ -24,7 +24,7 @@ import {
 // Phase D — block-level toolbar.
 //
 // Three buttons replace the legacy "Copy week" / "Clinical notes" /
-// "New mesocycle" trio:
+// "New training block" trio:
 //
 //   1. Copy current block — opens a date-picker modal, EP picks a
 //      future start date, action clones the entire program (weeks +

@@ -50,7 +50,7 @@ export default async function NewProgramPage({
         </Link>
         <div>
           <div className="eyebrow" style={{ marginBottom: 0 }}>
-            08 Program · New mesocycle · {fullName}
+            08 Program · New training block · {fullName}
           </div>
           <h1
             style={{
@@ -62,7 +62,7 @@ export default async function NewProgramPage({
               color: 'var(--color-charcoal)',
             }}
           >
-            Start a mesocycle
+            Start a training block
           </h1>
         </div>
       </div>
@@ -77,7 +77,7 @@ export default async function NewProgramPage({
           lineHeight: 1.55,
         }}
       >
-        A mesocycle is a block of consecutive weeks with a repeating day
+        A training block is a set of consecutive weeks with a repeating day
         split. Weeks + days scaffold out now; drop exercises into each day
         from the Session Builder.
       </p>

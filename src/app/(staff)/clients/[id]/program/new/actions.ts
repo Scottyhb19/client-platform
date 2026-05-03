@@ -7,7 +7,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { NewProgramState } from './types'
 
 /**
- * Creates a mesocycle for a client.
+ * Creates a training block for a client.
  *
  * Writes, in order:
  *   1. Archive any existing active programs for this client (status='archived').

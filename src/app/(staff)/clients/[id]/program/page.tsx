@@ -375,7 +375,7 @@ function EmptyProgram({ clientId }: { clientId: string }) {
           maxWidth: 460,
         }}
       >
-        Start a mesocycle for this client — a block of 4–8 weeks with a
+        Start a training block for this client — 4–8 weeks with a
         repeating day split (A/B, A/B/C, etc). The Session Builder then lets
         you fill in exercises day by day.
       </p>
@@ -384,7 +384,7 @@ function EmptyProgram({ clientId }: { clientId: string }) {
         className="btn primary"
       >
         <Plus size={14} aria-hidden />
-        Start first mesocycle
+        Start first training block
       </Link>
     </div>
   )

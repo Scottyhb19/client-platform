@@ -156,7 +156,7 @@ function sectionSub(section: Section): string {
     sessions:
       'Saved session layouts — recurring day templates you can apply to any client.',
     programs:
-      'Mesocycle templates — full week-by-week structures to apply to a new client.',
+      'Training block templates — full week-by-week structures to apply to a new client.',
   }[section]
 }
 
@@ -182,7 +182,7 @@ function ProgramsPlaceholder() {
   return (
     <PlaceholderCard
       title="Program templates land with Program engine"
-      body="Mesocycles you want to re-use across clients (e.g. '4-week strength base', '12-week ACL return-to-sport'). Apply to a new client with the start date and it scaffolds the whole calendar."
+      body="Training blocks you want to re-use across clients (e.g. '4-week strength base', '12-week ACL return-to-sport'). Apply to a new client with the start date and it scaffolds the whole calendar."
     />
   )
 }

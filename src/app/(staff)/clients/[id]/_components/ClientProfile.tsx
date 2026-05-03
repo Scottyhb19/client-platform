@@ -856,7 +856,7 @@ function ProgramTab({
             marginBottom: 6,
           }}
         >
-          No active mesocycle
+          No active training block
         </div>
         <p
           style={{
@@ -866,12 +866,12 @@ function ProgramTab({
             maxWidth: 440,
           }}
         >
-          Start a mesocycle — pick the duration, day split, and a start date.
+          Start a training block — pick the duration, day split, and a start date.
           Weeks and days scaffold out ready for the Session Builder.
         </p>
         <Link href={`/clients/${clientId}/program/new`} className="btn primary">
           <Plus size={14} aria-hidden />
-          Start first mesocycle
+          Start first training block
         </Link>
       </div>
     )
@@ -900,7 +900,7 @@ function ProgramTab({
             style={{ fontSize: '.78rem', padding: '6px 12px' }}
           >
             <Plus size={13} aria-hidden />
-            New mesocycle
+            New training block
           </Link>
           <Link
             href={`/clients/${clientId}/program`}
