@@ -243,3 +243,156 @@ Concretely:
 ### Reversibility note
 
 Re-flipping the schema-seed JSON to restore `auto` defaults is a one-PR change. Re-introducing the per-EP override column requires a migration to add the column back and a resolver-function rewrite. None of this is destructive pre-launch; once real client data accumulates, a future override mechanism would need to live alongside the publish gate rather than inside it.
+
+---
+
+## D-PROG-001 — `program_days.scheduled_date` becomes authoritative
+
+**Date:** 2026-05-03
+**Phase:** Programs polish, Phase A
+**Status:** Decided
+**Reversibility:** Easy pre-launch (no client program data exists). Painful post-launch — would require migrating every booked program back to a week-relative model.
+
+### Context
+
+Pre-Phase-A the `program_days` table addressed scheduling indirectly: each row carried `program_week_id` (FK into `program_weeks(week_number 1..N)`) and `day_of_week 0..6` (Mon..Sun). The actual calendar date for any day was computed at render time as `program.start_date + (week_number - 1) × 7 + dow_offset`. This worked for the original "12-week strip" UI but breaks the target UX in [docs/polish/programs.md](polish/programs.md):
+
+- "Copy this Tuesday's session to June 15" requires reverse-mapping a target date back to (week_number, day_of_week). The reverse mapping is ambiguous as soon as the target date falls outside the program's existing weeks.
+- "Repeat every Tuesday until June 30" produces N target dates; each must resolve to a (week, day_of_week) slot that may not exist yet.
+- The new month-view calendar fundamentally addresses days by date, not by week-of-program.
+
+### Decision
+
+`program_days` carries a date as a first-class field:
+
+- **`program_days.scheduled_date date NOT NULL`** — the authoritative date the day is scheduled for.
+- **`day_of_week` is dropped.** Display ("Tue") is derived at render time via `scheduled_date.toLocaleDateString('en-AU', { weekday: 'short' })`. No need to store a derived integer.
+- **`program_week_id` becomes nullable.** A `program_week` is now an optional periodisation grouping (accumulation/intensification/deload), not a structural requirement. Days created via day-level copy/repeat may sit outside any week.
+- **`program_days.program_id uuid NOT NULL`** is added (denormalised). RLS, the audit-log resolver, and the cross-org trigger all walk through this direct FK instead of `program_days → program_weeks → programs`. Same security model, fewer joins, and works when `program_week_id` is NULL.
+
+### Alternatives considered
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Keep week-relative model; add presentation layer over it | Rejected | Every copy/repeat code path becomes a date↔(week,dow) translation with edge cases at week boundaries. Cumulative complexity in every future calendar feature. |
+| Drop `program_weeks` entirely; make days a flat list per program | Rejected (for now) | Periodisation is a real clinical concept (week 1 = accumulation, week 5 = deload). Keeping the table as an *optional* grouping preserves the option without forcing it. See D-PROG-003. |
+| `day_of_week` as Postgres `GENERATED ALWAYS AS (extract(dow from scheduled_date))` column | Rejected | One more moving part for a value that's trivial to compute at render. Generated columns can also surprise — e.g. an INSERT … RETURNING * surfaces them but BEFORE INSERT triggers don't see them mutate. |
+
+### Migration shape
+
+Single migration `20260503100000_program_days_scheduled_date.sql`:
+
+1. Add `scheduled_date date` (nullable initially) and `program_id uuid` (nullable initially).
+2. Backfill both from the existing week-relative data:
+   - `program_id` from `program_weeks → programs`.
+   - `scheduled_date` from `programs.start_date + ((pw.week_number - 1) * 7 + ((pd.day_of_week + 6) % 7))::int` — the `+ 6) % 7` rotates Postgres-Mon=0 / Sun=6 onto Mon-first day-of-week order matching what the existing UI assumes.
+3. SET NOT NULL on both.
+4. Add FK `program_days.program_id → programs(id) ON DELETE CASCADE`.
+5. Make `program_week_id` nullable; relax the FK to `ON DELETE SET NULL` (so deleting a periodisation week doesn't cascade-delete the days).
+6. Drop `day_of_week` column and its CHECK constraint.
+7. Add index `program_days_program_date_idx ON (program_id, scheduled_date) WHERE deleted_at IS NULL` — the calendar's bread-and-butter query.
+8. Drop `program_days_dow_idx` (no longer needed).
+9. Update `enforce_program_exercise_same_org()` to walk via `program_days.program_id` directly.
+10. Update `audit_resolve_org_id()` CASE branches for `program_days` (use direct `program_id`) and `program_exercises` (one-hop walk via `pd.program_id`).
+11. Update RLS policies on `program_days` and `program_exercises` to resolve org via the direct FK.
+
+### Reversibility note
+
+Pre-launch — no production program data exists, so any rollback is just `git revert` + `npx supabase db push`. Post-launch, rolling back means recomputing `(week_number, day_of_week)` from `scheduled_date`, which is mechanical for days that fall inside the original weeks but loses semantic information for days that were created outside any week (e.g., copies onto dates with no `program_week_id`).
+
+---
+
+## D-PROG-002 — Multiple active programs per client allowed; "current" computed from date range
+
+**Date:** 2026-05-03
+**Phase:** Programs polish, Phase A
+**Status:** Decided
+**Reversibility:** Easy pre-launch.
+
+### Context
+
+Pre-Phase-A the schema enforced single-active-program-per-client via a partial unique index:
+
+```sql
+CREATE UNIQUE INDEX programs_one_active_per_client_idx
+  ON programs (client_id)
+  WHERE status = 'active' AND deleted_at IS NULL;
+```
+
+This worked when a "program" was singular — one mesocycle running at a time, archived when the next one started. The new "Repeat current block" toolbar action ([docs/polish/programs.md](polish/programs.md) Q5c=B) creates a new program starting on the day the current one ends. Both must coexist with `status='active'`; both must be reachable from the calendar; the day after the boundary, "current" is the new block.
+
+### Decision
+
+Drop the unique-active-per-client constraint. Replace it with a Postgres `EXCLUDE` constraint preventing **date-range overlap** on active programs of the same client (uses `btree_gist`):
+
+```sql
+ALTER TABLE programs ADD CONSTRAINT programs_no_active_overlap
+  EXCLUDE USING gist (
+    client_id WITH =,
+    daterange(start_date, start_date + (duration_weeks * 7), '[)') WITH &&
+  ) WHERE (status = 'active' AND deleted_at IS NULL AND start_date IS NOT NULL AND duration_weeks IS NOT NULL);
+```
+
+"Current" is then computed at query time:
+
+1. Try the program where today's date falls within `[start_date, start_date + duration_weeks * 7)` for this client. If exactly one match → that's current.
+2. If today is between programs (previous block ended Apr 30, next starts May 12, today is May 5) → most recent past program is current.
+3. If no programs exist → null; UI shows "New training block" CTA only.
+
+### Alternatives considered
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Keep single-active; auto-archive the current when a new one is created | Rejected | "Repeat current" needs both blocks visible on the calendar and reachable for editing. Auto-archive removes the previous block from the active query, breaking the calendar mid-month. |
+| Keep single-active; introduce a new `'scheduled'` status for upcoming blocks | Rejected | Adds a status to track in every existing query. The date-range comparison answers "is this active?" without the application code needing to track status transitions. |
+| App-level enforcement of non-overlap (no DB constraint) | Rejected | Bypassing the safety net invites silent inconsistencies. `btree_gist` is available on Supabase managed Postgres (verified). |
+
+### Migration shape
+
+Migration `20260503110000_drop_unique_active_program.sql`:
+
+1. `CREATE EXTENSION IF NOT EXISTS btree_gist;` (idempotent — likely already installed for other features).
+2. `DROP INDEX programs_one_active_per_client_idx;`
+3. Add the EXCLUDE constraint above.
+
+### Reversibility note
+
+Re-instating single-active is a one-line index recreate, but only safe if no client has accumulated >1 active program by then. Post-launch the migration would have to first archive the second-most-recent active program per client; pre-launch it's a no-op.
+
+---
+
+## D-PROG-003 — `program_weeks` retained as optional periodisation grouping
+
+**Date:** 2026-05-03
+**Phase:** Programs polish, Phase A
+**Status:** Decided
+**Reversibility:** Easy.
+
+### Context
+
+D-PROG-001 makes `scheduled_date` authoritative on `program_days` and `program_week_id` nullable. That raises a follow-on question: what does `program_weeks` mean now?
+
+- The original meaning ("week N of an N-week mesocycle") is no longer load-bearing — the calendar reads dates directly.
+- Periodisation is a real clinical concept: an EP may want to label week 5 as "deload" or week 1 as "accumulation". The `program_weeks.notes` field carries that intent.
+- Days created via day-level copy/repeat may not belong to any periodisation grouping, hence the nullable FK.
+
+### Decision
+
+Keep `program_weeks` as an **optional periodisation grouping**:
+
+- `week_number` stays as a stable integer label (1, 2, 3…) per program. It's an EP-defined ordering for periodisation grouping, not a calendar-week index.
+- The new month-view calendar UI does **not surface week numbers** anywhere. The EP sees real calendar months only.
+- `program_weeks.notes` carries periodisation intent (text that the EP can tag/use however they like).
+- Days inserted via day-level copy or repeat default to `program_week_id = NULL` (not part of any periodisation grouping). The EP can later assign them to a week via a future periodisation editor (deferred — not Phase A scope).
+- `program_days.program_week_id` FK becomes `ON DELETE SET NULL` (deleting a periodisation week leaves the days intact, just unassigned).
+
+### Alternatives considered
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Drop `program_weeks` entirely | Rejected | Forecloses the option of clinical periodisation labelling. Cheap to retain; no UI surface required in Phase A; future-proof. |
+| Auto-compute `week_number` from `scheduled_date` (week-of-program) | Rejected | Disallows EP-defined periodisation that doesn't match calendar weeks (e.g. a 5-day "intro" week). |
+
+### Reversibility note
+
+Dropping `program_weeks` later is straightforward: `DROP TABLE program_weeks CASCADE` after first migrating any periodisation labels into `program_days` (or another structure). No production data is at stake pre-launch.

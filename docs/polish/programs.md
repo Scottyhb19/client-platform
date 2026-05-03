@@ -372,4 +372,17 @@ Resolution of open questions can be terse: "Q1 yes, Q2 a, Q3 ok, Q4 a, Q5 c, Q6 
 
 ## 7. Progress log
 
-(Empty until Phase A starts.)
+Running record of what's closed, in order. Each entry references the commit on master.
+
+### Phase A — Schema foundation (closed; pgTAP 09 green on staging 2026-05-03)
+
+- **D-PROG-001 / 002 / 003 logged** in [`docs/decisions.md`](../decisions.md). The three architectural decisions: scheduled_date authoritative on program_days; multiple active programs per client allowed; program_weeks retained as optional periodisation grouping.
+- **P0-1 / P0-3 / P0-4 / P0-6** — closed in migration `20260503100000_program_days_scheduled_date.sql`. Adds `program_days.scheduled_date date NOT NULL` and `program_days.program_id uuid NOT NULL` (with FK + new `(program_id, scheduled_date)` index). Backfills both from the existing week-relative data using the Mon-first day-of-week mapping. Drops `day_of_week` column and its `program_days_dow_idx`. Relaxes `program_week_id` to nullable with `ON DELETE SET NULL`. Updates `enforce_program_exercise_same_org()` to walk via the direct `pd.program_id`. Updates `audit_resolve_org_id()` for both `program_days` (direct lookup) and `program_exercises` (one-hop walk). Drops and recreates the SELECT/INSERT/UPDATE RLS policies on `program_days` and `program_exercises` to use the shorter walk.
+- **P0-2** — closed in migration `20260503110000_drop_unique_active_program.sql`. Drops `programs_one_active_per_client_idx`. Adds `programs_no_active_overlap` EXCLUDE constraint using `btree_gist` so two active programs for the same client cannot have overlapping `[start_date, start_date + duration_weeks*7)` half-open ranges. Inactive / undated programs are exempt.
+- **TypeScript types regenerated** via `npm run supabase:types`. `program_days.Row` now carries `program_id: string`, `program_week_id: string | null`, `scheduled_date: string`; `day_of_week` is gone.
+- **pgTAP `09_programs_dates.sql`** — green on staging 2026-05-03. 7 assertions across §A (scheduled_date round-trips, program_week_id can be NULL), §B (two non-overlapping active programs allowed), §C (overlap rejected with SQLSTATE 23P01), §D (RLS isolation across orgs holds, program_exercises policy exists). Test pattern: per-assertion TAP lines captured into a temp `_tap` table, final SELECT returns all 7 rows — works around `supabase db query --linked --file` only returning the last statement's results.
+- **Known regression (intentional)**: the running app's program calendar page (`/clients/[id]/program`) currently throws because [page.tsx](../../src/app/(staff)/clients/[id]/program/page.tsx) and [ProgramCalendar.tsx](../../src/app/(staff)/clients/[id]/program/_components/ProgramCalendar.tsx) still query `program_days.day_of_week`. Phase B rewrites the loader and the calendar component to query `scheduled_date` directly — fixes the regression as part of the calendar redesign.
+
+### Phase A acceptance gate
+
+Closed. Schema is in the target shape; downstream phases (B–F) can proceed against this foundation.

@@ -1954,37 +1954,47 @@ export type Database = {
         Row: {
           created_at: string
           day_label: string
-          day_of_week: number | null
           deleted_at: string | null
           id: string
-          program_week_id: string
+          program_id: string
+          program_week_id: string | null
           published_at: string | null
+          scheduled_date: string
           sort_order: number
           updated_at: string
         }
         Insert: {
           created_at?: string
           day_label: string
-          day_of_week?: number | null
           deleted_at?: string | null
           id?: string
-          program_week_id: string
+          program_id: string
+          program_week_id?: string | null
           published_at?: string | null
+          scheduled_date: string
           sort_order?: number
           updated_at?: string
         }
         Update: {
           created_at?: string
           day_label?: string
-          day_of_week?: number | null
           deleted_at?: string | null
           id?: string
-          program_week_id?: string
+          program_id?: string
+          program_week_id?: string | null
           published_at?: string | null
+          scheduled_date?: string
           sort_order?: number
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "program_days_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "programs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "program_days_program_week_id_fkey"
             columns: ["program_week_id"]
