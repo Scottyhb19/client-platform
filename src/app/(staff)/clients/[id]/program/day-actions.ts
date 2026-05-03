@@ -39,6 +39,12 @@ export type RemoveDayActionResult =
   | { error: string }
   | { status: 'removed' }
 
+export type CreateDayActionResult =
+  | { error: string }
+  | { status: 'created'; newDayId: string }
+  | { status: 'no_program'; targetDate: string }
+  | { status: 'conflict'; existingDayId: string }
+
 
 /**
  * Copy one program_day to a target date. The destination program is
@@ -176,4 +182,49 @@ export async function removeProgramDayAction(
 
   revalidatePath(`/clients/${clientId}/program`)
   return { status: 'removed' }
+}
+
+
+/**
+ * Phase F.0 (D-PROG-004) — create an ad-hoc program_day on the chosen
+ * date for the client. The destination program is resolved server-side
+ * by date (matches copy semantics). The day is inserted with
+ * day_label='A' and no exercises; the EP fills it out in the session
+ * builder. Wraps the create_program_day RPC (migration 20260504100000).
+ */
+export async function createProgramDayAction(
+  clientId: string,
+  targetDate: string,
+): Promise<CreateDayActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase.rpc('create_program_day', {
+    p_client_id: clientId,
+    p_target_date: targetDate,
+  })
+
+  if (error) return { error: error.message }
+  if (!data || typeof data !== 'object') {
+    return { error: 'Unexpected response from create_program_day' }
+  }
+
+  const obj = data as {
+    status: string
+    new_day_id?: string
+    target_date?: string
+    existing_day_id?: string
+  }
+
+  switch (obj.status) {
+    case 'created':
+      revalidatePath(`/clients/${clientId}/program`)
+      return { status: 'created', newDayId: obj.new_day_id! }
+    case 'no_program':
+      return { status: 'no_program', targetDate: obj.target_date! }
+    case 'conflict':
+      return { status: 'conflict', existingDayId: obj.existing_day_id! }
+    default:
+      return { error: `Unknown status: ${obj.status}` }
+  }
 }

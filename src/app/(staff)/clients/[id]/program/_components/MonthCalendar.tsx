@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Plus,
   Repeat,
   Trash2,
   X,
@@ -27,6 +28,7 @@ import {
 } from '../../../../_components/MonthYearPicker'
 import {
   copyDayAction,
+  createProgramDayAction,
   removeProgramDayAction,
   repeatDayWeeklyAction,
   type ConflictEntry,
@@ -166,8 +168,15 @@ export function MonthCalendar({
     return m
   }, [programs])
 
-  // Single open day at a time keeps focus on one summary popover.
-  const [openDayId, setOpenDayId] = useState<string | null>(null)
+  // Single open cell at a time. 'day' opens the DaySummaryPopover for a
+  // programmed day; 'empty' opens the EmptyCellPopover (Phase F.0 / D-PROG-004
+  // — every in-month cell is interactive in idle mode so the EP can add an
+  // ad-hoc session by clicking any blank date).
+  const [openCell, setOpenCell] = useState<
+    | { kind: 'day'; id: string }
+    | { kind: 'empty'; iso: string }
+    | null
+  >(null)
   const [mode, setMode] = useState<CalendarMode>({ kind: 'idle' })
   const [busy, setBusy] = useState(false)
 
@@ -187,17 +196,29 @@ export function MonthCalendar({
     const next = new Date(visibleYear, visibleMonth + delta, 1)
     setVisibleYear(next.getFullYear())
     setVisibleMonth(next.getMonth())
-    setOpenDayId(null)
+    setOpenCell(null)
   }
 
   function gotoToday() {
     setVisibleYear(todayYear)
     setVisibleMonth(todayMonth)
-    setOpenDayId(null)
+    setOpenCell(null)
   }
 
   const isViewingThisMonth =
     visibleYear === todayYear && visibleMonth === todayMonth
+
+  // P2-9 — count distinct training blocks with days in the visible month.
+  // Surfaces a quiet eyebrow under the month label when ≥ 2 so the EP
+  // knows the calendar is straddling a block boundary.
+  const blocksInVisibleMonth = useMemo(() => {
+    const prefix = `${visibleYear}-${String(visibleMonth + 1).padStart(2, '0')}`
+    const ids = new Set<string>()
+    for (const d of days) {
+      if (d.scheduled_date.startsWith(prefix)) ids.add(d.program_id)
+    }
+    return ids.size
+  }, [days, visibleYear, visibleMonth])
 
   // ── Action runners ──────────────────────────────────────────────
 
@@ -286,9 +307,52 @@ export function MonthCalendar({
           setMode({ kind: 'idle' })
           return
         }
-        setOpenDayId(null)
+        setOpenCell(null)
         setMode({ kind: 'idle' })
         startTransition(() => router.refresh())
+      } finally {
+        setBusy(false)
+      }
+    },
+    [clientId, router],
+  )
+
+  // Phase F.0 — create an ad-hoc session on a chosen empty date. The
+  // RPC resolves the active program by date (same shape as copy). On
+  // success we navigate straight into the session builder for the new
+  // day so the EP can start filling exercises immediately.
+  const runCreate = useCallback(
+    async (targetDate: string) => {
+      setBusy(true)
+      try {
+        const result = await createProgramDayAction(clientId, targetDate)
+        if ('error' in result) {
+          // eslint-disable-next-line no-console
+          console.error('create_program_day error:', result.error)
+          setOpenCell(null)
+          return
+        }
+        switch (result.status) {
+          case 'created':
+            setOpenCell(null)
+            // Navigate to the new day's builder. router.push (not refresh)
+            // because we're leaving the calendar surface.
+            router.push(`/clients/${clientId}/program/days/${result.newDayId}`)
+            break
+          case 'no_program':
+            // Shouldn't happen — UI only shows the "Add session" button
+            // when a covering block exists. Defensive fall-through to
+            // the no-program toast.
+            setOpenCell(null)
+            setMode({ kind: 'no-program-toast', targetDate: result.targetDate })
+            break
+          case 'conflict':
+            // Race: another tab beat us to it. Refresh so the new day
+            // shows up; close the popover.
+            setOpenCell(null)
+            startTransition(() => router.refresh())
+            break
+        }
       } finally {
         setBusy(false)
       }
@@ -311,9 +375,20 @@ export function MonthCalendar({
         runCopy(mode.sourceDayId, cellIso, false)
         return
       }
-      // Default: toggle the day summary popover.
+      // Default: toggle the matching popover. Day cells open the day
+      // summary; empty cells open the create-session popover.
       if (day) {
-        setOpenDayId((prev) => (prev === day.id ? null : day.id))
+        setOpenCell((prev) =>
+          prev?.kind === 'day' && prev.id === day.id
+            ? null
+            : { kind: 'day', id: day.id },
+        )
+      } else {
+        setOpenCell((prev) =>
+          prev?.kind === 'empty' && prev.iso === cellIso
+            ? null
+            : { kind: 'empty', iso: cellIso },
+        )
       }
     },
     [mode, runCopy, todayIso],
@@ -361,7 +436,7 @@ export function MonthCalendar({
             <ChevronLeft size={18} aria-hidden />
           </button>
 
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', textAlign: 'center' }}>
             <button
               type="button"
               onClick={() => {
@@ -381,12 +456,28 @@ export function MonthCalendar({
                 fontSize: '1.4rem',
                 color: 'var(--color-charcoal)',
                 letterSpacing: '-0.005em',
-                transition: 'background 120ms',
+                transition: 'background 150ms cubic-bezier(0.4, 0, 0.2, 1)',
                 textAlign: 'center',
               }}
             >
               {FULL_MONTH_LABELS[visibleMonth]} {visibleYear}
             </button>
+            {blocksInVisibleMonth >= 2 && (
+              <div
+                aria-label={`${blocksInVisibleMonth} training blocks visible`}
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 600,
+                  fontSize: '.62rem',
+                  letterSpacing: '0.06em',
+                  textTransform: 'uppercase',
+                  color: 'var(--color-muted)',
+                  marginTop: -2,
+                }}
+              >
+                {blocksInVisibleMonth} blocks
+              </div>
+            )}
             {pickerOpen && (
               <MonthYearPicker
                 year={pickerYear}
@@ -398,7 +489,7 @@ export function MonthCalendar({
                 onPick={(y, m) => {
                   setVisibleYear(y)
                   setVisibleMonth(m)
-                  setOpenDayId(null)
+                  setOpenCell(null)
                   setPickerOpen(false)
                 }}
                 onClose={() => setPickerOpen(false)}
@@ -450,25 +541,28 @@ export function MonthCalendar({
         today={today}
         todayIso={todayIso}
         daysByDate={daysByDate}
+        programs={programs}
         programsById={programsById}
         clientId={clientId}
-        openDayId={openDayId}
+        openCell={openCell}
         mode={mode}
         compactPopover={compactPopover}
+        busy={busy}
         onCellClick={handleDayCellClick}
-        onCloseDay={() => setOpenDayId(null)}
+        onClosePopover={() => setOpenCell(null)}
         onCopyDay={(dayId, label, date) => {
-          setOpenDayId(null)
+          setOpenCell(null)
           setMode({ kind: 'copy-pick', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
         }}
         onRepeatDay={(dayId, label, date) => {
-          setOpenDayId(null)
+          setOpenCell(null)
           setMode({ kind: 'repeat-pick', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
         }}
         onDeleteDay={(dayId, label, date) => {
-          setOpenDayId(null)
+          setOpenCell(null)
           setMode({ kind: 'confirm-delete', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
         }}
+        onCreateDay={(targetDate) => runCreate(targetDate)}
       />
 
       {/* ─── Repeat mini-calendar picker (anchored, full-screen) ─── */}
@@ -555,15 +649,21 @@ interface MonthGridProps {
   today: Date
   todayIso: string
   daysByDate: Map<string, ProgramDayWithExercises>
+  programs: ProgramSummary[]
   programsById: Map<string, ProgramSummary>
   clientId: string
-  openDayId: string | null
+  openCell:
+    | { kind: 'day'; id: string }
+    | { kind: 'empty'; iso: string }
+    | null
   mode: CalendarMode
+  busy: boolean
   onCellClick: (cellIso: string, day: ProgramDayWithExercises | null) => void
-  onCloseDay: () => void
+  onClosePopover: () => void
   onCopyDay: (dayId: string, label: string, date: string) => void
   onRepeatDay: (dayId: string, label: string, date: string) => void
   onDeleteDay: (dayId: string, label: string, date: string) => void
+  onCreateDay: (targetDate: string) => void
   compactPopover: boolean
 }
 
@@ -573,15 +673,18 @@ function MonthGrid({
   today,
   todayIso,
   daysByDate,
+  programs,
   programsById,
   clientId,
-  openDayId,
+  openCell,
   mode,
+  busy,
   onCellClick,
-  onCloseDay,
+  onClosePopover,
   onCopyDay,
   onRepeatDay,
   onDeleteDay,
+  onCreateDay,
   compactPopover,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthCells(year, month), [year, month])
@@ -697,8 +800,9 @@ function MonthGrid({
                   size={14}
                   aria-hidden
                   style={{
+                    // 300ms reveal per design system (week-row collapse).
                     transition:
-                      'transform 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+                      'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)',
                     transform: collapsed ? 'none' : 'rotate(90deg)',
                   }}
                 />
@@ -732,8 +836,10 @@ function MonthGrid({
               ) : (
                 week.cells.map((c, i) => {
                   const day = c.inMonth ? daysByDate.get(c.iso) ?? null : null
-                  const isOpen =
-                    openDayId !== null && day?.id === openDayId
+                  const isDayOpen =
+                    openCell?.kind === 'day' && day?.id === openCell.id
+                  const isEmptyOpen =
+                    openCell?.kind === 'empty' && c.iso === openCell.iso
                   // In copy-pick mode, the source cell and past dates
                   // dim out and become unclickable; everything else
                   // shows a copy-cursor on hover.
@@ -743,21 +849,27 @@ function MonthGrid({
                   const isPastInCopy = inCopyPick && c.iso < todayIso
                   const isCopyTarget =
                     inCopyPick && !isCopySource && !isPastInCopy
+                  // Resolve the active program covering this date (for the
+                  // empty-cell popover). For programmed days, use the
+                  // explicit program_id; for empty cells, walk the
+                  // programs list.
+                  const program = c.inMonth
+                    ? day
+                      ? programsById.get(day.program_id) ?? null
+                      : findCoveringProgram(programs, c.iso)
+                    : null
                   return (
                     <DateCell
                       key={c.iso}
                       cell={c}
                       today={today}
                       day={day}
-                      isOpen={isOpen}
+                      isDayOpen={isDayOpen}
+                      isEmptyOpen={isEmptyOpen}
                       onClick={() => onCellClick(c.iso, day)}
-                      program={
-                        c.inMonth
-                          ? programsById.get(day?.program_id ?? '') ?? null
-                          : null
-                      }
+                      program={program}
                       clientId={clientId}
-                      onClose={onCloseDay}
+                      onClose={onClosePopover}
                       onCopy={() =>
                         day && onCopyDay(day.id, day.day_label, day.scheduled_date)
                       }
@@ -767,6 +879,8 @@ function MonthGrid({
                       onDelete={() =>
                         day && onDeleteDay(day.id, day.day_label, day.scheduled_date)
                       }
+                      onCreate={() => onCreateDay(c.iso)}
+                      busy={busy}
                       anchorRight={i >= 4}
                       compactPopover={compactPopover}
                       copyMode={
@@ -800,7 +914,8 @@ interface DateCellProps {
   cell: { iso: string; date: number; inMonth: boolean }
   today: Date
   day: ProgramDayWithExercises | null
-  isOpen: boolean
+  isDayOpen: boolean
+  isEmptyOpen: boolean
   onClick: () => void
   program: ProgramSummary | null
   clientId: string
@@ -808,6 +923,8 @@ interface DateCellProps {
   onCopy: () => void
   onRepeat: () => void
   onDelete: () => void
+  onCreate: () => void
+  busy: boolean
   anchorRight: boolean
   compactPopover: boolean
   // Visual mode for cells while a copy-pick is in progress.
@@ -820,7 +937,8 @@ function DateCell({
   cell,
   today,
   day,
-  isOpen,
+  isDayOpen,
+  isEmptyOpen,
   onClick,
   program,
   clientId,
@@ -828,6 +946,8 @@ function DateCell({
   onCopy,
   onRepeat,
   onDelete,
+  onCreate,
+  busy,
   anchorRight,
   compactPopover,
   copyMode,
@@ -841,38 +961,55 @@ function DateCell({
   if (!cell.inMonth) {
     return (
       <div className="day-cell empty" style={{ opacity: 0.4 }}>
-        <div className="day-date" style={{ color: 'var(--color-muted)' }}>
-          {cell.date}
-        </div>
+        {/* color comes from .day-cell.empty .day-date — see globals.css P2-1 */}
+        <div className="day-date">{cell.date}</div>
       </div>
     )
   }
 
-  // Empty cells (no day): in copy-pick mode they ARE clickable as
-  // destinations. Otherwise they render as the static empty cell.
+  // Empty cells (no day): always clickable in idle mode (Phase F.0 —
+  // opens the EmptyCellPopover for "Add session"). In copy-pick mode
+  // they're clickable as destinations.
   if (!day) {
-    if (isCopyTarget) {
-      return (
+    return (
+      <div style={{ position: 'relative' }}>
         <button
           type="button"
           onClick={onClick}
+          disabled={isCopyPast}
           className={`day-cell empty ${isToday ? 'today' : ''}`}
           style={{
-            cursor: 'copy',
+            cursor: isCopyTarget
+              ? 'copy'
+              : isCopyPast
+              ? 'not-allowed'
+              : 'pointer',
             font: 'inherit',
             color: 'inherit',
-            outline: '1px dashed var(--color-primary)',
-            background: 'rgba(45, 178, 76, 0.04)',
+            width: '100%',
+            outline: isEmptyOpen
+              ? '2px solid var(--color-primary)'
+              : isCopyTarget
+              ? '1px dashed var(--color-primary)'
+              : undefined,
+            background: isCopyTarget ? 'rgba(45, 178, 76, 0.04)' : undefined,
+            opacity: isCopyPast ? 0.4 : 1,
           }}
+          aria-expanded={isEmptyOpen}
         >
           <div className="day-date">{cell.date}</div>
         </button>
-      )
-    }
-    return (
-      <div className={`day-cell empty ${isToday ? 'today' : ''}`}
-           style={isCopyPast ? { opacity: 0.4 } : undefined}>
-        <div className="day-date">{cell.date}</div>
+
+        {isEmptyOpen && !inCopyPick && (
+          <EmptyCellPopover
+            cellIso={cell.iso}
+            program={program}
+            onClose={onClose}
+            onCreate={onCreate}
+            busy={busy}
+            anchorRight={anchorRight}
+          />
+        )}
       </div>
     )
   }
@@ -894,7 +1031,7 @@ function DateCell({
           font: 'inherit',
           color: 'inherit',
           width: '100%',
-          outline: isOpen
+          outline: isDayOpen
             ? '2px solid var(--color-primary)'
             : isCopyTarget
             ? '1px dashed var(--color-primary)'
@@ -902,7 +1039,7 @@ function DateCell({
           opacity: isCopyPast || isCopySource ? 0.45 : 1,
           background: isCopyTarget ? 'rgba(45, 178, 76, 0.04)' : undefined,
         }}
-        aria-expanded={isOpen}
+        aria-expanded={isDayOpen}
       >
         <div className="day-date">{cell.date}</div>
         <span className="day-tag">Day {day.day_label}</span>
@@ -920,7 +1057,7 @@ function DateCell({
         )}
       </button>
 
-      {isOpen && !inCopyPick && (
+      {isDayOpen && !inCopyPick && (
         <DaySummaryPopover
           day={day}
           program={program}
@@ -1179,6 +1316,135 @@ function DaySummaryPopover({
   )
 }
 
+// ============================================================================
+// EmptyCellPopover — anchored to an empty in-month cell. Same shape as
+// DaySummaryPopover but smaller content. Phase F.0 (D-PROG-004): the
+// EP can click any blank date and add an ad-hoc session by hitting the
+// "Add session" button. When no active block covers the date the
+// popover surfaces a clear explanation instead of a CTA.
+// ============================================================================
+
+interface EmptyCellPopoverProps {
+  cellIso: string
+  program: ProgramSummary | null
+  onClose: () => void
+  onCreate: () => void
+  busy: boolean
+  anchorRight: boolean
+}
+
+function EmptyCellPopover({
+  cellIso,
+  program,
+  onClose,
+  onCreate,
+  busy,
+  anchorRight,
+}: EmptyCellPopoverProps) {
+  const popoverRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    function onMouseDown(e: MouseEvent) {
+      const el = e.target as HTMLElement
+      if (popoverRef.current?.contains(el)) return
+      // Don't close if the user clicked the same empty cell that opened
+      // this popover — its onClick handles toggling.
+      if ((el.closest('.day-cell') as HTMLElement | null)?.getAttribute('aria-expanded') === 'true') {
+        return
+      }
+      onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onMouseDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onMouseDown)
+    }
+  }, [onClose])
+
+  const longDate = formatLongDate(cellIso)
+
+  return (
+    <div
+      ref={popoverRef}
+      role="dialog"
+      aria-label={`Add session for ${longDate}`}
+      style={{
+        position: 'absolute',
+        top: 'calc(100% + 6px)',
+        ...(anchorRight ? { right: 0 } : { left: 0 }),
+        width: '100%',
+        boxSizing: 'border-box',
+        background: 'var(--color-card)',
+        border: '1px solid var(--color-border-subtle)',
+        borderRadius: 10,
+        boxShadow: '0 12px 28px rgba(0,0,0,.12)',
+        padding: 10,
+        zIndex: 25,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '.85rem',
+          color: 'var(--color-charcoal)',
+          marginBottom: 4,
+        }}
+      >
+        {longDate}
+      </div>
+
+      {program ? (
+        <>
+          <div
+            style={{
+              fontSize: '.74rem',
+              color: 'var(--color-text-light)',
+              lineHeight: 1.45,
+              marginBottom: 10,
+            }}
+          >
+            Adds to <strong style={{ color: 'var(--color-charcoal)' }}>{program.name}</strong>.
+          </div>
+          <button
+            type="button"
+            onClick={onCreate}
+            disabled={busy}
+            className="btn primary"
+            style={{
+              padding: '6px 12px',
+              fontSize: '.78rem',
+              width: '100%',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <Plus size={12} aria-hidden />
+            {busy ? 'Working…' : 'Add session'}
+          </button>
+        </>
+      ) : (
+        <div
+          style={{
+            fontSize: '.74rem',
+            color: 'var(--color-muted)',
+            lineHeight: 1.45,
+          }}
+        >
+          No active training block covers this date.
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 // Compact icon-button styles tuned for the popover header — sized so
 // four icons + the day-label badge fit within a single calendar cell.
 const iconBtnBase: React.CSSProperties = {
@@ -1188,7 +1454,8 @@ const iconBtnBase: React.CSSProperties = {
   display: 'grid',
   placeItems: 'center',
   cursor: 'pointer',
-  transition: 'background 120ms, color 120ms',
+  // 150ms hover/press per design system, with the standard easing.
+  transition: 'background 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1)',
 }
 
 const iconLinkStyle: React.CSSProperties = {
@@ -1809,6 +2076,25 @@ function addDaysTo(d: Date, days: number): Date {
   const r = new Date(d)
   r.setDate(r.getDate() + days)
   return r
+}
+
+/**
+ * Resolve the active program covering an ISO date for the empty-cell
+ * popover. Mirrors the SQL helper `_program_for_date` so the UI can
+ * preview "Adds to <BlockName>" before the EP commits. Programs is a
+ * short list (1–3 active blocks per client) so the linear scan is fine.
+ */
+function findCoveringProgram(
+  programs: ProgramSummary[],
+  iso: string,
+): ProgramSummary | null {
+  for (const p of programs) {
+    const startDate = parseIso(p.start_date)
+    const endDate = addDaysTo(startDate, p.duration_weeks * 7)
+    const endIso = isoFromDate(endDate)
+    if (iso >= p.start_date && iso < endIso) return p
+  }
+  return null
 }
 
 // Re-exports for any consumer that needs the picker from here.

@@ -396,3 +396,64 @@ Keep `program_weeks` as an **optional periodisation grouping**:
 ### Reversibility note
 
 Dropping `program_weeks` later is straightforward: `DROP TABLE program_weeks CASCADE` after first migrating any periodisation labels into `program_days` (or another structure). No production data is at stake pre-launch.
+
+---
+
+## D-PROG-004 — Empty calendar cells are first-class click targets ("Add session")
+
+**Date:** 2026-05-04
+**Phase:** Programs polish, Phase F.0
+**Status:** Decided
+**Reversibility:** Easy. The change is one component (`MonthCalendar.tsx`) plus a single SECURITY DEFINER RPC; both can be reverted without schema impact.
+
+### Context
+
+Through Phases B–E, the calendar's interaction model treated empty in-month cells as decorative — they rendered as static `.day-cell.empty` divs with no click handler. The only path to add an ad-hoc session was via Copy day, which presupposed an existing source. To insert a one-off session on a previously-blank date, the EP had to: open a programmed day → Copy → pick the blank date as target. Two clicks of indirection for a primary action.
+
+User feedback in Phase F: "you should be able to click any blank date to get the same popover, but with 'Create Session' instead." Direct insertion is a more honest model — every in-month cell on the calendar represents a date the EP can act on.
+
+### Decision
+
+Every in-month cell is interactive in idle mode:
+
+- **Programmed cells** open the existing `DaySummaryPopover` (Open / Copy / Repeat / Delete).
+- **Empty in-month cells** open a new `EmptyCellPopover` with:
+  - The long-form date (e.g. "Mon, 4 May").
+  - If an active block covers the date: "Adds to <BlockName>" + a primary "Add session" button.
+  - If no active block covers the date: a quiet "No active training block covers this date." caption (no CTA).
+
+Clicking "Add session" calls a new SECURITY DEFINER RPC `create_program_day(p_client_id, p_target_date)` (migration `20260504100000_create_program_day.sql`) which:
+
+1. Validates caller org/role.
+2. Resolves the active program covering the target date via the existing `_program_for_date` helper.
+3. Inserts a fresh `program_day` with `day_label = 'A'` and `sort_order = 0`. No exercises.
+4. Returns `{status: 'created', new_day_id}` (or `no_program` / `conflict`).
+
+On `created`, the UI navigates straight to `/clients/[id]/program/days/<new_day_id>` so the EP can fill exercises immediately.
+
+### State machine impact
+
+The previous `openDayId: string | null` state in `MonthCalendar` is replaced by a discriminated union `openCell: { kind: 'day', id } | { kind: 'empty', iso } | null`. Single-popover invariant preserved. Past dates remain unrestricted at the cell level — the RPC accepts any date inside an active block, which lets the EP back-fill a missed session on a covered past date if needed.
+
+### Day label default
+
+The new day is created with `day_label = 'A'`. The EP renames it inside the session builder (the label is editable there). Alternatives considered:
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Default `'A'`, EP renames in builder | **Chosen** | Keeps click-to-create one click. Consistent across split patterns; renamable. |
+| Derive next letter from surrounding programmed days | Rejected | Adds complexity (which scope: same week? same program? overall?); ambiguous with multi-block months. |
+| Prompt for label in the popover | Rejected | One extra interaction in the primary path. The EP doesn't always know the label until they're filling exercises. |
+| Inherit from the most recent prior day | Rejected | Semantically wrong — copying a label without copying intent invites confusion. |
+
+### Alternatives considered (interaction model)
+
+| Option | Verdict | Reason |
+|---|---|---|
+| Empty cells stay non-interactive; "Add session" lives in toolbar with a date picker | Rejected | Two clicks to reach the date. The calendar IS the date picker — the cell IS the date. Direct manipulation wins. |
+| Hover-reveal "+" icon on empty cells | Rejected | Discoverable but visually noisy across 30+ cells. The popover-on-click pattern matches the day-cell behaviour; consistency over signalling. |
+| Disable click on past empty cells | Rejected | Constraints on past dates belong in the RPC if anywhere. The EP may legitimately want to back-fill a missed session within an active block. |
+
+### Reversibility note
+
+The RPC, server action, and `EmptyCellPopover` component can be removed and the empty-cell render can revert to its pre-Phase-F static `<div>` shape without schema impact (no column drops needed). The state-machine union can collapse back to `openDayId` mechanically.

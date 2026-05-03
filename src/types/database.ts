@@ -3345,6 +3345,10 @@ export type Database = {
         }
         Returns: string
       }
+      create_program_day: {
+        Args: { p_client_id: string; p_target_date: string }
+        Returns: Json
+      }
       create_test_session: {
         Args: {
           p_applied_battery_id: string
