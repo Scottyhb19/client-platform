@@ -2091,7 +2091,6 @@ export type Database = {
           id: string
           name: string
           organization_id: string
-          type: Database["public"]["Enums"]["program_type"]
           updated_at: string
         }
         Insert: {
@@ -2102,7 +2101,6 @@ export type Database = {
           id?: string
           name: string
           organization_id: string
-          type?: Database["public"]["Enums"]["program_type"]
           updated_at?: string
         }
         Update: {
@@ -2113,7 +2111,6 @@ export type Database = {
           id?: string
           name?: string
           organization_id?: string
-          type?: Database["public"]["Enums"]["program_type"]
           updated_at?: string
         }
         Relationships: [
@@ -2186,7 +2183,6 @@ export type Database = {
           start_date: string | null
           status: Database["public"]["Enums"]["program_status"]
           template_id: string | null
-          type: Database["public"]["Enums"]["program_type"]
           updated_at: string
           version: number
         }
@@ -2204,7 +2200,6 @@ export type Database = {
           start_date?: string | null
           status?: Database["public"]["Enums"]["program_status"]
           template_id?: string | null
-          type?: Database["public"]["Enums"]["program_type"]
           updated_at?: string
           version?: number
         }
@@ -2222,7 +2217,6 @@ export type Database = {
           start_date?: string | null
           status?: Database["public"]["Enums"]["program_status"]
           template_id?: string | null
-          type?: Database["public"]["Enums"]["program_type"]
           updated_at?: string
           version?: number
         }
@@ -3510,7 +3504,6 @@ export type Database = {
         | "discharge"
         | "general"
       program_status: "draft" | "active" | "archived"
-      program_type: "home_gym" | "in_clinic"
       test_side_t: "left" | "right"
       test_source_t: "manual" | "vald" | "imported"
       user_role: "owner" | "staff" | "client"
@@ -3714,7 +3707,6 @@ export const Constants = {
         "general",
       ],
       program_status: ["draft", "active", "archived"],
-      program_type: ["home_gym", "in_clinic"],
       test_side_t: ["left", "right"],
       test_source_t: ["manual", "vald", "imported"],
       user_role: ["owner", "staff", "client"],

@@ -45,6 +45,10 @@ export type CreateDayActionResult =
   | { status: 'no_program'; targetDate: string }
   | { status: 'conflict'; existingDayId: string }
 
+export type RenameDayActionResult =
+  | { error: string }
+  | { status: 'renamed'; dayLabel: string }
+
 
 /**
  * Copy one program_day to a target date. The destination program is
@@ -186,11 +190,44 @@ export async function removeProgramDayAction(
 
 
 /**
+ * Rename a program_day's `day_label`. Trimmed and length-validated
+ * client-side AND server-side (1..30 chars, matching the DB CHECK
+ * constraint). RLS scopes the UPDATE to the caller's organization.
+ */
+export async function renameProgramDayAction(
+  clientId: string,
+  dayId: string,
+  rawLabel: string,
+): Promise<RenameDayActionResult> {
+  await requireRole(['owner', 'staff'])
+
+  const label = rawLabel.trim()
+  if (label.length < 1 || label.length > 30) {
+    return { error: 'Label must be 1–30 characters.' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('program_days')
+    .update({ day_label: label })
+    .eq('id', dayId)
+    .is('deleted_at', null)
+
+  if (error) return { error: error.message }
+
+  revalidatePath(`/clients/${clientId}/program`)
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { status: 'renamed', dayLabel: label }
+}
+
+
+/**
  * Phase F.0 (D-PROG-004) — create an ad-hoc program_day on the chosen
  * date for the client. The destination program is resolved server-side
  * by date (matches copy semantics). The day is inserted with
- * day_label='A' and no exercises; the EP fills it out in the session
- * builder. Wraps the create_program_day RPC (migration 20260504100000).
+ * day_label='Day 1' and no exercises; the EP fills it out in the session
+ * builder. Wraps the create_program_day RPC.
  */
 export async function createProgramDayAction(
   clientId: string,

@@ -10,15 +10,17 @@ import type { NewProgramState } from './types'
  * Creates a training block for a client.
  *
  * Writes, in order:
- *   1. Archive any existing active programs for this client (status='archived').
- *   2. Insert the new `programs` row (status='active').
- *   3. Insert `program_weeks` for 1..duration.
- *   4. Insert `program_days` per week, with auto-generated A/B/C labels
- *      mapped to sensible default weekdays for the chosen split count.
+ *   1. Insert the new `programs` row (status='active'). Date-range overlaps
+ *      with existing active programs for the same client are caught by the
+ *      EXCLUDE constraint `programs_no_active_overlap`.
+ *   2. Insert `program_weeks` for 1..duration.
+ *   3. Insert `program_days` per week, one per EP-picked weekday. Each day
+ *      gets `day_label = "Day N"` (N = 1..days_per_week) which the EP can
+ *      rename inside the session builder.
  *
- * All writes go through the authenticated user's session so RLS scopes
- * them to the caller's organization. Inserts on nested tables rely on
- * the parent chain being in-org (per rls-policies.md §Pattern C).
+ * The form posts a `session_dow_0..N-1` field per session — each holds a
+ * JS day-of-week int (0=Sun..6=Sat). The server validates that exactly
+ * `days_per_week` distinct values landed.
  */
 export async function createProgramAction(
   _prev: NewProgramState,
@@ -31,10 +33,6 @@ export async function createProgramAction(
   const durationRaw = (formData.get('duration_weeks') ?? '').toString().trim()
   const daysRaw = (formData.get('days_per_week') ?? '').toString().trim()
   const startDate = (formData.get('start_date') ?? '').toString().trim() || null
-  const programType =
-    (formData.get('program_type') ?? 'in_clinic').toString() === 'home_gym'
-      ? 'home_gym'
-      : 'in_clinic'
   const notes = toNullable(formData.get('notes'))
 
   const fieldErrors: NewProgramState['fieldErrors'] = {}
@@ -50,20 +48,28 @@ export async function createProgramAction(
   if (!clientId) {
     return { error: 'Missing client id.', fieldErrors: {} }
   }
+
+  // Read N session day-of-week selections from the form. Skip if the
+  // earlier validation already failed — no point reading more fields.
+  let sessionDows: number[] = []
+  if (Number.isFinite(daysPerWeek) && daysPerWeek >= 1 && daysPerWeek <= 7) {
+    sessionDows = readSessionDows(formData, daysPerWeek)
+    if (sessionDows.length !== daysPerWeek) {
+      fieldErrors.session_days = 'Pick a day for every session.'
+    } else if (new Set(sessionDows).size !== sessionDows.length) {
+      fieldErrors.session_days = 'Each session must be on a different day.'
+    }
+  }
+
   if (Object.keys(fieldErrors).length > 0) {
     return { error: null, fieldErrors }
   }
 
   const supabase = await createSupabaseServerClient()
 
-  // Post D-PROG-002: multiple active programs per client are allowed
-  // as long as their date ranges don't overlap. The auto-archive of
-  // the prior active program is gone — back-to-back blocks coexist.
-  // If the new program's dates DO overlap an existing active block,
-  // the EXCLUDE constraint `programs_no_active_overlap` catches it
-  // and the insert below surfaces a clear error.
-
-  // 1. Insert the new program.
+  // 1. Insert the new program. Multiple active programs per client are
+  // allowed as long as their date ranges don't overlap (D-PROG-002);
+  // the EXCLUDE constraint enforces it server-side.
   const { data: program, error: progErr } = await supabase
     .from('programs')
     .insert({
@@ -73,7 +79,6 @@ export async function createProgramAction(
       name,
       duration_weeks: duration,
       start_date: startDate,
-      type: programType,
       status: 'active',
       notes,
     })
@@ -81,15 +86,25 @@ export async function createProgramAction(
     .single()
 
   if (progErr || !program) {
+    // exclusion_violation (23P01) means the chosen date range collides
+    // with an existing active block for this client. Translate the raw
+    // Postgres message into something the EP can act on. Match the
+    // copy_program flow's wording for consistency.
+    if ((progErr as { code?: string } | null)?.code === '23P01') {
+      return {
+        error:
+          'This client already has an active training block covering these dates. Pick a later start date, or archive the existing block first.',
+        fieldErrors: { start_date: 'Overlaps an existing active block.' },
+      }
+    }
     return {
       error: `Failed to create program: ${progErr?.message ?? 'unknown'}`,
       fieldErrors: {},
     }
   }
 
-  // 2. Insert weeks. Periodisation grouping (D-PROG-003) — week_number
-  // remains a stable integer label per program; the calendar UI doesn't
-  // surface weeks but the EP can attach periodisation notes here.
+  // 2. Insert weeks. week_number stays as the stable per-program label;
+  // periodisation grouping (D-PROG-003) attaches notes here later.
   const weekRows = Array.from({ length: duration }, (_, i) => ({
     program_id: program.id,
     week_number: i + 1,
@@ -107,22 +122,14 @@ export async function createProgramAction(
     }
   }
 
-  // 3. Insert days per week with concrete scheduled_date (D-PROG-001).
-  //
-  // defaultDaysOfWeek() returns JS-convention day-of-week values
-  // (0=Sunday, 1=Monday, ..., 6=Saturday). The schema stores
-  // scheduled_date as a real calendar date, so we have to map each
-  // (week_number, day_of_week) pair to a date offset from start_date.
-  //
-  // The convention the previous calendar UI used: start_date is treated
-  // as the Monday of week 1, days within the week order Mon..Sun.
-  // To convert JS dow to a Mon-first offset (Mon=0, Sun=6):
+  // 3. Insert days. Each session attaches to the EP-picked weekday;
+  // labels are "Day 1", "Day 2", ... in the order the sessions are
+  // listed in the form. start_date is treated as the Monday anchor of
+  // week 1 (matching the calendar's Mon-first grid). To convert a JS
+  // day-of-week (0=Sun..6=Sat) to a Mon-first offset (Mon=0..Sun=6):
   //   monOffset = (dow + 6) % 7
-  // and then scheduledDate = start_date + (week_number - 1) * 7 + monOffset.
-  //
-  // If start_date is null (open-ended program — duration_weeks may still
-  // be set but there's no calendar anchor) we skip the day inserts.
-  // The EP can backfill via the calendar later.
+  // Open-ended programs (start_date=null) skip day inserts — the EP
+  // backfills via the calendar later.
   if (startDate === null) {
     revalidatePath(`/clients/${clientId}/program`)
     redirect(`/clients/${clientId}/program`)
@@ -136,9 +143,8 @@ export async function createProgramAction(
     }
   }
 
-  const daysOfWeek = defaultDaysOfWeek(daysPerWeek)
   const dayRows = weeks.flatMap((w) =>
-    daysOfWeek.map((dow, i) => {
+    sessionDows.map((dow, i) => {
       const monOffset = (dow + 6) % 7
       const scheduledDate = addDaysIso(
         startDateObj,
@@ -147,7 +153,7 @@ export async function createProgramAction(
       return {
         program_id: program.id,
         program_week_id: w.id,
-        day_label: letterLabel(i),
+        day_label: `Day ${i + 1}`,
         scheduled_date: scheduledDate,
         sort_order: i,
       }
@@ -169,6 +175,17 @@ export async function createProgramAction(
   redirect(`/clients/${clientId}/program`)
 }
 
+function readSessionDows(formData: FormData, count: number): number[] {
+  const dows: number[] = []
+  for (let i = 0; i < count; i++) {
+    const raw = formData.get(`session_dow_${i}`)
+    if (raw === null) continue
+    const n = parseInt(raw.toString(), 10)
+    if (Number.isFinite(n) && n >= 0 && n <= 6) dows.push(n)
+  }
+  return dows
+}
+
 function parseStartDate(iso: string): Date | null {
   // Local-time interpretation; avoids the UTC-shift `new Date(iso)` can
   // introduce for date-only strings near midnight.
@@ -184,25 +201,6 @@ function addDaysIso(base: Date, days: number): string {
   const mo = String(d.getMonth() + 1).padStart(2, '0')
   const da = String(d.getDate()).padStart(2, '0')
   return `${y}-${mo}-${da}`
-}
-
-/**
- * Reasonable defaults for which weekdays a split hits.
- * 0 = Sunday, 1 = Monday, …, 6 = Saturday.
- * User can override any day in the calendar later.
- */
-function defaultDaysOfWeek(count: number): number[] {
-  if (count <= 1) return [1]
-  if (count === 2) return [1, 4]
-  if (count === 3) return [1, 3, 5]
-  if (count === 4) return [1, 2, 4, 5]
-  if (count === 5) return [1, 2, 3, 4, 5]
-  if (count === 6) return [1, 2, 3, 4, 5, 6]
-  return [1, 2, 3, 4, 5, 6, 0]
-}
-
-function letterLabel(index: number): string {
-  return String.fromCharCode(65 + index) // A, B, C…
 }
 
 function toNullable(value: FormDataEntryValue | null): string | null {

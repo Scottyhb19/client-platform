@@ -112,7 +112,7 @@ export default async function PortalTodayPage() {
   const session: TodaySession | null = todayDay
     ? {
         dayId: todayDay.id,
-        dayLabel: `Today · Day ${todayDay.day_label}`,
+        dayLabel: `Today · ${todayDay.day_label}`,
         dayTitle: formatDayTitle(todayDay.day_label, program?.name ?? ''),
         metaLine: composeMetaLine(
           todayDay.program_exercises?.length ?? 0,
@@ -160,7 +160,7 @@ function formatDayTitle(
   dayLabel: string,
   _programName: string,
 ): string {
-  return `Day ${dayLabel}`
+  return dayLabel
 }
 
 function composeMetaLine(

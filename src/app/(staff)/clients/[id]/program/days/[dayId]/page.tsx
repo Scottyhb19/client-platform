@@ -10,6 +10,7 @@ import {
 import { type PinnedNote } from '../../../_components/NotesPanel'
 import { type SessionReport } from '../../../_components/ReportsPanel'
 import { AssignButton } from './_components/AssignButton'
+import { DayLabelEditor } from './_components/DayLabelEditor'
 
 export const dynamic = 'force-dynamic'
 
@@ -184,7 +185,6 @@ export default async function SessionBuilderPage({
           <div>
             <div className="eyebrow" style={{ marginBottom: 0 }}>
               {client.first_name} {client.last_name} · {programName}
-              {dayDateLabel && ` · ${dayDateLabel}`} · Day {day.day_label}
             </div>
             <h1
               style={{
@@ -197,18 +197,31 @@ export default async function SessionBuilderPage({
             >
               Session Builder
             </h1>
+            {/* Subordinate display heading. Maps to the Odyssey design
+                system .h3 token (Barlow Condensed 700, 1.2rem, line-height
+                1.3, charcoal). Holds the editable day label and the date,
+                so the user has one decisive label per session. */}
             <div
               style={{
-                fontSize: '.86rem',
-                color: 'var(--color-text-light)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '1.2rem',
+                lineHeight: 1.3,
+                color: 'var(--color-charcoal)',
                 marginTop: 4,
               }}
             >
-              {programExercises.length === 0
-                ? 'No exercises yet — add from the Library panel.'
-                : `${programExercises.length} ${
-                    programExercises.length === 1 ? 'exercise' : 'exercises'
-                  }`}
+              <DayLabelEditor
+                clientId={id}
+                dayId={dayId}
+                initialLabel={day.day_label}
+              />
+              {dayDateLabel && (
+                <span style={{ color: 'var(--color-text-light)' }}>
+                  {' · '}
+                  {dayDateLabel}
+                </span>
+              )}
             </div>
           </div>
         </div>

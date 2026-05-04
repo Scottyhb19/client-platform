@@ -155,7 +155,7 @@ export default async function PortalSessionPage({
     <Logger
       sessionId={sessionId}
       dayId={dayId}
-      dayLabel={`Day ${day.day_label}`}
+      dayLabel={day.day_label}
       exercises={exercises}
       existingLogs={existingLogs}
     />

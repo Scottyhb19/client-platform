@@ -839,41 +839,57 @@ function ProgramTab({
 }) {
   if (!program) {
     return (
-      <div
-        className="card"
-        style={{
-          padding: '40px 28px',
-          textAlign: 'center',
-          color: 'var(--color-text-light)',
-        }}
+      <Panel
+        title="Program"
+        action={
+          <Link
+            href={`/clients/${clientId}/program`}
+            className="btn primary"
+            style={{ fontSize: '.78rem', padding: '6px 12px' }}
+          >
+            Open calendar
+          </Link>
+        }
       >
         <div
           style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 800,
-            fontSize: '1.2rem',
-            color: 'var(--color-charcoal)',
-            marginBottom: 6,
+            padding: '44px 28px',
+            textAlign: 'center',
+            color: 'var(--color-text-light)',
           }}
         >
-          No active training block
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 800,
+              fontSize: '1.25rem',
+              color: 'var(--color-charcoal)',
+              marginBottom: 6,
+            }}
+          >
+            No active program
+          </div>
+          <p
+            style={{
+              fontSize: '.92rem',
+              margin: '0 auto 20px',
+              lineHeight: 1.6,
+              maxWidth: 460,
+            }}
+          >
+            Start a training block for this client — pick a duration and a
+            day-of-week split. The Session Builder then lets you fill in
+            exercises day by day.
+          </p>
+          <Link
+            href={`/clients/${clientId}/program/new`}
+            className="btn primary"
+          >
+            <Plus size={14} aria-hidden />
+            Start first training block
+          </Link>
         </div>
-        <p
-          style={{
-            fontSize: '.9rem',
-            lineHeight: 1.6,
-            margin: '0 auto 20px',
-            maxWidth: 440,
-          }}
-        >
-          Start a training block — pick the duration, day split, and a start date.
-          Weeks and days scaffold out ready for the Session Builder.
-        </p>
-        <Link href={`/clients/${clientId}/program/new`} className="btn primary">
-          <Plus size={14} aria-hidden />
-          Start first training block
-        </Link>
-      </div>
+      </Panel>
     )
   }
 

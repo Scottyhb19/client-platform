@@ -96,20 +96,6 @@ export function SessionBuilder({
       }}
     >
       <div>
-        <div
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: 11,
-            letterSpacing: '.1em',
-            textTransform: 'uppercase',
-            color: FAINT,
-            marginBottom: 14,
-          }}
-        >
-          Session Exercises
-        </div>
-
         {programExercises.length === 0 ? (
           <EmptyState />
         ) : (

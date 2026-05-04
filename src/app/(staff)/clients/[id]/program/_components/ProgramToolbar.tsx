@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
   AlertCircle,
+  Archive,
   ChevronLeft,
   ChevronRight,
   Copy,
@@ -16,6 +17,7 @@ import {
   monthArrowStyle,
 } from '../../../../_components/MonthYearPicker'
 import {
+  archiveProgramAction,
   copyProgramAction,
   repeatProgramAction,
 } from '../program-actions'
@@ -62,6 +64,7 @@ type Mode =
   | { kind: 'idle' }
   | { kind: 'copy-pick' }
   | { kind: 'confirm-repeat' }
+  | { kind: 'confirm-archive' }
   | { kind: 'error'; title: string; description: string }
 
 export function ProgramToolbar({
@@ -124,6 +127,26 @@ export function ProgramToolbar({
           })
           break
       }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runArchive() {
+    if (!currentBlock) return
+    setBusy(true)
+    try {
+      const result = await archiveProgramAction(clientId, currentBlock.id)
+      if ('error' in result) {
+        setMode({
+          kind: 'error',
+          title: 'Archive failed',
+          description: result.error,
+        })
+        return
+      }
+      setMode({ kind: 'idle' })
+      startTransition(() => router.refresh())
     } finally {
       setBusy(false)
     }
@@ -199,6 +222,16 @@ export function ProgramToolbar({
               <Repeat size={14} aria-hidden />
               Repeat current block
             </button>
+            <button
+              type="button"
+              className="btn outline"
+              onClick={() => setMode({ kind: 'confirm-archive' })}
+              disabled={busy}
+              title="Archive this training block — frees the date range for a new block"
+            >
+              <Archive size={14} aria-hidden />
+              Archive block
+            </button>
           </>
         )}
         <Link
@@ -226,6 +259,15 @@ export function ProgramToolbar({
           newStartIso={repeatStartIso}
           onCancel={() => setMode({ kind: 'idle' })}
           onConfirm={runRepeat}
+          busy={busy}
+        />
+      )}
+
+      {mode.kind === 'confirm-archive' && currentBlock && (
+        <ArchiveBlockDialog
+          currentBlock={currentBlock}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={runArchive}
           busy={busy}
         />
       )}
@@ -562,6 +604,75 @@ function RepeatBlockDialog({
         onCancel={onCancel}
         onConfirm={onConfirm}
         confirmLabel={busy ? 'Repeating…' : 'Repeat block'}
+        confirmDisabled={busy}
+        cancelDisabled={busy}
+      />
+    </DialogShell>
+  )
+}
+
+
+// ============================================================================
+// ArchiveBlockDialog — confirm before flipping status to archived.
+// Frees the EXCLUDE date range so a new block can be created in the
+// same window. The block is preserved (deleted_at stays null) so it
+// remains findable in archived-blocks history.
+// ============================================================================
+
+interface ArchiveBlockDialogProps {
+  currentBlock: CurrentBlock
+  onCancel: () => void
+  onConfirm: () => void
+  busy: boolean
+}
+
+function ArchiveBlockDialog({
+  currentBlock,
+  onCancel,
+  onConfirm,
+  busy,
+}: ArchiveBlockDialogProps) {
+  const endIso = isoFromDate(
+    addDaysTo(parseIso(currentBlock.start_date), currentBlock.duration_weeks * 7 - 1),
+  )
+  return (
+    <DialogShell onCancel={onCancel} disabled={busy} width={420}>
+      <DialogHeader
+        title={`Archive ${currentBlock.name}?`}
+        subtitle="The block stays in archived history; sessions disappear from the calendar and the date range opens up for a new block."
+        onClose={onCancel}
+      />
+
+      <div
+        style={{
+          padding: '14px 16px',
+          background: 'var(--color-surface)',
+          borderRadius: 8,
+          marginBottom: 16,
+          fontSize: '.86rem',
+          color: 'var(--color-text)',
+          lineHeight: 1.6,
+        }}
+      >
+        <div style={{ marginBottom: 6 }}>
+          <span style={{ color: 'var(--color-muted)' }}>Block:</span>{' '}
+          <strong>{currentBlock.name}</strong>
+        </div>
+        <div>
+          <span style={{ color: 'var(--color-muted)' }}>Range:</span>{' '}
+          <strong>{formatLongDate(currentBlock.start_date)}</strong>
+          {' → '}
+          <strong>{formatLongDate(endIso)}</strong>{' '}
+          <span style={{ color: 'var(--color-muted)' }}>
+            ({currentBlock.duration_weeks} weeks)
+          </span>
+        </div>
+      </div>
+
+      <DialogActions
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        confirmLabel={busy ? 'Archiving…' : 'Archive block'}
         confirmDisabled={busy}
         cancelDisabled={busy}
       />

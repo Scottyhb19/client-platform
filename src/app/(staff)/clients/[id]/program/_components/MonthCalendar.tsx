@@ -1042,7 +1042,7 @@ function DateCell({
         aria-expanded={isDayOpen}
       >
         <div className="day-date">{cell.date}</div>
-        <span className="day-tag">Day {day.day_label}</span>
+        <span className="day-tag">{day.day_label}</span>
         {day.exercises.length > 0 && (
           <div
             style={{
@@ -1137,7 +1137,7 @@ function DaySummaryPopover({
     <div
       ref={popoverRef}
       role="dialog"
-      aria-label={`Day ${day.day_label} summary`}
+      aria-label={`${day.day_label} summary`}
       style={{
         position: 'absolute',
         top: 'calc(100% + 6px)',
@@ -1225,7 +1225,7 @@ function DaySummaryPopover({
             order: compact ? 1 : 0,
           }}
         >
-          Day {day.day_label}
+          {day.day_label}
         </span>
       </div>
 
