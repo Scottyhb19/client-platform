@@ -40,6 +40,21 @@
   --radius-input: 7px;
   --radius-button: 7px;
   --radius-chip: 10px;
+  --radius-pill: 999px;
+
+  /* Motion — design system §06. Hover/press 150ms, reveal 300ms.
+     No bounce, no spring, no entrance animations on page load. */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-fast: 150ms;
+  --motion-base: 300ms;
+
+  /* Font-size scale — Barlow body text. Used in components alongside
+     the existing display sizes (which are inline in components for now). */
+  --text-2xs: 0.64rem;
+  --text-xs: 0.72rem;
+  --text-sm: 0.78rem;
+  --text-base: 0.86rem;
+  --text-md: 0.92rem;
 }
 
 html,
@@ -322,6 +337,14 @@ body {
   border-radius: var(--radius-card);
   box-shadow: 0 1px 2px rgba(35, 31, 32, 0.04),
     0 4px 14px rgba(35, 31, 32, 0.05);
+}
+.card.card-link {
+  transition: border-color var(--motion-fast) var(--ease),
+    transform var(--motion-fast) var(--ease);
+}
+.card.card-link:hover {
+  border-color: var(--color-border);
+  transform: translateY(-1px);
 }
 
 /* --- Tags / chips / badges --- */

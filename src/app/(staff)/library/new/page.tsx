@@ -1,25 +1,33 @@
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { NewExerciseForm } from './_components/NewExerciseForm'
+import { ExerciseForm } from '../_components/ExerciseForm'
+import { createExerciseAction } from '../actions'
 
 export const dynamic = 'force-dynamic'
 
 export default async function NewExercisePage() {
   const supabase = await createSupabaseServerClient()
 
-  const [{ data: patterns }, { data: tags }] = await Promise.all([
-    supabase
-      .from('movement_patterns')
-      .select('id, name')
-      .is('deleted_at', null)
-      .order('sort_order'),
-    supabase
-      .from('exercise_tags')
-      .select('id, name')
-      .is('deleted_at', null)
-      .order('sort_order'),
-  ])
+  const [{ data: patterns }, { data: tags }, { data: metricUnits }] =
+    await Promise.all([
+      supabase
+        .from('movement_patterns')
+        .select('id, name')
+        .is('deleted_at', null)
+        .order('sort_order'),
+      supabase
+        .from('exercise_tags')
+        .select('id, name')
+        .is('deleted_at', null)
+        .order('sort_order'),
+      supabase
+        .from('exercise_metric_units')
+        .select('code, display_label')
+        .is('deleted_at', null)
+        .eq('is_active', true)
+        .order('sort_order'),
+    ])
 
   return (
     <div className="page" style={{ maxWidth: 820 }}>
@@ -45,7 +53,7 @@ export default async function NewExercisePage() {
         </Link>
         <div>
           <div className="eyebrow" style={{ marginBottom: 0 }}>
-            05 Exercise Library · New
+            Exercise library · New
           </div>
           <h1
             style={{
@@ -73,13 +81,16 @@ export default async function NewExercisePage() {
         }}
       >
         Add an exercise with sensible defaults. These become the starting
-        point in the session builder — any use can override sets, reps, load,
-        and RPE.
+        point in the session builder — any use can override sets, reps,
+        load, and RPE.
       </p>
 
-      <NewExerciseForm
+      <ExerciseForm
+        mode="create"
         patterns={patterns ?? []}
         tags={tags ?? []}
+        metricUnits={metricUnits ?? []}
+        action={createExerciseAction}
       />
     </div>
   )

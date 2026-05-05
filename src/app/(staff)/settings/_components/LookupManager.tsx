@@ -5,29 +5,47 @@ import { X } from 'lucide-react'
 import {
   addClientCategoryAction,
   addExerciseTagAction,
+  addMovementPatternAction,
   removeClientCategoryAction,
   removeExerciseTagAction,
+  removeMovementPatternAction,
 } from '../actions'
 import { inputStyle } from './PracticeInfoForm'
 
 export type LookupRow = { id: string; name: string }
 
-type Kind = 'tags' | 'categories'
+type Kind = 'tags' | 'categories' | 'patterns'
 
 type OptimisticOp =
   | { kind: 'add'; row: LookupRow }
   | { kind: 'remove'; id: string }
 
-const ACTIONS = {
+const ACTIONS: Record<
+  Kind,
+  {
+    add: (name: string) => Promise<{ error: string | null }>
+    remove: (id: string) => Promise<{ error: string | null }>
+    placeholder: string
+    label: string
+  }
+> = {
   tags: {
     add: addExerciseTagAction,
     remove: removeExerciseTagAction,
     placeholder: 'New tag name…',
+    label: 'tag',
   },
   categories: {
     add: addClientCategoryAction,
     remove: removeClientCategoryAction,
     placeholder: 'New category name…',
+    label: 'category',
+  },
+  patterns: {
+    add: addMovementPatternAction,
+    remove: removeMovementPatternAction,
+    placeholder: 'New movement pattern name…',
+    label: 'pattern',
   },
 }
 
@@ -38,7 +56,7 @@ export function LookupManager({
   kind: Kind
   rows: LookupRow[]
 }) {
-  const { add, remove, placeholder } = ACTIONS[kind]
+  const { add, remove, placeholder, label } = ACTIONS[kind]
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -184,7 +202,7 @@ export function LookupManager({
           onClick={handleAdd}
           disabled={pending || name.trim() === ''}
         >
-          {pending ? 'Adding…' : `Add ${kind === 'tags' ? 'tag' : 'category'}`}
+          {pending ? 'Adding…' : `Add ${label}`}
         </button>
       </div>
     </div>

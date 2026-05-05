@@ -1,10 +1,6 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { LibraryView } from './_components/LibraryView'
-import type {
-  LibraryExercise,
-  Pattern,
-  Tag,
-} from './_components/ExerciseLibrary'
+import type { LibraryExercise, Pattern, Tag } from './types'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +24,7 @@ export default async function LibraryPage() {
          default_metric_value, default_rpe, usage_count, video_url,
          movement_pattern_id,
          movement_pattern:movement_patterns(name),
-         exercise_tag_assignments(tag:exercise_tags(id, name))`,
+         exercise_tag_assignments(tag:exercise_tags(id, name, deleted_at))`,
       )
       .is('deleted_at', null)
       .order('name'),
@@ -48,9 +44,15 @@ export default async function LibraryPage() {
 
   const exercises: LibraryExercise[] = (exercisesRaw ?? []).map((e) => {
     const assignments = e.exercise_tag_assignments ?? []
+    // Drop soft-deleted tags from the per-card chip render. The assignment
+    // row stays in the join table for historical context; the chip is
+    // hidden because the tag itself is no longer active.
     const tagObjs = assignments
       .map((a) => a.tag)
-      .filter((t): t is { id: string; name: string } => t !== null)
+      .filter(
+        (t): t is { id: string; name: string; deleted_at: string | null } =>
+          t !== null && t.deleted_at === null,
+      )
     return {
       id: e.id,
       name: e.name,

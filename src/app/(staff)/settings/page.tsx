@@ -37,6 +37,7 @@ export default async function SettingsPage() {
 
   const [
     { data: org },
+    { data: patterns },
     { data: tags },
     { data: categories },
     { data: sessionTypes },
@@ -52,6 +53,12 @@ export default async function SettingsPage() {
       )
       .eq('id', organizationId)
       .maybeSingle(),
+    supabase
+      .from('movement_patterns')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order')
+      .order('name'),
     supabase
       .from('exercise_tags')
       .select('id, name')
@@ -97,6 +104,10 @@ export default async function SettingsPage() {
     reminder_lead_hours: org?.reminder_lead_hours ?? 24,
   }
 
+  const patternRows: LookupRow[] = (patterns ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+  }))
   const tagRows: LookupRow[] = (tags ?? []).map((t) => ({
     id: t.id,
     name: t.name,
@@ -157,8 +168,15 @@ export default async function SettingsPage() {
       </Section>
 
       <Section
+        title="Movement patterns"
+        desc="Primary classification for exercises in the library — Push, Pull, Squat, Hinge, Carry, Core, Isometric. Removing a pattern hides it from filter chips and the create form; existing exercises keep the link."
+      >
+        <LookupManager kind="patterns" rows={patternRows} />
+      </Section>
+
+      <Section
         title="Exercise tags"
-        desc="Tenant-wide tags applied to exercises in the library."
+        desc="Secondary classification for exercises in the library — DGR, PRI, Plyometrics, Rehab, Prehab."
       >
         <LookupManager kind="tags" rows={tagRows} />
       </Section>

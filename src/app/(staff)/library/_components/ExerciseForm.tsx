@@ -2,22 +2,52 @@
 
 import Link from 'next/link'
 import { useActionState } from 'react'
-import { createExerciseAction } from '../actions'
-import { initialNewExerciseState, type NewExerciseState } from '../types'
+import {
+  initialExerciseFormState,
+  type ExerciseFormState,
+  type ExerciseFormValues,
+  type MetricUnit,
+  type Pattern,
+  type Tag,
+} from '../types'
 
-type Pattern = { id: string; name: string }
-type Tag = { id: string; name: string }
+type Mode = 'create' | 'edit'
 
-interface NewExerciseFormProps {
+interface ExerciseFormProps {
+  mode: Mode
   patterns: Pattern[]
   tags: Tag[]
+  metricUnits: MetricUnit[]
+  initialValues?: ExerciseFormValues
+  action: (
+    prev: ExerciseFormState,
+    formData: FormData,
+  ) => Promise<ExerciseFormState>
 }
 
-export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
+export function ExerciseForm({
+  mode,
+  patterns,
+  tags,
+  metricUnits,
+  initialValues,
+  action,
+}: ExerciseFormProps) {
   const [state, formAction, pending] = useActionState<
-    NewExerciseState,
+    ExerciseFormState,
     FormData
-  >(createExerciseAction, initialNewExerciseState)
+  >(action, initialExerciseFormState)
+
+  const v = initialValues
+  const selectedTagIds = new Set(v?.tag_ids ?? [])
+  const submitLabel =
+    mode === 'create'
+      ? pending
+        ? 'Creating…'
+        : 'Create exercise'
+      : pending
+        ? 'Saving…'
+        : 'Save changes'
 
   return (
     <form action={formAction} style={{ display: 'grid', gap: 18 }}>
@@ -48,6 +78,7 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
             label="Name"
             required
             placeholder="Barbell Back Squat"
+            defaultValue={v?.name ?? ''}
             error={state.fieldErrors.name}
           />
           <div
@@ -57,7 +88,7 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
               <FieldLabel>Movement pattern</FieldLabel>
               <select
                 name="movement_pattern_id"
-                defaultValue=""
+                defaultValue={v?.movement_pattern_id ?? ''}
                 style={inputStyle}
               >
                 <option value="">—</option>
@@ -72,12 +103,14 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
               name="video_url"
               label="YouTube URL"
               placeholder="https://youtube.com/…"
+              defaultValue={v?.video_url ?? ''}
             />
           </div>
           <TextareaField
             name="description"
             label="Short description"
             placeholder="One-line description that appears on the card."
+            defaultValue={v?.description ?? ''}
             rows={2}
           />
         </div>
@@ -101,28 +134,48 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
             label="Sets"
             type="number"
             placeholder="4"
+            defaultValue={v?.default_sets?.toString() ?? ''}
           />
           <Field
             name="default_reps"
             label="Reps"
             placeholder="8 e/s"
+            defaultValue={v?.default_reps ?? ''}
           />
+          <div>
+            <FieldLabel>Unit</FieldLabel>
+            <select
+              name="default_metric"
+              defaultValue={v?.default_metric ?? ''}
+              style={inputStyle}
+            >
+              <option value="">—</option>
+              {metricUnits.map((u) => (
+                <option key={u.code} value={u.code}>
+                  {u.display_label}
+                </option>
+              ))}
+            </select>
+          </div>
           <Field
             name="default_metric_value"
             label="Load"
-            placeholder="60kg or BW"
+            placeholder="e.g. 60"
+            defaultValue={v?.default_metric_value ?? ''}
           />
           <Field
             name="default_rpe"
             label="RPE"
             type="number"
             placeholder="7"
+            defaultValue={v?.default_rpe?.toString() ?? ''}
           />
           <Field
             name="default_rest_seconds"
             label="Rest (sec)"
             type="number"
             placeholder="90"
+            defaultValue={v?.default_rest_seconds?.toString() ?? ''}
           />
         </div>
       </section>
@@ -137,6 +190,7 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
             name="instructions"
             label="Cues / instructions"
             placeholder="Hip-width stance. Brace before descent. Chest up, knees tracking over toes."
+            defaultValue={v?.instructions ?? ''}
             rows={4}
           />
         </div>
@@ -177,6 +231,7 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
                   type="checkbox"
                   name="tag_ids"
                   value={t.id}
+                  defaultChecked={selectedTagIds.has(t.id)}
                   style={{ accentColor: 'var(--color-accent)' }}
                 />
                 #{t.name}
@@ -198,7 +253,7 @@ export function NewExerciseForm({ patterns, tags }: NewExerciseFormProps) {
           Cancel
         </Link>
         <button type="submit" className="btn primary" disabled={pending}>
-          {pending ? 'Creating…' : 'Create exercise'}
+          {submitLabel}
         </button>
       </div>
     </form>
@@ -259,6 +314,7 @@ function Field({
   placeholder,
   required,
   error,
+  defaultValue,
 }: {
   name: string
   label: string
@@ -266,6 +322,7 @@ function Field({
   placeholder?: string
   required?: boolean
   error?: string
+  defaultValue?: string
 }) {
   return (
     <div>
@@ -285,6 +342,7 @@ function Field({
         type={type}
         placeholder={placeholder}
         required={required}
+        defaultValue={defaultValue}
         aria-invalid={error ? true : undefined}
         style={{
           ...inputStyle,
@@ -313,11 +371,13 @@ function TextareaField({
   label,
   placeholder,
   rows = 3,
+  defaultValue,
 }: {
   name: string
   label: string
   placeholder?: string
   rows?: number
+  defaultValue?: string
 }) {
   return (
     <div>
@@ -326,6 +386,7 @@ function TextareaField({
         name={name}
         placeholder={placeholder}
         rows={rows}
+        defaultValue={defaultValue}
         style={{
           ...inputStyle,
           height: 'auto',
@@ -343,10 +404,10 @@ const inputStyle: React.CSSProperties = {
   height: 36,
   padding: '0 12px',
   border: '1px solid var(--color-border-subtle)',
-  borderRadius: 7,
+  borderRadius: 'var(--radius-input)',
   background: 'var(--color-surface)',
   fontFamily: 'var(--font-sans)',
-  fontSize: '.86rem',
+  fontSize: 'var(--text-base)',
   outline: 'none',
   color: 'var(--color-text)',
 }

@@ -3383,6 +3383,12 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_clinical_note: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_exercise: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_exercise_tag: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_movement_pattern: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       soft_delete_practice_custom_test: {
         Args: { p_id: string }
         Returns: undefined

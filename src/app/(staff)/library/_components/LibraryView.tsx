@@ -3,12 +3,8 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
-import {
-  ExerciseLibrary,
-  type LibraryExercise,
-  type Pattern,
-  type Tag,
-} from './ExerciseLibrary'
+import { ExerciseLibrary } from './ExerciseLibrary'
+import type { LibraryExercise, Pattern, Tag } from '../types'
 
 type Section = 'exercises' | 'circuits' | 'sessions' | 'programs'
 
@@ -110,15 +106,10 @@ export function LibraryView({
 function HeaderActions({ section }: { section: Section }) {
   if (section === 'exercises') {
     return (
-      <>
-        <button type="button" className="btn outline" disabled>
-          Import CSV
-        </button>
-        <Link href="/library/new" className="btn primary">
-          <Plus size={14} aria-hidden />
-          New exercise
-        </Link>
-      </>
+      <Link href="/library/new" className="btn primary">
+        <Plus size={14} aria-hidden />
+        New exercise
+      </Link>
     )
   }
   return (
@@ -163,8 +154,8 @@ function sectionSub(section: Section): string {
 function CircuitsPlaceholder() {
   return (
     <PlaceholderCard
-      title="Circuits land with Session Builder"
-      body="Supersets, trisets, and finishers live here. When you build a superset in the Session Builder, you'll be able to 'save as circuit' so you can drop the same group into any future session with one click."
+      title="Circuits"
+      body="Reusable groups of exercises — supersets, trisets, finishers. Build a circuit once, drop it into any session by name."
     />
   )
 }
@@ -172,8 +163,8 @@ function CircuitsPlaceholder() {
 function SessionsPlaceholder() {
   return (
     <PlaceholderCard
-      title="Sessions land after Session Builder"
-      body="Once Session Builder is live, any finished session can be saved as a template — 'Day A — Lower', 'Return-to-sport assessment', 'Bone-loading circuit'. Drop the template into a new program day and it pre-fills."
+      title="Sessions"
+      body="Saved session layouts — 'Day A — Lower', 'Return-to-sport assessment'. Apply to a new program day and the prescription pre-fills."
     />
   )
 }
@@ -181,8 +172,8 @@ function SessionsPlaceholder() {
 function ProgramsPlaceholder() {
   return (
     <PlaceholderCard
-      title="Program templates land with Program engine"
-      body="Training blocks you want to re-use across clients (e.g. '4-week strength base', '12-week ACL return-to-sport'). Apply to a new client with the start date and it scaffolds the whole calendar."
+      title="Programs"
+      body="Training block templates — '4-week strength base', '12-week ACL return-to-sport'. Apply to a new client with a start date and the calendar scaffolds end-to-end."
     />
   )
 }

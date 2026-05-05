@@ -92,9 +92,27 @@ async function addLookup(
   if (!trimmed) return { error: 'Name is required.' }
 
   const supabase = await createSupabaseServerClient()
+
+  // Append: take MAX(sort_order) + 10 so new rows land at the end of the
+  // list. Matches the seeded gap pattern (10/20/30/…) and leaves room
+  // between values for a future drag-reorder UI without renumbering.
+  const { data: maxRow } = await supabase
+    .from(table)
+    .select('sort_order')
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const nextSortOrder = (maxRow?.sort_order ?? 0) + 10
+
   const { error } = await supabase
     .from(table)
-    .insert({ organization_id: organizationId, name: trimmed })
+    .insert({
+      organization_id: organizationId,
+      name: trimmed,
+      sort_order: nextSortOrder,
+    })
 
   if (error) {
     if (error.code === '23505') {
@@ -106,20 +124,18 @@ async function addLookup(
   return { error: null }
 }
 
+/** Hard DELETE removal for client_categories only. The cascade behaviour
+ *  is intentional: clients.category_id → ON DELETE SET NULL, so removed
+ *  category just becomes "uncategorized" on existing clients — no data
+ *  destroyed. exercise_tags moved to soft-delete via RPC (see
+ *  removeExerciseTagAction below) so that historical tag assignments on
+ *  exercises survive the removal. */
 async function removeLookup(
-  table: 'exercise_tags' | 'client_categories',
+  table: 'client_categories',
   id: string,
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
-  // Hard DELETE instead of soft-delete: PostgREST's default
-  // `return=representation` re-SELECTs the updated row, which trips the
-  // SELECT policy's `deleted_at IS NULL` clause after soft-delete and
-  // surfaces as "new row violates row-level security policy". DELETE has
-  // no post-check and no returning row to SELECT.
-  //   exercise_tags → exercise_tag_assignments cascades on delete
-  //   client_categories → clients.category_id is SET NULL on delete
-  // Both are intended side-effects of the user's "remove" click.
   const { error } = await supabase.from(table).delete().eq('id', id)
   if (error) return { error: `Remove failed: ${error.message}` }
   revalidatePath('/settings')
@@ -135,7 +151,20 @@ export async function addExerciseTagAction(
 export async function removeExerciseTagAction(
   id: string,
 ): Promise<{ error: string | null }> {
-  return removeLookup('exercise_tags', id)
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+  // Soft-delete via SECURITY DEFINER RPC. Preserves exercise_tag_assignments
+  // rows (CASCADE only fires on hard DELETE), so the historical record of
+  // which tag was applied to which exercise survives the removal. The tag
+  // disappears from filter chips, the create/edit picker, and the per-card
+  // chip render (all filter deleted_at IS NULL).
+  const { error } = await supabase.rpc('soft_delete_exercise_tag', {
+    p_id: id,
+  })
+  if (error) return { error: `Remove failed: ${error.message}` }
+  revalidatePath('/settings')
+  revalidatePath('/library')
+  return { error: null }
 }
 
 export async function addClientCategoryAction(
@@ -148,6 +177,66 @@ export async function removeClientCategoryAction(
   id: string,
 ): Promise<{ error: string | null }> {
   return removeLookup('client_categories', id)
+}
+
+/* ====================== Movement patterns ====================== */
+
+/** Movement patterns use the soft-delete RPC instead of hard DELETE: the
+ *  RESTRICT FK on exercises.movement_pattern_id would block hard delete
+ *  the moment any exercise references the pattern. Soft-delete preserves
+ *  the FK so existing exercises still resolve the pattern name; the
+ *  pattern just disappears from filter chips and pickers. */
+export async function addMovementPatternAction(
+  name: string,
+): Promise<{ error: string | null }> {
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const trimmed = name.trim()
+  if (!trimmed) return { error: 'Name is required.' }
+
+  const supabase = await createSupabaseServerClient()
+
+  // Append: take the current MAX(sort_order) + 10. The seeded patterns are
+  // spaced 10/20/30/…; matching the gap leaves room between values for a
+  // future drag-reorder UI without renumbering every row.
+  const { data: maxRow } = await supabase
+    .from('movement_patterns')
+    .select('sort_order')
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const nextSortOrder = (maxRow?.sort_order ?? 0) + 10
+
+  const { error } = await supabase
+    .from('movement_patterns')
+    .insert({
+      organization_id: organizationId,
+      name: trimmed,
+      sort_order: nextSortOrder,
+    })
+
+  if (error) {
+    if (error.code === '23505') {
+      return { error: `"${trimmed}" already exists.` }
+    }
+    return { error: `Add failed: ${error.message}` }
+  }
+  revalidatePath('/settings')
+  return { error: null }
+}
+
+export async function removeMovementPatternAction(
+  id: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase.rpc('soft_delete_movement_pattern', {
+    p_id: id,
+  })
+  if (error) return { error: `Remove failed: ${error.message}` }
+  revalidatePath('/settings')
+  return { error: null }
 }
 
 /* ====================== Helper ====================== */
