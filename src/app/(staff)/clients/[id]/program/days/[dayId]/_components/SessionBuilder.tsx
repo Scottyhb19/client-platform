@@ -562,9 +562,9 @@ function ExerciseBody({
       style={{
         display: 'grid',
         gridTemplateColumns: '1.1fr 1.2fr',
-        gap: 20,
+        gap: 14,
         flex: 1,
-        padding: '16px 20px',
+        padding: '12px 14px',
         opacity: pending ? 0.55 : 1,
         transition: 'opacity 150ms',
       }}
@@ -636,37 +636,42 @@ function ExerciseBody({
         >
           Instructions
         </div>
-        <EditableTextarea
-          programExerciseId={pe.id}
-          field="instructions"
-          initialValue={pe.instructions ?? ''}
-          placeholder="Add a coaching cue…"
-        />
-
-        <div style={{ marginTop: 12 }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 8,
+            alignItems: 'flex-end',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <EditableTextarea
+              programExerciseId={pe.id}
+              field="instructions"
+              initialValue={pe.instructions ?? ''}
+              placeholder="Add a coaching cue…"
+            />
+          </div>
           {pe.exercise_video_url ? (
             <a
               href={pe.exercise_video_url}
               target="_blank"
               rel="noreferrer"
+              aria-label="Play demo video"
               style={{
-                display: 'block',
+                display: 'grid',
+                placeItems: 'center',
                 background: INK,
                 borderRadius: 8,
-                height: 140,
-                position: 'relative',
-                overflow: 'hidden',
+                width: 96,
+                height: 60,
+                flexShrink: 0,
                 textDecoration: 'none',
               }}
             >
               <span
                 style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: 40,
-                  height: 40,
+                  width: 26,
+                  height: 26,
                   borderRadius: '50%',
                   background: 'rgba(255,255,255,0.92)',
                   display: 'grid',
@@ -674,37 +679,26 @@ function ExerciseBody({
                   color: INK,
                 }}
               >
-                <Play size={16} aria-hidden fill="currentColor" />
-              </span>
-              <span
-                style={{
-                  position: 'absolute',
-                  bottom: 8,
-                  left: 12,
-                  fontSize: 11,
-                  color: 'rgba(255,255,255,0.65)',
-                }}
-              >
-                Demo
+                <Play size={12} aria-hidden fill="currentColor" />
               </span>
             </a>
           ) : (
             <div
+              aria-label="No demo video"
               style={{
-                background: INK,
-                borderRadius: 8,
-                height: 140,
                 display: 'grid',
                 placeItems: 'center',
-                color: 'rgba(255,255,255,0.5)',
-                fontSize: 12,
-                position: 'relative',
+                background: INK,
+                borderRadius: 8,
+                width: 96,
+                height: 60,
+                flexShrink: 0,
               }}
             >
               <span
                 style={{
-                  width: 40,
-                  height: 40,
+                  width: 26,
+                  height: 26,
                   borderRadius: '50%',
                   background: 'rgba(255,255,255,0.12)',
                   display: 'grid',
@@ -712,18 +706,7 @@ function ExerciseBody({
                   color: 'rgba(255,255,255,0.5)',
                 }}
               >
-                <Play size={16} aria-hidden />
-              </span>
-              <span
-                style={{
-                  position: 'absolute',
-                  bottom: 8,
-                  left: 12,
-                  fontSize: 11,
-                  color: 'rgba(255,255,255,0.5)',
-                }}
-              >
-                No demo
+                <Play size={12} aria-hidden />
               </span>
             </div>
           )}
@@ -759,7 +742,7 @@ function ColHeader({
         fontSize: 11,
         letterSpacing: '.08em',
         textTransform: 'uppercase',
-        height: 30,
+        height: 26,
         display: 'grid',
         placeItems: 'center',
         borderRadius: 8,
@@ -784,7 +767,7 @@ function StaticCell({
       style={{
         background: CREAM,
         borderRadius: 8,
-        height: 32,
+        height: 26,
         display: 'grid',
         placeItems: 'center',
         fontFamily: 'var(--font-sans)',
@@ -864,7 +847,7 @@ function SetRow({
     <>
       <div
         style={{
-          height: 32,
+          height: 26,
           display: 'grid',
           placeItems: 'center',
           fontFamily: 'var(--font-sans)',
@@ -950,7 +933,7 @@ function InlineCell({
       style={{
         background: CREAM,
         borderRadius: 8,
-        height: 32,
+        height: 26,
         textAlign: 'center',
         fontFamily: 'var(--font-sans)',
         fontSize: 13,
@@ -1048,7 +1031,7 @@ function ExtrasRow({ pe }: { pe: ProgramExercise }) {
         display: 'grid',
         gridTemplateColumns: 'repeat(3, 1fr)',
         gap: 6,
-        marginTop: 12,
+        marginTop: 8,
       }}
     >
       <SmallField
@@ -1300,7 +1283,7 @@ function EditableTextarea({
         color: value ? INK : FAINT,
         fontWeight: 400,
         width: '100%',
-        minHeight: 64,
+        minHeight: 60,
         resize: 'vertical',
         outline: 'none',
         boxSizing: 'border-box',
