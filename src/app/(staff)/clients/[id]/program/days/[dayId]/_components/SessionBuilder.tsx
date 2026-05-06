@@ -28,21 +28,20 @@ import {
 /*
  * Session Builder — light/cream skeleton.
  *
- * Design tokens lifted from .design-ref/odyssey SessionBuilder.jsx.
- * Cards are white on warm parchment. The ONE harsh-black element is the
- * sequencing pill that floats on the left of each card (solo = single
- * rounded pill; superset = a continuous black spine with green B1/B2
- * letters running down it). Everything else uses softer charcoal.
+ * Cards are white on warm parchment. The sequencing pill / superset spine
+ * uses slate (var(--color-slate)) — a notch lighter than charcoal so it
+ * reads as structural without going harsh. Green accent letters (B1, B2…)
+ * run down the spine for supersets. All colours reference design-system
+ * tokens (defined in globals.css); the named constants below are aliases,
+ * not raw hex.
  */
-const INK = '#1E1A18'
-const INK_SOFT = '#2A2522'
-const CREAM = '#F5F0EA'
-const CREAM_DEEP = '#EDE8E2'
-const BORDER = '#E2DDD7'
-const MUTED = '#78746F'
-const FAINT = '#A09890'
-const GREEN = '#2DB24C'
-const ALERT = '#D64045'
+const INK = 'var(--color-primary)'
+const CREAM = 'var(--color-surface)'
+const CREAM_DEEP = 'var(--color-surface-2)'
+const BORDER = 'var(--color-border-hairline)'
+const MUTED = 'var(--color-muted)'
+const FAINT = 'var(--color-text-faint)'
+const GREEN = 'var(--color-accent)'
 
 export type ProgramExercise = {
   id: string
@@ -110,7 +109,7 @@ export function SessionBuilder({
             gap: 4,
             background: CREAM_DEEP,
             padding: 3,
-            borderRadius: 7,
+            borderRadius: 'var(--radius-input)',
             marginBottom: 14,
           }}
         >
@@ -158,7 +157,7 @@ function EmptyState() {
       style={{
         background: '#fff',
         border: `1px dashed ${BORDER}`,
-        borderRadius: 14,
+        borderRadius: 'var(--radius-card)',
         padding: '40px 24px',
         textAlign: 'center',
         color: MUTED,
@@ -293,7 +292,7 @@ function SectionStrip({ children }: { children: React.ReactNode }) {
           width: 6,
           height: 6,
           borderRadius: '50%',
-          background: '#9A9490',
+          background: 'var(--color-text-faint)',
         }}
       />
       <span
@@ -320,7 +319,7 @@ function SoloPill({ letter }: { letter: string }) {
       style={{
         width: 34,
         minHeight: 34,
-        background: '#000',
+        background: 'var(--color-slate)',
         color: GREEN,
         fontFamily: 'var(--font-display)',
         fontWeight: 800,
@@ -365,7 +364,7 @@ function SupersetSpine({
           left: '50%',
           transform: 'translateX(-50%)',
           width: 34,
-          background: '#000',
+          background: 'var(--color-slate)',
           borderRadius: 17,
         }}
       />
@@ -958,7 +957,7 @@ function InlineCell({
         fontWeight: 500,
         color: empty ? FAINT : INK,
         border:
-          status === 'error' ? '1px solid #B04040' : '1px solid transparent',
+          status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
         outline: 'none',
         padding: '0 10px',
         width: '100%',
@@ -1140,7 +1139,7 @@ function SmallField({
           padding: '0 8px',
           background: CREAM,
           border:
-            status === 'error' ? '1px solid #B04040' : '1px solid transparent',
+            status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
           borderRadius: 6,
           fontFamily: 'var(--font-sans)',
           fontSize: 12,
@@ -1292,7 +1291,7 @@ function EditableTextarea({
       style={{
         background: CREAM,
         border:
-          status === 'error' ? '1px solid #B04040' : '1px solid transparent',
+          status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
         borderRadius: 8,
         padding: '10px 12px',
         fontFamily: 'var(--font-sans)',
@@ -1331,7 +1330,7 @@ function IconButton({
       style={{
         background: 'transparent',
         border: 'none',
-        color: disabled ? '#D6D0C8' : MUTED,
+        color: disabled ? 'var(--color-border-subtle)' : MUTED,
         cursor: disabled ? 'not-allowed' : 'pointer',
         padding: 4,
         display: 'grid',
@@ -1462,7 +1461,7 @@ function LibraryPanel({
             height: 32,
             padding: '0 12px 0 30px',
             border: `1px solid ${BORDER}`,
-            borderRadius: 7,
+            borderRadius: 'var(--radius-input)',
             fontFamily: 'var(--font-sans)',
             fontSize: '.82rem',
             background: CREAM,

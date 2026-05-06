@@ -24,8 +24,12 @@
   --color-surface: #f7f4f0;
   --color-surface-2: #ede8e2;
   --color-card: #ffffff;
+  --color-border-hairline: #e2ddd7;
   --color-border-subtle: #d6cfc6;
   --color-border: #cfc7bd;
+  /* Faded placeholder text — sits between --color-muted and the surface,
+     used where empty inputs need a present-but-quiet hint. */
+  --color-text-faint: #a09890;
 
   /* Semantic */
   --color-warning: #e8a317;
