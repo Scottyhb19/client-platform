@@ -5,6 +5,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   SessionBuilder,
   type ExerciseTagOption,
+  type LastLogged,
   type LibraryPick,
   type MetricUnitOption,
   type MovementPatternOption,
@@ -150,6 +151,74 @@ export default async function SessionBuilderPage({
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
 
+  // Phase H (2026-05-08): "Last logged" footer per exercise card.
+  // For each exercise_id on this day, find the most recent completed
+  // exercise_log for THIS client, with its set_logs. Pre-launch the result
+  // is empty for every row — fine, the footer just doesn't render.
+  //
+  // Why join via sessions!inner + filter on sessions.client_id rather than
+  // trusting RLS alone: exercise_logs.exercise_id is shared across all
+  // clients in the org (durable FK to the exercises catalog), so without
+  // the client filter we'd surface another client's history on this card.
+  // RLS keeps us inside the org; the client-id filter narrows to this
+  // person.
+  //
+  // No DISTINCT ON in supabase-js — we order DESC, then dedupe by
+  // exercise_id in TS taking the first (most recent) hit. Pre-launch this
+  // is empty; post-launch the row count is bounded by sessions × exercises
+  // and an `exercise_logs_exercise_idx` partial index covers the where
+  // clause. If real-traffic profiling shows it's slow, swap to a
+  // SECURITY DEFINER RPC with a per-exercise lateral subquery
+  // (deferred per docs/polish/session-builder.md §2.9).
+  const exerciseIdsOnDay = Array.from(
+    new Set((programExercisesRaw ?? []).map((pe) => pe.exercise_id)),
+  )
+
+  const lastLoggedByExerciseId = new Map<string, LastLogged>()
+  if (exerciseIdsOnDay.length > 0) {
+    const { data: logsRaw, error: logsErr } = await supabase
+      .from('exercise_logs')
+      .select(
+        `exercise_id,
+         completed_at,
+         sessions!inner(client_id),
+         set_logs(
+           set_number, weight_value, weight_metric,
+           reps_performed, deleted_at
+         )`,
+      )
+      .eq('sessions.client_id', id)
+      .in('exercise_id', exerciseIdsOnDay)
+      .is('deleted_at', null)
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+
+    if (logsErr) throw new Error(`Load last-logged: ${logsErr.message}`)
+
+    for (const log of logsRaw ?? []) {
+      // First hit per exercise_id wins (rows ordered completed_at DESC).
+      if (lastLoggedByExerciseId.has(log.exercise_id)) continue
+      if (!log.completed_at) continue
+
+      const sets = (log.set_logs ?? [])
+        .filter((s) => s.deleted_at === null)
+        .sort((a, b) => a.set_number - b.set_number)
+
+      // No live sets at all — no useful footer. Skip so we keep looking
+      // backwards for an earlier session that does have set data.
+      if (sets.length === 0) continue
+
+      lastLoggedByExerciseId.set(log.exercise_id, {
+        completedAt: log.completed_at,
+        sets: sets.map((s) => ({
+          weightValue: s.weight_value === null ? null : Number(s.weight_value),
+          weightMetric: s.weight_metric,
+          repsPerformed: s.reps_performed,
+        })),
+      })
+    }
+  }
+
   const programExercises: ProgramExercise[] = (programExercisesRaw ?? []).map(
     (pe) => ({
       id: pe.id,
@@ -176,6 +245,7 @@ export default async function SessionBuilderPage({
           optional_metric: s.optional_metric,
           optional_value: s.optional_value,
         })),
+      lastLogged: lastLoggedByExerciseId.get(pe.exercise_id) ?? null,
     }),
   )
 

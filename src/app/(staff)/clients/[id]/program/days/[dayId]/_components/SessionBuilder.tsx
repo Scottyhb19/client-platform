@@ -59,6 +59,7 @@ import {
   ReportsPanel,
   type SessionReport,
 } from '../../../../_components/ReportsPanel'
+import { timeAgo } from '../../../../_components/reports/helpers'
 
 /*
  * Session Builder — light/cream skeleton.
@@ -110,6 +111,24 @@ export type PrescriptionSet = {
   optional_value: string | null
 }
 
+/**
+ * Phase H (2026-05-08): "Last logged" footer source data. The page loader
+ * looks up the most recent completed exercise_log for this client +
+ * exercise_id and passes its set_logs along. We keep the raw per-set
+ * shape (weight + metric + reps) here so the renderer can decide
+ * uniform-vs-range and bodyweight-vs-load purely on what was performed.
+ */
+export type LastLoggedSet = {
+  weightValue: number | null
+  weightMetric: string | null
+  repsPerformed: number | null
+}
+
+export type LastLogged = {
+  completedAt: string
+  sets: LastLoggedSet[]
+}
+
 export type ProgramExercise = {
   id: string
   sort_order: number
@@ -122,6 +141,7 @@ export type ProgramExercise = {
   exercise_name: string
   exercise_video_url: string | null
   prescriptionSets: PrescriptionSet[]
+  lastLogged: LastLogged | null
 }
 
 export type LibraryPick = {
@@ -1301,6 +1321,7 @@ function ExerciseBody({
         />
         <SetStepper pe={pe} clientId={clientId} dayId={dayId} />
         <ExtrasRow pe={pe} />
+        <LastLoggedFooter pe={pe} />
       </div>
     </div>
   )
@@ -1814,6 +1835,94 @@ function SmallField({
       />
     </label>
   )
+}
+
+/* ====================== Last-logged footer ====================== */
+
+/**
+ * Phase H (2026-05-08): a single-line "Last: …" readout pinned to the
+ * bottom of the prescription column. Reads the most recent completed
+ * exercise_log for THIS client + exercise_id (loaded by page.tsx) and
+ * renders the actuals so the EP can see what the client did last time
+ * without leaving the builder.
+ *
+ * Format conventions (sign-off 2026-05-08, Q1a + Q2a):
+ *   - Reps/weight uniform across sets → single value (`4 × 6 @ 80 kg`).
+ *   - Reps/weight varying          → low-high range (`4 × 6 @ 75-80 kg`).
+ *   - weight_metric === 'bodyweight' → drop `@`, append `BW` (`3 × 8 BW`).
+ *   - Mixed metrics across sets   → use set 1's metric (defensive).
+ *   - Date is relative ("9 days ago") — CLAUDE.md voice rule.
+ *
+ * Returns null when there is no history. Pre-launch this is true for
+ * every card; post-launch it surfaces only on cards the client has
+ * completed at least once.
+ */
+function LastLoggedFooter({ pe }: { pe: ProgramExercise }) {
+  if (pe.lastLogged === null) return null
+  const summary = formatLastLoggedSummary(pe.lastLogged)
+  if (summary === null) return null
+
+  return (
+    <div
+      style={{
+        marginTop: 'auto',
+        paddingTop: 8,
+        borderTop: `1px solid ${BORDER}`,
+        fontFamily: 'var(--font-sans)',
+        fontSize: 11,
+        lineHeight: 1.4,
+        color: MUTED,
+      }}
+    >
+      <span style={{ color: INK, fontWeight: 600 }}>Last:</span>{' '}
+      <span>{summary}</span>{' '}
+      <span style={{ color: FAINT }}>· {timeAgo(pe.lastLogged.completedAt)}</span>
+    </div>
+  )
+}
+
+/**
+ * Builds the body text between "Last:" and the time-ago suffix. Returns
+ * null when there's nothing meaningful to show (no live sets at all —
+ * the loader already filters this case, but the renderer is defensive).
+ */
+function formatLastLoggedSummary(ll: LastLogged): string | null {
+  const sets = ll.sets
+  const N = sets.length
+  if (N === 0) return null
+
+  // Reps: collapse to single value if uniform, otherwise low-high range.
+  const reps: number[] = []
+  for (const s of sets) if (s.repsPerformed !== null) reps.push(s.repsPerformed)
+  let countLabel: string
+  if (reps.length > 0) {
+    const min = Math.min(...reps)
+    const max = Math.max(...reps)
+    countLabel = `${N} × ${min === max ? min : `${min}-${max}`}`
+  } else {
+    // No reps logged on any set — fall back to bare set count.
+    countLabel = `${N} ${N === 1 ? 'set' : 'sets'}`
+  }
+
+  // Load: bodyweight short-circuits to "BW", otherwise uniform/range value
+  // followed by metric. Set 1's metric wins on the (rare) mixed case.
+  const metric = sets[0]?.weightMetric ?? null
+  if (metric === 'bodyweight') {
+    return `${countLabel} BW`
+  }
+  const weights: number[] = []
+  for (const s of sets) if (s.weightValue !== null) weights.push(s.weightValue)
+  if (weights.length === 0) {
+    // No load data, no bodyweight flag — append "reps" only when we have
+    // a reps value, otherwise leave as bare count (defensive, rare).
+    return reps.length > 0 ? `${countLabel} reps` : countLabel
+  }
+  const wMin = Math.min(...weights)
+  const wMax = Math.max(...weights)
+  const fmtN = (n: number) => parseFloat(n.toFixed(2)).toString()
+  const valueStr = wMin === wMax ? fmtN(wMin) : `${fmtN(wMin)}-${fmtN(wMax)}`
+  const unitStr = metric ? ` ${metric}` : ''
+  return `${countLabel} @ ${valueStr}${unitStr}`
 }
 
 /* ====================== Between-cards action bar ====================== */
