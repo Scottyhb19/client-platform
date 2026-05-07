@@ -135,6 +135,46 @@ export async function addExerciseToDayAction(
 }
 
 /**
+ * Swap an exercise in place — replace one program_exercise row with another
+ * at the same slot (sort_order, section_title, superset_group_id), and
+ * fan out fresh per-set rows from the new exercise's defaults.
+ *
+ * Routes through the swap_program_exercise SECURITY DEFINER RPC
+ * (migration 20260507100400) so soft-delete + insert + per-set fan-out
+ * happens in one transaction. A sequence of supabase-js calls would leak
+ * mid-swap orphans on revalidate (Q1 sign-off 2026-05-07).
+ *
+ * Old prescription is discarded (Q2 sign-off): the EP picked a different
+ * exercise, defaults speak for the new exercise. Set count resets to the
+ * new exercise's default_sets (or 1 when NULL) — the stepper is one click
+ * away if the EP wants to override.
+ *
+ * History (exercise_logs / set_logs) survives because exercise_logs.
+ * exercise_id is a direct FK to exercises that doesn't change on swap;
+ * Phase H "Last logged" lookups key off exercise_id, so the footer
+ * correctly resets to the new exercise's history.
+ */
+export async function swapProgramExerciseAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+  newExerciseId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc('swap_program_exercise', {
+    p_pe_id: programExerciseId,
+    p_new_exercise_id: newExerciseId,
+  })
+
+  if (error) return { error: `Swap failed: ${error.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
  * Soft-delete a program_exercise row via the soft_delete_program_exercise
  * RPC (migration 20260429130000). Direct UPDATE setting deleted_at fails
  * 42501 because the SELECT policy filters deleted_at IS NULL; the RPC
@@ -611,6 +651,39 @@ export async function addProgramExerciseSetAction(
     })
 
   if (insertErr) return { error: `Couldn't add set: ${insertErr.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
+ * Set the metric (optional_metric) for every live set on a program_exercise
+ * in one bulk UPDATE. The metric is column-level in the UI (per Phase F
+ * sign-off chat 2026-05-07) — picking "kg" applies to all sets at once,
+ * picking RPE applies to all sets at once. Storage stays per-set so the
+ * portal RPC and Logger don't need to change; this action is the writer
+ * that keeps the per-set rows in sync.
+ *
+ * Direct UPDATE works (no soft-delete trap): the SELECT policy filters
+ * deleted_at IS NULL, the UPDATE policy lets owner/staff write to live
+ * rows in their org, and we're touching optional_metric (not deleted_at).
+ */
+export async function updateProgramExerciseMetricAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+  metric: string | null,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('program_exercise_sets')
+    .update({ optional_metric: metric })
+    .eq('program_exercise_id', programExerciseId)
+    .is('deleted_at', null)
+
+  if (error) return { error: `Set metric failed: ${error.message}` }
 
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }

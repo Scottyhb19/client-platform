@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   GripVertical,
   Link2,
   Play,
@@ -43,8 +44,10 @@ import {
   removeProgramExerciseAction,
   removeProgramExerciseSetAction,
   reorderProgramExercisesAction,
+  swapProgramExerciseAction,
   ungroupFromSupersetAction,
   updateProgramExerciseAction,
+  updateProgramExerciseMetricAction,
   updateProgramExerciseSetAction,
   updateSectionTitleAction,
   type InsertSlot,
@@ -131,14 +134,21 @@ export type LibraryPick = {
 
 /**
  * Lookup options sourced from the org's tenant-configurable tables. All
- * three are loaded by the page.tsx Promise.all and passed in via props.
+ * are loaded by the page.tsx Promise.all and passed in via props.
  *
- * Phase E (2026-05-07) — drives the SectionTitleField dropdown and the
- * LibraryPanel multi-select chip filters.
+ * Phase E (2026-05-07) — section_titles drives SectionTitleField,
+ * movement_patterns + exercise_tags drive LibraryPanel chip filters.
+ *
+ * Phase F (2026-05-07) — exercise_metric_units drives the SetMetricCell
+ * dropdown for the Load/Notes column. Same source the new-exercise form
+ * uses (library/new/page.tsx). `code` is the stable machine identifier
+ * stored in program_exercise_sets.optional_metric; `display_label` is
+ * what the EP sees in the dropdown and in the read-only display.
  */
 export type SectionTitleOption = { id: string; name: string }
 export type MovementPatternOption = { id: string; name: string }
 export type ExerciseTagOption = { id: string; name: string }
+export type MetricUnitOption = { code: string; display_label: string }
 
 interface SessionBuilderProps {
   clientId: string
@@ -150,6 +160,7 @@ interface SessionBuilderProps {
   sectionTitles: SectionTitleOption[]
   movementPatterns: MovementPatternOption[]
   exerciseTags: ExerciseTagOption[]
+  metricUnits: MetricUnitOption[]
 }
 
 export function SessionBuilder({
@@ -162,6 +173,7 @@ export function SessionBuilder({
   sectionTitles,
   movementPatterns,
   exerciseTags,
+  metricUnits,
 }: SessionBuilderProps) {
   const router = useRouter()
   const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('library')
@@ -169,7 +181,23 @@ export function SessionBuilder({
   // Phase D: an insertion slot can be armed by a between-cards bar's
   // "+ Add exercise" click. The next library-pick consumes the slot. Cleared
   // by the LibraryPanel's Cancel button or after a successful add.
-  const [insertSlot, setInsertSlot] = useState<InsertSlot | null>(null)
+  const [insertSlot, setInsertSlotState] = useState<InsertSlot | null>(null)
+
+  // Phase F: a swap target can be armed by clicking an exercise name. The
+  // next library-pick consumes the swap target via swapProgramExerciseAction.
+  // Mutually exclusive with insertSlot — arming one clears the other so the
+  // EP only ever has one armed library action at a time.
+  const [swapTarget, setSwapTargetState] = useState<string | null>(null)
+
+  function setInsertSlot(slot: InsertSlot | null) {
+    setInsertSlotState(slot)
+    if (slot !== null) setSwapTargetState(null)
+  }
+
+  function setSwapTarget(peId: string | null) {
+    setSwapTargetState(peId)
+    if (peId !== null) setInsertSlotState(null)
+  }
 
   // Phase G: id of the card currently being dragged. Drives the
   // DragOverlay ghost render. null means no drag in progress.
@@ -246,6 +274,13 @@ export function SessionBuilder({
       ? programExercises.find((e) => e.id === activeDragId) ?? null
       : null
 
+  function handleSwapClick(peId: string) {
+    // Click again on the same name = cancel (toggle). Click a different
+    // name = re-arm (latest wins). Same toggle pattern as insertSlot.
+    setSwapTarget(swapTarget === peId ? null : peId)
+    if (swapTarget !== peId) focusLibrarySearch()
+  }
+
   return (
     <div
       style={{
@@ -284,6 +319,9 @@ export function SessionBuilder({
                 setInsertSlot={setInsertSlot}
                 focusLibrarySearch={focusLibrarySearch}
                 sectionTitles={sectionTitles}
+                metricUnits={metricUnits}
+                swapTarget={swapTarget}
+                onSwapClick={handleSwapClick}
               />
             </SortableContext>
             <DragOverlay>
@@ -338,6 +376,8 @@ export function SessionBuilder({
             programExercises={programExercises}
             movementPatterns={movementPatterns}
             exerciseTags={exerciseTags}
+            swapTarget={swapTarget}
+            setSwapTarget={setSwapTarget}
           />
         )}
         {tab === 'notes' && <NotesPanel notes={pinnedNotes} />}
@@ -413,6 +453,9 @@ function ExerciseList({
   setInsertSlot,
   focusLibrarySearch,
   sectionTitles,
+  metricUnits,
+  swapTarget,
+  onSwapClick,
 }: {
   exercises: ProgramExercise[]
   clientId: string
@@ -421,6 +464,9 @@ function ExerciseList({
   setInsertSlot: (s: InsertSlot | null) => void
   focusLibrarySearch: () => void
   sectionTitles: SectionTitleOption[]
+  metricUnits: MetricUnitOption[]
+  swapTarget: string | null
+  onSwapClick: (peId: string) => void
 }) {
   const nodes: React.ReactNode[] = []
   let lastSection: string | null | undefined = undefined
@@ -498,6 +544,9 @@ function ExerciseList({
           isFirstOverall={isFirstOverall}
           isLastOverall={isLastOverall}
           sectionTitles={sectionTitles}
+          metricUnits={metricUnits}
+          swapTarget={swapTarget}
+          onSwapClick={onSwapClick}
         />,
       )
       i = j
@@ -514,6 +563,9 @@ function ExerciseList({
           isFirst={isFirstOverall}
           isLast={isLastOverall}
           sectionTitles={sectionTitles}
+          metricUnits={metricUnits}
+          swapTarget={swapTarget}
+          onSwapClick={onSwapClick}
         />,
       )
       i += 1
@@ -793,6 +845,9 @@ function SoloExercise({
   isFirst,
   isLast,
   sectionTitles,
+  metricUnits,
+  swapTarget,
+  onSwapClick,
 }: {
   pe: ProgramExercise
   letter: string
@@ -801,6 +856,9 @@ function SoloExercise({
   isFirst: boolean
   isLast: boolean
   sectionTitles: SectionTitleOption[]
+  metricUnits: MetricUnitOption[]
+  swapTarget: string | null
+  onSwapClick: (peId: string) => void
 }) {
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
@@ -813,6 +871,9 @@ function SoloExercise({
           isFirst={isFirst}
           isLast={isLast}
           sectionTitles={sectionTitles}
+          metricUnits={metricUnits}
+          swapTarget={swapTarget}
+          onSwapClick={onSwapClick}
         />
       </SortableCardShell>
     </div>
@@ -832,6 +893,9 @@ function SupersetBlock({
   isFirstOverall,
   isLastOverall,
   sectionTitles,
+  metricUnits,
+  swapTarget,
+  onSwapClick,
 }: {
   baseLetter: string
   members: ProgramExercise[]
@@ -843,6 +907,9 @@ function SupersetBlock({
   isFirstOverall: boolean
   isLastOverall: boolean
   sectionTitles: SectionTitleOption[]
+  metricUnits: MetricUnitOption[]
+  swapTarget: string | null
+  onSwapClick: (peId: string) => void
 }) {
   // members[0]'s superset_group_id is non-null and equal across all members
   // by construction (the walker only enters this branch for memberCount > 1).
@@ -912,6 +979,9 @@ function SupersetBlock({
                 isFirst={isFirstOverall && idx === 0}
                 isLast={isLastOverall && idx === members.length - 1}
                 sectionTitles={sectionTitles}
+                metricUnits={metricUnits}
+                swapTarget={swapTarget}
+                onSwapClick={onSwapClick}
               />
             </SortableCardShell>
             {idx < members.length - 1 && (
@@ -974,6 +1044,9 @@ function ExerciseBody({
   isFirst,
   isLast,
   sectionTitles,
+  metricUnits,
+  swapTarget,
+  onSwapClick,
 }: {
   pe: ProgramExercise
   clientId: string
@@ -981,7 +1054,11 @@ function ExerciseBody({
   isFirst: boolean
   isLast: boolean
   sectionTitles: SectionTitleOption[]
+  metricUnits: MetricUnitOption[]
+  swapTarget: string | null
+  onSwapClick: (peId: string) => void
 }) {
+  const isSwapping = swapTarget === pe.id
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -1050,17 +1127,41 @@ function ExerciseBody({
             marginBottom: 10,
           }}
         >
-          <span
+          {/* Phase F: clickable name arms a swap-in-place. Click again on
+              the same name = cancel; click a different name = re-arm.
+              Renders as an underlined button when armed; hover-only
+              underline at rest so the surface stays calm. */}
+          <button
+            type="button"
+            onClick={() => onSwapClick(pe.id)}
+            aria-label={`Swap ${pe.exercise_name}`}
+            title={isSwapping ? 'Cancel swap' : 'Swap exercise'}
             style={{
               fontFamily: 'var(--font-sans)',
               fontWeight: 600,
               fontSize: 15,
               color: INK,
               flex: 1,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              textAlign: 'left',
+              textDecoration: isSwapping ? 'underline' : 'none',
+              textDecorationStyle: 'dashed',
+              textDecorationColor: 'var(--color-slate)',
+              textUnderlineOffset: 4,
+            }}
+            onMouseEnter={(e) => {
+              if (!isSwapping)
+                e.currentTarget.style.textDecoration = 'underline'
+            }}
+            onMouseLeave={(e) => {
+              if (!isSwapping) e.currentTarget.style.textDecoration = 'none'
             }}
           >
             {pe.exercise_name}
-          </span>
+          </button>
           <IconButton
             disabled={isFirst || pending}
             onClick={() => handleMove('up')}
@@ -1192,7 +1293,12 @@ function ExerciseBody({
 
       {/* RIGHT: set table + stepper */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <SetTable pe={pe} />
+        <SetTable
+          pe={pe}
+          metricUnits={metricUnits}
+          clientId={clientId}
+          dayId={dayId}
+        />
         <SetStepper pe={pe} clientId={clientId} dayId={dayId} />
         <ExtrasRow pe={pe} />
       </div>
@@ -1233,10 +1339,37 @@ function ColHeader({
 
 /**
  * Renders one row per live set on the program_exercise. Each row is
- * independently editable — Phase C (2026-05-07) per-set storage replaces
- * the prior "row-1-master / 2..N-static" pattern.
+ * independently editable for value (Phase C, 2026-05-07).
+ *
+ * Phase F (2026-05-07): metric is column-level, not per-set. The third
+ * column's HEADER becomes the metric dropdown; picking a metric writes
+ * it to every set in this exercise via updateProgramExerciseMetricAction.
+ * Per-row cells are value-only. This is how an EP actually thinks: "the
+ * column is kg, log values" — wave loading varies the value across sets,
+ * not the metric.
+ *
+ * Storage stays per-set (the per-set table is unchanged). The action
+ * writes the same metric to all sets in one bulk UPDATE; reads pull from
+ * the first set. Logger's portal-side prefill keeps working unchanged
+ * because all sets share the metric.
  */
-function SetTable({ pe }: { pe: ProgramExercise }) {
+function SetTable({
+  pe,
+  metricUnits,
+  clientId,
+  dayId,
+}: {
+  pe: ProgramExercise
+  metricUnits: MetricUnitOption[]
+  clientId: string
+  dayId: string
+}) {
+  // Column-level metric is read from the first live set — they're all in
+  // sync since updateProgramExerciseMetricAction is the only writer and
+  // does a bulk UPDATE. addExerciseToDayAction / swap_program_exercise /
+  // addProgramExerciseSetAction all seed the same metric across rows.
+  const columnMetric = pe.prescriptionSets[0]?.optional_metric ?? ''
+
   return (
     <div
       style={{
@@ -1248,7 +1381,13 @@ function SetTable({ pe }: { pe: ProgramExercise }) {
     >
       <ColHeader narrow>Set</ColHeader>
       <ColHeader>Reps</ColHeader>
-      <ColHeader>Load / Notes</ColHeader>
+      <MetricColumnDropdown
+        peId={pe.id}
+        clientId={clientId}
+        dayId={dayId}
+        metric={columnMetric}
+        metricUnits={metricUnits}
+      />
 
       {pe.prescriptionSets.map((set) => (
         <SetRow key={set.id} set={set} />
@@ -1347,6 +1486,126 @@ function SetCell({
         boxSizing: 'border-box',
       }}
     />
+  )
+}
+
+/**
+ * Phase F: the third column's HEADER is the metric dropdown. Picking a
+ * metric writes it to every set in this exercise via the column-wide
+ * updateProgramExerciseMetricAction (one bulk UPDATE on
+ * program_exercise_sets). Closed state shows the metric's display_label
+ * uppercased so it reads like a column header; empty state shows the
+ * default "Load / Notes" label.
+ *
+ * Visual: same black slab as the other column headers (background INK,
+ * white text, Barlow Condensed 700, uppercase). Custom chevron overlay
+ * — appearance:none on the native <select> + a Lucide ChevronDown
+ * positioned absolutely at the right.
+ *
+ * The metric storage stays per-set; this component is just the writer
+ * that keeps all rows in sync. Logger's portal-side prefill (Phase C
+ * routing on optional_metric === 'rpe') keeps working unchanged.
+ */
+function MetricColumnDropdown({
+  peId,
+  clientId,
+  dayId,
+  metric,
+  metricUnits,
+}: {
+  peId: string
+  clientId: string
+  dayId: string
+  metric: string
+  metricUnits: MetricUnitOption[]
+}) {
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+  // Legacy-value fallback: same pattern as SectionTitleField from Phase E.
+  // If the saved metric isn't in the org's current list (renamed,
+  // soft-deleted, etc.), keep it as a selectable option so the closed
+  // state doesn't silently drop to "—".
+  const metricInOptions =
+    metric !== '' && metricUnits.some((u) => u.code === metric)
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value === '' ? null : e.target.value
+    startTransition(async () => {
+      const res = await updateProgramExerciseMetricAction(
+        clientId,
+        dayId,
+        peId,
+        next,
+      )
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        height: 26,
+      }}
+    >
+      <select
+        value={metric}
+        onChange={handleChange}
+        disabled={pending}
+        aria-label="Load / Notes metric"
+        style={{
+          background: INK,
+          color: '#fff',
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 11,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          height: '100%',
+          width: '100%',
+          padding: '0 22px 0 12px',
+          border: 'none',
+          borderRadius: 8,
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          MozAppearance: 'none',
+          cursor: pending ? 'wait' : 'pointer',
+          boxSizing: 'border-box',
+          textAlign: 'center',
+          textAlignLast: 'center',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+        }}
+      >
+        <option value="">Load / Notes</option>
+        {!metricInOptions && metric !== '' && (
+          <option value={metric}>{metric}</option>
+        )}
+        {metricUnits.map((u) => (
+          <option key={u.code} value={u.code}>
+            {u.display_label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        size={12}
+        aria-hidden
+        style={{
+          position: 'absolute',
+          right: 7,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          color: '#fff',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
   )
 }
 
@@ -2051,6 +2310,8 @@ function LibraryPanel({
   programExercises,
   movementPatterns,
   exerciseTags,
+  swapTarget,
+  setSwapTarget,
 }: {
   options: LibraryPick[]
   clientId: string
@@ -2060,6 +2321,8 @@ function LibraryPanel({
   programExercises: ProgramExercise[]
   movementPatterns: MovementPatternOption[]
   exerciseTags: ExerciseTagOption[]
+  swapTarget: string | null
+  setSwapTarget: (peId: string | null) => void
 }) {
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<string | null>(null)
@@ -2120,6 +2383,26 @@ function LibraryPanel({
 
   function handleAdd(exerciseId: string) {
     setAdding(exerciseId)
+    // Swap takes priority — the two states are mutually exclusive at the
+    // setter level but the runtime check is defensive.
+    if (swapTarget) {
+      startTransition(async () => {
+        const res = await swapProgramExerciseAction(
+          clientId,
+          dayId,
+          swapTarget,
+          exerciseId,
+        )
+        if (res.error) {
+          alert(res.error)
+        } else {
+          setSwapTarget(null)
+          router.refresh()
+        }
+        setAdding(null)
+      })
+      return
+    }
     const slot: InsertSlot = insertSlot ?? { kind: 'append' }
     startTransition(async () => {
       const res = await addExerciseToDayAction(clientId, dayId, exerciseId, slot)
@@ -2133,16 +2416,27 @@ function LibraryPanel({
     })
   }
 
-  // Slot status banner. The label tells the EP exactly where the next
-  // pick will land; Cancel returns to default (append-at-end).
+  // Slot/swap status banner. The label tells the EP exactly what the next
+  // pick will do; Cancel returns to default (append-at-end, no swap).
+  // Swap wins over insert when both armed (defensive — setters enforce
+  // mutual exclusion upstream).
   let slotLabel: string | null = null
-  if (insertSlot?.kind === 'atStart') {
+  let cancelHandler: (() => void) | null = null
+  if (swapTarget) {
+    const target = programExercises.find((p) => p.id === swapTarget)
+    slotLabel = target
+      ? `Replacing: ${target.exercise_name}`
+      : 'Replacing exercise'
+    cancelHandler = () => setSwapTarget(null)
+  } else if (insertSlot?.kind === 'atStart') {
     slotLabel = 'Inserting at top'
+    cancelHandler = () => setInsertSlot(null)
   } else if (insertSlot?.kind === 'after') {
     const anchor = programExercises.find((p) => p.id === insertSlot.afterPeId)
     slotLabel = anchor
       ? `Inserting after ${anchor.exercise_name}`
       : 'Inserting at slot'
+    cancelHandler = () => setInsertSlot(null)
   }
 
   return (
@@ -2176,9 +2470,9 @@ function LibraryPanel({
           </span>
           <button
             type="button"
-            onClick={() => setInsertSlot(null)}
-            aria-label="Cancel insert"
-            title="Cancel insert"
+            onClick={() => cancelHandler?.()}
+            aria-label={swapTarget ? 'Cancel swap' : 'Cancel insert'}
+            title={swapTarget ? 'Cancel swap' : 'Cancel insert'}
             style={{
               width: 18,
               height: 18,

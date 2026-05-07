@@ -6,6 +6,7 @@ import {
   SessionBuilder,
   type ExerciseTagOption,
   type LibraryPick,
+  type MetricUnitOption,
   type MovementPatternOption,
   type ProgramExercise,
   type SectionTitleOption,
@@ -67,12 +68,16 @@ export default async function SessionBuilderPage({
   if (!client) notFound()
 
   // Session content + library pool + pinned notes + reports + section
-  // titles + movement patterns + exercise tags in parallel. The library
-  // query carries movement_pattern_id and a flat tag_ids array so the
-  // panel's chip filters can run client-side without a second round trip.
+  // titles + movement patterns + exercise tags + metric units in parallel.
+  // The library query carries movement_pattern_id and a flat tag_ids
+  // array so the panel's chip filters can run client-side without a
+  // second round trip.
   // Phase E (2026-05-07): adds section_titles + movement_patterns +
   // exercise_tags loads for the SectionTitleField dropdown and the
   // LibraryPanel chip filters.
+  // Phase F (2026-05-07): adds exercise_metric_units load for the
+  // SetMetricCell dropdown — same source as library/new/page.tsx
+  // (filter is_active = true, deleted_at IS NULL, ordered by sort_order).
   const [
     { data: programExercisesRaw, error: peErr },
     { data: libraryRaw },
@@ -81,6 +86,7 @@ export default async function SessionBuilderPage({
     { data: sectionTitlesRaw },
     { data: patternsRaw },
     { data: tagsRaw },
+    { data: metricUnitsRaw },
   ] = await Promise.all([
     supabase
       .from('program_exercises')
@@ -134,6 +140,12 @@ export default async function SessionBuilderPage({
       .select('id, name')
       .is('deleted_at', null)
       .order('sort_order'),
+    supabase
+      .from('exercise_metric_units')
+      .select('code, display_label')
+      .is('deleted_at', null)
+      .eq('is_active', true)
+      .order('sort_order'),
   ])
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
@@ -186,6 +198,11 @@ export default async function SessionBuilderPage({
   const exerciseTags: ExerciseTagOption[] = (tagsRaw ?? []).map((t) => ({
     id: t.id,
     name: t.name,
+  }))
+
+  const metricUnits: MetricUnitOption[] = (metricUnitsRaw ?? []).map((u) => ({
+    code: u.code,
+    display_label: u.display_label,
   }))
 
   // Skip empty pinned notes — see program/page.tsx Phase F.6 fix.
@@ -306,6 +323,7 @@ export default async function SessionBuilderPage({
         sectionTitles={sectionTitles}
         movementPatterns={movementPatterns}
         exerciseTags={exerciseTags}
+        metricUnits={metricUnits}
       />
     </div>
   )
