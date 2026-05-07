@@ -15,6 +15,26 @@ import {
   X,
 } from 'lucide-react'
 import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   addExerciseToDayAction,
   addProgramExerciseSetAction,
   addSectionTitleAction,
@@ -22,6 +42,7 @@ import {
   moveProgramExerciseAction,
   removeProgramExerciseAction,
   removeProgramExerciseSetAction,
+  reorderProgramExercisesAction,
   ungroupFromSupersetAction,
   updateProgramExerciseAction,
   updateProgramExerciseSetAction,
@@ -53,6 +74,30 @@ const BORDER = 'var(--color-border-hairline)'
 const MUTED = 'var(--color-muted)'
 const FAINT = 'var(--color-text-faint)'
 const GREEN = 'var(--color-accent)'
+
+/* ====================== Drag-and-drop plumbing ====================== */
+
+/**
+ * Phase G — drag-and-drop reorder via @dnd-kit.
+ *
+ * The grip handle inside ExerciseBody is the drag activator. It lives a
+ * few JSX layers below the white card div that owns the useSortable
+ * lifecycle (setNodeRef, transform). React Context bridges the two:
+ * SortableCardShell publishes the drag-handle props; <DragHandle /> deep
+ * inside the card consumes them and spreads them onto the grip button.
+ *
+ * Alternative considered: render-prop / cloneElement to inject
+ * dragHandleProps. Rejected because ExerciseBody is far enough below
+ * SortableCardShell that prop-drilling pollutes three intermediate
+ * component signatures with no other use for the props.
+ */
+type DragHandleApi = {
+  attributes: ReturnType<typeof useSortable>['attributes']
+  listeners: ReturnType<typeof useSortable>['listeners']
+  setActivatorNodeRef: ReturnType<typeof useSortable>['setActivatorNodeRef']
+}
+
+const DragHandleContext = React.createContext<DragHandleApi | null>(null)
 
 export type PrescriptionSet = {
   id: string
@@ -118,12 +163,69 @@ export function SessionBuilder({
   movementPatterns,
   exerciseTags,
 }: SessionBuilderProps) {
+  const router = useRouter()
   const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('library')
 
   // Phase D: an insertion slot can be armed by a between-cards bar's
   // "+ Add exercise" click. The next library-pick consumes the slot. Cleared
   // by the LibraryPanel's Cancel button or after a successful add.
   const [insertSlot, setInsertSlot] = useState<InsertSlot | null>(null)
+
+  // Phase G: id of the card currently being dragged. Drives the
+  // DragOverlay ghost render. null means no drag in progress.
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [, startReorderTransition] = useTransition()
+
+  // Phase G: three sensors so reorder works for mouse, touch, and keyboard.
+  // PointerSensor — primary desktop input; the small distance threshold lets
+  //   the user click the grip without instantly starting a drag.
+  // TouchSensor — tablets in the gym; the delay+tolerance pair lets a
+  //   tap-then-drag start cleanly without hijacking scrolls.
+  // KeyboardSensor — a11y fallback; sortableKeyboardCoordinates is the
+  //   stock vertical-list coordinate getter from @dnd-kit/sortable.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 5 },
+    }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveDragId(event.active.id as string)
+  }
+
+  function handleDragCancel() {
+    setActiveDragId(null)
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragId(null)
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const oldIndex = programExercises.findIndex((e) => e.id === active.id)
+    const newIndex = programExercises.findIndex((e) => e.id === over.id)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+
+    const reordered = arrayMove(programExercises, oldIndex, newIndex)
+    const orderedIds = reordered.map((e) => e.id)
+    const movedPeId = active.id as string
+
+    startReorderTransition(async () => {
+      const res = await reorderProgramExercisesAction(
+        clientId,
+        dayId,
+        orderedIds,
+        movedPeId,
+      )
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
 
   // When a bar arms a slot, the user expects the library panel to be
   // ready for them. Force the right-panel tab to library + focus the search
@@ -139,6 +241,11 @@ export function SessionBuilder({
     })
   }
 
+  const activeDragPe =
+    activeDragId !== null
+      ? programExercises.find((e) => e.id === activeDragId) ?? null
+      : null
+
   return (
     <div
       style={{
@@ -152,15 +259,37 @@ export function SessionBuilder({
         {programExercises.length === 0 ? (
           <EmptyState />
         ) : (
-          <ExerciseList
-            exercises={programExercises}
-            clientId={clientId}
-            dayId={dayId}
-            insertSlot={insertSlot}
-            setInsertSlot={setInsertSlot}
-            focusLibrarySearch={focusLibrarySearch}
-            sectionTitles={sectionTitles}
-          />
+          <DndContext
+            // Stable id so DndContext's accessibility-announcement element
+            // gets a deterministic aria-describedby across SSR + client
+            // hydration. Without this, @dnd-kit's internal counter starts
+            // at different points on the two passes and React fires a
+            // hydration mismatch on every DragHandle button.
+            id="session-builder-dnd"
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <SortableContext
+              items={programExercises.map((e) => e.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ExerciseList
+                exercises={programExercises}
+                clientId={clientId}
+                dayId={dayId}
+                insertSlot={insertSlot}
+                setInsertSlot={setInsertSlot}
+                focusLibrarySearch={focusLibrarySearch}
+                sectionTitles={sectionTitles}
+              />
+            </SortableContext>
+            <DragOverlay>
+              {activeDragPe ? <DraggedCardGhost pe={activeDragPe} /> : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
 
@@ -350,9 +479,15 @@ function ExerciseList({
       const isFirstOverall = i === 0
       const isLastOverall = j === exercises.length
 
+      // Defensive key: include the index of the first member so a
+      // non-contiguous group (legacy data from before the Phase G arrow
+      // hot-fix routed moves through reorder_program_exercises) renders
+      // as two visually separate blocks rather than crashing on a
+      // duplicate React key. The next reorder via arrow or DnD will
+      // normalise the data via singleton cleanup + group re-derivation.
       nodes.push(
         <SupersetBlock
-          key={`grp-${groupId}`}
+          key={`grp-${groupId}-${i}`}
           baseLetter={baseLetter}
           members={members}
           clientId={clientId}
@@ -512,6 +647,142 @@ function SpineLetter({ children }: { children: React.ReactNode }) {
   )
 }
 
+/* ====================== Sortable card shell + drag handle ====================== */
+
+/**
+ * Wraps the white-card div with @dnd-kit's useSortable. Used by both
+ * SoloExercise (flex layout) and SupersetBlock members (grid layout) — the
+ * caller passes the layout-specific style via `layoutStyle` and the shell
+ * merges it with the always-on card chrome (white bg, hairline border,
+ * 12px radius).
+ *
+ * Publishes the drag-handle props via DragHandleContext so the
+ * <DragHandle /> deep inside ExerciseBody can pick them up without prop
+ * drilling.
+ *
+ * Phase G — drag-and-drop reorder. /docs/polish/session-builder.md §4 row G.
+ */
+function SortableCardShell({
+  pe,
+  layoutStyle,
+  children,
+}: {
+  pe: ProgramExercise
+  layoutStyle?: React.CSSProperties
+  children: React.ReactNode
+}) {
+  const {
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+    attributes,
+    listeners,
+    setActivatorNodeRef,
+  } = useSortable({ id: pe.id })
+
+  const handle = useMemo<DragHandleApi>(
+    () => ({ attributes, listeners, setActivatorNodeRef }),
+    [attributes, listeners, setActivatorNodeRef],
+  )
+
+  // The dragged card itself fades to a stub while the DragOverlay ghost
+  // tracks the cursor. Non-dragged cards still receive transform/transition
+  // so they slide out of the way.
+  return (
+    <DragHandleContext.Provider value={handle}>
+      <div
+        ref={setNodeRef}
+        style={{
+          background: '#fff',
+          borderRadius: 12,
+          border: `1px solid ${BORDER}`,
+          display: 'flex',
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.35 : 1,
+          ...layoutStyle,
+        }}
+      >
+        {children}
+      </div>
+    </DragHandleContext.Provider>
+  )
+}
+
+/**
+ * The grip icon, now an active drag activator rather than a decorative
+ * glyph. Reads useSortable's attributes/listeners from DragHandleContext
+ * and spreads them onto a button so the affordance is keyboard- and
+ * screen-reader-friendly.
+ *
+ * touchAction:'none' is load-bearing on touch devices — without it the
+ * browser's native scroll/gesture handler races @dnd-kit's TouchSensor and
+ * the drag never starts.
+ */
+function DragHandle() {
+  const ctx = React.useContext(DragHandleContext)
+  return (
+    <button
+      ref={ctx?.setActivatorNodeRef}
+      type="button"
+      aria-label="Drag to reorder"
+      title="Drag to reorder"
+      {...(ctx?.attributes ?? {})}
+      {...(ctx?.listeners ?? {})}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color: FAINT,
+        cursor: 'grab',
+        padding: 4,
+        marginLeft: 2,
+        display: 'grid',
+        placeItems: 'center',
+        borderRadius: 4,
+        touchAction: 'none',
+      }}
+    >
+      <GripVertical size={14} aria-hidden />
+    </button>
+  )
+}
+
+/**
+ * The translucent floating card that follows the cursor while a drag is in
+ * progress. Deliberately sparse — name + a "dragging" cue. The full card
+ * (with set table, instructions, etc.) would be expensive to re-render on
+ * every pointer-move and visually noisy.
+ */
+function DraggedCardGhost({ pe }: { pe: ProgramExercise }) {
+  return (
+    <div
+      style={{
+        background: '#fff',
+        border: `1px solid ${BORDER}`,
+        borderRadius: 12,
+        padding: '10px 14px',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+        cursor: 'grabbing',
+        // Match the card width loosely; @dnd-kit will size the overlay to
+        // the active node's box anyway, so this is a fallback only.
+        minWidth: 240,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-sans)',
+          fontWeight: 600,
+          fontSize: 14,
+          color: INK,
+        }}
+      >
+        {pe.exercise_name}
+      </div>
+    </div>
+  )
+}
+
 /* ====================== Solo exercise wrapper ====================== */
 
 function SoloExercise({
@@ -534,15 +805,7 @@ function SoloExercise({
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
       <SoloPill letter={letter} />
-      <div
-        style={{
-          flex: 1,
-          background: '#fff',
-          borderRadius: 12,
-          border: `1px solid ${BORDER}`,
-          display: 'flex',
-        }}
-      >
+      <SortableCardShell pe={pe} layoutStyle={{ flex: 1 }}>
         <ExerciseBody
           pe={pe}
           clientId={clientId}
@@ -551,7 +814,7 @@ function SoloExercise({
           isLast={isLast}
           sectionTitles={sectionTitles}
         />
-      </div>
+      </SortableCardShell>
     </div>
   )
 }
@@ -633,14 +896,11 @@ function SupersetBlock({
             >
               <SpineLetter>{`${baseLetter}${idx + 1}`}</SpineLetter>
             </div>
-            <div
-              style={{
+            <SortableCardShell
+              pe={pe}
+              layoutStyle={{
                 gridColumn: 2,
                 gridRow: cardRow,
-                background: '#fff',
-                borderRadius: 12,
-                border: `1px solid ${BORDER}`,
-                display: 'flex',
                 position: 'relative',
                 zIndex: 1,
               }}
@@ -653,7 +913,7 @@ function SupersetBlock({
                 isLast={isLastOverall && idx === members.length - 1}
                 sectionTitles={sectionTitles}
               />
-            </div>
+            </SortableCardShell>
             {idx < members.length - 1 && (
               <>
                 <div
@@ -831,11 +1091,7 @@ function ExerciseBody({
           >
             <Trash2 size={14} aria-hidden />
           </IconButton>
-          <GripVertical
-            size={14}
-            aria-hidden
-            style={{ color: FAINT, marginLeft: 2 }}
-          />
+          <DragHandle />
         </div>
 
         <SectionTitleField

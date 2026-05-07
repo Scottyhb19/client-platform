@@ -3399,6 +3399,14 @@ export type Database = {
         Args: { p_after_pe_id: string; p_day_id: string; p_exercise_id: string }
         Returns: string
       }
+      reorder_program_exercises: {
+        Args: {
+          p_day_id: string
+          p_moved_pe_id: string
+          p_ordered_ids: string[]
+        }
+        Returns: undefined
+      }
       repeat_program: { Args: { p_source_program_id: string }; Returns: Json }
       repeat_program_day_weekly: {
         Args: { p_end_date: string; p_force?: boolean; p_source_day_id: string }
@@ -3459,6 +3467,10 @@ export type Database = {
           p_phone?: string
           p_referral_source?: string
         }
+        Returns: string
+      }
+      swap_program_exercise: {
+        Args: { p_new_exercise_id: string; p_pe_id: string }
         Returns: string
       }
       test_metric_visibility: {

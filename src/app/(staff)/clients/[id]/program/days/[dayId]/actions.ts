@@ -212,8 +212,70 @@ export async function updateProgramExerciseAction(
 }
 
 /**
- * Reorder a program_exercise up or down by one position. Swaps
- * sort_order with the adjacent row within the same program_day.
+ * Atomic full-list reorder. Phase G of the session-builder polish pass —
+ * drag-and-drop via @dnd-kit produces "the new order", not "this one moved
+ * to that index". A multi-position drag through chained adjacent swaps
+ * would be (a) non-atomic across N round-trips, (b) momentarily expose
+ * intermediate sort_order states via realtime, and (c) re-introduce the
+ * partial-failure window we already closed for inserts via
+ * insert_program_exercise_at.
+ *
+ * orderedIds must be a permutation of the day's live program_exercise ids.
+ * The RPC validates this server-side; the client just sends what the DnD
+ * library gave it.
+ *
+ * movedPeId is a hint — the id of the card the user dragged. The server
+ * uses it to re-derive that one card's superset_group_id from its new
+ * neighbours (Q3 sign-off 2026-05-07: server re-derives from position).
+ * Other cards keep their group_id; singleton cleanup runs at the end so
+ * any group reduced to a single member by the move dissolves. Pass NULL
+ * for sort-order-only reorders that should not touch group membership.
+ *
+ * RLS scoped via the parent walk in the RPC (single-hop via pd.program_id
+ * post-D-PROG-001).
+ */
+export async function reorderProgramExercisesAction(
+  clientId: string,
+  dayId: string,
+  orderedIds: string[],
+  movedPeId: string | null,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc('reorder_program_exercises', {
+    p_day_id: dayId,
+    p_ordered_ids: orderedIds,
+    // p_moved_pe_id is nullable in SQL but the generated types treat it as
+    // non-null. Cast at the call site so the rest of the file stays clean.
+    p_moved_pe_id: movedPeId as unknown as string,
+  })
+
+  if (error) return { error: `Reorder failed: ${error.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
+ * Reorder a program_exercise up or down by one position. The keyboard-
+ * accessible fallback for the up/down arrow buttons; drag-and-drop hits
+ * reorderProgramExercisesAction above.
+ *
+ * Phase G hot-fix (2026-05-07): the arrow now delegates to the same
+ * reorder_program_exercises RPC that DnD uses, instead of doing a bare
+ * sentinel-swap of sort_orders. Reason: a bare swap leaves
+ * superset_group_id untouched, so clicking ↑ on the first member of a
+ * superset would push that member above an outsider — same group_id, no
+ * longer contiguous in sort_order — which is an invalid state the
+ * ExerciseList walker can't render (duplicate React key on the group's
+ * SupersetBlock). Routing through the RPC means the arrow inherits the
+ * group-rederivation rule + singleton cleanup, matching DnD semantics
+ * exactly.
+ *
+ * Implementation: read the day's live ids in sort_order, swap the target
+ * with its neighbour client-side, hand the new permutation to the RPC.
+ * The RPC re-validates and applies atomically.
  */
 export async function moveProgramExerciseAction(
   clientId: string,
@@ -224,50 +286,39 @@ export async function moveProgramExerciseAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const { data: target, error: targetErr } = await supabase
+  const { data: rows, error: readErr } = await supabase
     .from('program_exercises')
-    .select('id, sort_order, program_day_id')
-    .eq('id', programExerciseId)
+    .select('id')
+    .eq('program_day_id', dayId)
     .is('deleted_at', null)
-    .single()
+    .order('sort_order', { ascending: true })
 
-  if (targetErr || !target) {
-    return { error: `Exercise not found: ${targetErr?.message ?? 'unknown'}` }
+  if (readErr) return { error: `Read failed: ${readErr.message}` }
+  if (!rows || rows.length === 0) return { error: 'Day has no exercises.' }
+
+  const index = rows.findIndex((r) => r.id === programExerciseId)
+  if (index === -1) return { error: 'Exercise not found on this day.' }
+
+  const neighbourIndex = direction === 'up' ? index - 1 : index + 1
+  if (neighbourIndex < 0 || neighbourIndex >= rows.length) {
+    // Already at the edge — silent no-op so the arrow's disabled state is
+    // a soft guarantee, not the only safeguard.
+    return { error: null }
   }
 
-  // Find the neighbour on the relevant side.
-  const { data: neighbour, error: neighbourErr } = await supabase
-    .from('program_exercises')
-    .select('id, sort_order')
-    .eq('program_day_id', target.program_day_id)
-    .is('deleted_at', null)
-    .filter(
-      'sort_order',
-      direction === 'up' ? 'lt' : 'gt',
-      target.sort_order,
-    )
-    .order('sort_order', { ascending: direction !== 'up' })
-    .limit(1)
-    .maybeSingle()
-
-  if (neighbourErr) return { error: `Neighbour lookup: ${neighbourErr.message}` }
-  if (!neighbour) return { error: null } // already at the edge; no-op
-
-  // Swap via a sentinel value to avoid any unique-constraint collision if
-  // (day_id, sort_order) is ever promoted to UNIQUE in a future migration.
-  const sentinel = -1 - target.sort_order
-  const steps = [
-    { id: target.id, sort_order: sentinel },
-    { id: neighbour.id, sort_order: target.sort_order },
-    { id: target.id, sort_order: neighbour.sort_order },
+  const orderedIds = rows.map((r) => r.id)
+  ;[orderedIds[index], orderedIds[neighbourIndex]] = [
+    orderedIds[neighbourIndex]!,
+    orderedIds[index]!,
   ]
-  for (const step of steps) {
-    const { error: stepErr } = await supabase
-      .from('program_exercises')
-      .update({ sort_order: step.sort_order })
-      .eq('id', step.id)
-    if (stepErr) return { error: `Swap failed: ${stepErr.message}` }
-  }
+
+  const { error: rpcErr } = await supabase.rpc('reorder_program_exercises', {
+    p_day_id: dayId,
+    p_ordered_ids: orderedIds,
+    p_moved_pe_id: programExerciseId,
+  })
+
+  if (rpcErr) return { error: `Move failed: ${rpcErr.message}` }
 
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }
