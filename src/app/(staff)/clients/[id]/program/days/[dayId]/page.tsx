@@ -74,9 +74,12 @@ export default async function SessionBuilderPage({
       .from('program_exercises')
       .select(
         `id, sort_order, section_title, superset_group_id,
-         sets, reps, optional_value, rpe, rest_seconds, tempo, instructions,
+         rest_seconds, tempo, instructions,
          exercise_id,
-         exercise:exercises(name, video_url)`,
+         exercise:exercises(name, video_url),
+         prescription_sets:program_exercise_sets(
+           id, set_number, reps, optional_metric, optional_value, deleted_at
+         )`,
       )
       .eq('program_day_id', dayId)
       .is('deleted_at', null)
@@ -113,16 +116,26 @@ export default async function SessionBuilderPage({
       sort_order: pe.sort_order,
       section_title: pe.section_title,
       superset_group_id: pe.superset_group_id,
-      sets: pe.sets,
-      reps: pe.reps,
-      optional_value: pe.optional_value,
-      rpe: pe.rpe,
       rest_seconds: pe.rest_seconds,
       tempo: pe.tempo,
       instructions: pe.instructions,
       exercise_id: pe.exercise_id,
       exercise_name: pe.exercise?.name ?? 'Unknown',
       exercise_video_url: pe.exercise?.video_url ?? null,
+      // Filter + sort the nested set rows in TS — the supabase-js select
+      // string can't express both per-relation filter (deleted_at IS NULL)
+      // and per-relation order (set_number ASC) cleanly. The arrays are
+      // tiny (1–50 rows) so the cost is negligible.
+      prescriptionSets: (pe.prescription_sets ?? [])
+        .filter((s) => s.deleted_at === null)
+        .sort((a, b) => a.set_number - b.set_number)
+        .map((s) => ({
+          id: s.id,
+          set_number: s.set_number,
+          reps: s.reps,
+          optional_metric: s.optional_metric,
+          optional_value: s.optional_value,
+        })),
     }),
   )
 

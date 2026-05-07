@@ -82,15 +82,29 @@ export default async function PortalSessionPage({
       letter = `${String.fromCharCode(65 + groupLetterIndex)}${subIndex}`
     }
 
+    // prescription_sets comes back as Json from the RPC's jsonb_agg. Parse
+    // and project into the Logger's typed shape. The RPC already orders
+    // by set_number, so no sort needed here.
+    const rawSets = Array.isArray(e.prescription_sets)
+      ? (e.prescription_sets as Array<{
+          set_number: number
+          reps: string | null
+          optional_metric: string | null
+          optional_value: string | null
+        }>)
+      : []
+
     exercises.push({
       programExerciseId: e.program_exercise_id,
       name: e.exercise_name,
       sectionTitle: e.section_title,
       instructions: e.instructions,
-      sets: e.sets ?? 1,
-      reps: e.reps,
-      optionalValue: e.optional_value,
-      rpe: e.rpe,
+      prescribedSets: rawSets.map((s) => ({
+        setNumber: s.set_number,
+        reps: s.reps,
+        optionalMetric: s.optional_metric,
+        optionalValue: s.optional_value,
+      })),
       letter,
     })
   }

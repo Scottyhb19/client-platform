@@ -5,28 +5,71 @@ import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
- * Add an exercise to a program_day by copying the exercise's defaults
- * onto a new program_exercises row. sort_order = (max + 1) so it lands
- * at the bottom.
+ * Where to insert an exercise when calling addExerciseToDayAction.
  *
- * RLS scopes the insert via the parent chain (program_day → program
- * → organization).
+ *   append  — MAX(sort_order)+1; today's behaviour. The bottom between-cards
+ *             bar and any default library-pick (no slot armed) end up here.
+ *   atStart — sort_order 0; existing rows shifted +1. The top between-cards
+ *             bar.
+ *   after   — sort_order = anchor.sort_order + 1; downstream rows shifted +1.
+ *             Body between-cards bars carry an anchor pe id.
+ *
+ * Phase D of the session-builder polish pass (/docs/polish/session-builder.md
+ * §4 row D + §0.1 ø-1, ø-3).
+ */
+export type InsertSlot =
+  | { kind: 'append' }
+  | { kind: 'atStart' }
+  | { kind: 'after'; afterPeId: string }
+
+/**
+ * Add an exercise to a program_day at a given slot. Two code paths:
+ *
+ *   - append (default): TS-side compute MAX(sort_order)+1, insert
+ *     program_exercises, fan out program_exercise_sets. Best-effort
+ *     cleanup-via-soft-delete on per-set fan-out failure. Stable since
+ *     Phase C — left alone.
+ *   - atStart / after: routed through the insert_program_exercise_at RPC
+ *     (migration 20260507100300) so shift + insert + per-set fan-out is
+ *     atomic under one transaction. The RPC handles group inheritance
+ *     internally per Q3 sign-off 2026-05-07: anchor and below share a
+ *     superset_group_id ⇒ new row inherits it; otherwise solo.
+ *
+ * RLS scopes both paths via the parent chain (program_day → program →
+ * organization).
  */
 export async function addExerciseToDayAction(
   clientId: string,
   dayId: string,
   exerciseId: string,
+  slot: InsertSlot = { kind: 'append' },
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
+
+  if (slot.kind !== 'append') {
+    const p_after_pe_id = slot.kind === 'after' ? slot.afterPeId : null
+    const { error } = await supabase.rpc('insert_program_exercise_at', {
+      p_day_id: dayId,
+      p_exercise_id: exerciseId,
+      // p_after_pe_id is nullable in SQL (NULL ⇒ insert at start), but
+      // generated types always treat function args as non-null. Cast at
+      // the call site so the rest of the file stays clean.
+      p_after_pe_id: p_after_pe_id as unknown as string,
+    })
+    if (error) return { error: `Couldn't insert exercise: ${error.message}` }
+    revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+    return { error: null }
+  }
+
+  // ----- append path (unchanged from Phase C) ----- //
 
   // Pull the exercise defaults so the prescription starts sensibly.
   const { data: exercise, error: exErr } = await supabase
     .from('exercises')
     .select(
       `id, default_sets, default_reps, default_metric,
-       default_metric_value, default_rpe, default_rest_seconds,
-       instructions`,
+       default_metric_value, default_rest_seconds, instructions`,
     )
     .eq('id', exerciseId)
     .is('deleted_at', null)
@@ -49,21 +92,42 @@ export async function addExerciseToDayAction(
   if (orderErr) return { error: `Couldn't compute sort order: ${orderErr.message}` }
   const nextOrder = (existing?.sort_order ?? -1) + 1
 
-  const { error: insertErr } = await supabase.from('program_exercises').insert({
-    program_day_id: dayId,
-    exercise_id: exercise.id,
-    sets: exercise.default_sets,
+  const { data: inserted, error: insertErr } = await supabase
+    .from('program_exercises')
+    .insert({
+      program_day_id: dayId,
+      exercise_id: exercise.id,
+      rest_seconds: exercise.default_rest_seconds,
+      instructions: exercise.instructions,
+      sort_order: nextOrder,
+    })
+    .select('id')
+    .single()
+
+  if (insertErr || !inserted) {
+    return { error: `Couldn't add exercise: ${insertErr?.message ?? 'unknown'}` }
+  }
+
+  // Fan out the per-set rows. Default to 1 row when default_sets is NULL
+  // so the SetTable always has at least one editable line.
+  const setCount = Math.max(1, exercise.default_sets ?? 1)
+  const setRows = Array.from({ length: setCount }, (_, idx) => ({
+    program_exercise_id: inserted.id,
+    set_number: idx + 1,
     reps: exercise.default_reps,
     optional_metric: exercise.default_metric,
     optional_value: exercise.default_metric_value,
-    rpe: exercise.default_rpe,
-    rest_seconds: exercise.default_rest_seconds,
-    instructions: exercise.instructions,
-    sort_order: nextOrder,
-  })
+  }))
 
-  if (insertErr) {
-    return { error: `Couldn't add exercise: ${insertErr.message}` }
+  const { error: setsErr } = await supabase
+    .from('program_exercise_sets')
+    .insert(setRows)
+
+  if (setsErr) {
+    // Best-effort cleanup: soft-delete the orphaned parent so the EP
+    // doesn't see an exercise with zero set rows.
+    await supabase.rpc('soft_delete_program_exercise', { p_id: inserted.id })
+    return { error: `Couldn't seed sets: ${setsErr.message}` }
   }
 
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
@@ -99,12 +163,14 @@ export async function removeProgramExerciseAction(
  * Patch a program_exercise row (single-field autosave). Validates the
  * field key against an allowlist so the client can't poke at
  * program_day_id, exercise_id, etc.
+ *
+ * Phase C (2026-05-07): per-set fields (sets / reps / optional_value /
+ * rpe) moved off program_exercises onto program_exercise_sets and are
+ * patched via updateProgramExerciseSetAction below. The remaining fields
+ * here are genuinely per-exercise (instructions, tempo, rest, section
+ * title) and stay on the parent row.
  */
 export type ProgramExercisePatch = {
-  sets?: number | null
-  reps?: string | null
-  optional_value?: string | null
-  rpe?: number | null
   rest_seconds?: number | null
   tempo?: string | null
   instructions?: string | null
@@ -112,10 +178,6 @@ export type ProgramExercisePatch = {
 }
 
 const EDITABLE_FIELDS = new Set<keyof ProgramExercisePatch>([
-  'sets',
-  'reps',
-  'optional_value',
-  'rpe',
   'rest_seconds',
   'tempo',
   'instructions',
@@ -212,62 +274,103 @@ export async function moveProgramExerciseAction(
 }
 
 /**
- * Group a program_exercise into a superset with the exercise immediately
- * above it (by sort_order). If the above exercise already has a
- * superset_group_id, we join it; otherwise we mint a new UUID and set
- * both rows to the same value. Not allowed on the first exercise.
+ * Group the two cards on either side of a between-cards action bar. Replaces
+ * groupWithAboveAction (deleted in Phase D, 2026-05-07) — the new bar
+ * placement makes "the relationship between these two cards" the natural
+ * primitive, so the action takes both pe ids explicitly.
+ *
+ * Q3 sign-off 2026-05-07 covers four cases:
+ *
+ *   - Both ungrouped → mint a new UUID, both adopt it (fresh group).
+ *   - One ungrouped, one grouped (boundary) → ungrouped joins the existing
+ *     group.
+ *   - Both grouped, different groups (adjacent groups) → merge into the
+ *     upper group's id (canonical so the visual letter A/B/C of the upper
+ *     group stays stable on render).
+ *   - Both grouped, same group → no-op (the UI hides the Superset button
+ *     when both share a group, but defensive).
+ *
+ * The caller (BetweenCardsBar) is responsible for only showing the Superset
+ * button when grouping makes sense; this action stays self-consistent if
+ * a stale render slips one through.
  */
-export async function groupWithAboveAction(
+export async function groupAcrossActionBarAction(
   clientId: string,
   dayId: string,
-  programExerciseId: string,
+  beforePeId: string,
+  afterPeId: string,
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const { data: target } = await supabase
-    .from('program_exercises')
-    .select('id, sort_order, program_day_id')
-    .eq('id', programExerciseId)
-    .is('deleted_at', null)
-    .single()
-
-  if (!target) return { error: 'Exercise not found.' }
-
-  const { data: above } = await supabase
+  const { data: pair, error: lookupErr } = await supabase
     .from('program_exercises')
     .select('id, sort_order, superset_group_id')
-    .eq('program_day_id', target.program_day_id)
+    .eq('program_day_id', dayId)
+    .in('id', [beforePeId, afterPeId])
     .is('deleted_at', null)
-    .lt('sort_order', target.sort_order)
-    .order('sort_order', { ascending: false })
-    .limit(1)
-    .maybeSingle()
 
-  if (!above) {
-    return { error: "Can't group the first exercise." }
+  if (lookupErr) return { error: `Lookup failed: ${lookupErr.message}` }
+  if (!pair || pair.length !== 2) return { error: 'Adjacent rows not found.' }
+
+  const before = pair.find((p) => p.id === beforePeId)
+  const after = pair.find((p) => p.id === afterPeId)
+  if (!before || !after) return { error: 'Adjacent rows not found.' }
+
+  const beforeG = before.superset_group_id
+  const afterG = after.superset_group_id
+
+  // Same group — defensive no-op.
+  if (beforeG && afterG && beforeG === afterG) {
+    return { error: null }
   }
 
-  const groupId = above.superset_group_id ?? crypto.randomUUID()
-
-  // Ensure the above exercise has the group id (if it was standalone).
-  if (!above.superset_group_id) {
-    const { error: aboveErr } = await supabase
+  // Two ungrouped → mint a fresh group.
+  if (!beforeG && !afterG) {
+    const newGroupId = crypto.randomUUID()
+    const { error } = await supabase
       .from('program_exercises')
-      .update({ superset_group_id: groupId })
-      .eq('id', above.id)
-    if (aboveErr) return { error: `Couldn't group: ${aboveErr.message}` }
+      .update({ superset_group_id: newGroupId })
+      .in('id', [beforePeId, afterPeId])
+    if (error) return { error: `Group failed: ${error.message}` }
+    revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+    return { error: null }
   }
 
-  const { error: targetErr } = await supabase
-    .from('program_exercises')
-    .update({ superset_group_id: groupId })
-    .eq('id', programExerciseId)
+  // Boundary — ungrouped card joins the existing group.
+  if (!beforeG && afterG) {
+    const { error } = await supabase
+      .from('program_exercises')
+      .update({ superset_group_id: afterG })
+      .eq('id', beforePeId)
+    if (error) return { error: `Group failed: ${error.message}` }
+    revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+    return { error: null }
+  }
+  if (beforeG && !afterG) {
+    const { error } = await supabase
+      .from('program_exercises')
+      .update({ superset_group_id: beforeG })
+      .eq('id', afterPeId)
+    if (error) return { error: `Group failed: ${error.message}` }
+    revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+    return { error: null }
+  }
 
-  if (targetErr) return { error: `Couldn't group: ${targetErr.message}` }
+  // Adjacent different groups → merge into the upper group's id.
+  if (beforeG && afterG && beforeG !== afterG) {
+    const { error } = await supabase
+      .from('program_exercises')
+      .update({ superset_group_id: beforeG })
+      .eq('program_day_id', dayId)
+      .eq('superset_group_id', afterG)
+      .is('deleted_at', null)
+    if (error) return { error: `Merge failed: ${error.message}` }
+    revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+    return { error: null }
+  }
 
-  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
-  return { error: null }
+  return { error: 'Unexpected grouping state.' }
 }
 
 /**
@@ -362,6 +465,125 @@ export async function ungroupFromSupersetAction(
       .update({ superset_group_id: null })
       .eq('id', remaining[0].id)
   }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/* ====================== Per-set prescription actions ====================== */
+
+/**
+ * Patch a program_exercise_sets row (single-cell autosave). Allowlist-
+ * validated; the client can't poke at program_exercise_id, set_number,
+ * timestamps, deleted_at.
+ *
+ * Phase C (2026-05-07). Phase F will switch optional_metric to a metric
+ * dropdown sourced from exercise_metric_units; until then the UI keeps
+ * Load/Notes freetext and only writes optional_value here.
+ */
+export type ProgramExerciseSetPatch = {
+  reps?: string | null
+  optional_metric?: string | null
+  optional_value?: string | null
+}
+
+const EDITABLE_SET_FIELDS = new Set<keyof ProgramExerciseSetPatch>([
+  'reps',
+  'optional_metric',
+  'optional_value',
+])
+
+export async function updateProgramExerciseSetAction(
+  setId: string,
+  patch: ProgramExerciseSetPatch,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  const clean: ProgramExerciseSetPatch = {}
+  for (const key of Object.keys(patch) as Array<keyof ProgramExerciseSetPatch>) {
+    if (EDITABLE_SET_FIELDS.has(key)) {
+      clean[key] = patch[key]
+    }
+  }
+
+  if (Object.keys(clean).length === 0) return { error: null }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('program_exercise_sets')
+    .update(clean)
+    .eq('id', setId)
+
+  if (error) return { error: `Update failed: ${error.message}` }
+  return { error: null }
+}
+
+/**
+ * Add a new set row to a program_exercise. Stepper "+" — copies the last
+ * live set's values so quick set-count adjustments inherit the EP's
+ * prescription rather than starting blank (Q2 sign-off, 2026-05-07).
+ *
+ * set_number is computed as max(set_number) over live rows + 1. The
+ * partial-unique index on (program_exercise_id, set_number) WHERE
+ * deleted_at IS NULL allows a re-used set_number after a soft-delete —
+ * see migration 20260507100000 §1.
+ */
+export async function addProgramExerciseSetAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data: lastSet, error: lookupErr } = await supabase
+    .from('program_exercise_sets')
+    .select('set_number, reps, optional_metric, optional_value')
+    .eq('program_exercise_id', programExerciseId)
+    .is('deleted_at', null)
+    .order('set_number', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (lookupErr) return { error: `Couldn't read last set: ${lookupErr.message}` }
+
+  const nextSetNumber = (lastSet?.set_number ?? 0) + 1
+
+  const { error: insertErr } = await supabase
+    .from('program_exercise_sets')
+    .insert({
+      program_exercise_id: programExerciseId,
+      set_number: nextSetNumber,
+      reps: lastSet?.reps ?? null,
+      optional_metric: lastSet?.optional_metric ?? null,
+      optional_value: lastSet?.optional_value ?? null,
+    })
+
+  if (insertErr) return { error: `Couldn't add set: ${insertErr.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
+ * Soft-delete a single set via the soft_delete_program_exercise_set RPC
+ * (migration 20260507100000 §6). Direct UPDATE setting deleted_at fails
+ * 42501 because the SELECT policy filters deleted_at IS NULL — see
+ * memory/project_postgrest_soft_delete_rls.md.
+ */
+export async function removeProgramExerciseSetAction(
+  clientId: string,
+  dayId: string,
+  setId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc('soft_delete_program_exercise_set', {
+    p_id: setId,
+  })
+
+  if (error) return { error: `Remove set failed: ${error.message}` }
 
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }

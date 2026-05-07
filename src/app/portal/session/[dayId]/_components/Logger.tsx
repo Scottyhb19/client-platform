@@ -8,15 +8,19 @@ import {
   logSetAction,
 } from '../actions'
 
+export type PrescribedSet = {
+  setNumber: number
+  reps: string | null
+  optionalMetric: string | null
+  optionalValue: string | null
+}
+
 export type LoggerExercise = {
   programExerciseId: string
   name: string
   sectionTitle: string | null
   instructions: string | null
-  sets: number
-  reps: string | null
-  optionalValue: string | null // prescribed load as free-text
-  rpe: number | null
+  prescribedSets: PrescribedSet[]
   letter: string
 }
 
@@ -54,13 +58,19 @@ export function Logger({
   })
 
   // Derived: the first unlogged exercise/set is "active". If everything
-  // is logged, the session is ready to complete.
+  // is logged, the session is ready to complete. Walks the prescribed
+  // sets in order so non-contiguous set_numbers (e.g. after a soft-delete
+  // mid-list) are honoured.
   const { activeExIdx, activeSetNumber, allDone } = useMemo(() => {
     for (let exIdx = 0; exIdx < exercises.length; exIdx++) {
       const ex = exercises[exIdx]
-      for (let s = 1; s <= ex.sets; s++) {
-        if (!logsByKey.has(setKey(ex.programExerciseId, s))) {
-          return { activeExIdx: exIdx, activeSetNumber: s, allDone: false }
+      for (const prescribed of ex.prescribedSets) {
+        if (!logsByKey.has(setKey(ex.programExerciseId, prescribed.setNumber))) {
+          return {
+            activeExIdx: exIdx,
+            activeSetNumber: prescribed.setNumber,
+            allDone: false,
+          }
         }
       }
     }
@@ -88,20 +98,24 @@ export function Logger({
       />
       <ExerciseHead exercise={ex} />
       <div style={{ padding: '0 20px 20px' }}>
-        {Array.from({ length: ex.sets }).map((_, i) => {
-          const setNumber = i + 1
+        {ex.prescribedSets.map((prescribed) => {
+          const setNumber = prescribed.setNumber
           const logged = logsByKey.get(
             setKey(ex.programExerciseId, setNumber),
           )
+          const isLastPrescribed =
+            setNumber === ex.prescribedSets[ex.prescribedSets.length - 1]?.setNumber
           const isActive = !logged && setNumber === activeSetNumber
-          if (logged) return <SetRowDone key={setNumber} logged={logged} setNumber={setNumber} />
+          if (logged)
+            return <SetRowDone key={setNumber} logged={logged} setNumber={setNumber} />
           if (isActive)
             return (
               <ActiveSet
                 key={setNumber}
                 sessionId={sessionId}
                 exercise={ex}
-                setNumber={setNumber}
+                prescribed={prescribed}
+                isLast={isLastPrescribed}
                 onLogged={(log) =>
                   setLogsByKey((prev) => {
                     const next = new Map(prev)
@@ -359,27 +373,36 @@ function SetRowDone({
 function ActiveSet({
   sessionId,
   exercise,
-  setNumber,
+  prescribed,
+  isLast,
   onLogged,
 }: {
   sessionId: string
   exercise: LoggerExercise
-  setNumber: number
+  prescribed: PrescribedSet
+  isLast: boolean
   onLogged: (log: LoggedSet) => void
 }) {
+  // Reps prefill: only when the prescription is a numeric reps value.
   const [reps, setReps] = useState(
-    exercise.reps && /^\d+$/.test(exercise.reps.trim())
-      ? exercise.reps.trim()
+    prescribed.reps && /^\d+$/.test(prescribed.reps.trim())
+      ? prescribed.reps.trim()
       : '',
   )
-  const [load, setLoad] = useState(exercise.optionalValue ?? '')
+  // Load prefill: optional_value, unless the metric is RPE (in which case
+  // optional_value is the prescribed RPE and shouldn't go in the load slot).
+  const [load, setLoad] = useState(
+    prescribed.optionalMetric === 'rpe' ? '' : (prescribed.optionalValue ?? ''),
+  )
+  // RPE prefill: when the metric is rpe, surface the prescribed RPE; the
+  // client overwrites with their actual perceived RPE during the set.
   const [rpe, setRpe] = useState(
-    exercise.rpe !== null ? String(exercise.rpe) : '',
+    prescribed.optionalMetric === 'rpe' ? (prescribed.optionalValue ?? '') : '',
   )
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
-  const isLastSet = setNumber === exercise.sets
+  const setNumber = prescribed.setNumber
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -524,7 +547,7 @@ function ActiveSet({
       >
         {pending
           ? 'Saving…'
-          : isLastSet
+          : isLast
             ? 'Finish exercise · next'
             : 'Log set · next'}
       </button>
@@ -688,12 +711,31 @@ function setKey(programExerciseId: string, setNumber: number): string {
 }
 
 function buildRxLabel(e: LoggerExercise): string {
+  const sets = e.prescribedSets
+  if (sets.length === 0) return ''
+
+  // Q5 sign-off (2026-05-07): render the eyebrow summary only when every
+  // set is identical. Wave-loading and other non-uniform prescriptions
+  // hide the summary — the per-set rows below speak for themselves.
+  const first = sets[0]!
+  const allSame = sets.every(
+    (s) =>
+      s.reps === first.reps &&
+      s.optionalMetric === first.optionalMetric &&
+      s.optionalValue === first.optionalValue,
+  )
+  if (!allSame) return ''
+
   const bits: string[] = []
-  if (e.sets && e.reps) bits.push(`${e.sets} × ${e.reps}`)
-  else if (e.sets) bits.push(`${e.sets} sets`)
-  else if (e.reps) bits.push(e.reps)
-  if (e.optionalValue) bits.push(e.optionalValue)
-  if (e.rpe) bits.push(`RPE ${e.rpe}`)
+  if (first.reps) bits.push(`${sets.length} × ${first.reps}`)
+  else bits.push(`${sets.length} sets`)
+  if (first.optionalValue) {
+    bits.push(
+      first.optionalMetric === 'rpe'
+        ? `RPE ${first.optionalValue}`
+        : first.optionalValue,
+    )
+  }
   return bits.join(' · ')
 }
 

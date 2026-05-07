@@ -2004,6 +2004,50 @@ export type Database = {
           },
         ]
       }
+      program_exercise_sets: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          optional_metric: string | null
+          optional_value: string | null
+          program_exercise_id: string
+          reps: string | null
+          set_number: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          program_exercise_id: string
+          reps?: string | null
+          set_number: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          program_exercise_id?: string
+          reps?: string | null
+          set_number?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "program_exercise_sets_program_exercise_id_fkey"
+            columns: ["program_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "program_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       program_exercises: {
         Row: {
           created_at: string
@@ -3254,14 +3298,10 @@ export type Database = {
           exercise_name: string
           exercise_video_url: string
           instructions: string
-          optional_metric: string
-          optional_value: string
+          prescription_sets: Json
           program_exercise_id: string
-          reps: string
           rest_seconds: number
-          rpe: number
           section_title: string
-          sets: number
           sort_order: number
           superset_group_id: string
           tempo: string
@@ -3355,6 +3395,10 @@ export type Database = {
         }
         Returns: string
       }
+      insert_program_exercise_at: {
+        Args: { p_after_pe_id: string; p_day_id: string; p_exercise_id: string }
+        Returns: string
+      }
       repeat_program: { Args: { p_source_program_id: string }; Returns: Json }
       repeat_program_day_weekly: {
         Args: { p_end_date: string; p_force?: boolean; p_source_day_id: string }
@@ -3395,6 +3439,10 @@ export type Database = {
       }
       soft_delete_program_day: { Args: { p_id: string }; Returns: undefined }
       soft_delete_program_exercise: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_program_exercise_set: {
         Args: { p_id: string }
         Returns: undefined
       }

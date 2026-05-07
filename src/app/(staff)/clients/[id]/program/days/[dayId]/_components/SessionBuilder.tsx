@@ -1,23 +1,32 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import React, { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
   ArrowUp,
   GripVertical,
+  Link2,
   Play,
+  Plus,
   Search,
   Trash2,
+  Unlink,
+  X,
 } from 'lucide-react'
 import {
   addExerciseToDayAction,
-  groupWithAboveAction,
+  addProgramExerciseSetAction,
+  groupAcrossActionBarAction,
   moveProgramExerciseAction,
   removeProgramExerciseAction,
+  removeProgramExerciseSetAction,
   ungroupFromSupersetAction,
   updateProgramExerciseAction,
+  updateProgramExerciseSetAction,
+  type InsertSlot,
   type ProgramExercisePatch,
+  type ProgramExerciseSetPatch,
 } from '../actions'
 import { NotesPanel, type PinnedNote } from '../../../../_components/NotesPanel'
 import {
@@ -43,21 +52,26 @@ const MUTED = 'var(--color-muted)'
 const FAINT = 'var(--color-text-faint)'
 const GREEN = 'var(--color-accent)'
 
+export type PrescriptionSet = {
+  id: string
+  set_number: number
+  reps: string | null
+  optional_metric: string | null
+  optional_value: string | null
+}
+
 export type ProgramExercise = {
   id: string
   sort_order: number
   section_title: string | null
   superset_group_id: string | null
-  sets: number | null
-  reps: string | null
-  optional_value: string | null
-  rpe: number | null
   rest_seconds: number | null
   tempo: string | null
   instructions: string | null
   exercise_id: string
   exercise_name: string
   exercise_video_url: string | null
+  prescriptionSets: PrescriptionSet[]
 }
 
 export type LibraryPick = {
@@ -85,6 +99,25 @@ export function SessionBuilder({
 }: SessionBuilderProps) {
   const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('library')
 
+  // Phase D: an insertion slot can be armed by a between-cards bar's
+  // "+ Add exercise" click. The next library-pick consumes the slot. Cleared
+  // by the LibraryPanel's Cancel button or after a successful add.
+  const [insertSlot, setInsertSlot] = useState<InsertSlot | null>(null)
+
+  // When a bar arms a slot, the user expects the library panel to be
+  // ready for them. Force the right-panel tab to library + focus the search
+  // input. focusLibrarySearch's DOM query relies on aria-label so it
+  // survives wrapper changes.
+  function focusLibrarySearch() {
+    setTab('library')
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        'input[aria-label="Search exercises"]',
+      )
+      el?.focus()
+    })
+  }
+
   return (
     <div
       style={{
@@ -98,7 +131,14 @@ export function SessionBuilder({
         {programExercises.length === 0 ? (
           <EmptyState />
         ) : (
-          renderGroupedExercises(programExercises, clientId, dayId)
+          <ExerciseList
+            exercises={programExercises}
+            clientId={clientId}
+            dayId={dayId}
+            insertSlot={insertSlot}
+            setInsertSlot={setInsertSlot}
+            focusLibrarySearch={focusLibrarySearch}
+          />
         )}
       </div>
 
@@ -142,6 +182,9 @@ export function SessionBuilder({
             options={libraryOptions}
             clientId={clientId}
             dayId={dayId}
+            insertSlot={insertSlot}
+            setInsertSlot={setInsertSlot}
+            programExercises={programExercises}
           />
         )}
         {tab === 'notes' && <NotesPanel notes={pinnedNotes} />}
@@ -192,20 +235,42 @@ function EmptyState() {
 /* ====================== Left column: grouped exercise list ====================== */
 
 /**
- * Walks the ordered list once and decides per-card layout:
- *   - Standalone exercise → solo card with single floating black pill (A, B…)
- *   - Group of 2+ exercises → one wrapper containing stacked white cards
- *     with a continuous black spine carrying green B1, B2… letters.
+ * Walks the ordered list once and emits an alternating sequence of
+ * BetweenCardsBar slots and exercise cards (or superset blocks):
+ *
+ *   [top bar] [card A] [bar] [card B] [bar] [group(C1, [in-group bar], C2)]
+ *   [bar] [card D] [bottom bar]
+ *
+ * Standalone exercises render as a solo card with a single floating slate
+ * pill (A, B…). A group of 2+ contiguous same-group exercises renders as
+ * one SupersetBlock with a continuous slate spine carrying B1, B2… letters
+ * down its length, and bars between members inside the group (in-group
+ * bars carry only the "+ Add exercise" affordance — supersetting members
+ * already grouped is a no-op).
+ *
+ * Phase D (2026-05-07): replaces the prior renderGroupedExercises function
+ * which emitted only cards; bars used to live as CardActions below each
+ * card and groups-with-above-only.
  */
-function renderGroupedExercises(
-  exercises: ProgramExercise[],
-  clientId: string,
-  dayId: string,
-) {
+function ExerciseList({
+  exercises,
+  clientId,
+  dayId,
+  insertSlot,
+  setInsertSlot,
+  focusLibrarySearch,
+}: {
+  exercises: ProgramExercise[]
+  clientId: string
+  dayId: string
+  insertSlot: InsertSlot | null
+  setInsertSlot: (s: InsertSlot | null) => void
+  focusLibrarySearch: () => void
+}) {
   const nodes: React.ReactNode[] = []
   let lastSection: string | null | undefined = undefined
 
-  // Letter assignment + group counts
+  // Letter assignment + group counts (existing logic, preserved verbatim).
   const groupCounts = new Map<string, number>()
   for (const pe of exercises) {
     if (pe.superset_group_id) {
@@ -215,6 +280,22 @@ function renderGroupedExercises(
       )
     }
   }
+
+  // Top bar (kind='top'): "+ Add exercise" arms an atStart slot. No Superset.
+  nodes.push(
+    <BetweenCardsBar
+      key="bar-top"
+      beforePeId={null}
+      beforeGroupId={null}
+      afterPeId={exercises[0]!.id}
+      afterGroupId={exercises[0]!.superset_group_id}
+      clientId={clientId}
+      dayId={dayId}
+      insertSlot={insertSlot}
+      setInsertSlot={setInsertSlot}
+      focusLibrarySearch={focusLibrarySearch}
+    />,
+  )
 
   let groupLetterIndex = -1
   let i = 0
@@ -232,7 +313,7 @@ function renderGroupedExercises(
     const baseLetter = String.fromCharCode(65 + groupLetterIndex)
 
     if (groupId && memberCount > 1) {
-      // Collect contiguous group members
+      // Collect contiguous group members.
       const members: ProgramExercise[] = []
       let j = i
       while (j < exercises.length && exercises[j]!.superset_group_id === groupId) {
@@ -250,6 +331,9 @@ function renderGroupedExercises(
           members={members}
           clientId={clientId}
           dayId={dayId}
+          insertSlot={insertSlot}
+          setInsertSlot={setInsertSlot}
+          focusLibrarySearch={focusLibrarySearch}
           isFirstOverall={isFirstOverall}
           isLastOverall={isLastOverall}
         />,
@@ -271,9 +355,49 @@ function renderGroupedExercises(
       )
       i += 1
     }
+
+    // Between-cards bar after every card/group except the last. The
+    // before/after groupIds let the bar decide whether to show the
+    // "Superset" affordance (hidden when both share a group_id).
+    if (i < exercises.length) {
+      const before = exercises[i - 1]!
+      const after = exercises[i]!
+      nodes.push(
+        <BetweenCardsBar
+          key={`bar-${before.id}-${after.id}`}
+          beforePeId={before.id}
+          beforeGroupId={before.superset_group_id}
+          afterPeId={after.id}
+          afterGroupId={after.superset_group_id}
+          clientId={clientId}
+          dayId={dayId}
+          insertSlot={insertSlot}
+          setInsertSlot={setInsertSlot}
+          focusLibrarySearch={focusLibrarySearch}
+        />,
+      )
+    }
   }
 
-  return nodes
+  // Bottom bar (kind='bottom'): "+ Add exercise" clears the slot (today's
+  // append behaviour). No Superset.
+  const last = exercises[exercises.length - 1]!
+  nodes.push(
+    <BetweenCardsBar
+      key="bar-bottom"
+      beforePeId={last.id}
+      beforeGroupId={last.superset_group_id}
+      afterPeId={null}
+      afterGroupId={null}
+      clientId={clientId}
+      dayId={dayId}
+      insertSlot={insertSlot}
+      setInsertSlot={setInsertSlot}
+      focusLibrarySearch={focusLibrarySearch}
+    />,
+  )
+
+  return <>{nodes}</>
 }
 
 function SectionStrip({ children }: { children: React.ReactNode }) {
@@ -338,66 +462,25 @@ function SoloPill({ letter }: { letter: string }) {
   )
 }
 
-function SupersetSpine({
-  baseLetter,
-  count,
-}: {
-  baseLetter: string
-  count: number
-}) {
+/**
+ * Letter that sits in the spine column, aligned with a single card's row.
+ * Phase D layout: lifted out of the previous SupersetSpine flex
+ * distribution because in-group bars in the right column push the spine
+ * letters out of vertical alignment with their cards. Letters now live
+ * in their own grid cells in SupersetBlock; this is the rendered glyph.
+ */
+function SpineLetter({ children }: { children: React.ReactNode }) {
   return (
-    <div
+    <span
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        width: 34,
-        position: 'relative',
-        flexShrink: 0,
+        fontFamily: 'var(--font-display)',
+        fontWeight: 800,
+        fontSize: 12,
+        color: GREEN,
       }}
     >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          bottom: 0,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 34,
-          background: 'var(--color-slate)',
-          borderRadius: 17,
-        }}
-      />
-      {Array.from({ length: count }).map((_, idx) => (
-        <div
-          key={idx}
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            position: 'relative',
-            zIndex: 1,
-            padding: '12px 0',
-          }}
-        >
-          <span
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 800,
-              fontSize: 12,
-              color: GREEN,
-            }}
-          >
-            {`${baseLetter}${idx + 1}`}
-          </span>
-          {idx < count - 1 && (
-            <span style={{ color: GREEN, fontSize: 16, lineHeight: 1 }}>−</span>
-          )}
-        </div>
-      ))}
-    </div>
+      {children}
+    </span>
   )
 }
 
@@ -419,34 +502,25 @@ function SoloExercise({
   isLast: boolean
 }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
-        <SoloPill letter={letter} />
-        <div
-          style={{
-            flex: 1,
-            background: '#fff',
-            borderRadius: 12,
-            border: `1px solid ${BORDER}`,
-            display: 'flex',
-          }}
-        >
-          <ExerciseBody
-            pe={pe}
-            clientId={clientId}
-            dayId={dayId}
-            isFirst={isFirst}
-            isLast={isLast}
-          />
-        </div>
+    <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
+      <SoloPill letter={letter} />
+      <div
+        style={{
+          flex: 1,
+          background: '#fff',
+          borderRadius: 12,
+          border: `1px solid ${BORDER}`,
+          display: 'flex',
+        }}
+      >
+        <ExerciseBody
+          pe={pe}
+          clientId={clientId}
+          dayId={dayId}
+          isFirst={isFirst}
+          isLast={isLast}
+        />
       </div>
-      <CardActions
-        clientId={clientId}
-        dayId={dayId}
-        peId={pe.id}
-        grouped={false}
-        isFirst={isFirst}
-      />
     </div>
   )
 }
@@ -458,6 +532,9 @@ function SupersetBlock({
   members,
   clientId,
   dayId,
+  insertSlot,
+  setInsertSlot,
+  focusLibrarySearch,
   isFirstOverall,
   isLastOverall,
 }: {
@@ -465,29 +542,74 @@ function SupersetBlock({
   members: ProgramExercise[]
   clientId: string
   dayId: string
+  insertSlot: InsertSlot | null
+  setInsertSlot: (s: InsertSlot | null) => void
+  focusLibrarySearch: () => void
   isFirstOverall: boolean
   isLastOverall: boolean
 }) {
+  // members[0]'s superset_group_id is non-null and equal across all members
+  // by construction (the walker only enters this branch for memberCount > 1).
+  const groupId = members[0]!.superset_group_id!
+
+  // Phase D layout: CSS grid with paired rows so each letter sits on the
+  // same row as its card. Pre-Phase-D the spine was a flex column with
+  // its letters distributed evenly across the block height, which was
+  // fine when the right column was just stacked cards but broke once
+  // we interleaved bars between members — the bars added height the
+  // spine didn't account for. Grid pins each letter to its card row,
+  // and the bar rows between get the existing dash separator.
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '34px 1fr',
+        columnGap: 10,
+        position: 'relative',
+      }}
+    >
+      {/* Continuous slate spine that sits behind every grid row in the
+          left column. Absolute-positioned so it stretches the full block
+          height regardless of the per-row content. */}
       <div
         style={{
-          display: 'flex',
-          gap: 10,
-          alignItems: 'stretch',
-          position: 'relative',
+          position: 'absolute',
+          top: 0,
+          bottom: 0,
+          left: 0,
+          width: 34,
+          background: 'var(--color-slate)',
+          borderRadius: 17,
+          zIndex: 0,
         }}
-      >
-        <SupersetSpine baseLetter={baseLetter} count={members.length} />
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {members.map((pe, idx) => (
+      />
+      {members.map((pe, idx) => {
+        const cardRow = idx * 2 + 1
+        const barRow = idx * 2 + 2
+        return (
+          <React.Fragment key={pe.id}>
             <div
-              key={pe.id}
               style={{
+                gridColumn: 1,
+                gridRow: cardRow,
+                display: 'grid',
+                placeItems: 'center',
+                position: 'relative',
+                zIndex: 1,
+              }}
+            >
+              <SpineLetter>{`${baseLetter}${idx + 1}`}</SpineLetter>
+            </div>
+            <div
+              style={{
+                gridColumn: 2,
+                gridRow: cardRow,
                 background: '#fff',
                 borderRadius: 12,
                 border: `1px solid ${BORDER}`,
                 display: 'flex',
+                position: 'relative',
+                zIndex: 1,
               }}
             >
               <ExerciseBody
@@ -498,16 +620,53 @@ function SupersetBlock({
                 isLast={isLastOverall && idx === members.length - 1}
               />
             </div>
-          ))}
-        </div>
-      </div>
-      <CardActions
-        clientId={clientId}
-        dayId={dayId}
-        peId={members[members.length - 1]!.id}
-        grouped={true}
-        isFirst={false}
-      />
+            {idx < members.length - 1 && (
+              <>
+                <div
+                  style={{
+                    gridColumn: 1,
+                    gridRow: barRow,
+                    display: 'grid',
+                    placeItems: 'center',
+                    position: 'relative',
+                    zIndex: 1,
+                  }}
+                >
+                  <span
+                    style={{
+                      color: GREEN,
+                      fontSize: 16,
+                      lineHeight: 1,
+                    }}
+                  >
+                    −
+                  </span>
+                </div>
+                <div
+                  style={{
+                    gridColumn: 2,
+                    gridRow: barRow,
+                    position: 'relative',
+                    zIndex: 1,
+                  }}
+                >
+                  <BetweenCardsBar
+                    beforePeId={pe.id}
+                    beforeGroupId={groupId}
+                    afterPeId={members[idx + 1]!.id}
+                    afterGroupId={groupId}
+                    clientId={clientId}
+                    dayId={dayId}
+                    insertSlot={insertSlot}
+                    setInsertSlot={setInsertSlot}
+                    focusLibrarySearch={focusLibrarySearch}
+                  />
+                </div>
+              </>
+            )}
+          </React.Fragment>
+        )
+      })}
     </div>
   )
 }
@@ -549,6 +708,22 @@ function ExerciseBody({
   function handleMove(direction: 'up' | 'down') {
     startTransition(async () => {
       const res = await moveProgramExerciseAction(clientId, dayId, pe.id, direction)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  // Phase D: per-card ungroup. Hidden when the card isn't in a group;
+  // visible icon-button alongside the existing arrow/trash strip otherwise.
+  // The action stays single-card-scoped (this card leaves its group; if
+  // only one member remains, that member is also cleared — handled inside
+  // ungroupFromSupersetAction).
+  function handleUngroup() {
+    startTransition(async () => {
+      const res = await ungroupFromSupersetAction(clientId, dayId, pe.id)
       if (res.error) {
         alert(res.error)
         return
@@ -604,6 +779,15 @@ function ExerciseBody({
           >
             <ArrowDown size={14} aria-hidden />
           </IconButton>
+          {pe.superset_group_id && (
+            <IconButton
+              disabled={pending}
+              onClick={handleUngroup}
+              label="Remove from superset"
+            >
+              <Unlink size={14} aria-hidden />
+            </IconButton>
+          )}
           <IconButton
             disabled={pending}
             onClick={handleRemove}
@@ -716,7 +900,7 @@ function ExerciseBody({
       {/* RIGHT: set table + stepper */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         <SetTable pe={pe} />
-        <SetStepper pe={pe} />
+        <SetStepper pe={pe} clientId={clientId} dayId={dayId} />
         <ExtrasRow pe={pe} />
       </div>
     </div>
@@ -754,47 +938,12 @@ function ColHeader({
   )
 }
 
-function StaticCell({
-  value,
-  placeholder,
-}: {
-  value: string
-  placeholder?: string
-}) {
-  const empty = !value
-  return (
-    <div
-      style={{
-        background: CREAM,
-        borderRadius: 8,
-        height: 26,
-        display: 'grid',
-        placeItems: 'center',
-        fontFamily: 'var(--font-sans)',
-        fontSize: 13,
-        fontWeight: 500,
-        color: empty ? FAINT : INK,
-        padding: '0 10px',
-      }}
-    >
-      {value || placeholder || '—'}
-    </div>
-  )
-}
-
 /**
- * Renders one row per set. Row 1 is editable and writes to the master
- * pe.reps / pe.optional_value fields. Rows 2..N display the same value
- * as static text — they become independent inputs once per-set storage
- * lands.
+ * Renders one row per live set on the program_exercise. Each row is
+ * independently editable — Phase C (2026-05-07) per-set storage replaces
+ * the prior "row-1-master / 2..N-static" pattern.
  */
 function SetTable({ pe }: { pe: ProgramExercise }) {
-  const setCount = Math.max(1, pe.sets ?? 1)
-  const reps = pe.reps ?? ''
-  const load = pe.optional_value ?? ''
-  const rpe = pe.rpe ? `RPE ${pe.rpe}` : ''
-  const loadDisplay = load || rpe
-
   return (
     <div
       style={{
@@ -808,41 +957,14 @@ function SetTable({ pe }: { pe: ProgramExercise }) {
       <ColHeader>Reps</ColHeader>
       <ColHeader>Load / Notes</ColHeader>
 
-      {Array.from({ length: setCount }).map((_, idx) => (
-        <SetRow
-          key={idx}
-          rowIndex={idx}
-          pe={pe}
-          reps={reps}
-          load={load}
-          loadPlaceholder={rpe || '—'}
-          loadDisplay={loadDisplay}
-        />
+      {pe.prescriptionSets.map((set) => (
+        <SetRow key={set.id} set={set} />
       ))}
     </div>
   )
 }
 
-function SetRow({
-  rowIndex,
-  pe,
-  reps,
-  load,
-  loadPlaceholder,
-  loadDisplay,
-}: {
-  rowIndex: number
-  pe: ProgramExercise
-  reps: string
-  load: string
-  loadPlaceholder: string
-  loadDisplay: string
-}) {
-  const setLabel = String(rowIndex + 1)
-  // Row 1 is the editable "master" row. Other rows display the same
-  // values as static text until per-set data lands.
-  const editable = rowIndex === 0
-
+function SetRow({ set }: { set: PrescriptionSet }) {
   return (
     <>
       <div
@@ -858,45 +980,32 @@ function SetRow({
           borderRadius: 8,
         }}
       >
-        {setLabel}
+        {set.set_number}
       </div>
-      {editable ? (
-        <>
-          <InlineCell
-            programExerciseId={pe.id}
-            field="reps"
-            kind="text"
-            initialValue={reps}
-            placeholder="—"
-          />
-          <InlineCell
-            programExerciseId={pe.id}
-            field="optional_value"
-            kind="text"
-            initialValue={load}
-            placeholder={loadPlaceholder}
-          />
-        </>
-      ) : (
-        <>
-          <StaticCell value={reps} />
-          <StaticCell value={loadDisplay} />
-        </>
-      )}
+      <SetCell
+        setId={set.id}
+        field="reps"
+        initialValue={set.reps ?? ''}
+        placeholder="—"
+      />
+      <SetCell
+        setId={set.id}
+        field="optional_value"
+        initialValue={set.optional_value ?? ''}
+        placeholder="—"
+      />
     </>
   )
 }
 
-function InlineCell({
-  programExerciseId,
+function SetCell({
+  setId,
   field,
-  kind,
   initialValue,
   placeholder,
 }: {
-  programExerciseId: string
-  field: keyof ProgramExercisePatch
-  kind: 'number' | 'text'
+  setId: string
+  field: keyof ProgramExerciseSetPatch
   initialValue: string
   placeholder?: string
 }) {
@@ -907,22 +1016,20 @@ function InlineCell({
 
   function handleBlur() {
     if (value === initialValue) return
-    const patch = buildPatch(field, value, kind)
-    if (patch === null) {
-      setStatus('error')
-      return
+    const trimmed = value.trim()
+    const patch: ProgramExerciseSetPatch = {
+      [field]: trimmed === '' ? null : trimmed,
     }
     setStatus('saving')
     startTransition(async () => {
-      const res = await updateProgramExerciseAction(programExerciseId, patch)
+      const res = await updateProgramExerciseSetAction(setId, patch)
       setStatus(res.error ? 'error' : 'idle')
     })
   }
 
   return (
     <input
-      type={kind === 'number' ? 'number' : 'text'}
-      inputMode={kind === 'number' ? 'numeric' : undefined}
+      type="text"
       value={value}
       placeholder={placeholder}
       onChange={(e) => setValue(e.target.value)}
@@ -950,15 +1057,41 @@ function InlineCell({
   )
 }
 
-function SetStepper({ pe }: { pe: ProgramExercise }) {
+function SetStepper({
+  pe,
+  clientId,
+  dayId,
+}: {
+  pe: ProgramExercise
+  clientId: string
+  dayId: string
+}) {
   const [pending, startTransition] = useTransition()
-  const current = pe.sets ?? 1
+  const router = useRouter()
+  const current = pe.prescriptionSets.length
 
-  function bump(delta: number) {
-    const next = Math.max(1, current + delta)
-    if (next === current) return
+  function handleAdd() {
     startTransition(async () => {
-      await updateProgramExerciseAction(pe.id, { sets: next })
+      const res = await addProgramExerciseSetAction(clientId, dayId, pe.id)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  function handleRemove() {
+    if (current <= 1) return
+    const last = pe.prescriptionSets[pe.prescriptionSets.length - 1]
+    if (!last) return
+    startTransition(async () => {
+      const res = await removeProgramExerciseSetAction(clientId, dayId, last.id)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
     })
   }
 
@@ -975,7 +1108,7 @@ function SetStepper({ pe }: { pe: ProgramExercise }) {
     >
       <button
         type="button"
-        onClick={() => bump(-1)}
+        onClick={handleRemove}
         disabled={current <= 1 || pending}
         aria-label="Remove set"
         style={{
@@ -996,7 +1129,7 @@ function SetStepper({ pe }: { pe: ProgramExercise }) {
       </span>
       <button
         type="button"
-        onClick={() => bump(1)}
+        onClick={handleAdd}
         disabled={pending}
         aria-label="Add set"
         style={{
@@ -1016,31 +1149,25 @@ function SetStepper({ pe }: { pe: ProgramExercise }) {
   )
 }
 
-/* ====================== Extras row (RPE / Rest / Tempo) ====================== */
+/* ====================== Extras row (Rest / Tempo) ====================== */
 
 /**
- * Less-prominent extras kept accessible without crowding the table. The
- * RPE input is duplicated visually inside the Load/Notes column when
- * there's no load value (matches the design's "RPE 8" placeholder
- * pattern), and stays editable here as the source of truth.
+ * Per-exercise extras. RPE is no longer here — it moves to per-set storage
+ * via the Load/Notes cell, which becomes a [value][metric] dropdown in
+ * Phase F (with 'rpe' as one of the metric options). Until then the
+ * Phase C UI keeps Load/Notes freetext per set; the EP can type 'RPE 8'
+ * inline when prescribing perceived effort.
  */
 function ExtrasRow({ pe }: { pe: ProgramExercise }) {
   return (
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(3, 1fr)',
+        gridTemplateColumns: 'repeat(2, 1fr)',
         gap: 6,
         marginTop: 8,
       }}
     >
-      <SmallField
-        programExerciseId={pe.id}
-        field="rpe"
-        label="RPE"
-        kind="number"
-        initialValue={pe.rpe?.toString() ?? ''}
-      />
       <SmallField
         programExerciseId={pe.id}
         field="rest_seconds"
@@ -1137,102 +1264,191 @@ function SmallField({
   )
 }
 
-/* ====================== Card actions (under each card) ====================== */
+/* ====================== Between-cards action bar ====================== */
 
-function CardActions({
+/**
+ * The Phase D action bar — replaces the prior CardActions which lived below
+ * each card and was ambiguous about which cards it acted on.
+ *
+ * Three positions:
+ *   - top    (beforePeId == null) — "+ Add exercise" arms an atStart slot.
+ *   - between (both ids set)      — "+ Add exercise" arms an after-anchor
+ *                                    slot; "Superset" groups the two cards
+ *                                    on either side per Q3 sign-off
+ *                                    2026-05-07. Hidden when both share a
+ *                                    group_id (already grouped — bar shows
+ *                                    only "+ Add exercise" inside a group).
+ *   - bottom (afterPeId == null)  — "+ Add exercise" clears the slot
+ *                                    (today's append-at-MAX behaviour).
+ *
+ * The bar is a 1px hairline + small icon-only buttons centered on top.
+ * Always-on per Q2 sign-off: discoverability beats restraint here, the bar
+ * is the only insertion affordance now.
+ */
+function BetweenCardsBar({
+  beforePeId,
+  beforeGroupId,
+  afterPeId,
+  afterGroupId,
   clientId,
   dayId,
-  peId,
-  grouped,
-  isFirst,
+  insertSlot,
+  setInsertSlot,
+  focusLibrarySearch,
 }: {
+  beforePeId: string | null
+  beforeGroupId: string | null
+  afterPeId: string | null
+  afterGroupId: string | null
   clientId: string
   dayId: string
-  peId: string
-  grouped: boolean
-  isFirst: boolean
+  insertSlot: InsertSlot | null
+  setInsertSlot: (s: InsertSlot | null) => void
+  focusLibrarySearch: () => void
 }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
+  const isTop = beforePeId === null
+  const isBottom = afterPeId === null
+  const isBetween = !isTop && !isBottom
+
+  // Same group ⇒ already supersetted ⇒ the Superset button is meaningless.
+  // Render it only on between-cards bars where grouping the pair changes
+  // something (different groups merge; ungrouped + grouped joins; both
+  // ungrouped mints fresh).
+  const sameGroup =
+    isBetween && beforeGroupId !== null && beforeGroupId === afterGroupId
+  const showSuperset = isBetween && !sameGroup
+
+  // Visual feedback: which bar's "+ Add exercise" is currently armed for
+  // the next library-pick. Subtle but explicit.
+  const isActiveSlot =
+    (isTop && insertSlot?.kind === 'atStart') ||
+    (isBetween &&
+      insertSlot?.kind === 'after' &&
+      insertSlot.afterPeId === beforePeId)
+
+  function handleAddExercise() {
+    if (isTop) setInsertSlot({ kind: 'atStart' })
+    else if (isBottom) setInsertSlot(null) // bottom = today's append
+    else setInsertSlot({ kind: 'after', afterPeId: beforePeId! })
+    focusLibrarySearch()
+  }
+
   function handleSuperset() {
-    if (grouped) {
-      startTransition(async () => {
-        const res = await ungroupFromSupersetAction(clientId, dayId, peId)
-        if (res.error) {
-          alert(res.error)
-          return
-        }
-        router.refresh()
-      })
-    } else {
-      startTransition(async () => {
-        const res = await groupWithAboveAction(clientId, dayId, peId)
-        if (res.error) {
-          alert(res.error)
-          return
-        }
-        router.refresh()
-      })
-    }
+    if (!isBetween || sameGroup) return
+    startTransition(async () => {
+      const res = await groupAcrossActionBarAction(
+        clientId,
+        dayId,
+        beforePeId!,
+        afterPeId!,
+      )
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
+    })
   }
 
-  function focusLibrarySearch() {
-    const el = document.querySelector<HTMLInputElement>(
-      'input[aria-label="Search exercises"]',
-    )
-    el?.focus()
-  }
-
-  const supersetDisabled = !grouped && isFirst
+  const addLabel = isTop
+    ? 'Insert at top'
+    : isBottom
+      ? 'Add exercise at end'
+      : 'Insert exercise here'
 
   return (
     <div
       style={{
-        display: 'flex',
-        gap: 8,
-        justifyContent: 'center',
-        marginTop: 10,
+        position: 'relative',
+        height: 22,
+        margin: '4px 0',
       }}
     >
-      <button
-        type="button"
-        onClick={handleSuperset}
-        disabled={pending || supersetDisabled}
-        title={
-          supersetDisabled
-            ? 'Add this below another exercise to superset them'
-            : grouped
-              ? 'Remove from superset'
-              : 'Group with the exercise above'
-        }
-        style={pillButtonStyle(pending || supersetDisabled)}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: '50%',
+          height: 1,
+          background: BORDER,
+          transform: 'translateY(-50%)',
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        style={{
+          position: 'relative',
+          height: '100%',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 4,
+        }}
       >
-        {grouped ? 'Remove superset' : 'Superset'}
-      </button>
-      <button
-        type="button"
-        onClick={focusLibrarySearch}
-        style={pillButtonStyle(false)}
-      >
-        + Add exercise
-      </button>
+        {showSuperset && (
+          <BarButton
+            onClick={handleSuperset}
+            disabled={pending}
+            label="Superset"
+          >
+            <Link2 size={12} aria-hidden />
+          </BarButton>
+        )}
+        <BarButton
+          onClick={handleAddExercise}
+          disabled={pending}
+          label={addLabel}
+          active={isActiveSlot}
+        >
+          <Plus size={12} aria-hidden />
+        </BarButton>
+      </div>
     </div>
   )
 }
 
-function pillButtonStyle(disabled: boolean): React.CSSProperties {
-  return {
-    padding: '7px 14px',
-    background: '#fff',
-    border: `1px solid ${BORDER}`,
-    borderRadius: 6,
-    fontSize: 12,
-    fontWeight: 500,
-    color: disabled ? FAINT : INK,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    fontFamily: 'var(--font-sans)',
-  }
+function BarButton({
+  children,
+  label,
+  onClick,
+  disabled,
+  active,
+}: {
+  children: React.ReactNode
+  label: string
+  onClick: () => void
+  disabled?: boolean
+  active?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      style={{
+        width: 22,
+        height: 22,
+        background: active ? 'var(--color-slate)' : '#fff',
+        color: active ? '#fff' : disabled ? FAINT : MUTED,
+        border: `1px solid ${active ? 'var(--color-slate)' : BORDER}`,
+        borderRadius: 6,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        display: 'grid',
+        placeItems: 'center',
+        padding: 0,
+        transition:
+          'background 150ms, color 150ms, border-color 150ms',
+      }}
+    >
+      {children}
+    </button>
+  )
 }
 
 /* ====================== Editable bits shared across the card ====================== */
@@ -1399,14 +1615,21 @@ function LibraryPanel({
   options,
   clientId,
   dayId,
+  insertSlot,
+  setInsertSlot,
+  programExercises,
 }: {
   options: LibraryPick[]
   clientId: string
   dayId: string
+  insertSlot: InsertSlot | null
+  setInsertSlot: (s: InsertSlot | null) => void
+  programExercises: ProgramExercise[]
 }) {
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+  const router = useRouter()
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -1416,11 +1639,29 @@ function LibraryPanel({
 
   function handleAdd(exerciseId: string) {
     setAdding(exerciseId)
+    const slot: InsertSlot = insertSlot ?? { kind: 'append' }
     startTransition(async () => {
-      const res = await addExerciseToDayAction(clientId, dayId, exerciseId)
-      if (res.error) alert(res.error)
+      const res = await addExerciseToDayAction(clientId, dayId, exerciseId, slot)
+      if (res.error) {
+        alert(res.error)
+      } else {
+        setInsertSlot(null)
+        router.refresh()
+      }
       setAdding(null)
     })
+  }
+
+  // Slot status banner. The label tells the EP exactly where the next
+  // pick will land; Cancel returns to default (append-at-end).
+  let slotLabel: string | null = null
+  if (insertSlot?.kind === 'atStart') {
+    slotLabel = 'Inserting at top'
+  } else if (insertSlot?.kind === 'after') {
+    const anchor = programExercises.find((p) => p.id === insertSlot.afterPeId)
+    slotLabel = anchor
+      ? `Inserting after ${anchor.exercise_name}`
+      : 'Inserting at slot'
   }
 
   return (
@@ -1428,6 +1669,51 @@ function LibraryPanel({
       <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
         Library — pick to add
       </div>
+      {slotLabel && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 10,
+            padding: '6px 10px',
+            background: CREAM_DEEP,
+            border: `1px solid ${BORDER}`,
+            borderRadius: 6,
+          }}
+        >
+          <span
+            style={{
+              flex: 1,
+              fontFamily: 'var(--font-sans)',
+              fontSize: '.76rem',
+              fontWeight: 500,
+              color: INK,
+            }}
+          >
+            {slotLabel}
+          </span>
+          <button
+            type="button"
+            onClick={() => setInsertSlot(null)}
+            aria-label="Cancel insert"
+            title="Cancel insert"
+            style={{
+              width: 18,
+              height: 18,
+              background: 'transparent',
+              border: 'none',
+              color: MUTED,
+              cursor: 'pointer',
+              display: 'grid',
+              placeItems: 'center',
+              padding: 0,
+            }}
+          >
+            <X size={12} aria-hidden />
+          </button>
+        </div>
+      )}
       <div style={{ position: 'relative', marginBottom: 10 }}>
         <Search
           size={14}
