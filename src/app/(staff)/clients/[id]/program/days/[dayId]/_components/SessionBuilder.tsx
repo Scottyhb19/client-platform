@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState, useTransition } from 'react'
+import React, { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
@@ -17,6 +17,7 @@ import {
 import {
   addExerciseToDayAction,
   addProgramExerciseSetAction,
+  addSectionTitleAction,
   groupAcrossActionBarAction,
   moveProgramExerciseAction,
   removeProgramExerciseAction,
@@ -24,6 +25,7 @@ import {
   ungroupFromSupersetAction,
   updateProgramExerciseAction,
   updateProgramExerciseSetAction,
+  updateSectionTitleAction,
   type InsertSlot,
   type ProgramExercisePatch,
   type ProgramExerciseSetPatch,
@@ -77,8 +79,21 @@ export type ProgramExercise = {
 export type LibraryPick = {
   id: string
   name: string
+  movement_pattern_id: string | null
   movement_pattern_name: string | null
+  tag_ids: string[]
 }
+
+/**
+ * Lookup options sourced from the org's tenant-configurable tables. All
+ * three are loaded by the page.tsx Promise.all and passed in via props.
+ *
+ * Phase E (2026-05-07) — drives the SectionTitleField dropdown and the
+ * LibraryPanel multi-select chip filters.
+ */
+export type SectionTitleOption = { id: string; name: string }
+export type MovementPatternOption = { id: string; name: string }
+export type ExerciseTagOption = { id: string; name: string }
 
 interface SessionBuilderProps {
   clientId: string
@@ -87,6 +102,9 @@ interface SessionBuilderProps {
   libraryOptions: LibraryPick[]
   pinnedNotes: PinnedNote[]
   reports: SessionReport[]
+  sectionTitles: SectionTitleOption[]
+  movementPatterns: MovementPatternOption[]
+  exerciseTags: ExerciseTagOption[]
 }
 
 export function SessionBuilder({
@@ -96,6 +114,9 @@ export function SessionBuilder({
   libraryOptions,
   pinnedNotes,
   reports,
+  sectionTitles,
+  movementPatterns,
+  exerciseTags,
 }: SessionBuilderProps) {
   const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('library')
 
@@ -138,6 +159,7 @@ export function SessionBuilder({
             insertSlot={insertSlot}
             setInsertSlot={setInsertSlot}
             focusLibrarySearch={focusLibrarySearch}
+            sectionTitles={sectionTitles}
           />
         )}
       </div>
@@ -185,6 +207,8 @@ export function SessionBuilder({
             insertSlot={insertSlot}
             setInsertSlot={setInsertSlot}
             programExercises={programExercises}
+            movementPatterns={movementPatterns}
+            exerciseTags={exerciseTags}
           />
         )}
         {tab === 'notes' && <NotesPanel notes={pinnedNotes} />}
@@ -259,6 +283,7 @@ function ExerciseList({
   insertSlot,
   setInsertSlot,
   focusLibrarySearch,
+  sectionTitles,
 }: {
   exercises: ProgramExercise[]
   clientId: string
@@ -266,6 +291,7 @@ function ExerciseList({
   insertSlot: InsertSlot | null
   setInsertSlot: (s: InsertSlot | null) => void
   focusLibrarySearch: () => void
+  sectionTitles: SectionTitleOption[]
 }) {
   const nodes: React.ReactNode[] = []
   let lastSection: string | null | undefined = undefined
@@ -336,6 +362,7 @@ function ExerciseList({
           focusLibrarySearch={focusLibrarySearch}
           isFirstOverall={isFirstOverall}
           isLastOverall={isLastOverall}
+          sectionTitles={sectionTitles}
         />,
       )
       i = j
@@ -351,6 +378,7 @@ function ExerciseList({
           dayId={dayId}
           isFirst={isFirstOverall}
           isLast={isLastOverall}
+          sectionTitles={sectionTitles}
         />,
       )
       i += 1
@@ -493,6 +521,7 @@ function SoloExercise({
   dayId,
   isFirst,
   isLast,
+  sectionTitles,
 }: {
   pe: ProgramExercise
   letter: string
@@ -500,6 +529,7 @@ function SoloExercise({
   dayId: string
   isFirst: boolean
   isLast: boolean
+  sectionTitles: SectionTitleOption[]
 }) {
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'stretch' }}>
@@ -519,6 +549,7 @@ function SoloExercise({
           dayId={dayId}
           isFirst={isFirst}
           isLast={isLast}
+          sectionTitles={sectionTitles}
         />
       </div>
     </div>
@@ -537,6 +568,7 @@ function SupersetBlock({
   focusLibrarySearch,
   isFirstOverall,
   isLastOverall,
+  sectionTitles,
 }: {
   baseLetter: string
   members: ProgramExercise[]
@@ -547,6 +579,7 @@ function SupersetBlock({
   focusLibrarySearch: () => void
   isFirstOverall: boolean
   isLastOverall: boolean
+  sectionTitles: SectionTitleOption[]
 }) {
   // members[0]'s superset_group_id is non-null and equal across all members
   // by construction (the walker only enters this branch for memberCount > 1).
@@ -618,6 +651,7 @@ function SupersetBlock({
                 dayId={dayId}
                 isFirst={isFirstOverall && idx === 0}
                 isLast={isLastOverall && idx === members.length - 1}
+                sectionTitles={sectionTitles}
               />
             </div>
             {idx < members.length - 1 && (
@@ -679,12 +713,14 @@ function ExerciseBody({
   dayId,
   isFirst,
   isLast,
+  sectionTitles,
 }: {
   pe: ProgramExercise
   clientId: string
   dayId: string
   isFirst: boolean
   isLast: boolean
+  sectionTitles: SectionTitleOption[]
 }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
@@ -805,6 +841,7 @@ function ExerciseBody({
         <SectionTitleField
           programExerciseId={pe.id}
           initialValue={pe.section_title ?? ''}
+          options={sectionTitles}
         />
 
         <div
@@ -1543,36 +1580,161 @@ function IconButton({
   )
 }
 
+/**
+ * Section title is a tenant-configurable label per program_exercise. Free
+ * text on the column (Q1 sign-off 2026-05-07 — the dropdown is a UI helper,
+ * not an FK), so legacy ad-hoc values still render even if they're not in
+ * the org's section_titles list.
+ *
+ * Two modes:
+ *   - select   — native <select>: sentinel "(none)" + the org's seeded
+ *                titles + the value-as-option fallback (when the saved
+ *                value isn't in the list, e.g. legacy free-text) + a
+ *                trailing "+ Add new section…" sentinel.
+ *   - creating — inline text input. Enter submits via addSectionTitleAction
+ *                AND applies via updateProgramExerciseAction in parallel;
+ *                Esc cancels. Duplicate names soft-fail (the existing
+ *                section is the wanted state — apply anyway).
+ *
+ * Phase E (/docs/polish/session-builder.md §2.6).
+ */
 function SectionTitleField({
   programExerciseId,
   initialValue,
+  options,
 }: {
   programExerciseId: string
   initialValue: string
+  options: SectionTitleOption[]
 }) {
   const [value, setValue] = useState(initialValue)
+  const [mode, setMode] = useState<'select' | 'creating'>('select')
+  const [draft, setDraft] = useState('')
   const [, startTransition] = useTransition()
+  const router = useRouter()
 
-  function handleBlur() {
-    if (value === initialValue) return
-    const patch: ProgramExercisePatch = {
-      section_title: value.trim() === '' ? null : value.trim(),
-    }
+  // Sync local state when the server pushes a new initialValue — happens
+  // when a sibling in our superset group adopts a section title via
+  // updateSectionTitleAction's fan-out path. Without this, useState only
+  // honours initialValue on the first render and the prop change is
+  // silently ignored, leaving siblings showing stale "(— Section —)".
+  // Skip while the user is mid-create to not blow away their draft.
+  useEffect(() => {
+    if (mode === 'creating') return
+    setValue(initialValue)
+  }, [initialValue, mode])
+
+  // Render a legacy free-text option when the saved value isn't in the
+  // org's section_titles list. Without this the <select> would silently
+  // reset on first render to the empty option.
+  const valueInOptions = value !== '' && options.some((o) => o.name === value)
+
+  function applyValue(next: string) {
+    setValue(next)
     startTransition(async () => {
-      await updateProgramExerciseAction(programExerciseId, patch)
+      // Section is a property of the block. The action fans out to every
+      // live member of the superset group when this card is grouped, so
+      // siblings stay in sync. router.refresh() pulls those siblings'
+      // updated section_title into their own SectionTitleField instances.
+      const res = await updateSectionTitleAction(
+        programExerciseId,
+        next === '' ? null : next,
+      )
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
     })
   }
 
+  function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const v = e.target.value
+    if (v === '__add__') {
+      setDraft('')
+      setMode('creating')
+      return
+    }
+    if (v === value) return
+    applyValue(v)
+  }
+
+  function commitDraft() {
+    const name = draft.trim()
+    if (!name) {
+      setMode('select')
+      return
+    }
+    setMode('select')
+    setValue(name)
+    startTransition(async () => {
+      // Both server actions are independent. Run in parallel — the section
+      // title persists to section_titles for the org's dropdown; the
+      // updateSectionTitle action applies the name to this card AND fans
+      // out to its superset siblings if grouped. Duplicate-name on add is
+      // soft-failed: the section already exists in the org's list ⇒ the
+      // EP's intent is satisfied without an alert.
+      const [addRes, updateRes] = await Promise.all([
+        addSectionTitleAction(name),
+        updateSectionTitleAction(programExerciseId, name),
+      ])
+      if (
+        addRes.error &&
+        !addRes.error.toLowerCase().includes('already exists')
+      ) {
+        alert(addRes.error)
+      }
+      if (updateRes.error) {
+        alert(updateRes.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  if (mode === 'creating') {
+    return (
+      <input
+        autoFocus
+        type="text"
+        value={draft}
+        placeholder="New section name"
+        maxLength={60}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            ;(e.target as HTMLInputElement).blur()
+          } else if (e.key === 'Escape') {
+            setDraft('')
+            setMode('select')
+          }
+        }}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          borderBottom: `1px dashed ${BORDER}`,
+          padding: '4px 0',
+          fontFamily: 'var(--font-display)',
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: MUTED,
+          outline: 'none',
+          marginBottom: 12,
+        }}
+      />
+    )
+  }
+
   return (
-    <input
-      type="text"
+    <select
       value={value}
-      placeholder="Section (e.g. Strength, Upper, Stability)"
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={handleBlur}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-      }}
+      onChange={handleSelectChange}
+      aria-label="Section"
       style={{
         width: '100%',
         background: 'transparent',
@@ -1587,8 +1749,21 @@ function SectionTitleField({
         color: value ? MUTED : FAINT,
         outline: 'none',
         marginBottom: 12,
+        appearance: 'none',
+        cursor: 'pointer',
       }}
-    />
+    >
+      <option value="">— Section —</option>
+      {!valueInOptions && value !== '' && (
+        <option value={value}>{value}</option>
+      )}
+      {options.map((o) => (
+        <option key={o.id} value={o.name}>
+          {o.name}
+        </option>
+      ))}
+      <option value="__add__">+ Add new section…</option>
+    </select>
   )
 }
 
@@ -1618,6 +1793,8 @@ function LibraryPanel({
   insertSlot,
   setInsertSlot,
   programExercises,
+  movementPatterns,
+  exerciseTags,
 }: {
   options: LibraryPick[]
   clientId: string
@@ -1625,17 +1802,65 @@ function LibraryPanel({
   insertSlot: InsertSlot | null
   setInsertSlot: (s: InsertSlot | null) => void
   programExercises: ProgramExercise[]
+  movementPatterns: MovementPatternOption[]
+  exerciseTags: ExerciseTagOption[]
 }) {
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<string | null>(null)
+  // Chip filter state. Multi-select within each category. AND across
+  // categories, OR within (Q3 sign-off 2026-05-07).
+  const [selectedPatternIds, setSelectedPatternIds] = useState<Set<string>>(
+    () => new Set(),
+  )
+  const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const [, startTransition] = useTransition()
   const router = useRouter()
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return options
-    return options.filter((o) => o.name.toLowerCase().includes(q))
-  }, [options, query])
+    return options.filter((o) => {
+      if (q && !o.name.toLowerCase().includes(q)) return false
+      if (selectedPatternIds.size > 0) {
+        if (
+          !o.movement_pattern_id ||
+          !selectedPatternIds.has(o.movement_pattern_id)
+        ) {
+          return false
+        }
+      }
+      if (selectedTagIds.size > 0) {
+        const hasAny = o.tag_ids.some((id) => selectedTagIds.has(id))
+        if (!hasAny) return false
+      }
+      return true
+    })
+  }, [options, query, selectedPatternIds, selectedTagIds])
+
+  const filtersActive =
+    selectedPatternIds.size > 0 || selectedTagIds.size > 0
+
+  function togglePattern(id: string) {
+    setSelectedPatternIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function toggleTag(id: string) {
+    setSelectedTagIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function resetFilters() {
+    setSelectedPatternIds(new Set())
+    setSelectedTagIds(new Set())
+  }
 
   function handleAdd(exerciseId: string) {
     setAdding(exerciseId)
@@ -1714,7 +1939,15 @@ function LibraryPanel({
           </button>
         </div>
       )}
-      <div style={{ position: 'relative', marginBottom: 10 }}>
+      {/* Movement-pattern chips above the search. Multi-select; OR within. */}
+      <FilterChipRow
+        chips={movementPatterns}
+        selected={selectedPatternIds}
+        onToggle={togglePattern}
+        ariaLabel="Filter by movement pattern"
+      />
+
+      <div style={{ position: 'relative', marginTop: 8, marginBottom: 8 }}>
         <Search
           size={14}
           aria-hidden
@@ -1739,6 +1972,38 @@ function LibraryPanel({
           }}
         />
       </div>
+
+      {/* Exercise-tag chips below the search. Multi-select; OR within.
+          Tag filter is AND'd with the pattern filter (Q3 sign-off
+          2026-05-07). */}
+      <FilterChipRow
+        chips={exerciseTags}
+        selected={selectedTagIds}
+        onToggle={toggleTag}
+        prefix="#"
+        ariaLabel="Filter by tag"
+      />
+
+      {filtersActive && (
+        <button
+          type="button"
+          onClick={resetFilters}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: MUTED,
+            fontSize: '.72rem',
+            fontWeight: 500,
+            cursor: 'pointer',
+            padding: '2px 0',
+            marginBottom: 8,
+            textDecoration: 'underline',
+            textUnderlineOffset: 2,
+          }}
+        >
+          Reset filters
+        </button>
+      )}
 
       {options.length === 0 ? (
         <div
@@ -1801,3 +2066,66 @@ function LibraryPanel({
   )
 }
 
+/**
+ * Multi-select chip row used by the LibraryPanel for movement-pattern and
+ * tag filters. Local-first: filter state lives in LibraryPanel; this
+ * component is purely presentational.
+ *
+ * Visual: small pill chips, hairline border, charcoal-on when selected
+ * (matches the .chip token in globals.css but tightened for the session-
+ * builder's denser right-panel context — 3px/9px padding vs the global
+ * 6px/14px).
+ */
+function FilterChipRow({
+  chips,
+  selected,
+  onToggle,
+  prefix,
+  ariaLabel,
+}: {
+  chips: { id: string; name: string }[]
+  selected: Set<string>
+  onToggle: (id: string) => void
+  prefix?: string
+  ariaLabel: string
+}) {
+  if (chips.length === 0) return null
+  return (
+    <div
+      role="group"
+      aria-label={ariaLabel}
+      style={{
+        display: 'flex',
+        gap: 4,
+        flexWrap: 'wrap',
+      }}
+    >
+      {chips.map((c) => {
+        const on = selected.has(c.id)
+        return (
+          <button
+            key={c.id}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onToggle(c.id)}
+            style={{
+              padding: '3px 9px',
+              borderRadius: 999,
+              border: `1px solid ${on ? 'var(--color-charcoal)' : BORDER}`,
+              background: on ? 'var(--color-charcoal)' : '#fff',
+              color: on ? '#fff' : MUTED,
+              fontFamily: 'var(--font-sans)',
+              fontSize: '.7rem',
+              fontWeight: 500,
+              cursor: 'pointer',
+              transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+            }}
+          >
+            {prefix}
+            {c.name}
+          </button>
+        )
+      })}
+    </div>
+  )
+}

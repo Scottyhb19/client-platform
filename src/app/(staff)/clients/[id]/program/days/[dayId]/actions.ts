@@ -588,3 +588,143 @@ export async function removeProgramExerciseSetAction(
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }
 }
+
+/* ====================== Section title management ====================== */
+
+/**
+ * Apply a section title to a program_exercise — and to every other live
+ * member of its superset group, if grouped. Used by the SectionTitleField
+ * in the session builder.
+ *
+ * Why a dedicated action vs. the generic updateProgramExerciseAction:
+ *   - Section is conceptually a property of the *block* (a superset is one
+ *     logical block — its section header in the design renders once across
+ *     the whole group). Letting the user set the section on one member and
+ *     leaving siblings empty creates a visual asymmetry the EP didn't ask
+ *     for and cannot recover from short of clicking each sibling.
+ *   - Solo cards behave identically to the old patch path (single-row
+ *     UPDATE), so non-superset behaviour is unchanged.
+ *
+ * Atomicity: a single UPDATE with the group_id filter — either every
+ * member adopts the new section_title or the request fails. RLS scopes
+ * the visibility + writability via the parent walk on program_days
+ * (post-D-PROG-001 single-hop); the matching SELECT/UPDATE policies on
+ * program_exercises gate every row before the bulk UPDATE touches it.
+ *
+ * Phase E hot-fix (2026-05-07) — chat report: "when I add the section
+ * for the B superset it does not update the rest of the superset."
+ */
+export async function updateSectionTitleAction(
+  programExerciseId: string,
+  value: string | null,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data: target, error: lookupErr } = await supabase
+    .from('program_exercises')
+    .select('id, program_day_id, superset_group_id')
+    .eq('id', programExerciseId)
+    .is('deleted_at', null)
+    .single()
+
+  if (lookupErr || !target) {
+    return { error: `Exercise not found: ${lookupErr?.message ?? 'unknown'}` }
+  }
+
+  const trimmed = value?.trim() ?? ''
+  const newValue = trimmed === '' ? null : trimmed
+
+  if (target.superset_group_id) {
+    const { error } = await supabase
+      .from('program_exercises')
+      .update({ section_title: newValue })
+      .eq('program_day_id', target.program_day_id)
+      .eq('superset_group_id', target.superset_group_id)
+      .is('deleted_at', null)
+    if (error) return { error: `Update section: ${error.message}` }
+  } else {
+    const { error } = await supabase
+      .from('program_exercises')
+      .update({ section_title: newValue })
+      .eq('id', programExerciseId)
+    if (error) return { error: `Update section: ${error.message}` }
+  }
+
+  return { error: null }
+}
+
+/**
+ * Insert a new section_titles row scoped to the caller's organization. Used
+ * by the SectionTitleField "+ Add section…" affordance in the session
+ * builder (Phase E, /docs/polish/session-builder.md §2.6).
+ *
+ * Returns the inserted row so the client can apply the value optimistically
+ * and let router.refresh() repopulate dropdowns on other cards. The "name
+ * already exists" path returns a soft error — the caller can still apply
+ * the same name to the program_exercise (section_title is free-text on
+ * program_exercises by design — Q1 sign-off 2026-05-07; the dropdown is a
+ * UI helper, not an FK).
+ *
+ * RLS: the staff-INSERT policy on section_titles requires
+ * organization_id = user_organization_id(); requireRole gives us the
+ * caller's org so the WITH CHECK passes.
+ *
+ * Audit: section_titles is currently un-audited (no trigger, no
+ * audit_resolve_org_id branch). Phase I polish-round will add coverage to
+ * match the movement_patterns / exercise_tags precedent set in
+ * 20260505100100_audit_register_library — deferred per Q4 sign-off
+ * 2026-05-07 to keep Phase E pure UI/wiring.
+ */
+export async function addSectionTitleAction(
+  rawName: string,
+): Promise<{
+  data: { id: string; name: string } | null
+  error: string | null
+}> {
+  const { organizationId } = await requireRole(['owner', 'staff'])
+
+  const name = rawName.trim()
+  if (name.length === 0 || name.length > 60) {
+    return { data: null, error: 'Section name must be 1–60 characters.' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+
+  // sort_order = (max + 10) within the org so freshly-added sections sort
+  // to the bottom of the list. Step of 10 mirrors the seed (10, 20, …, 100).
+  const { data: maxRow } = await supabase
+    .from('section_titles')
+    .select('sort_order')
+    .eq('organization_id', organizationId)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const nextOrder = (maxRow?.sort_order ?? 0) + 10
+
+  const { data: inserted, error } = await supabase
+    .from('section_titles')
+    .insert({
+      organization_id: organizationId,
+      name,
+      sort_order: nextOrder,
+    })
+    .select('id, name')
+    .single()
+
+  if (error) {
+    // Duplicate (case-insensitive) — friendlier message via the partial
+    // unique index section_titles_org_name_unique on lower(name).
+    if (error.code === '23505') {
+      return {
+        data: null,
+        error: `A section called "${name}" already exists.`,
+      }
+    }
+    return { data: null, error: `Couldn't add section: ${error.message}` }
+  }
+
+  return { data: inserted, error: null }
+}

@@ -4,8 +4,11 @@ import { ArrowLeft, Copy } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   SessionBuilder,
+  type ExerciseTagOption,
   type LibraryPick,
+  type MovementPatternOption,
   type ProgramExercise,
+  type SectionTitleOption,
 } from './_components/SessionBuilder'
 import { type PinnedNote } from '../../../_components/NotesPanel'
 import { type SessionReport } from '../../../_components/ReportsPanel'
@@ -63,12 +66,21 @@ export default async function SessionBuilderPage({
 
   if (!client) notFound()
 
-  // Session content + library pool + pinned notes + reports in parallel.
+  // Session content + library pool + pinned notes + reports + section
+  // titles + movement patterns + exercise tags in parallel. The library
+  // query carries movement_pattern_id and a flat tag_ids array so the
+  // panel's chip filters can run client-side without a second round trip.
+  // Phase E (2026-05-07): adds section_titles + movement_patterns +
+  // exercise_tags loads for the SectionTitleField dropdown and the
+  // LibraryPanel chip filters.
   const [
     { data: programExercisesRaw, error: peErr },
     { data: libraryRaw },
     { data: notesRaw },
     { data: reportsRaw },
+    { data: sectionTitlesRaw },
+    { data: patternsRaw },
+    { data: tagsRaw },
   ] = await Promise.all([
     supabase
       .from('program_exercises')
@@ -87,8 +99,9 @@ export default async function SessionBuilderPage({
     supabase
       .from('exercises')
       .select(
-        `id, name,
-         movement_pattern:movement_patterns(name)`,
+        `id, name, movement_pattern_id,
+         movement_pattern:movement_patterns(name),
+         tag_assignments:exercise_tag_assignments(tag_id)`,
       )
       .is('deleted_at', null)
       .order('name'),
@@ -106,6 +119,21 @@ export default async function SessionBuilderPage({
       .is('deleted_at', null)
       .order('test_date', { ascending: false })
       .limit(20),
+    supabase
+      .from('section_titles')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('movement_patterns')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('exercise_tags')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
   ])
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
@@ -142,7 +170,22 @@ export default async function SessionBuilderPage({
   const libraryOptions: LibraryPick[] = (libraryRaw ?? []).map((e) => ({
     id: e.id,
     name: e.name,
+    movement_pattern_id: e.movement_pattern_id,
     movement_pattern_name: e.movement_pattern?.name ?? null,
+    tag_ids: (e.tag_assignments ?? []).map((t) => t.tag_id),
+  }))
+
+  const sectionTitles: SectionTitleOption[] = (sectionTitlesRaw ?? []).map(
+    (s) => ({ id: s.id, name: s.name }),
+  )
+
+  const movementPatterns: MovementPatternOption[] = (patternsRaw ?? []).map(
+    (p) => ({ id: p.id, name: p.name }),
+  )
+
+  const exerciseTags: ExerciseTagOption[] = (tagsRaw ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
   }))
 
   // Skip empty pinned notes — see program/page.tsx Phase F.6 fix.
@@ -260,6 +303,9 @@ export default async function SessionBuilderPage({
         libraryOptions={libraryOptions}
         pinnedNotes={pinnedNotes}
         reports={reports}
+        sectionTitles={sectionTitles}
+        movementPatterns={movementPatterns}
+        exerciseTags={exerciseTags}
       />
     </div>
   )
