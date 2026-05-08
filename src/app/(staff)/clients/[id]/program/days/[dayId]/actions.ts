@@ -394,9 +394,13 @@ export async function groupAcrossActionBarAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
+  // Phase J (2026-05-08): section_title now follows the group across every
+  // grouping branch below — the upper card/group is canonical for both id
+  // and section, mirroring the existing id-merge rule. See migration
+  // 20260508120000 for the matching reorder-path reconciliation.
   const { data: pair, error: lookupErr } = await supabase
     .from('program_exercises')
-    .select('id, sort_order, superset_group_id')
+    .select('id, sort_order, superset_group_id, section_title')
     .eq('program_day_id', dayId)
     .in('id', [beforePeId, afterPeId])
     .is('deleted_at', null)
@@ -416,43 +420,87 @@ export async function groupAcrossActionBarAction(
     return { error: null }
   }
 
-  // Two ungrouped → mint a fresh group.
+  // Two ungrouped → mint a fresh group. Q1-A: upper section wins, both
+  // members converge on it.
   if (!beforeG && !afterG) {
     const newGroupId = crypto.randomUUID()
     const { error } = await supabase
       .from('program_exercises')
-      .update({ superset_group_id: newGroupId })
+      .update({
+        superset_group_id: newGroupId,
+        section_title: before.section_title,
+      })
       .in('id', [beforePeId, afterPeId])
     if (error) return { error: `Group failed: ${error.message}` }
     revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
     return { error: null }
   }
 
-  // Boundary — ungrouped card joins the existing group.
+  // Boundary — ungrouped card joins the existing group; joiner adopts
+  // the group's section_title (read any sibling — fan-out keeps them
+  // uniform).
   if (!beforeG && afterG) {
+    const { data: groupRow, error: gErr } = await supabase
+      .from('program_exercises')
+      .select('section_title')
+      .eq('program_day_id', dayId)
+      .eq('superset_group_id', afterG)
+      .is('deleted_at', null)
+      .limit(1)
+      .single()
+    if (gErr) return { error: `Lookup failed: ${gErr.message}` }
     const { error } = await supabase
       .from('program_exercises')
-      .update({ superset_group_id: afterG })
+      .update({
+        superset_group_id: afterG,
+        section_title: groupRow.section_title,
+      })
       .eq('id', beforePeId)
     if (error) return { error: `Group failed: ${error.message}` }
     revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
     return { error: null }
   }
   if (beforeG && !afterG) {
+    const { data: groupRow, error: gErr } = await supabase
+      .from('program_exercises')
+      .select('section_title')
+      .eq('program_day_id', dayId)
+      .eq('superset_group_id', beforeG)
+      .is('deleted_at', null)
+      .limit(1)
+      .single()
+    if (gErr) return { error: `Lookup failed: ${gErr.message}` }
     const { error } = await supabase
       .from('program_exercises')
-      .update({ superset_group_id: beforeG })
+      .update({
+        superset_group_id: beforeG,
+        section_title: groupRow.section_title,
+      })
       .eq('id', afterPeId)
     if (error) return { error: `Group failed: ${error.message}` }
     revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
     return { error: null }
   }
 
-  // Adjacent different groups → merge into the upper group's id.
+  // Adjacent different groups → merge into the upper group's id. Q2-Yes:
+  // upper group's section also wins — every lower-group member converges
+  // on the upper section in the same UPDATE that rewrites group_id.
   if (beforeG && afterG && beforeG !== afterG) {
+    const { data: upperRow, error: ugErr } = await supabase
+      .from('program_exercises')
+      .select('section_title')
+      .eq('program_day_id', dayId)
+      .eq('superset_group_id', beforeG)
+      .is('deleted_at', null)
+      .limit(1)
+      .single()
+    if (ugErr) return { error: `Lookup failed: ${ugErr.message}` }
     const { error } = await supabase
       .from('program_exercises')
-      .update({ superset_group_id: beforeG })
+      .update({
+        superset_group_id: beforeG,
+        section_title: upperRow.section_title,
+      })
       .eq('program_day_id', dayId)
       .eq('superset_group_id', afterG)
       .is('deleted_at', null)
@@ -515,6 +563,12 @@ export async function unpublishProgramDayAction(
  * Ungroup an exercise from its superset. If the remaining group has
  * only one member left, clear that exercise's group id too — a
  * singleton superset is meaningless and reads as a regular exercise.
+ *
+ * Phase J (2026-05-08): the explicitly-ungrouped card also has its
+ * section_title cleared — the EP just removed it from the block, so the
+ * leaver becomes a fresh solo (matches the outbound-move rule in the
+ * reorder RPC). The singleton survivor (if any) keeps its section per
+ * Q3-A — it didn't move, only its partner did.
  */
 export async function ungroupFromSupersetAction(
   clientId: string,
@@ -535,10 +589,10 @@ export async function ungroupFromSupersetAction(
 
   const oldGroupId = target.superset_group_id
 
-  // Clear this exercise's group.
+  // Clear this exercise's group AND section (Phase J: leaver loses section).
   const { error: clearErr } = await supabase
     .from('program_exercises')
-    .update({ superset_group_id: null })
+    .update({ superset_group_id: null, section_title: null })
     .eq('id', programExerciseId)
   if (clearErr) return { error: `Ungroup failed: ${clearErr.message}` }
 
@@ -551,6 +605,7 @@ export async function ungroupFromSupersetAction(
     .is('deleted_at', null)
 
   if (remaining && remaining.length === 1) {
+    // Survivor keeps its section_title — only group_id clears.
     await supabase
       .from('program_exercises')
       .update({ superset_group_id: null })
