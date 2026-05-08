@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth/require-role'
+import { loadCatalog, loadPublicationsForClient } from '@/lib/testing/loaders'
 import {
   SessionBuilder,
   type ExerciseTagOption,
@@ -12,7 +14,10 @@ import {
   type ProgramExercise,
   type SectionTitleOption,
 } from './_components/SessionBuilder'
-import { type PinnedNote } from '../../../_components/NotesPanel'
+import {
+  type ClinicalNoteSummary,
+  type ClinicalNoteField,
+} from '../../../_components/NotesPanel'
 import { type SessionReport } from '../../../_components/ReportsPanel'
 import { AssignButton } from './_components/AssignButton'
 import { DayLabelEditor } from './_components/DayLabelEditor'
@@ -41,6 +46,7 @@ export default async function SessionBuilderPage({
   params: Promise<{ id: string; dayId: string }>
 }) {
   const { id, dayId } = await params
+  const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
   // Day + parent program — fail if the day belongs to a different client.
@@ -83,8 +89,9 @@ export default async function SessionBuilderPage({
   const [
     { data: programExercisesRaw, error: peErr },
     { data: libraryRaw },
-    { data: notesRaw },
-    { data: reportsRaw },
+    { data: notesRaw, error: notesErr },
+    publicationsResult,
+    catalog,
     { data: sectionTitlesRaw },
     { data: patternsRaw },
     { data: tagsRaw },
@@ -113,20 +120,45 @@ export default async function SessionBuilderPage({
       )
       .is('deleted_at', null)
       .order('name'),
+    // Phase J.2 (2026-05-08): clinical notes for the right-rail Notes tab.
+    // All notes for the client (capped at 30 most recent), pinned-first
+    // then by note_date DESC so the panel mirrors the client profile's
+    // notes ordering. Selecting content_json + the legacy SOAP columns
+    // because notes saved before migration 20260427100000 still carry
+    // body_rich / subjective; modern notes denormalise into content_json
+    // and explicitly NULL the legacy fields (notes-actions.ts §Update).
     supabase
       .from('clinical_notes')
-      .select(`id, body_rich, subjective, flag_body_region`)
+      .select(
+        `id, note_date, is_pinned, flag_body_region,
+         body_rich, subjective, content_json`,
+      )
       .eq('client_id', id)
-      .eq('is_pinned', true)
       .is('deleted_at', null)
-      .order('note_date', { ascending: false }),
+      .order('is_pinned', { ascending: false })
+      .order('note_date', { ascending: false })
+      .limit(30),
+    // Phase J.2: published reports come from client_publications (per-test
+    // publish gate, migration 20260501120000), not the legacy `reports`
+    // table. The join on test_sessions narrows to this client and brings
+    // back conducted_at for the panel header. Cap matches the old reports
+    // query.
     supabase
-      .from('reports')
-      .select('id, title, report_type, test_date, is_published')
-      .eq('client_id', id)
+      .from('client_publications')
+      .select(
+        `id, test_session_id, test_id, framing_text, published_at,
+         session:test_sessions!inner(client_id, conducted_at, deleted_at)`,
+      )
+      .eq('session.client_id', id)
+      .is('session.deleted_at', null)
       .is('deleted_at', null)
-      .order('test_date', { ascending: false })
+      .order('published_at', { ascending: false })
       .limit(20),
+    // Catalog used to resolve client_publications.test_id → friendly
+    // test name. Cheap (one query against the seed table + per-org
+    // custom-test rows + disabled-test rows) and the same loader the
+    // Reports tab on the client profile uses.
+    loadCatalog(supabase, organizationId, { includeCustom: true }),
     supabase
       .from('section_titles')
       .select('id, name')
@@ -151,6 +183,9 @@ export default async function SessionBuilderPage({
   ])
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
+  if (notesErr) throw new Error(`Load clinical notes: ${notesErr.message}`)
+  if (publicationsResult.error)
+    throw new Error(`Load publications: ${publicationsResult.error.message}`)
 
   // Phase H (2026-05-08): "Last logged" footer per exercise card.
   // For each exercise_id on this day, find the most recent completed
@@ -276,21 +311,71 @@ export default async function SessionBuilderPage({
     display_label: u.display_label,
   }))
 
-  // Skip empty pinned notes — see program/page.tsx Phase F.6 fix.
-  const pinnedNotes: PinnedNote[] = (notesRaw ?? [])
-    .map((n) => ({
-      id: n.id,
-      body: (n.body_rich ?? n.subjective ?? '').trim(),
-      flag_body_region: n.flag_body_region,
-    }))
-    .filter((n) => n.body.length > 0)
+  // Phase J.2 (2026-05-08): notes denormalise to ClinicalNoteSummary.
+  // Modern notes carry their content in content_json.fields[] (per
+  // migration 20260427100000); pre-template notes still carry text in
+  // body_rich / subjective and flow through the legacy_body fallback.
+  // A note that ends up with no fields AND no legacy text is dropped —
+  // that would render as an empty card.
+  type ContentJsonShape = {
+    fields?: Array<{ label?: unknown; value?: unknown }>
+  }
+  const clinicalNotes: ClinicalNoteSummary[] = (notesRaw ?? [])
+    .map((n) => {
+      const cj = n.content_json as ContentJsonShape | null
+      const fields: ClinicalNoteField[] = (cj?.fields ?? [])
+        .map((f) => ({
+          label: typeof f.label === 'string' ? f.label : '',
+          value: typeof f.value === 'string' ? f.value : '',
+        }))
+        .filter((f) => f.label.length > 0)
+      const legacyBody = (n.body_rich ?? n.subjective ?? '').trim()
+      return {
+        id: n.id,
+        note_date: n.note_date,
+        is_pinned: n.is_pinned,
+        flag_body_region: n.flag_body_region,
+        fields,
+        legacy_body: legacyBody,
+      }
+    })
+    .filter(
+      (n) =>
+        n.fields.some((f) => f.value.trim().length > 0) ||
+        n.legacy_body.length > 0,
+    )
 
-  const reports: SessionReport[] = (reportsRaw ?? []).map((r) => ({
-    id: r.id,
-    title: r.title,
-    report_type: r.report_type,
-    test_date: r.test_date,
-    is_published: r.is_published,
+  // Phase J.2: build test_id → test_name lookup once, then map
+  // publications. Falls back to test_id if the catalog entry was
+  // disabled or the publication points at a stale custom-test id.
+  const testNameById = new Map<string, string>()
+  for (const cat of catalog) {
+    for (const sub of cat.subcategories) {
+      for (const t of sub.tests) {
+        testNameById.set(t.id, t.name)
+      }
+    }
+  }
+  type PublicationJoinRow = {
+    id: string
+    test_session_id: string
+    test_id: string
+    framing_text: string | null
+    published_at: string
+    session: {
+      client_id: string
+      conducted_at: string
+      deleted_at: string | null
+    } | null
+  }
+  const publicationsRaw =
+    (publicationsResult.data ?? []) as unknown as PublicationJoinRow[]
+  const reports: SessionReport[] = publicationsRaw.map((p) => ({
+    id: p.id,
+    test_id: p.test_id,
+    test_name: testNameById.get(p.test_id) ?? p.test_id,
+    conducted_at: p.session?.conducted_at ?? p.published_at,
+    framing_text: p.framing_text,
   }))
 
   const programName = day.program?.name ?? ''
@@ -395,7 +480,7 @@ export default async function SessionBuilderPage({
         dayId={dayId}
         programExercises={programExercises}
         libraryOptions={libraryOptions}
-        pinnedNotes={pinnedNotes}
+        clinicalNotes={clinicalNotes}
         reports={reports}
         sectionTitles={sectionTitles}
         movementPatterns={movementPatterns}

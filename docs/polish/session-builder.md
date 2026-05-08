@@ -339,3 +339,51 @@ Total: ~9.5 EP-days. Sequenced, no overlap. Acceptance test at the end of each p
 None at sign-off. All architectural calls are resolved in §0.1.
 
 If something surfaces during Phase A that contradicts an answer here, it gets raised in chat — never silently re-decided.
+
+
+---
+
+## 11. Phase J.2 — Right-panel data wiring (2026-05-08)
+
+**Trigger:** User reported the session builder's right-rail Notes and Reports tabs as "panel is there but no content," and asked for the panel to stay continually fresh, not stale.
+
+### 11.1 What broke
+
+Two unrelated bugs and one design-decision drift, all converging on the same symptom.
+
+1. **Notes loader read columns that the writer no longer populated.** Migration [20260427100000_note_templates.sql](../../supabase/migrations/20260427100000_note_templates.sql) shifted clinical_notes onto a templated `content_json` shape. [`notes-actions.ts`](../../src/app/(staff)/clients/[id]/notes-actions.ts) §Update explicitly NULLs the legacy `body_rich / subjective / objective / assessment / plan` columns on every save. The day-page loader and the program-calendar loader both still selected only `body_rich, subjective` and filtered empties out — so every modern note rendered as an empty body and was dropped. Net effect: pinning a note from the profile produced no visible change in the right rail.
+
+2. **Reports loader pointed at the wrong table.** The right rail queried the legacy `reports` table (intended for a future VALD CSV importer, never populated). The active testing-module surface publishes via `client_publications` joined on `test_sessions`, per migration [20260501120000_per_test_publications.sql](../../supabase/migrations/20260501120000_per_test_publications.sql). Q2 sign-off resolved this in favour of switching the loader, not bridging the testing module to the legacy table.
+
+3. **Mutations didn't revalidate the panel's routes.** [`notes-actions.ts`](../../src/app/(staff)/clients/[id]/notes-actions.ts) and [`publish-actions.ts`](../../src/app/(staff)/clients/[id]/publish-actions.ts) only called `revalidatePath('/clients/${clientId}')`. The program calendar (`/clients/[id]/program`) and the session-builder day page (`/clients/[id]/program/days/[dayId]`) are not children of a shared layout, so the path-only revalidation didn't reach them. Pinning a note from the profile while the session builder was open in another tab left a stale prefetched render. This is the "continually updated and not stale" thread of the request.
+
+### 11.2 Sign-off log (chat 2026-05-08)
+
+| # | Question | Answer |
+|---|----------|--------|
+| Q1 | Notes panel scope | **Option C — all notes, sorted by date with pinned at top.** Replicate the client profile's notes view in the right rail. Pinned notes keep the red-flag treatment; non-pinned notes render as plain cream cards. |
+| Q2 | Reports panel source | **Option A — switch the loader to `client_publications`** joined on `test_sessions` for `conducted_at`. Catalog (`physical_markers_schema_seed` + `practice_custom_tests`) resolves `test_id` to a friendly test name. The legacy `reports` table is not touched in this pass. |
+| Q3 | Live updates while the page is open | **Option A — fresh on every navigation + after every related mutation.** No realtime subscription. Fix `revalidatePath` calls to cover the program calendar and the day-page route segment. |
+
+### 11.3 Resolution
+
+Single-commit change. Read-path + cache-invalidation only — no schema changes, no new tables, no new RPCs.
+
+- **Shared panels** ([`NotesPanel.tsx`](../../src/app/(staff)/clients/[id]/_components/NotesPanel.tsx), [`ReportsPanel.tsx`](../../src/app/(staff)/clients/[id]/_components/ReportsPanel.tsx)):
+  - `PinnedNote` type renamed to `ClinicalNoteSummary` to reflect the broader scope (pinned + recent). Old alias removed; all callers updated.
+  - `NotesPanel` now renders the per-note labelled fields from `content_json.fields[]` with a legacy `body_rich / subjective` fallback for pre-template notes. Pinned notes keep the left-border red-flag treatment (the only place that pattern is permitted per the design system §Components); non-pinned notes are plain cream cards.
+  - `SessionReport` type re-shaped: `{ id, test_id, test_name, conducted_at, framing_text }`. The `is_published` / `Draft` badge is gone — every row in `client_publications` filtered to `deleted_at IS NULL` is by definition live.
+- **Loaders** (day-page [`page.tsx`](../../src/app/(staff)/clients/[id]/program/days/[dayId]/page.tsx), program-calendar [`page.tsx`](../../src/app/(staff)/clients/[id]/program/page.tsx)):
+  - Notes query selects `id, note_date, is_pinned, flag_body_region, body_rich, subjective, content_json`. Drops the `is_pinned = true` filter. Orders `is_pinned DESC, note_date DESC`. Caps at 30 rows.
+  - Reports query switches to `client_publications` with `test_sessions!inner(client_id, conducted_at, deleted_at)` join, scoped by `client_id` on the joined table. Caps at 20 rows.
+  - Catalog loaded once via [`loadCatalog`](../../src/lib/testing/loaders.ts) (with `includeCustom: true`) to resolve `test_id` → friendly `test_name`. Falls back to `test_id` on miss.
+  - Day-page picks up `organizationId` via `requireRole(['owner', 'staff'])` so it can call `loadCatalog`. Program-calendar does the same inside the `if (panelOpen)` block — closed-state path stays cheap.
+- **Revalidation** ([`notes-actions.ts`](../../src/app/(staff)/clients/[id]/notes-actions.ts), [`publish-actions.ts`](../../src/app/(staff)/clients/[id]/publish-actions.ts)):
+  - Every clinical-note mutation (create / archive / pin-toggle / update) calls a new `revalidateClinicalNoteSurfaces(clientId)` helper that revalidates `/clients/${clientId}`, `/clients/${clientId}/program`, and the dynamic route segment `/clients/[id]/program/days/[dayId]` with `'page'`. The third call is broader than ideal (invalidates every day page across all clients) but Next.js can't target a single dayId without that segment in hand at the call site. Pre-launch the over-revalidation is a non-issue; if it ever shows up as a router-cache thrash post-launch, switching to tag-based invalidation is the migration path.
+  - `publishTestAction` and `unpublishPublicationAction` mirror the same set so the right-rail Reports tab refreshes after publish/unpublish.
+
+### 11.4 Out of scope
+
+- The dashboard's pinned-note preview ([`dashboard/page.tsx:97`](../../src/app/(staff)/dashboard/page.tsx)) has the same `body_rich / subjective`-only loader bug. It does not mount the shared `NotesPanel` (renders its own attention strip), so its fix belongs to the dashboard polish pass — captured here as a follow-up rather than bundled in.
+- Real-time subscriptions on `clinical_notes` / `client_publications` (Q3 Option B). Deferred per sign-off; nav-time revalidation is sufficient for the single-user pre-launch reality.
+

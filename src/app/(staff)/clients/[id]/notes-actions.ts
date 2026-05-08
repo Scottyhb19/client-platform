@@ -5,6 +5,21 @@ import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
+/**
+ * Bust the router cache for every staff route that surfaces this client's
+ * clinical notes. Without this, pinning or saving a note from the profile
+ * leaves a stale prefetched render of the program calendar and the session
+ * builder's right-panel Notes tab. The day-page pattern is dynamic so
+ * we revalidate the route segment, not a specific dayId — broader than
+ * ideal, but Next.js can't target a single dayId without that segment in
+ * hand here.
+ */
+function revalidateClinicalNoteSurfaces(clientId: string): void {
+  revalidatePath(`/clients/${clientId}`)
+  revalidatePath(`/clients/${clientId}/program`)
+  revalidatePath('/clients/[id]/program/days/[dayId]', 'page')
+}
+
 type FieldType = Database['public']['Enums']['note_template_field_type']
 
 export type NoteFieldValue = {
@@ -152,7 +167,7 @@ export async function createClinicalNoteAction(
     return { error: `Could not save note: ${error.message}`, id: null }
   }
 
-  revalidatePath(`/clients/${input.clientId}`)
+  revalidateClinicalNoteSurfaces(input.clientId)
   return { error: null, id: data.id }
 }
 
@@ -209,7 +224,7 @@ export async function archiveClinicalNoteAction(
     return { error: `Could not archive note: ${error.message}` }
   }
 
-  revalidatePath(`/clients/${note.client_id}`)
+  revalidateClinicalNoteSurfaces(note.client_id)
   return { error: null }
 }
 
@@ -249,7 +264,7 @@ export async function toggleClinicalNotePinAction(
     return { error: `Could not update pin: ${error.message}` }
   }
 
-  revalidatePath(`/clients/${note.client_id}`)
+  revalidateClinicalNoteSurfaces(note.client_id)
   return { error: null }
 }
 
@@ -332,6 +347,6 @@ export async function updateClinicalNoteAction(
     }
   }
 
-  revalidatePath(`/clients/${data.client_id}`)
+  revalidateClinicalNoteSurfaces(data.client_id)
   return { error: null }
 }

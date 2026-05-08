@@ -55,7 +55,10 @@ import {
   type ProgramExercisePatch,
   type ProgramExerciseSetPatch,
 } from '../actions'
-import { NotesPanel, type PinnedNote } from '../../../../_components/NotesPanel'
+import {
+  NotesPanel,
+  type ClinicalNoteSummary,
+} from '../../../../_components/NotesPanel'
 import {
   ReportsPanel,
   type SessionReport,
@@ -176,7 +179,7 @@ interface SessionBuilderProps {
   dayId: string
   programExercises: ProgramExercise[]
   libraryOptions: LibraryPick[]
-  pinnedNotes: PinnedNote[]
+  clinicalNotes: ClinicalNoteSummary[]
   reports: SessionReport[]
   sectionTitles: SectionTitleOption[]
   movementPatterns: MovementPatternOption[]
@@ -189,7 +192,7 @@ export function SessionBuilder({
   dayId,
   programExercises,
   libraryOptions,
-  pinnedNotes,
+  clinicalNotes,
   reports,
   sectionTitles,
   movementPatterns,
@@ -462,7 +465,7 @@ export function SessionBuilder({
             setSwapTarget={setSwapTarget}
           />
         )}
-        {tab === 'notes' && <NotesPanel notes={pinnedNotes} />}
+        {tab === 'notes' && <NotesPanel notes={clinicalNotes} />}
         {tab === 'reports' && <ReportsPanel reports={reports} />}
       </aside>
     </div>

@@ -85,8 +85,13 @@ export async function publishTestAction(args: {
   }
 
   // Refresh the staff client page so the per-test card state and the
-  // (eventual) dashboard attention panel both pick up the new state.
+  // (eventual) dashboard attention panel both pick up the new state, plus
+  // the program calendar's side panel and the session builder's right-rail
+  // Reports tab — both surface client_publications. Session-builder uses
+  // a dynamic dayId so we revalidate the route segment, not a specific id.
   revalidatePath(`/clients/${args.clientId}`)
+  revalidatePath(`/clients/${args.clientId}/program`)
+  revalidatePath('/clients/[id]/program/days/[dayId]', 'page')
 
   return { data: { publicationId: data.id }, error: null }
 }
@@ -110,6 +115,10 @@ export async function unpublishPublicationAction(args: {
     return { data: null, error: `Unpublish failed: ${error.message}` }
   }
 
+  // Match publishTestAction's surface set so the right-rail Reports tab
+  // and program-calendar side panel pick up the unpublish too.
   revalidatePath(`/clients/${args.clientId}`)
+  revalidatePath(`/clients/${args.clientId}/program`)
+  revalidatePath('/clients/[id]/program/days/[dayId]', 'page')
   return { data: { ok: true }, error: null }
 }

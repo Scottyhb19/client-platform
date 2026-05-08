@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth/require-role'
+import { loadCatalog } from '@/lib/testing/loaders'
 import {
   initialsFor,
   toneFor,
@@ -15,7 +17,10 @@ import type {
 import { ProgramToolbar } from './_components/ProgramToolbar'
 import { CalendarPanelToggle } from './_components/CalendarPanelToggle'
 import { CalendarSidePanel } from './_components/CalendarSidePanel'
-import { type PinnedNote } from '../_components/NotesPanel'
+import {
+  type ClinicalNoteSummary,
+  type ClinicalNoteField,
+} from '../_components/NotesPanel'
 import { type SessionReport } from '../_components/ReportsPanel'
 
 export const dynamic = 'force-dynamic'
@@ -157,45 +162,106 @@ export default async function ClientProgramPage({
   const todayIso = new Date().toISOString().slice(0, 10)
   const currentBlock = resolveCurrentBlock(programs, todayIso)
 
-  // Side panel content (Phase E). Only fetched when the panel is open
-  // — closed-state path stays cheap (the common case).
-  let pinnedNotes: PinnedNote[] = []
+  // Side panel content (Phase E, refreshed Phase J.2 2026-05-08). Only
+  // fetched when the panel is open — closed-state path stays cheap (the
+  // common case). Notes are sourced via content_json (per migration
+  // 20260427100000); reports come from client_publications joined to
+  // test_sessions, with the catalog providing test names. Mirrors the
+  // session-builder day page loader.
+  let clinicalNotes: ClinicalNoteSummary[] = []
   let reports: SessionReport[] = []
   if (panelOpen) {
-    const [{ data: notesRaw }, { data: reportsRaw }] = await Promise.all([
+    const { organizationId } = await requireRole(['owner', 'staff'])
+    const [
+      { data: notesRaw, error: notesErr },
+      publicationsResult,
+      catalog,
+    ] = await Promise.all([
       supabase
         .from('clinical_notes')
-        .select(`id, body_rich, subjective, flag_body_region`)
+        .select(
+          `id, note_date, is_pinned, flag_body_region,
+           body_rich, subjective, content_json`,
+        )
         .eq('client_id', id)
-        .eq('is_pinned', true)
         .is('deleted_at', null)
-        .order('note_date', { ascending: false }),
+        .order('is_pinned', { ascending: false })
+        .order('note_date', { ascending: false })
+        .limit(30),
       supabase
-        .from('reports')
-        .select('id, title, report_type, test_date, is_published')
-        .eq('client_id', id)
+        .from('client_publications')
+        .select(
+          `id, test_session_id, test_id, framing_text, published_at,
+           session:test_sessions!inner(client_id, conducted_at, deleted_at)`,
+        )
+        .eq('session.client_id', id)
+        .is('session.deleted_at', null)
         .is('deleted_at', null)
-        .order('test_date', { ascending: false })
+        .order('published_at', { ascending: false })
         .limit(20),
+      loadCatalog(supabase, organizationId, { includeCustom: true }),
     ])
 
-    // Skip empty pinned notes — a note with is_pinned=true but blank
-    // body_rich AND subjective renders as a red strip with no content.
-    // Filtered here so the panel stays meaningful (Phase F.6).
-    pinnedNotes = (notesRaw ?? [])
-      .map((n) => ({
-        id: n.id,
-        body: (n.body_rich ?? n.subjective ?? '').trim(),
-        flag_body_region: n.flag_body_region,
-      }))
-      .filter((n) => n.body.length > 0)
+    if (notesErr) throw new Error(`Load clinical notes: ${notesErr.message}`)
+    if (publicationsResult.error)
+      throw new Error(`Load publications: ${publicationsResult.error.message}`)
 
-    reports = (reportsRaw ?? []).map((r) => ({
-      id: r.id,
-      title: r.title,
-      report_type: r.report_type,
-      test_date: r.test_date,
-      is_published: r.is_published,
+    type ContentJsonShape = {
+      fields?: Array<{ label?: unknown; value?: unknown }>
+    }
+    clinicalNotes = (notesRaw ?? [])
+      .map((n) => {
+        const cj = n.content_json as ContentJsonShape | null
+        const fields: ClinicalNoteField[] = (cj?.fields ?? [])
+          .map((f) => ({
+            label: typeof f.label === 'string' ? f.label : '',
+            value: typeof f.value === 'string' ? f.value : '',
+          }))
+          .filter((f) => f.label.length > 0)
+        const legacyBody = (n.body_rich ?? n.subjective ?? '').trim()
+        return {
+          id: n.id,
+          note_date: n.note_date,
+          is_pinned: n.is_pinned,
+          flag_body_region: n.flag_body_region,
+          fields,
+          legacy_body: legacyBody,
+        }
+      })
+      .filter(
+        (n) =>
+          n.fields.some((f) => f.value.trim().length > 0) ||
+          n.legacy_body.length > 0,
+      )
+
+    const testNameById = new Map<string, string>()
+    for (const cat of catalog) {
+      for (const sub of cat.subcategories) {
+        for (const t of sub.tests) {
+          testNameById.set(t.id, t.name)
+        }
+      }
+    }
+    type PublicationJoinRow = {
+      id: string
+      test_session_id: string
+      test_id: string
+      framing_text: string | null
+      published_at: string
+      session: {
+        client_id: string
+        conducted_at: string
+        deleted_at: string | null
+      } | null
+    }
+    const publicationsRaw =
+      (publicationsResult.data ?? []) as unknown as PublicationJoinRow[]
+    reports = publicationsRaw.map((p) => ({
+      id: p.id,
+      test_id: p.test_id,
+      test_name: testNameById.get(p.test_id) ?? p.test_id,
+      conducted_at: p.session?.conducted_at ?? p.published_at,
+      framing_text: p.framing_text,
     }))
   }
 
@@ -306,7 +372,7 @@ export default async function ClientProgramPage({
           />
         )}
         {panelOpen && (
-          <CalendarSidePanel notes={pinnedNotes} reports={reports} />
+          <CalendarSidePanel notes={clinicalNotes} reports={reports} />
         )}
       </div>
     </div>

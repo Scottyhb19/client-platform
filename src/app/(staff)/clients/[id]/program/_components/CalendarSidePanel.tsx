@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   NotesPanel,
-  type PinnedNote,
+  type ClinicalNoteSummary,
 } from '../../_components/NotesPanel'
 import {
   ReportsPanel,
@@ -28,7 +28,7 @@ const MUTED = '#78746F'
 const CREAM_DEEP = '#EDE8E2'
 
 interface CalendarSidePanelProps {
-  notes: PinnedNote[]
+  notes: ClinicalNoteSummary[]
   reports: SessionReport[]
 }
 
