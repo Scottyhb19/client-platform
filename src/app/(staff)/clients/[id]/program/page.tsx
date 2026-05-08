@@ -174,13 +174,14 @@ export default async function ClientProgramPage({
     const { organizationId } = await requireRole(['owner', 'staff'])
     const [
       { data: notesRaw, error: notesErr },
+      { data: noteTemplatesRaw },
       publicationsResult,
       catalog,
     ] = await Promise.all([
       supabase
         .from('clinical_notes')
         .select(
-          `id, note_date, is_pinned, flag_body_region,
+          `id, note_date, is_pinned, flag_body_region, template_id,
            body_rich, subjective, content_json`,
         )
         .eq('client_id', id)
@@ -188,6 +189,10 @@ export default async function ClientProgramPage({
         .order('is_pinned', { ascending: false })
         .order('note_date', { ascending: false })
         .limit(30),
+      supabase
+        .from('note_templates')
+        .select('id, name')
+        .is('deleted_at', null),
       supabase
         .from('client_publications')
         .select(
@@ -209,6 +214,10 @@ export default async function ClientProgramPage({
     type ContentJsonShape = {
       fields?: Array<{ label?: unknown; value?: unknown }>
     }
+    const templateNameById = new Map<string, string>()
+    for (const t of noteTemplatesRaw ?? []) {
+      templateNameById.set(t.id, t.name)
+    }
     clinicalNotes = (notesRaw ?? [])
       .map((n) => {
         const cj = n.content_json as ContentJsonShape | null
@@ -224,6 +233,9 @@ export default async function ClientProgramPage({
           note_date: n.note_date,
           is_pinned: n.is_pinned,
           flag_body_region: n.flag_body_region,
+          template_name: n.template_id
+            ? templateNameById.get(n.template_id) ?? null
+            : null,
           fields,
           legacy_body: legacyBody,
         }

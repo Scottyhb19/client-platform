@@ -90,6 +90,7 @@ export default async function SessionBuilderPage({
     { data: programExercisesRaw, error: peErr },
     { data: libraryRaw },
     { data: notesRaw, error: notesErr },
+    { data: noteTemplatesRaw },
     publicationsResult,
     catalog,
     { data: sectionTitlesRaw },
@@ -127,10 +128,12 @@ export default async function SessionBuilderPage({
     // because notes saved before migration 20260427100000 still carry
     // body_rich / subjective; modern notes denormalise into content_json
     // and explicitly NULL the legacy fields (notes-actions.ts §Update).
+    // template_id powers the template chip on each row — resolved against
+    // the parallel note_templates load below.
     supabase
       .from('clinical_notes')
       .select(
-        `id, note_date, is_pinned, flag_body_region,
+        `id, note_date, is_pinned, flag_body_region, template_id,
          body_rich, subjective, content_json`,
       )
       .eq('client_id', id)
@@ -138,6 +141,10 @@ export default async function SessionBuilderPage({
       .order('is_pinned', { ascending: false })
       .order('note_date', { ascending: false })
       .limit(30),
+    supabase
+      .from('note_templates')
+      .select('id, name')
+      .is('deleted_at', null),
     // Phase J.2: published reports come from client_publications (per-test
     // publish gate, migration 20260501120000), not the legacy `reports`
     // table. The join on test_sessions narrows to this client and brings
@@ -320,6 +327,10 @@ export default async function SessionBuilderPage({
   type ContentJsonShape = {
     fields?: Array<{ label?: unknown; value?: unknown }>
   }
+  const templateNameById = new Map<string, string>()
+  for (const t of noteTemplatesRaw ?? []) {
+    templateNameById.set(t.id, t.name)
+  }
   const clinicalNotes: ClinicalNoteSummary[] = (notesRaw ?? [])
     .map((n) => {
       const cj = n.content_json as ContentJsonShape | null
@@ -335,6 +346,9 @@ export default async function SessionBuilderPage({
         note_date: n.note_date,
         is_pinned: n.is_pinned,
         flag_body_region: n.flag_body_region,
+        template_name: n.template_id
+          ? templateNameById.get(n.template_id) ?? null
+          : null,
         fields,
         legacy_body: legacyBody,
       }
