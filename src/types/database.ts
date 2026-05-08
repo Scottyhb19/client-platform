@@ -3420,6 +3420,10 @@ export type Database = {
         }
         Returns: string
       }
+      duplicate_program_day: {
+        Args: { p_source_day_id: string; p_target_date: string }
+        Returns: Json
+      }
       insert_program_exercise_at: {
         Args: { p_after_pe_id: string; p_day_id: string; p_exercise_id: string }
         Returns: string

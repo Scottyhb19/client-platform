@@ -114,7 +114,7 @@ export function DayLabelEditor({
           size={14}
           aria-hidden
           style={{
-            opacity: hovered ? 0.55 : 0,
+            opacity: hovered ? 0.6 : 0.25,
             transition: 'opacity 150ms cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         />

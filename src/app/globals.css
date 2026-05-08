@@ -849,6 +849,57 @@ body {
   line-height: 1.45;
 }
 
+/* =============================================================================
+ * Session-builder Phase I — autosave tick + panel-flash keyframes.
+ *
+ * Both keyframes are designed for the "key-bumped element re-runs the
+ * animation once" pattern: render an element with key={savedAt} (or
+ * key={flashKey}); each new key remounts the element so the keyframe
+ * runs from 0% again. No JS setTimeout, no cleanup.
+ * =============================================================================
+ */
+
+/* Autosave tick — green check inside cell border. 200ms in, 600ms hold,
+   400ms out (1200ms total). Spec: §2.16 of docs/polish/session-builder.md.
+   Restraint-aligned: opacity + a tiny 0.7→1 scale on entry; no bounce. */
+@keyframes save-tick {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  16.66% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  66.66% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+/* Panel-border flash — used when the empty-state "Browse the library"
+   button focuses the library search; a single accent-green ring around
+   the right panel pulses once so the EP's eye snaps to where the action
+   landed. 1000ms total: 200ms in, 400ms hold, 400ms out. */
+@keyframes panel-flash {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Mobile portal thread — single-column full-bleed */
 .portal-thread {
   display: flex;

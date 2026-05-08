@@ -49,6 +49,12 @@ export type RenameDayActionResult =
   | { error: string }
   | { status: 'renamed'; dayLabel: string }
 
+export type DuplicateDayActionResult =
+  | { error: string }
+  | { status: 'created'; newDayId: string }
+  | { status: 'conflict' }
+  | { status: 'no_program'; targetDate: string }
+
 
 /**
  * Copy one program_day to a target date. The destination program is
@@ -219,6 +225,56 @@ export async function renameProgramDayAction(
   revalidatePath(`/clients/${clientId}/program`)
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { status: 'renamed', dayLabel: label }
+}
+
+
+/**
+ * Phase I §2.13 (session-builder polish pass) — duplicate one program_day
+ * to a target date the EP picks. Wraps the duplicate_program_day RPC
+ * (migration 20260508100000) which copies the day + program_exercises
+ * + program_exercise_sets in a single transaction. Refuses on conflict
+ * (no force-overwrite path); the new day lands as a draft (published_at
+ * NULL).
+ *
+ * Caller revalidates both the program calendar (so the new day appears
+ * on the date) and the source-day route (in case the EP is still on it).
+ * The caller also navigates to the new day on success.
+ */
+export async function duplicateProgramDayAction(
+  clientId: string,
+  sourceDayId: string,
+  targetDate: string,
+): Promise<DuplicateDayActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase.rpc('duplicate_program_day', {
+    p_source_day_id: sourceDayId,
+    p_target_date: targetDate,
+  })
+
+  if (error) return { error: error.message }
+  if (!data || typeof data !== 'object') {
+    return { error: 'Unexpected response from duplicate_program_day' }
+  }
+
+  const obj = data as {
+    status: string
+    new_day_id?: string
+    target_date?: string
+  }
+
+  switch (obj.status) {
+    case 'created':
+      revalidatePath(`/clients/${clientId}/program`)
+      return { status: 'created', newDayId: obj.new_day_id! }
+    case 'conflict':
+      return { status: 'conflict' }
+    case 'no_program':
+      return { status: 'no_program', targetDate: obj.target_date! }
+    default:
+      return { error: `Unknown status: ${obj.status}` }
+  }
 }
 
 

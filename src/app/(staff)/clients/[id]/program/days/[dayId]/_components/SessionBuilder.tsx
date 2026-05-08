@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronDown,
   GripVertical,
   Link2,
@@ -275,6 +276,11 @@ export function SessionBuilder({
     })
   }
 
+  // Phase I §2.12: bumped by the empty-state "Browse the library" button.
+  // The right-panel overlay re-keys, the panel-flash keyframe runs once.
+  // Stays at 0 unless the EP triggers it; never auto-fires.
+  const [panelFlashKey, setPanelFlashKey] = useState(0)
+
   // When a bar arms a slot, the user expects the library panel to be
   // ready for them. Force the right-panel tab to library + focus the search
   // input. focusLibrarySearch's DOM query relies on aria-label so it
@@ -301,6 +307,14 @@ export function SessionBuilder({
     if (swapTarget !== peId) focusLibrarySearch()
   }
 
+  // Phase I §2.12 — empty-state "Browse the library" handler.
+  // Switches to the library tab + focuses the search input + bumps the
+  // panel-flash counter so the right-panel border pulses once.
+  function browseFromEmptyState() {
+    focusLibrarySearch()
+    setPanelFlashKey((n) => n + 1)
+  }
+
   return (
     <div
       style={{
@@ -312,7 +326,7 @@ export function SessionBuilder({
     >
       <div>
         {programExercises.length === 0 ? (
-          <EmptyState />
+          <EmptyState onBrowse={browseFromEmptyState} />
         ) : (
           <DndContext
             // Stable id so DndContext's accessibility-announcement element
@@ -351,7 +365,55 @@ export function SessionBuilder({
         )}
       </div>
 
-      <aside style={{ position: 'sticky', top: 20 }}>
+      {/*
+        Phase I §2.15: panel always fills the visible area to the right of
+        the exercise list — sticky-pinned at top: 20, height locked to
+        100vh-40px, content scrolls inside. Long Notes / Reports / Library
+        scroll within the panel; the page scroll only moves the exercise
+        list. Without this, scrolling past the panel's natural height
+        floated Library/Notes/Reports off-screen and lost the load-bearing
+        right-panel adjacency.
+
+        position: relative is added so the §2.12 panel-flash overlay can
+        be absolutely positioned against this aside (re-keyed by
+        panelFlashKey when the empty-state CTA fires).
+      */}
+      <aside
+        style={{
+          position: 'sticky',
+          top: 20,
+          height: 'calc(100vh - 40px)',
+          overflowY: 'auto',
+        }}
+      >
+        {panelFlashKey > 0 && (
+          <span
+            key={panelFlashKey}
+            aria-hidden
+            style={{
+              position: 'sticky',
+              top: 0,
+              left: 0,
+              right: 0,
+              display: 'block',
+              height: 0,
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                inset: '-2px -2px auto -2px',
+                height: 'calc(100vh - 36px)',
+                border: '2px solid var(--color-accent)',
+                borderRadius: 'var(--radius-card)',
+                opacity: 0,
+                animation: 'panel-flash 1000ms cubic-bezier(0.4, 0, 0.2, 1) forwards',
+              }}
+            />
+          </span>
+        )}
         <div
           style={{
             display: 'flex',
@@ -407,7 +469,7 @@ export function SessionBuilder({
   )
 }
 
-function EmptyState() {
+function EmptyState({ onBrowse }: { onBrowse: () => void }) {
   return (
     <div
       style={{
@@ -434,13 +496,29 @@ function EmptyState() {
         style={{
           fontSize: '.86rem',
           lineHeight: 1.55,
-          margin: '0 auto',
+          margin: '0 auto 16px',
           maxWidth: 360,
         }}
       >
         Pick exercises from the Library panel on the right. Defaults are
         copied in; you can tweak them per exercise inline.
       </p>
+      {/*
+        Phase I §2.12: explicit affordance into the right-panel library.
+        Reuses focusLibrarySearch (already used by between-cards "+ Add
+        exercise") so the search input is focused on first click; the panel
+        border pulses once via the panel-flash keyframe so the EP's eye
+        snaps to where the next action lives.
+      */}
+      <button
+        type="button"
+        onClick={onBrowse}
+        className="btn outline"
+        style={{ padding: '8px 16px', fontSize: '.84rem' }}
+      >
+        <Search size={14} aria-hidden />
+        Browse the library
+      </button>
     </div>
   )
 }
@@ -1464,6 +1542,9 @@ function SetCell({
 }) {
   const [value, setValue] = useState(initialValue)
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  // Phase I §2.16: bumped on each successful save. Re-keyed SaveTick
+  // remounts and the keyframe runs once. No setTimeout, no cleanup.
+  const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
   const empty = value.trim() === ''
 
@@ -1476,37 +1557,88 @@ function SetCell({
     setStatus('saving')
     startTransition(async () => {
       const res = await updateProgramExerciseSetAction(setId, patch)
-      setStatus(res.error ? 'error' : 'idle')
+      if (res.error) {
+        setStatus('error')
+      } else {
+        setStatus('idle')
+        setSavedAt((n) => n + 1)
+      }
     })
   }
 
   return (
-    <input
-      type="text"
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={handleBlur}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-      }}
+    <div style={{ position: 'relative', width: '100%' }}>
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+        }}
+        style={{
+          background: CREAM,
+          borderRadius: 8,
+          height: 26,
+          textAlign: 'center',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 13,
+          fontWeight: 500,
+          color: empty ? FAINT : INK,
+          border:
+            status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
+          outline: 'none',
+          padding: '0 10px',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      />
+      <SaveTick savedAt={savedAt} placement="inline" />
+    </div>
+  )
+}
+
+/**
+ * Phase I §2.16 — autosave success indicator. Renders nothing on first
+ * mount (savedAt === 0). On each save, the parent bumps savedAt; React
+ * remounts this component (key={savedAt}) and the CSS keyframe `save-tick`
+ * runs once: 200ms in / 600ms hold / 400ms out. Pointer-events none so it
+ * never intercepts a click.
+ *
+ * Two placements:
+ *   - inline   — small inputs (SetCell, SmallField). Vertically centered
+ *                on the right edge of the cell.
+ *   - corner   — taller surfaces (EditableTextarea). Top-right corner.
+ */
+function SaveTick({
+  savedAt,
+  placement,
+}: {
+  savedAt: number
+  placement: 'inline' | 'corner'
+}) {
+  if (savedAt === 0) return null
+  const positionStyle =
+    placement === 'inline'
+      ? { top: '50%', right: 6, transform: 'translateY(-50%)' }
+      : { top: 8, right: 8 }
+  return (
+    <span
+      key={savedAt}
+      aria-hidden
       style={{
-        background: CREAM,
-        borderRadius: 8,
-        height: 26,
-        textAlign: 'center',
-        fontFamily: 'var(--font-sans)',
-        fontSize: 13,
-        fontWeight: 500,
-        color: empty ? FAINT : INK,
-        border:
-          status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
-        outline: 'none',
-        padding: '0 10px',
-        width: '100%',
-        boxSizing: 'border-box',
+        position: 'absolute',
+        ...positionStyle,
+        display: 'grid',
+        placeItems: 'center',
+        pointerEvents: 'none',
+        color: GREEN,
+        animation: 'save-tick 1200ms cubic-bezier(0.4, 0, 0.2, 1) forwards',
       }}
-    />
+    >
+      <Check size={12} strokeWidth={2.5} aria-hidden />
+    </span>
   )
 }
 
@@ -1774,6 +1906,8 @@ function SmallField({
 }) {
   const [value, setValue] = useState(initialValue)
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  // Phase I §2.16 — autosave success indicator (see SaveTick below).
+  const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
   const empty = value.trim() === ''
 
@@ -1787,7 +1921,12 @@ function SmallField({
     setStatus('saving')
     startTransition(async () => {
       const res = await updateProgramExerciseAction(programExerciseId, patch)
-      setStatus(res.error ? 'error' : 'idle')
+      if (res.error) {
+        setStatus('error')
+      } else {
+        setStatus('idle')
+        setSavedAt((n) => n + 1)
+      }
     })
   }
 
@@ -1806,33 +1945,36 @@ function SmallField({
       >
         {label}
       </div>
-      <input
-        type={kind === 'number' ? 'number' : 'text'}
-        inputMode={kind === 'number' ? 'numeric' : undefined}
-        value={value}
-        placeholder="—"
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={handleBlur}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        }}
-        style={{
-          width: '100%',
-          height: 28,
-          padding: '0 8px',
-          background: CREAM,
-          border:
-            status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
-          borderRadius: 6,
-          fontFamily: 'var(--font-sans)',
-          fontSize: 12,
-          fontWeight: 500,
-          color: empty ? FAINT : INK,
-          textAlign: 'center',
-          outline: 'none',
-          boxSizing: 'border-box',
-        }}
-      />
+      <div style={{ position: 'relative' }}>
+        <input
+          type={kind === 'number' ? 'number' : 'text'}
+          inputMode={kind === 'number' ? 'numeric' : undefined}
+          value={value}
+          placeholder="—"
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
+          style={{
+            width: '100%',
+            height: 28,
+            padding: '0 8px',
+            background: CREAM,
+            border:
+              status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
+            borderRadius: 6,
+            fontFamily: 'var(--font-sans)',
+            fontSize: 12,
+            fontWeight: 500,
+            color: empty ? FAINT : INK,
+            textAlign: 'center',
+            outline: 'none',
+            boxSizing: 'border-box',
+          }}
+        />
+        <SaveTick savedAt={savedAt} placement="inline" />
+      </div>
     </label>
   )
 }
@@ -2127,6 +2269,8 @@ function EditableTextarea({
 }) {
   const [value, setValue] = useState(initialValue)
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
+  // Phase I §2.16 — autosave success indicator (see SaveTick).
+  const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
 
   function handleBlur() {
@@ -2137,35 +2281,44 @@ function EditableTextarea({
     setStatus('saving')
     startTransition(async () => {
       const res = await updateProgramExerciseAction(programExerciseId, patch)
-      setStatus(res.error ? 'error' : 'idle')
+      if (res.error) {
+        setStatus('error')
+      } else {
+        setStatus('idle')
+        setSavedAt((n) => n + 1)
+      }
     })
   }
 
   return (
-    <textarea
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={handleBlur}
-      rows={3}
-      style={{
-        background: CREAM,
-        border:
-          status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
-        borderRadius: 8,
-        padding: '10px 12px',
-        fontFamily: 'var(--font-sans)',
-        fontSize: 13,
-        lineHeight: 1.5,
-        color: value ? INK : FAINT,
-        fontWeight: 400,
-        width: '100%',
-        minHeight: 60,
-        resize: 'vertical',
-        outline: 'none',
-        boxSizing: 'border-box',
-      }}
-    />
+    <div style={{ position: 'relative' }}>
+      <textarea
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={handleBlur}
+        rows={3}
+        style={{
+          background: CREAM,
+          border:
+            status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
+          borderRadius: 8,
+          padding: '10px 12px',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: value ? INK : FAINT,
+          fontWeight: 400,
+          width: '100%',
+          minHeight: 60,
+          resize: 'vertical',
+          outline: 'none',
+          boxSizing: 'border-box',
+          display: 'block',
+        }}
+      />
+      <SaveTick savedAt={savedAt} placement="corner" />
+    </div>
   )
 }
 

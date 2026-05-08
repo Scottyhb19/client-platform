@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Copy } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   SessionBuilder,
@@ -16,6 +16,7 @@ import { type PinnedNote } from '../../../_components/NotesPanel'
 import { type SessionReport } from '../../../_components/ReportsPanel'
 import { AssignButton } from './_components/AssignButton'
 import { DayLabelEditor } from './_components/DayLabelEditor'
+import { DuplicateButton } from './_components/DuplicateButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -369,10 +370,16 @@ export default async function SessionBuilderPage({
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button type="button" className="btn outline" disabled>
-            <Copy size={14} aria-hidden />
-            Duplicate
-          </button>
+          {/* Phase I §2.13: Duplicate is enabled whenever the source day
+              has at least one exercise to copy. An empty day's duplicate
+              would land an empty day on the new date — pointless, so
+              keep it disabled. */}
+          <DuplicateButton
+            clientId={id}
+            sourceDayId={dayId}
+            sourceDate={day.scheduled_date}
+            disabled={programExercises.length === 0}
+          />
           <AssignButton
             clientId={id}
             dayId={dayId}
