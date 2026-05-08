@@ -3,7 +3,11 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
-import { loadCatalog, loadPublicationsForClient } from '@/lib/testing/loaders'
+import {
+  loadCatalog,
+  loadPublicationsForClient,
+  loadTestHistoryForClient,
+} from '@/lib/testing/loaders'
 import {
   SessionBuilder,
   type ExerciseTagOption,
@@ -93,6 +97,8 @@ export default async function SessionBuilderPage({
     { data: noteTemplatesRaw },
     publicationsResult,
     catalog,
+    testHistory,
+    { data: batteriesRaw },
     { data: sectionTitlesRaw },
     { data: patternsRaw },
     { data: tagsRaw },
@@ -150,11 +156,16 @@ export default async function SessionBuilderPage({
     // table. The join on test_sessions narrows to this client and brings
     // back conducted_at for the panel header. Cap matches the old reports
     // query.
+    // Phase J.4 (2026-05-09): also pull applied_battery_id from the joined
+    // session so the rail's reader can show the battery chip + group
+    // sibling publications by session.
     supabase
       .from('client_publications')
       .select(
         `id, test_session_id, test_id, framing_text, published_at,
-         session:test_sessions!inner(client_id, conducted_at, deleted_at)`,
+         session:test_sessions!inner(
+           client_id, conducted_at, deleted_at, applied_battery_id
+         )`,
       )
       .eq('session.client_id', id)
       .is('session.deleted_at', null)
@@ -166,6 +177,16 @@ export default async function SessionBuilderPage({
     // custom-test rows + disabled-test rows) and the same loader the
     // Reports tab on the client profile uses.
     loadCatalog(supabase, organizationId, { includeCustom: true }),
+    // Phase J.4: per-test trajectories so the rail's Reports reader can
+    // compute baseline / previous / current values per metric. Bounded
+    // per client; mirrors the loader the profile Reports tab already uses.
+    loadTestHistoryForClient(supabase, organizationId, id),
+    // Phase J.4: applied_battery_id → battery_name lookup. Tiny per-org
+    // table; loaded once for chip rendering.
+    supabase
+      .from('test_batteries')
+      .select('id, name')
+      .is('deleted_at', null),
     supabase
       .from('section_titles')
       .select('id, name')
@@ -380,17 +401,30 @@ export default async function SessionBuilderPage({
       client_id: string
       conducted_at: string
       deleted_at: string | null
+      applied_battery_id: string | null
     } | null
+  }
+  const batteryNameById = new Map<string, string>()
+  for (const b of batteriesRaw ?? []) {
+    batteryNameById.set(b.id, b.name)
   }
   const publicationsRaw =
     (publicationsResult.data ?? []) as unknown as PublicationJoinRow[]
-  const reports: SessionReport[] = publicationsRaw.map((p) => ({
-    id: p.id,
-    test_id: p.test_id,
-    test_name: testNameById.get(p.test_id) ?? p.test_id,
-    conducted_at: p.session?.conducted_at ?? p.published_at,
-    framing_text: p.framing_text,
-  }))
+  const reports: SessionReport[] = publicationsRaw.map((p) => {
+    const appliedBatteryId = p.session?.applied_battery_id ?? null
+    return {
+      id: p.id,
+      test_session_id: p.test_session_id,
+      test_id: p.test_id,
+      test_name: testNameById.get(p.test_id) ?? p.test_id,
+      conducted_at: p.session?.conducted_at ?? p.published_at,
+      framing_text: p.framing_text,
+      applied_battery_id: appliedBatteryId,
+      battery_name: appliedBatteryId
+        ? batteryNameById.get(appliedBatteryId) ?? null
+        : null,
+    }
+  })
 
   const programName = day.program?.name ?? ''
   const dayDateLabel = day.scheduled_date
@@ -496,6 +530,7 @@ export default async function SessionBuilderPage({
         libraryOptions={libraryOptions}
         clinicalNotes={clinicalNotes}
         reports={reports}
+        testHistory={testHistory}
         sectionTitles={sectionTitles}
         movementPatterns={movementPatterns}
         exerciseTags={exerciseTags}

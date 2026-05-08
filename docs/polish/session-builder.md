@@ -387,3 +387,56 @@ Single-commit change. Read-path + cache-invalidation only — no schema changes,
 - The dashboard's pinned-note preview ([`dashboard/page.tsx:97`](../../src/app/(staff)/dashboard/page.tsx)) has the same `body_rich / subjective`-only loader bug. It does not mount the shared `NotesPanel` (renders its own attention strip), so its fix belongs to the dashboard polish pass — captured here as a follow-up rather than bundled in.
 - Real-time subscriptions on `clinical_notes` / `client_publications` (Q3 Option B). Deferred per sign-off; nav-time revalidation is sufficient for the single-user pre-launch reality.
 
+
+
+---
+
+## 12. Phase J.4 — Right-rail Reports list ⇆ reader with summary cards (2026-05-09)
+
+**Trigger:** Phase J.2 wired the rail's Reports tab to `client_publications`, but the panel was still a flat list of test names + dates. The user asked for it to behave like the new Notes tab (list ⇆ reader, click to open) AND to surface "summary of recent score and percentage change of the metrics with a given test as well as a whole testing battery."
+
+### 12.1 Sign-off log (chat 2026-05-09)
+
+| # | Question | Answer |
+|---|----------|--------|
+| Q1 | List granularity | **One row per publication.** Click → reader showing the clicked test PLUS sibling published tests from the same session as additional cards. Battery name + session date in the reader header. |
+| Q2 | % change baseline | **Default vs first-ever capture (baseline).** Per-card toggle in the top-right corner switches that card to "vs Previous" (the immediately prior session for that metric). Independent — toggling one card doesn't flip siblings. |
+| Q3 | "Recent score" scope | **Frozen snapshot.** The recent value shown is the score from THIS publication's session, not the latest across all sessions. Lets the EP see the test as it was when published; opens the door to historical context without surprise drift. |
+| Q4 | Bilateral metrics | **Stack Left + Right rows.** Same as `MetricBadge` on the profile. |
+| Q5 | Direction-of-good edge cases | `target_range` and `context_dependent` stay neutral grey until clinical bands ship. Defers to existing `verdictFor` behaviour in [`src/lib/testing/direction.ts`](../../src/lib/testing/direction.ts). |
+| Q6 | First-capture (no baseline) | **"First capture · [date]"** in muted text. No colour. Same fallback `MetricBadge` already does. |
+
+### 12.2 Resolution
+
+Single commit. Adds rail-only summary surface; no schema change, no new RPC, no new loader.
+
+**Reused existing helpers** (no new math):
+- `verdictFor(direction, baseline, current)` and `colourFor(...)` from [`src/lib/testing/direction.ts`](../../src/lib/testing/direction.ts) for green/red/neutral mapping.
+- `formatPctChange(baseline, current)` for the right-aligned `+12.4%` / `-3.1%` chip.
+- `pickBaseline(points, side?)` and `pickLatest(points, side?)` from [`src/lib/testing/helpers.ts`](../../src/lib/testing/helpers.ts) for side-aware point picking.
+- `loadTestHistoryForClient(supabase, organizationId, clientId)` from [`src/lib/testing/loaders.ts`](../../src/lib/testing/loaders.ts) for the per-test trajectories.
+
+**File-level changes:**
+
+- **[`ReportsPanel.tsx`](../../src/app/(staff)/clients/[id]/_components/ReportsPanel.tsx)** — rewritten as a client component. Owns `openPubId` state for list/reader and a per-card `mode: 'baseline' | 'previous'` toggle. List view: pinned-style rows by date and test name; reader view: stacked test cards (clicked test first, sibling published tests below). Each card is fixed-width and its content stays inside the rail's ~280–300 px envelope (test name truncates with ellipsis, value/Δ row uses flex `min-width: 0`, baseline footer truncates).
+- **[`SessionBuilder.tsx`](../../src/app/(staff)/clients/[id]/program/days/[dayId]/_components/SessionBuilder.tsx)** + **[`CalendarSidePanel.tsx`](../../src/app/(staff)/clients/[id]/program/_components/CalendarSidePanel.tsx)** — accept the new `testHistory` prop and forward to `ReportsPanel`.
+- **Day-page loader** + **program-calendar loader** — extend the existing publications query to also pull `applied_battery_id` from the joined `test_sessions`; add a parallel `test_batteries(id, name)` lookup; add a parallel `loadTestHistoryForClient` call. The catalog already loaded for test-name resolution stays.
+- **`SessionReport` type** extended with `test_session_id`, `applied_battery_id`, `battery_name`, `framing_text`, and resolved `test_name`. The list-view row uses just the date + test name + battery chip; the reader uses the rest.
+
+**Loader-cost note:** `loadTestHistoryForClient` joins `test_results` with `test_sessions` and resolves per-metric settings. Bounded per client; pre-launch dataset is tiny. Loaded eagerly on every day-page render and conditionally (when `?panel=notes`) on the program calendar — symmetric with how the Notes panel does its loads. If post-launch profiling shows it's slow, swap to a lazy server-action triggered on first row-click without breaking the prop shape.
+
+### 12.3 Visual envelope
+
+- Card width fits the rail (rail-card padding 14 px both sides, full-bleed content). Test name ellipsis-truncates in the card header.
+- Value row: flex container, `justify-content: space-between`, `min-width: 0` on each side so neither the value nor the Δ pushes overflow. `whiteSpace: nowrap` on the value but the container can wrap if a unit is unusually long.
+- Toggle pill: two-state segmented control aligned to card top-right; abbreviated labels `Baseline` / `Previous` (no leading "vs" prefix; the card context is unambiguous).
+- Bilateral: each side gets its own indented row under the metric label, mirrored from `MetricBadge`.
+- Reader scrolls vertically inside the card's `maxHeight: 480px` viewport — same as the NoteReader from §11.
+
+### 12.4 Out of scope
+
+- Sparklines or inline charts in the rail. Reserved for the profile's TestCard.
+- Editing or unpublishing from the rail (still profile-only).
+- Composite "battery score" — not specified in the brief.
+- Showing UNPUBLISHED tests from the same session. The rail is the published-reports surface; unpublished captures stay on the profile's Reports tab.
+

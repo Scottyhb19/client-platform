@@ -9,6 +9,7 @@ import {
   ReportsPanel,
   type SessionReport,
 } from '../../_components/ReportsPanel'
+import type { ClientTestHistory } from '@/lib/testing/loader-types'
 
 /**
  * Side panel on the program calendar page (Phase E).
@@ -30,9 +31,14 @@ const CREAM_DEEP = '#EDE8E2'
 interface CalendarSidePanelProps {
   notes: ClinicalNoteSummary[]
   reports: SessionReport[]
+  history: ClientTestHistory
 }
 
-export function CalendarSidePanel({ notes, reports }: CalendarSidePanelProps) {
+export function CalendarSidePanel({
+  notes,
+  reports,
+  history,
+}: CalendarSidePanelProps) {
   const [tab, setTab] = useState<'notes' | 'reports'>('notes')
 
   return (
@@ -72,7 +78,9 @@ export function CalendarSidePanel({ notes, reports }: CalendarSidePanelProps) {
       </div>
 
       {tab === 'notes' && <NotesPanel notes={notes} />}
-      {tab === 'reports' && <ReportsPanel reports={reports} />}
+      {tab === 'reports' && (
+        <ReportsPanel reports={reports} history={history} />
+      )}
     </aside>
   )
 }

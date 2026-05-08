@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
-import { loadCatalog } from '@/lib/testing/loaders'
+import { loadCatalog, loadTestHistoryForClient } from '@/lib/testing/loaders'
+import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import {
   initialsFor,
   toneFor,
@@ -170,6 +171,7 @@ export default async function ClientProgramPage({
   // session-builder day page loader.
   let clinicalNotes: ClinicalNoteSummary[] = []
   let reports: SessionReport[] = []
+  let testHistory: ClientTestHistory = { tests: [], categories: [], sessions: [] }
   if (panelOpen) {
     const { organizationId } = await requireRole(['owner', 'staff'])
     const [
@@ -177,6 +179,8 @@ export default async function ClientProgramPage({
       { data: noteTemplatesRaw },
       publicationsResult,
       catalog,
+      historyLoaded,
+      { data: batteriesRaw },
     ] = await Promise.all([
       supabase
         .from('clinical_notes')
@@ -193,11 +197,15 @@ export default async function ClientProgramPage({
         .from('note_templates')
         .select('id, name')
         .is('deleted_at', null),
+      // Phase J.4 (2026-05-09): also pulls applied_battery_id from the
+      // joined session so the rail's reader can show the battery chip.
       supabase
         .from('client_publications')
         .select(
           `id, test_session_id, test_id, framing_text, published_at,
-           session:test_sessions!inner(client_id, conducted_at, deleted_at)`,
+           session:test_sessions!inner(
+             client_id, conducted_at, deleted_at, applied_battery_id
+           )`,
         )
         .eq('session.client_id', id)
         .is('session.deleted_at', null)
@@ -205,7 +213,16 @@ export default async function ClientProgramPage({
         .order('published_at', { ascending: false })
         .limit(20),
       loadCatalog(supabase, organizationId, { includeCustom: true }),
+      // Phase J.4: per-test trajectories — feeds the Reports reader's
+      // baseline / previous / current calculations. Bounded per client.
+      loadTestHistoryForClient(supabase, organizationId, id),
+      // Phase J.4: applied_battery_id → battery_name lookup for the chip.
+      supabase
+        .from('test_batteries')
+        .select('id, name')
+        .is('deleted_at', null),
     ])
+    testHistory = historyLoaded
 
     if (notesErr) throw new Error(`Load clinical notes: ${notesErr.message}`)
     if (publicationsResult.error)
@@ -264,17 +281,30 @@ export default async function ClientProgramPage({
         client_id: string
         conducted_at: string
         deleted_at: string | null
+        applied_battery_id: string | null
       } | null
+    }
+    const batteryNameById = new Map<string, string>()
+    for (const b of batteriesRaw ?? []) {
+      batteryNameById.set(b.id, b.name)
     }
     const publicationsRaw =
       (publicationsResult.data ?? []) as unknown as PublicationJoinRow[]
-    reports = publicationsRaw.map((p) => ({
-      id: p.id,
-      test_id: p.test_id,
-      test_name: testNameById.get(p.test_id) ?? p.test_id,
-      conducted_at: p.session?.conducted_at ?? p.published_at,
-      framing_text: p.framing_text,
-    }))
+    reports = publicationsRaw.map((p) => {
+      const appliedBatteryId = p.session?.applied_battery_id ?? null
+      return {
+        id: p.id,
+        test_session_id: p.test_session_id,
+        test_id: p.test_id,
+        test_name: testNameById.get(p.test_id) ?? p.test_id,
+        conducted_at: p.session?.conducted_at ?? p.published_at,
+        framing_text: p.framing_text,
+        applied_battery_id: appliedBatteryId,
+        battery_name: appliedBatteryId
+          ? batteryNameById.get(appliedBatteryId) ?? null
+          : null,
+      }
+    })
   }
 
   // When the side panel is open the calendar needs more horizontal room
@@ -384,7 +414,11 @@ export default async function ClientProgramPage({
           />
         )}
         {panelOpen && (
-          <CalendarSidePanel notes={clinicalNotes} reports={reports} />
+          <CalendarSidePanel
+            notes={clinicalNotes}
+            reports={reports}
+            history={testHistory}
+          />
         )}
       </div>
     </div>

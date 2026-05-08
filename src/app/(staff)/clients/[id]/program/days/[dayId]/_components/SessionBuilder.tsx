@@ -63,6 +63,7 @@ import {
   ReportsPanel,
   type SessionReport,
 } from '../../../../_components/ReportsPanel'
+import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import { timeAgo } from '../../../../_components/reports/helpers'
 
 /*
@@ -181,6 +182,7 @@ interface SessionBuilderProps {
   libraryOptions: LibraryPick[]
   clinicalNotes: ClinicalNoteSummary[]
   reports: SessionReport[]
+  testHistory: ClientTestHistory
   sectionTitles: SectionTitleOption[]
   movementPatterns: MovementPatternOption[]
   exerciseTags: ExerciseTagOption[]
@@ -194,6 +196,7 @@ export function SessionBuilder({
   libraryOptions,
   clinicalNotes,
   reports,
+  testHistory,
   sectionTitles,
   movementPatterns,
   exerciseTags,
@@ -466,7 +469,9 @@ export function SessionBuilder({
           />
         )}
         {tab === 'notes' && <NotesPanel notes={clinicalNotes} />}
-        {tab === 'reports' && <ReportsPanel reports={reports} />}
+        {tab === 'reports' && (
+          <ReportsPanel reports={reports} history={testHistory} />
+        )}
       </aside>
     </div>
   )
