@@ -124,10 +124,19 @@ export async function createProgramAction(
 
   // 3. Insert days. Each session attaches to the EP-picked weekday;
   // labels are "Day 1", "Day 2", ... in the order the sessions are
-  // listed in the form. start_date is treated as the Monday anchor of
-  // week 1 (matching the calendar's Mon-first grid). To convert a JS
-  // day-of-week (0=Sun..6=Sat) to a Mon-first offset (Mon=0..Sun=6):
-  //   monOffset = (dow + 6) % 7
+  // listed in the form.
+  //
+  // The program's "weeks" are 7-day chunks anchored to start_date —
+  // start_date is the program's literal first day, not a Monday
+  // anchor. For each picked JS day-of-week (0=Sun..6=Sat), the offset
+  // is the smallest non-negative shift from start_date's own dow that
+  // lands on the picked dow:
+  //   offset = (dow - startDow + 7) % 7
+  // i.e. "first occurrence of `dow` on or after start_date". Each
+  // subsequent week adds 7 days. This honours whatever start_date the
+  // EP picked — Mon picks land on Mondays, Tue/Thu/Sat picks land on
+  // Tue/Thu/Sat — without silently snapping start_date backwards.
+  //
   // Open-ended programs (start_date=null) skip day inserts — the EP
   // backfills via the calendar later.
   if (startDate === null) {
@@ -143,12 +152,13 @@ export async function createProgramAction(
     }
   }
 
+  const startDow = startDateObj.getDay()  // JS 0=Sun..6=Sat
   const dayRows = weeks.flatMap((w) =>
     sessionDows.map((dow, i) => {
-      const monOffset = (dow + 6) % 7
+      const offsetWithinWeek = (dow - startDow + 7) % 7
       const scheduledDate = addDaysIso(
         startDateObj,
-        (w.week_number - 1) * 7 + monOffset,
+        (w.week_number - 1) * 7 + offsetWithinWeek,
       )
       return {
         program_id: program.id,
