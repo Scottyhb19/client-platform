@@ -13,21 +13,5 @@ interface Props {
 }
 
 export function PortalFramingBlock({ text }: Props) {
-  return (
-    <p
-      style={{
-        margin: 0,
-        padding: '12px 14px',
-        background: 'var(--color-surface)',
-        borderLeft: '2px solid var(--color-accent)',
-        borderRadius: 6,
-        fontSize: '.92rem',
-        lineHeight: 1.5,
-        color: 'var(--color-text)',
-        fontStyle: 'italic',
-      }}
-    >
-      {text}
-    </p>
-  )
+  return <p className="portal-framing-block">{text}</p>
 }

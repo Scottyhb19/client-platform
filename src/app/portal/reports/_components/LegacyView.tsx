@@ -23,14 +23,17 @@ export function LegacyView({ reports }: Props) {
       {reports.map((r) => (
         <div
           key={r.id}
+          className="portal-card"
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '14px 16px',
-            background: '#fff',
-            border: '1px solid var(--color-border-subtle)',
-            borderRadius: 10,
+            // Compact list-row radius — matches legacy --radius-chip (10px),
+            // not the full --radius-card (14px). Phase G makes the row
+            // clickable; the smaller radius reads as "list item" not
+            // "content card".
+            borderRadius: 'var(--radius-chip)',
             marginBottom: 8,
           }}
         >

@@ -70,13 +70,11 @@ export default async function PortalYouPage() {
         {rows.map(([k, v]) => (
           <div
             key={k}
+            className="portal-card is-compact"
             style={{
               display: 'flex',
               justifyContent: 'space-between',
               padding: '14px 16px',
-              background: '#fff',
-              border: '1px solid var(--color-border-subtle)',
-              borderRadius: 10,
               marginBottom: 8,
               gap: 12,
             }}
@@ -100,11 +98,9 @@ export default async function PortalYouPage() {
 
         {/* Install-to-home tip */}
         <div
+          className="portal-card is-compact"
           style={{
             marginTop: 18,
-            background: '#fff',
-            border: '1px solid var(--color-border-subtle)',
-            borderRadius: 10,
             padding: '14px 16px',
             fontSize: '.8rem',
             lineHeight: 1.5,
@@ -112,12 +108,11 @@ export default async function PortalYouPage() {
           }}
         >
           <div
+            className="portal-eyebrow"
+            // Override muted → primary: this tip's eyebrow is its own
+            // anchor (no surrounding section title to depend on).
             style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
               fontSize: '.7rem',
-              letterSpacing: '.06em',
-              textTransform: 'uppercase',
               color: 'var(--color-primary)',
               marginBottom: 4,
             }}
@@ -133,17 +128,18 @@ export default async function PortalYouPage() {
         <form action={logout} style={{ marginTop: 18 }}>
           <button
             type="submit"
+            className="portal-btn-secondary"
+            // Override .portal-btn-secondary defaults: sign-out is a
+            // smaller, sans-font, lower-key destructive action — not the
+            // celebratory full-display-font CTA the primary/secondary
+            // shapes assume. Class still gives us the bordered chrome.
             style={{
-              width: '100%',
               padding: 14,
-              background: '#fff',
-              color: 'var(--color-text)',
-              border: '1px solid var(--color-border-subtle)',
-              borderRadius: 10,
               fontFamily: 'var(--font-sans)',
               fontWeight: 600,
               fontSize: '.9rem',
-              cursor: 'pointer',
+              borderRadius: 'var(--radius-chip)',
+              color: 'var(--color-text)',
             }}
           >
             Sign out

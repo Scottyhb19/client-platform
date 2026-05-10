@@ -61,15 +61,17 @@ export default async function PortalProgramPage() {
           return (
             <div
               key={w.id}
+              className="portal-card is-compact"
               style={{
-                background: '#fff',
-                border: `1px solid ${
-                  isCurrent ? 'var(--color-primary)' : 'var(--color-border-subtle)'
-                }`,
-                borderRadius: 10,
+                // Override border-color to highlight the current week.
+                // Non-current weeks suppress the .portal-card shadow so the
+                // current row reads as the dominant element in the list.
+                borderColor: isCurrent
+                  ? 'var(--color-primary)'
+                  : 'var(--color-border-subtle)',
+                boxShadow: isCurrent ? undefined : 'none',
                 padding: '14px 16px',
                 marginBottom: 8,
-                boxShadow: isCurrent ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
               }}
             >
               <div

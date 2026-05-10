@@ -102,14 +102,10 @@ export default async function PortalSessionCompletePage({
       </div>
 
       <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.72rem',
-          letterSpacing: '.06em',
-          textTransform: 'uppercase',
-          color: 'var(--color-primary)',
-        }}
+        className="portal-eyebrow"
+        // Override eyebrow's default muted colour — completion screen wants
+        // the eyebrow to read as a "yes you did it" primary, not a quiet label.
+        style={{ color: 'var(--color-primary)' }}
       >
         Session complete
       </div>
@@ -161,38 +157,31 @@ export default async function PortalSessionCompletePage({
         />
       </div>
 
-      <Link
-        href="/portal"
-        style={{
-          display: 'block',
-          padding: 16,
-          background: 'var(--color-primary)',
-          color: '#fff',
-          borderRadius: 12,
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '1.1rem',
-          letterSpacing: '.02em',
-          textDecoration: 'none',
-        }}
-      >
+      <Link href="/portal" className="portal-btn-primary">
         Back to today
       </Link>
     </div>
   )
 }
 
+/**
+ * Compact stat tile for the completion summary. Wraps a `.portal-stat`
+ * (label-then-value) in a `.portal-card` with the smaller list-row radius
+ * (--radius-chip / 10px) so the three tiles read as a tight panel rather
+ * than full content cards.
+ */
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
     <div
+      className="portal-card"
       style={{
-        background: '#fff',
-        border: '1px solid var(--color-border-subtle)',
-        borderRadius: 10,
+        borderRadius: 'var(--radius-chip)',
         padding: '10px 12px',
       }}
     >
       <div
+        // Tighter eyebrow than .portal-eyebrow's standard 0.72rem — stat
+        // tiles need a smaller label to balance the tile's own size.
         style={{
           fontSize: '.62rem',
           color: 'var(--color-muted)',
@@ -252,16 +241,17 @@ function FallbackCard({
       </p>
       <Link
         href={`/portal/session/${dayId}`}
+        className="portal-btn-primary"
+        // Inline-block override — fallback is centred under a paragraph,
+        // not the full-width primary CTA shape that .portal-btn-primary
+        // assumes. Keeping the class so colour/font/transition come from
+        // the primitive; just tightening the box.
         style={{
           display: 'inline-block',
+          width: 'auto',
           padding: '12px 22px',
-          background: 'var(--color-primary)',
-          color: '#fff',
-          borderRadius: 10,
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
           fontSize: '.95rem',
-          textDecoration: 'none',
+          borderRadius: 'var(--radius-chip)',
         }}
       >
         Back to the logger

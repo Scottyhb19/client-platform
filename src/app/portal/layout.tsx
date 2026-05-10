@@ -82,25 +82,8 @@ export default async function PortalLayout({
     .is('deleted_at', null)
 
   return (
-    <div
-      style={{
-        background: '#E8ECE9',
-        minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 480,
-          minHeight: '100vh',
-          background: 'var(--color-surface)',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: '0 0 40px rgba(0,0,0,.04)',
-        }}
-      >
+    <div className="portal-shell">
+      <div className="portal-shell__column">
         <main style={{ flex: 1, overflowY: 'auto' }}>{children}</main>
         <BottomNav
           messageCount={unreadFromStaff ?? 0}

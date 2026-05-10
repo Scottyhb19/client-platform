@@ -78,18 +78,9 @@ export function BottomNav({ messageCount = 0, threadId = null }: BottomNavProps)
   return (
     <nav
       aria-label="Portal"
-      style={{
-        position: 'sticky',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        background: '#fff',
-        borderTop: '1px solid #E2DDD7',
-        paddingBottom: 'env(safe-area-inset-bottom, 14px)',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(6, 1fr)',
-        zIndex: 10,
-      }}
+      className="portal-bottom-nav"
+      // Column count is per-instance (6 items today; Phase F may change it).
+      style={{ gridTemplateColumns: `repeat(${ITEMS.length}, 1fr)` }}
     >
       {ITEMS.map((item) => {
         const isActive =
@@ -106,33 +97,14 @@ export function BottomNav({ messageCount = 0, threadId = null }: BottomNavProps)
             aria-label={
               showBadge ? `${item.label} (${messageCount} unread)` : item.label
             }
-            style={{
-              position: 'relative',
-              padding: '10px 4px 8px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 3,
-              textDecoration: 'none',
-              color: isActive
-                ? 'var(--color-primary)'
-                : 'var(--color-muted)',
-            }}
+            className={`portal-bottom-nav__item${isActive ? ' is-active' : ''}`}
           >
             <Icon
               size={20}
               aria-hidden
               strokeWidth={isActive ? 2.25 : 1.75}
             />
-            <span
-              style={{
-                fontSize: '.62rem',
-                fontWeight: isActive ? 700 : 500,
-                fontFamily: 'var(--font-sans)',
-              }}
-            >
-              {item.label}
-            </span>
+            <span className="portal-bottom-nav__item-label">{item.label}</span>
             {showBadge && (
               <span aria-hidden className="portal-nav-badge">
                 {messageCount > 9 ? '9+' : messageCount}

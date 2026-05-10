@@ -208,11 +208,14 @@ function buildExerciseList(
     }
   }
 
+  // Tone names match the .portal-seq[data-tone] selectors. Renamed in
+  // Phase B from charcoal/primary/accent/amber — the new names describe
+  // what the bubble actually looks like rather than what it was meant to.
   const tones: TodaySessionExercise['tone'][] = [
-    'charcoal',
-    'primary',
-    'accent',
-    'amber',
+    'default',
+    'muted',
+    'parchment',
+    'outline',
   ]
   let groupLetterIndex = -1
   let currentGroupId: string | null = null

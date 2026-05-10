@@ -202,11 +202,9 @@ function SessionError({
         </Link>
       </div>
       <div
+        className="portal-card"
         style={{
           margin: '0 16px 16px',
-          background: '#fff',
-          border: '1px solid var(--color-border-subtle)',
-          borderRadius: 14,
           padding: '32px 20px',
           textAlign: 'center',
         }}

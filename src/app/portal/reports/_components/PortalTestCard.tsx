@@ -27,10 +27,8 @@ export function PortalTestCard({ test, publications }: Props) {
 
   return (
     <article
+      className="portal-card is-compact"
       style={{
-        background: '#fff',
-        border: '1px solid var(--color-border-subtle)',
-        borderRadius: 10,
         padding: '14px 14px 16px',
         marginBottom: 12,
         display: 'flex',

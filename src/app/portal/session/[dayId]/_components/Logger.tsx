@@ -171,16 +171,7 @@ function TopBar({
         >
           <X size={14} aria-hidden /> Exit
         </Link>
-        <div
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: '.72rem',
-            letterSpacing: '.06em',
-            textTransform: 'uppercase',
-            color: 'var(--color-muted)',
-          }}
-        >
+        <div className="portal-eyebrow">
           Exercise {exerciseIdx + 1} of {totalExercises}
         </div>
         <div style={{ width: 46 }} />
@@ -216,14 +207,11 @@ function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
   return (
     <div style={{ padding: '0 20px', marginBottom: 16 }}>
       <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.72rem',
-          letterSpacing: '.06em',
-          textTransform: 'uppercase',
-          color: 'var(--color-primary)',
-        }}
+        className="portal-eyebrow"
+        // Override muted → primary: this is the active exercise label,
+        // not a quiet section heading. The section-title-plus-letter line
+        // anchors the screen.
+        style={{ color: 'var(--color-primary)' }}
       >
         {exercise.sectionTitle
           ? `${exercise.sectionTitle} · ${exercise.letter}`
@@ -648,14 +636,10 @@ function CompletePrompt({
         <Check size={28} aria-hidden />
       </div>
       <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.72rem',
-          letterSpacing: '.06em',
-          textTransform: 'uppercase',
-          color: 'var(--color-primary)',
-        }}
+        className="portal-eyebrow"
+        // Same primary-override as the active exercise eyebrow: this is
+        // the celebratory state, not a quiet label.
+        style={{ color: 'var(--color-primary)' }}
       >
         {dayLabel} · sets logged
       </div>
@@ -684,19 +668,7 @@ function CompletePrompt({
         type="button"
         onClick={handleComplete}
         disabled={pending}
-        style={{
-          width: '100%',
-          padding: 16,
-          background: 'var(--color-primary)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 12,
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '1.1rem',
-          letterSpacing: '.02em',
-          cursor: 'pointer',
-        }}
+        className="portal-btn-primary"
       >
         {pending ? 'Wrapping up…' : 'Finish session'}
       </button>
