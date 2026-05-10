@@ -1,0 +1,33 @@
+-- ============================================================================
+-- 20260510150000_relax_sessions_completed_requires_rpe
+-- ============================================================================
+-- Why: The original schema (20260420101900_session_logging.sql lines 42-44)
+-- enforces "every completed session must have an RPE" via a table-level
+-- CHECK constraint:
+--
+--   CONSTRAINT sessions_completed_requires_rpe CHECK (
+--     completed_at IS NULL OR session_rpe IS NOT NULL
+--   )
+--
+-- The Phase C portal completion UI permits clients to skip both the RPE
+-- and the feedback fields. The matching RPC (client_complete_session) was
+-- relaxed in 20260510130100_client_complete_session_v2 to accept NULL
+-- session_rpe, but the table-level CHECK still rejects the row, surfacing
+-- in the portal as the alert:
+--
+--   new row for relation "sessions" violates check constraint
+--   "sessions_completed_requires_rpe"
+--
+-- The application-layer fix is a no-op without the schema-layer fix.
+--
+-- Drop the CHECK so the table contract matches the Phase C UI contract:
+-- session_rpe is captured *if the client chose to give one*, NULL otherwise.
+-- The column-level guard `CHECK (session_rpe IS NULL OR session_rpe BETWEEN
+-- 1 AND 10)` on the column itself remains — the range constraint still
+-- applies when a value is supplied.
+--
+-- Pre-launch advantage applies (CLAUDE.md): no production data, no
+-- backfill needed. Existing seed sessions either already have an RPE or
+-- haven't been completed.
+-- ============================================================================
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_completed_requires_rpe;
