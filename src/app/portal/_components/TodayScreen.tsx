@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { sameCalendarDay, type WeekDot } from '../_lib/portal-helpers'
 
 // WeekDot is the type for the strip of seven dots across the top of the
@@ -43,6 +44,12 @@ interface TodayScreenProps {
     remaining: number
     avgRpe: number | null
   }
+  // Week navigation chrome.
+  monthLabel: string // "April 2026"
+  prevWeekHref: string // "/portal?w=2026-04-13"
+  nextWeekHref: string // "/portal?w=2026-04-27"
+  isCurrentWeek: boolean // hides "back to today" pill when true
+  backToTodayHref: string // "/portal"
 }
 
 export function TodayScreen({
@@ -52,6 +59,11 @@ export function TodayScreen({
   weekDots,
   session,
   weekStats,
+  monthLabel,
+  prevWeekHref,
+  nextWeekHref,
+  isCurrentWeek,
+  backToTodayHref,
 }: TodayScreenProps) {
   const todayIdx = weekDots.findIndex((d) =>
     sameCalendarDay(d.date, new Date()),
@@ -81,6 +93,64 @@ export function TodayScreen({
         </h1>
       </div>
 
+      {/* Week strip nav — month label + prev/next chevrons. Mirrors the
+          .week-strip-nav block in the client-portal.html prototype. The
+          "Back to today" pill appears only when the user has navigated
+          away from the current week. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 20px 8px',
+          gap: 12,
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '.92rem',
+            color: 'var(--color-charcoal)',
+          }}
+        >
+          {monthLabel}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {!isCurrentWeek && (
+            <Link
+              href={backToTodayHref}
+              style={{
+                fontSize: '.7rem',
+                fontWeight: 600,
+                color: 'var(--color-text-light)',
+                background: 'var(--color-surface)',
+                border: '1px solid var(--color-border-subtle)',
+                padding: '4px 10px',
+                borderRadius: 999,
+                textDecoration: 'none',
+              }}
+            >
+              Back to today
+            </Link>
+          )}
+          <Link
+            href={prevWeekHref}
+            aria-label="Previous week"
+            style={weekArrowStyle}
+          >
+            <ChevronLeft size={14} aria-hidden />
+          </Link>
+          <Link
+            href={nextWeekHref}
+            aria-label="Next week"
+            style={weekArrowStyle}
+          >
+            <ChevronRight size={14} aria-hidden />
+          </Link>
+        </div>
+      </div>
+
       {/* Week strip */}
       <div className="portal-week-strip">
         {weekDots.map((d, i) => {
@@ -99,7 +169,12 @@ export function TodayScreen({
               {d.dayLabel && (
                 <span className="portal-day-cell__tag">{d.dayLabel}</span>
               )}
-              {d.state === 'done' && !d.dayLabel && (
+              {/* Green dot signals "session programmed today" at a glance,
+                  per the client-portal.html prototype's .has-session::after
+                  pattern. Renders for any state except 'rest' — the tag
+                  above refines which day variant; the dot is the primary
+                  visual cue. */}
+              {d.state !== 'rest' && (
                 <span className="portal-day-cell__dot" />
               )}
             </button>
@@ -258,4 +333,20 @@ export function TodayScreen({
 
 function weekdayShort(d: Date): string {
   return d.toLocaleDateString('en-AU', { weekday: 'narrow' })
+}
+
+// Shared style for the prev/next week chevron buttons. Same posture as the
+// prototype's .week-arrow: 28×28, hairline border, parchment background,
+// muted icon colour.
+const weekArrowStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 28,
+  height: 28,
+  border: '1px solid var(--color-border-subtle)',
+  borderRadius: 7,
+  background: 'var(--color-card)',
+  color: 'var(--color-text-light)',
+  textDecoration: 'none',
 }

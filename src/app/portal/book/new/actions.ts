@@ -52,9 +52,6 @@ export async function confirmBookingAction(
   const supabase = await createSupabaseServerClient()
 
   const { data: appointmentId, error: rpcError } = await supabase.rpc(
-    // @ts-expect-error — supabase gen-types introspection cache is lagging
-    // behind the deployed migration. Function exists; remove after the
-    // next successful `npm run supabase:types`.
     'client_book_appointment',
     {
       p_session_type_id: sessionTypeId,

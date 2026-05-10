@@ -600,14 +600,17 @@ function CompletePrompt({
   dayLabel: string
 }) {
   const [pending, startTransition] = useTransition()
+  const [feedback, setFeedback] = useState('')
+  const [sessionRpe, setSessionRpe] = useState<number | null>(null)
 
   function handleComplete() {
+    const trimmed = feedback.trim()
     startTransition(async () => {
       const res = await completeSessionAction(
         sessionId,
         dayId,
-        null, // feedback — collected on the completion screen
-        null, // session_rpe — could average per-set rpes here
+        trimmed.length === 0 ? null : trimmed,
+        sessionRpe,
       )
       if (res && res.error) alert(res.error)
     })
@@ -659,11 +662,83 @@ function CompletePrompt({
           fontSize: '.92rem',
           color: 'var(--color-text-light)',
           lineHeight: 1.5,
-          marginBottom: 28,
+          marginBottom: 24,
         }}
       >
         One step left — tap below to wrap up and review the session.
       </p>
+
+      {/* Optional session RPE — 1-10 chips. Null = skipped. The RPC accepts
+          NULL since 20260510130100_client_complete_session_v2. */}
+      <div style={{ marginBottom: 18, textAlign: 'left' }}>
+        <div
+          className="portal-eyebrow"
+          style={{ marginBottom: 8 }}
+        >
+          Session RPE · optional
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
+            const sel = sessionRpe === n
+            return (
+              <button
+                key={n}
+                type="button"
+                aria-pressed={sel}
+                onClick={() => setSessionRpe(sel ? null : n)}
+                style={{
+                  flex: 1,
+                  height: 40,
+                  border: '1px solid var(--color-border-subtle)',
+                  background: sel ? 'var(--color-accent)' : 'var(--color-card)',
+                  color: sel ? '#fff' : 'var(--color-charcoal)',
+                  borderRadius: 7,
+                  fontFamily: 'var(--font-display)',
+                  fontWeight: 700,
+                  fontSize: '0.92rem',
+                  padding: 0,
+                  cursor: 'pointer',
+                }}
+              >
+                {n}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Optional free-text feedback. Empty string normalises to NULL on
+          submit so blank submissions don't store '' in sessions.feedback. */}
+      <div style={{ marginBottom: 24, textAlign: 'left' }}>
+        <div
+          className="portal-eyebrow"
+          style={{ marginBottom: 8 }}
+        >
+          Feedback · optional
+        </div>
+        <textarea
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          placeholder="Anything stand out?"
+          rows={3}
+          style={{
+            width: '100%',
+            border: '1px solid var(--color-border-subtle)',
+            borderRadius: 7,
+            background: 'var(--color-surface)',
+            padding: '10px 12px',
+            fontFamily: 'inherit',
+            fontSize: '.88rem',
+            lineHeight: 1.5,
+            color: 'var(--color-charcoal)',
+            outline: 'none',
+            resize: 'vertical',
+            minHeight: 80,
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
       <button
         type="button"
         onClick={handleComplete}

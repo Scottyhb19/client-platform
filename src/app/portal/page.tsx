@@ -6,17 +6,26 @@ import {
   type TodaySessionExercise,
 } from './_components/TodayScreen'
 import {
+  addDays,
   buildWeekDots,
   greetingFor,
+  isoFromDate,
+  mondayFromIso,
   mondayOfCurrentWeek,
-  weekdayIndex,
   type WeekDot,
 } from './_lib/portal-helpers'
 
 export const dynamic = 'force-dynamic'
 
-export default async function PortalTodayPage() {
+export default async function PortalTodayPage({
+  searchParams,
+}: {
+  // ?w=YYYY-MM-DD navigates the week strip to a different week. Missing or
+  // invalid → snaps to mondayOfCurrentWeek().
+  searchParams: Promise<{ w?: string }>
+}) {
   const supabase = await createSupabaseServerClient()
+  const { w: weekParam } = await searchParams
 
   // Get this client's row (RLS allows self-SELECT via user_id = auth.uid()).
   const {
@@ -41,54 +50,46 @@ export default async function PortalTodayPage() {
     .is('deleted_at', null)
     .maybeSingle()
 
-  const weekStart = mondayOfCurrentWeek()
+  const weekStart = weekParam ? mondayFromIso(weekParam) : mondayOfCurrentWeek()
   const weekStartIso = isoFromDate(weekStart)
-  const weekEndIso = isoFromDate(addDaysTo(weekStart, 7)) // exclusive end
+  const prevWeekIso = isoFromDate(addDays(weekStart, -7))
+  const nextWeekIso = isoFromDate(addDays(weekStart, 7))
+  const monthLabel = formatMonth(weekStart)
   const now = new Date()
   const todayIso = isoFromDate(now)
-  const todayDow = weekdayIndex(now)
+  const isCurrentWeek =
+    weekStart.getTime() === mondayOfCurrentWeek(now).getTime()
 
-  // Days for THIS calendar week, post D-PROG-001 — query by date range
-  // directly. Only published days surface to the client (RLS + the
-  // explicit published_at filter below).
-  let weekDays: Array<{
-    id: string
+  // Days for THIS calendar week — load via client_get_week_overview RPC.
+  // The PostgREST embed exercise:exercises(name) we used previously
+  // returned NULL because the exercises table is staff-only at the RLS
+  // layer (see 20260420102600_rls_enable_and_policies.sql:445-465). The
+  // RPC is SECURITY DEFINER pinned to auth.uid() and returns the exercise
+  // summary as a jsonb array per day in a single round trip.
+  type WeekDayRow = {
+    program_day_id: string
     day_label: string
     scheduled_date: string
     sort_order: number
-    published_at: string | null
-    program_exercises: Array<{
-      id: string
-      sort_order: number
-      section_title: string | null
-      superset_group_id: string | null
-      sets: number | null
-      reps: string | null
-      optional_value: string | null
-      rpe: number | null
-      exercise: { name: string } | null
-    }>
-  }> = []
+    exercises: RawExercise[]
+  }
+  let weekDays: WeekDayRow[] = []
 
   if (program) {
-    const { data: daysRaw } = await supabase
-      .from('program_days')
-      .select(
-        `id, day_label, scheduled_date, sort_order, published_at,
-         program_exercises(
-           id, sort_order, section_title, superset_group_id,
-           sets, reps, optional_value, rpe,
-           exercise:exercises(name)
-         )`,
-      )
-      .eq('program_id', program.id)
-      .gte('scheduled_date', weekStartIso)
-      .lt('scheduled_date', weekEndIso)
-      .not('published_at', 'is', null)
-      .is('deleted_at', null)
-      .order('scheduled_date', { ascending: true })
+    const { data: overview } = await supabase.rpc(
+      'client_get_week_overview',
+      { p_week_start_date: weekStartIso },
+    )
 
-    weekDays = daysRaw ?? []
+    weekDays = (overview ?? []).map((d) => ({
+      program_day_id: d.program_day_id,
+      day_label: d.day_label,
+      scheduled_date: d.scheduled_date,
+      sort_order: d.sort_order,
+      exercises: Array.isArray(d.exercises)
+        ? (d.exercises as RawExercise[])
+        : [],
+    }))
   }
 
   // Map weekday → programmed day for the week strip. Derive the
@@ -111,16 +112,16 @@ export default async function PortalTodayPage() {
   const todayDay = weekDays.find((d) => d.scheduled_date === todayIso)
   const session: TodaySession | null = todayDay
     ? {
-        dayId: todayDay.id,
+        dayId: todayDay.program_day_id,
         dayLabel: `Today · ${todayDay.day_label}`,
         dayTitle: formatDayTitle(todayDay.day_label, program?.name ?? ''),
         metaLine: composeMetaLine(
-          todayDay.program_exercises?.length ?? 0,
+          todayDay.exercises.length,
           program?.name ?? '',
           weekNumberFor(program, todayIso),
           program?.duration_weeks ?? null,
         ),
-        exercises: buildExerciseList(todayDay.program_exercises ?? []),
+        exercises: buildExerciseList(todayDay.exercises),
       }
     : null
 
@@ -144,6 +145,11 @@ export default async function PortalTodayPage() {
         remaining: weekDays.length - 0,
         avgRpe: null,
       }}
+      monthLabel={monthLabel}
+      prevWeekHref={`/portal?w=${prevWeekIso}`}
+      nextWeekHref={`/portal?w=${nextWeekIso}`}
+      isCurrentWeek={isCurrentWeek}
+      backToTodayHref="/portal"
     />
   )
 }
@@ -153,6 +159,13 @@ function formatShort(d: Date): string {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
+  }).format(d)
+}
+
+function formatMonth(d: Date): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    month: 'long',
+    year: 'numeric',
   }).format(d)
 }
 
@@ -181,15 +194,20 @@ function composeMetaLine(
   return bits.join(' · ')
 }
 
+// Shape of one exercise object inside the client_get_week_overview RPC's
+// per-day jsonb array (see 20260510140000_client_get_week_overview.sql).
+// The RPC pre-resolves exercises.name through the SECURITY DEFINER barrier
+// so it lands here as a top-level field rather than via a nested join.
 type RawExercise = {
-  id: string
+  program_exercise_id: string
   sort_order: number
+  section_title: string | null
   superset_group_id: string | null
+  name: string
   sets: number | null
   reps: string | null
   optional_value: string | null
   rpe: number | null
-  exercise: { name: string } | null
 }
 
 function buildExerciseList(
@@ -239,9 +257,9 @@ function buildExerciseList(
     }
 
     return {
-      id: e.id,
+      id: e.program_exercise_id,
       letter,
-      name: e.exercise?.name ?? 'Exercise',
+      name: e.name,
       rx: buildRx(e),
       tone: tones[i % tones.length],
     }
@@ -258,24 +276,12 @@ function buildRx(e: RawExercise): string {
   return bits.join(' · ') || '—'
 }
 
-// Date helpers — local-time interpretation to dodge UTC shift on
-// date-only ISO strings.
+// Date helper — local-time interpretation to dodge UTC shift on date-only
+// ISO strings. Local because used only here; isoFromDate is shared and
+// lives in portal-helpers.ts.
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y!, (m ?? 1) - 1, d ?? 1)
-}
-
-function isoFromDate(d: Date): string {
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
-  const da = String(d.getDate()).padStart(2, '0')
-  return `${y}-${mo}-${da}`
-}
-
-function addDaysTo(d: Date, days: number): Date {
-  const r = new Date(d)
-  r.setDate(r.getDate() + days)
-  return r
 }
 
 // Compute which week-of-program contains the given ISO date. Returns

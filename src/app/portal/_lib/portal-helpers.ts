@@ -12,6 +12,32 @@ export function mondayOfCurrentWeek(now = new Date()): Date {
   return m
 }
 
+/**
+ * Returns the Monday of the calendar week containing the supplied ISO date
+ * (YYYY-MM-DD). Tolerates the input being a non-Monday by snapping to the
+ * preceding Monday. Returns mondayOfCurrentWeek() when the input is missing
+ * or fails to parse — used by the Today page's ?w= query-param navigation.
+ */
+export function mondayFromIso(iso: string | null | undefined): Date {
+  if (!iso) return mondayOfCurrentWeek()
+  const parts = iso.split('-').map(Number)
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) {
+    return mondayOfCurrentWeek()
+  }
+  const [y, m, d] = parts as [number, number, number]
+  const dt = new Date(y, m - 1, d)
+  if (Number.isNaN(dt.getTime())) return mondayOfCurrentWeek()
+  return mondayOfCurrentWeek(dt)
+}
+
+/** YYYY-MM-DD from a Date in local time (no UTC shift). */
+export function isoFromDate(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const da = String(d.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${da}`
+}
+
 /** 0-indexed day-of-week for display (Mon=0..Sun=6). */
 export function weekdayIndex(d: Date): number {
   return (d.getDay() + 6) % 7

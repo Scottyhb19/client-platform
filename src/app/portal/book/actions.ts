@@ -25,9 +25,6 @@ export async function cancelAppointmentAction(
 
   const supabase = await createSupabaseServerClient()
   const { error } = await supabase.rpc(
-    // @ts-expect-error — supabase gen-types introspection cache is lagging
-    // behind the deployed migration. Function exists; remove after the
-    // next successful `npm run supabase:types`.
     'client_cancel_appointment',
     { p_appointment_id: appointmentId },
   )
