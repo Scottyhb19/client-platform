@@ -928,3 +928,377 @@ body {
   border-top: 1px solid var(--color-border-subtle);
   background: #fff;
 }
+
+/* =============================================================================
+ * Portal atoms — mobile-first PWA primitives.
+ *
+ * Mirrors the staff-side atoms (.card, .btn, .eyebrow, .tag, .chip) but tuned
+ * for thumb-driven mobile use: larger touch targets, generous padding,
+ * full-width primary CTAs.
+ *
+ * Naming convention matches the existing .portal-thread__* block above. Use
+ * these classes in any component under src/app/portal/. Do not reimplement
+ * the same shapes inline — if a needed pattern isn't here yet, add a class.
+ *
+ * Token alignment with staff side:
+ *   .portal-card     ↔ .card        (same two-shadow warm-tinted treatment;
+ *                                    decision A2 in docs/polish/client-portal.md)
+ *   .portal-eyebrow  ↔ .eyebrow     (identical — uppercase mini-header)
+ *   .portal-btn-*    ↔ .btn         (different shape — full-width mobile,
+ *                                    larger padding)
+ * =============================================================================
+ */
+
+/* --- Card ---
+   Same warm-tinted two-shadow treatment as the staff .card per A2 decision.
+   No padding by default; consumers compose internal sections. */
+.portal-card {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow:
+    0 1px 2px rgba(35, 31, 32, 0.04),
+    0 4px 14px rgba(35, 31, 32, 0.05);
+}
+/* Compact list-row variant — used for tight one-line rows (LegacyView,
+   you/page.tsx tiles, complete/page.tsx StatTile, program/page.tsx week
+   strips, PortalTestCard). Tighter radius reads as "list item" rather
+   than "content card". Used when stacking many small cards in a list. */
+.portal-card.is-compact {
+  border-radius: var(--radius-chip);
+}
+
+/* --- Buttons ---
+   Mobile-first primary action. Full-width by default — the most common shape
+   on a portal screen is "one prominent CTA at the bottom of the visible
+   region". Border-radius 12px is the established portal CTA radius (between
+   --radius-chip 10 and --radius-card 14), used in the existing inline session
+   buttons. Inlining the literal because this is the only place it's used
+   and the design system already covers the other radii. */
+.portal-btn-primary {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease);
+}
+.portal-btn-primary:hover,
+.portal-btn-primary:focus-visible {
+  background: var(--color-primary-dark);
+}
+.portal-btn-primary:disabled {
+  background: var(--color-text-light);
+  cursor: not-allowed;
+}
+
+.portal-btn-secondary {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: var(--color-card);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease);
+}
+.portal-btn-secondary:hover,
+.portal-btn-secondary:focus-visible {
+  border-color: var(--color-primary);
+}
+
+/* --- Eyebrow ---
+   Identical shape to the staff .eyebrow. Replicated under the .portal-
+   namespace so portal components don't need to import .eyebrow directly
+   (keeps portal styling independently auditable). */
+.portal-eyebrow {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+/* --- Week strip ---
+   Seven-day grid at the top of the Today screen. Matches the inline shape
+   currently in TodayScreen but tokenised. */
+.portal-week-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  padding: 6px 16px 14px;
+}
+
+/* --- Day cell ---
+   Single day in the week strip. Default state = unselected. The selected
+   variant inverts to charcoal so today/selected reads as the dominant cell
+   without relying on accent green (which is reserved for completion). */
+.portal-day-cell {
+  padding: 10px 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-chip);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-height: 68px;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
+}
+.portal-day-cell.is-selected {
+  background: var(--color-charcoal);
+  border-color: var(--color-charcoal);
+}
+.portal-day-cell__weekday {
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-muted);
+}
+.portal-day-cell.is-selected .portal-day-cell__weekday {
+  color: rgba(255, 255, 255, 0.6);
+}
+.portal-day-cell__date {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--color-charcoal);
+}
+.portal-day-cell.is-selected .portal-day-cell__date {
+  color: #fff;
+}
+.portal-day-cell__tag {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  background: rgba(45, 178, 76, 0.1);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.portal-day-cell.is-selected .portal-day-cell__tag {
+  color: var(--color-accent);
+  background: rgba(45, 178, 76, 0.15);
+}
+.portal-day-cell__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+}
+
+/* --- Sequence bubble ---
+   The A / A1 / B letter circles next to each exercise. Tone variants are
+   selected via [data-tone="..."]. Renamed from the inline TodayScreen
+   tone names (charcoal/primary/accent/amber) to match what they actually
+   render: default (the strong primary), muted (warm grey), parchment
+   (soft warm tan), outline (parchment with hairline ring).
+
+   The previous "amber" tone was misleading — it never rendered amber. */
+.portal-seq {
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+.portal-seq[data-tone="default"] {
+  background: var(--color-primary);
+  color: #fff;
+}
+.portal-seq[data-tone="muted"] {
+  background: var(--color-muted);
+  color: #fff;
+}
+.portal-seq[data-tone="parchment"] {
+  background: var(--color-border-subtle);
+  color: var(--color-text);
+}
+.portal-seq[data-tone="outline"] {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+  box-shadow: inset 0 0 0 1px var(--color-border-subtle);
+}
+
+/* --- Stat ---
+   Compact stat block (big number + small label). Used in the "This week"
+   summary on the Today screen and on the completion summary. Tone is
+   advisory — defaults to primary text. */
+.portal-stat {
+  display: block;
+}
+.portal-stat__big {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 1.4rem;
+  color: var(--color-charcoal);
+}
+.portal-stat__label {
+  font-size: 0.82rem;
+  color: var(--color-text);
+}
+.portal-stat[data-tone="primary"] .portal-stat__big {
+  color: var(--color-primary);
+}
+.portal-stat[data-tone="accent"] .portal-stat__big {
+  color: var(--color-accent);
+}
+.portal-stat[data-tone="muted"] .portal-stat__big {
+  color: var(--color-text-light);
+}
+
+/* --- Empty state ---
+   Card-shaped empty / placeholder. Solid border by default; .is-rest-day
+   modifier swaps to a dashed border so "rest day" reads as intentional
+   absence rather than a missing-data error. */
+.portal-empty {
+  margin: 0 16px 16px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-card);
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--color-text-light);
+}
+.portal-empty.is-rest-day {
+  border-style: dashed;
+}
+.portal-empty__title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-charcoal);
+  margin-bottom: 4px;
+}
+.portal-empty__body {
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+/* --- Bottom nav ---
+   Sticky thumb-zone navigation. Column count is set per-instance via inline
+   style (the nav has 5 or 6 items depending on whether Book is shown).
+   Safe-area padding handles iPhone home indicator. */
+.portal-bottom-nav {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--color-card);
+  border-top: 1px solid var(--color-border-hairline);
+  padding-bottom: env(safe-area-inset-bottom, 14px);
+  display: grid;
+  z-index: 10;
+}
+.portal-bottom-nav__item {
+  position: relative;
+  padding: 10px 4px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-decoration: none;
+  color: var(--color-muted);
+  transition: color var(--motion-fast) var(--ease);
+}
+.portal-bottom-nav__item.is-active {
+  color: var(--color-primary);
+}
+.portal-bottom-nav__item-label {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 500;
+}
+.portal-bottom-nav__item.is-active .portal-bottom-nav__item-label {
+  font-weight: 700;
+}
+
+/* --- Shell ---
+   Outer wrapper used once by src/app/portal/layout.tsx. Centres a 480px
+   column on desktop with a soft ambient shadow; full-bleed on mobile.
+   The cool grey-green #e8ece9 is the only place this colour appears in
+   the app (the "outside the centred portal" surface on desktop preview)
+   so it lives here rather than as a token. */
+.portal-shell {
+  background: #e8ece9;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+}
+.portal-shell__column {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100vh;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  /* Ambient column shadow — only visible on desktop where the column is
+     narrower than the viewport. Not part of the .portal-card vocabulary. */
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.04);
+}
+
+/* --- Framing block ---
+   Italic clinician's-notepad block used by reports → DataView to render
+   the EP's framing text above each test card. Quiet by design (per brief
+   §6.4 voice rules); the accent-green left border is the only colour. */
+.portal-framing-block {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--color-surface);
+  border-left: 2px solid var(--color-accent);
+  border-radius: 6px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  font-style: italic;
+}
+
+/* --- Tab pill ---
+   Mobile tab strip — used by ReportsTabs. Pill-shaped, charcoal-fill
+   active, surface-fill inactive. Same posture as staff .chip but tuned
+   for tabs (display font, tighter letter-spacing, larger touch). */
+.portal-tab {
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-muted);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  transition: background var(--motion-fast) var(--ease);
+}
+.portal-tab.is-active {
+  background: var(--color-charcoal);
+  border-color: var(--color-charcoal);
+  color: #fff;
+}
