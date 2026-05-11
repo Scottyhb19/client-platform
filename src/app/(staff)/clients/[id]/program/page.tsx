@@ -14,7 +14,6 @@ import type {
   ProgramSummary,
   ProgramDayWithExercises,
   ProgramExerciseWithMeta,
-  CompletionSummary,
 } from './_components/MonthCalendar'
 import { ProgramToolbar } from './_components/ProgramToolbar'
 import { CalendarPanelToggle } from './_components/CalendarPanelToggle'
@@ -93,10 +92,6 @@ export default async function ClientProgramPage({
     }))
 
   let days: ProgramDayWithExercises[] = []
-  // Phase D — most-recent completion per program_day_id. Empty when no
-  // programs / no days / no completions. Populated below alongside the
-  // program_exercises bulk load so the calendar paints in one pass.
-  let completionsByDayId = new Map<string, CompletionSummary>()
 
   if (programs.length > 0) {
     const programIds = programs.map((p) => p.id)
@@ -152,80 +147,6 @@ export default async function ClientProgramPage({
           exercise: e.exercise,
         })
         exercisesByDayId.set(e.program_day_id, list)
-      }
-
-      // Phase D — completed sessions for these program days. Staff RLS
-      // grants direct SELECT on sessions/exercise_logs/set_logs in own
-      // org, so no SECURITY DEFINER RPC needed. We pull every completed
-      // session ordered newest-first and keep only the most recent per
-      // program_day_id in JS; resume/repeat completions surface later
-      // if the EP asks.
-      //
-      // The embed pulls set_logs.rpe (not weight or reps) since the
-      // popover only needs set_count + avg per-set RPE. The deleted_at
-      // filters on the embedded rows are applied by RLS automatically
-      // — see RLS migration §5.
-      const { data: sessionsRaw, error: sessionsErr } = await supabase
-        .from('sessions')
-        .select(
-          `id, program_day_id, started_at, completed_at, duration_minutes,
-           session_rpe, feedback,
-           exercise_logs(
-             id,
-             set_logs(rpe)
-           )`,
-        )
-        .eq('client_id', id)
-        .in('program_day_id', dayIds)
-        .not('completed_at', 'is', null)
-        .is('deleted_at', null)
-        .order('completed_at', { ascending: false })
-
-      if (sessionsErr)
-        throw new Error(`Load session completions: ${sessionsErr.message}`)
-
-      type SessionRow = {
-        id: string
-        program_day_id: string | null
-        started_at: string
-        completed_at: string
-        duration_minutes: number | null
-        session_rpe: number | null
-        feedback: string | null
-        exercise_logs:
-          | Array<{ id: string; set_logs: Array<{ rpe: number | null }> | null }>
-          | null
-      }
-
-      for (const row of (sessionsRaw ?? []) as SessionRow[]) {
-        if (!row.program_day_id) continue
-        // Already have a newer completion for this day — skip.
-        if (completionsByDayId.has(row.program_day_id)) continue
-
-        let setCount = 0
-        let rpeSum = 0
-        let rpeCount = 0
-        for (const el of row.exercise_logs ?? []) {
-          for (const sl of el.set_logs ?? []) {
-            setCount += 1
-            if (sl.rpe !== null) {
-              rpeSum += sl.rpe
-              rpeCount += 1
-            }
-          }
-        }
-
-        completionsByDayId.set(row.program_day_id, {
-          id: row.id,
-          program_day_id: row.program_day_id,
-          started_at: row.started_at,
-          completed_at: row.completed_at,
-          duration_minutes: row.duration_minutes,
-          session_rpe: row.session_rpe,
-          feedback: row.feedback,
-          set_count: setCount,
-          avg_rpe: rpeCount > 0 ? rpeSum / rpeCount : null,
-        })
       }
     }
 
@@ -489,7 +410,6 @@ export default async function ClientProgramPage({
             programs={programs}
             days={days}
             todayIso={todayIso}
-            completionsByDayId={completionsByDayId}
             compactPopover={panelOpen}
           />
         )}

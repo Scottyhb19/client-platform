@@ -7,6 +7,7 @@ import {
   ClientProfile,
   type ProfileAppointment,
   type ProfileClient,
+  type ProfileCompletion,
   type ProfileCondition,
   type ProfileNote,
   type ProfileNoteTemplate,
@@ -65,6 +66,7 @@ export default async function ClientProfilePage({
     { data: appointmentRows },
     { data: reportRows },
     { data: fileRows, error: filesErr },
+    { data: completionsRaw, error: completionsErr },
     testCatalog,
     testBatteries,
     lastUsedBattery,
@@ -155,6 +157,26 @@ export default async function ClientProfilePage({
         data: ClientFile[] | null
         error: { message: string } | null
       }>,
+    // Phase D — most recent 10 completed sessions for this client. Feeds
+    // the Program tab's right-side CompletionsPanel. Staff RLS grants
+    // direct SELECT on sessions/exercise_logs/set_logs in own org, so
+    // no SECURITY DEFINER RPC needed. The program_day embed pulls
+    // day_label + scheduled_date so each entry can render "Day 1 · Sat
+    // 10 May" without a second lookup. Sessions with program_day_id
+    // NULL (orphan from soft-deleted parent) get a defaulted label.
+    supabase
+      .from('sessions')
+      .select(
+        `id, program_day_id, started_at, completed_at, duration_minutes,
+         session_rpe, feedback,
+         program_day:program_days(day_label, scheduled_date),
+         exercise_logs(id, set_logs(rpe))`,
+      )
+      .eq('client_id', id)
+      .not('completed_at', 'is', null)
+      .is('deleted_at', null)
+      .order('completed_at', { ascending: false })
+      .limit(10),
     // Testing-module data for the Reports tab + capture modal.
     loadCatalog(supabase, organizationId),
     loadActiveBatteries(supabase, organizationId),
@@ -167,6 +189,8 @@ export default async function ClientProfilePage({
   if (conditionsErr)
     throw new Error(`Load conditions: ${conditionsErr.message}`)
   if (notesErr) throw new Error(`Load notes: ${notesErr.message}`)
+  if (completionsErr)
+    throw new Error(`Load completions: ${completionsErr.message}`)
   // The client_files table is created by migration 20260428100000. Until
   // that migration is applied, the query errors out — we treat the
   // not-yet-migrated case as "show empty Files tab" rather than crashing
@@ -297,12 +321,61 @@ export default async function ClientProfilePage({
 
   const files: ClientFile[] = (fileRows ?? []) as ClientFile[]
 
+  // Phase D — fold per-session set_count + avg per-set RPE in JS rather
+  // than via PostgREST aggregate (which is awkward for the avg-of-rpe
+  // case). Each row's exercise_logs[].set_logs[] is walked once.
+  type CompletionsRow = {
+    id: string
+    program_day_id: string | null
+    started_at: string
+    completed_at: string
+    duration_minutes: number | null
+    session_rpe: number | null
+    feedback: string | null
+    program_day: { day_label: string; scheduled_date: string } | null
+    exercise_logs:
+      | Array<{ id: string; set_logs: Array<{ rpe: number | null }> | null }>
+      | null
+  }
+  const completions: ProfileCompletion[] = (
+    (completionsRaw ?? []) as unknown as CompletionsRow[]
+  ).map((row) => {
+    let setCount = 0
+    let rpeSum = 0
+    let rpeCount = 0
+    for (const el of row.exercise_logs ?? []) {
+      for (const sl of el.set_logs ?? []) {
+        setCount += 1
+        if (sl.rpe !== null) {
+          rpeSum += sl.rpe
+          rpeCount += 1
+        }
+      }
+    }
+    return {
+      id: row.id,
+      // program_day is null when the parent program_day was soft-deleted
+      // — the session FK is ON DELETE SET NULL. Show a defaulted label
+      // rather than failing the row.
+      day_label: row.program_day?.day_label ?? 'Ad-hoc',
+      scheduled_date: row.program_day?.scheduled_date ?? null,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      duration_minutes: row.duration_minutes,
+      session_rpe: row.session_rpe,
+      feedback: row.feedback,
+      set_count: setCount,
+      avg_rpe: rpeCount > 0 ? rpeSum / rpeCount : null,
+    }
+  })
+
   return (
     <ClientProfile
       client={profileClient}
       conditions={(conditions ?? []) as ProfileCondition[]}
       notes={profileNotes}
       program={programSummary}
+      completions={completions}
       statusLabel={statusLabel}
       statusKind={statusKind}
       noteTemplates={noteTemplates}

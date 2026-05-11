@@ -70,30 +70,11 @@ export interface ProgramDayWithExercises {
   exercises: ProgramExerciseWithMeta[]
 }
 
-// Phase D — captured by the portal Logger's CompletePrompt, displayed
-// here on the staff side. Most recent completion per program_day_id;
-// resume/repeat completions for the same day get the older row hidden.
-export interface CompletionSummary {
-  id: string
-  program_day_id: string
-  started_at: string
-  completed_at: string
-  duration_minutes: number | null
-  session_rpe: number | null     // 1-10 or NULL (client skipped)
-  feedback: string | null
-  set_count: number
-  avg_rpe: number | null         // avg of set_logs.rpe (per-set RPE)
-}
-
 interface MonthCalendarProps {
   clientId: string
   programs: ProgramSummary[]
   days: ProgramDayWithExercises[]
   todayIso: string
-  // Phase D — keyed by program_day_id. Days without a completion are
-  // simply absent from the map; future days don't render a completion
-  // section, past days render a quiet "Not yet completed" empty state.
-  completionsByDayId: Map<string, CompletionSummary>
   // When true (panel open / cells narrower), the day popover stacks
   // its header — icons row on top, Day label beneath — to keep
   // everything inside the cell.
@@ -159,7 +140,6 @@ export function MonthCalendar({
   programs,
   days,
   todayIso,
-  completionsByDayId,
   compactPopover = false,
 }: MonthCalendarProps) {
   const router = useRouter()
@@ -563,7 +543,6 @@ export function MonthCalendar({
         daysByDate={daysByDate}
         programs={programs}
         programsById={programsById}
-        completionsByDayId={completionsByDayId}
         clientId={clientId}
         openCell={openCell}
         mode={mode}
@@ -672,7 +651,6 @@ interface MonthGridProps {
   daysByDate: Map<string, ProgramDayWithExercises>
   programs: ProgramSummary[]
   programsById: Map<string, ProgramSummary>
-  completionsByDayId: Map<string, CompletionSummary>
   clientId: string
   openCell:
     | { kind: 'day'; id: string }
@@ -697,7 +675,6 @@ function MonthGrid({
   daysByDate,
   programs,
   programsById,
-  completionsByDayId,
   clientId,
   openCell,
   mode,
@@ -859,9 +836,6 @@ function MonthGrid({
               ) : (
                 week.cells.map((c, i) => {
                   const day = c.inMonth ? daysByDate.get(c.iso) ?? null : null
-                  const completion = day
-                    ? completionsByDayId.get(day.id) ?? null
-                    : null
                   const isDayOpen =
                     openCell?.kind === 'day' && day?.id === openCell.id
                   const isEmptyOpen =
@@ -889,9 +863,7 @@ function MonthGrid({
                       key={c.iso}
                       cell={c}
                       today={today}
-                      todayIso={todayIso}
                       day={day}
-                      completion={completion}
                       isDayOpen={isDayOpen}
                       isEmptyOpen={isEmptyOpen}
                       onClick={() => onCellClick(c.iso, day)}
@@ -941,10 +913,7 @@ function MonthGrid({
 interface DateCellProps {
   cell: { iso: string; date: number; inMonth: boolean }
   today: Date
-  todayIso: string
   day: ProgramDayWithExercises | null
-  // Phase D — most recent completion for this day, if any.
-  completion: CompletionSummary | null
   isDayOpen: boolean
   isEmptyOpen: boolean
   onClick: () => void
@@ -967,9 +936,7 @@ interface DateCellProps {
 function DateCell({
   cell,
   today,
-  todayIso,
   day,
-  completion,
   isDayOpen,
   isEmptyOpen,
   onClick,
@@ -1090,35 +1057,11 @@ function DateCell({
         )}
       </button>
 
-      {/* Phase D — completion marker. 6px accent-green dot in the
-          cell's top-right when the client has logged a completion for
-          this program_day. Mirrors the portal's `.has-session::after`
-          pattern but signals "completed" rather than "programmed".
-          pointer-events: none so the underlying button still takes the
-          click; aria-hidden because the day-popover surfaces the data. */}
-      {completion && (
-        <span
-          aria-hidden
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: 'var(--color-accent)',
-            pointerEvents: 'none',
-          }}
-        />
-      )}
-
       {isDayOpen && !inCopyPick && (
         <DaySummaryPopover
           day={day}
           program={program}
           clientId={clientId}
-          completion={completion}
-          todayIso={todayIso}
           onClose={onClose}
           onCopy={onCopy}
           onRepeat={onRepeat}
@@ -1142,11 +1085,6 @@ interface DaySummaryPopoverProps {
   day: ProgramDayWithExercises
   program: ProgramSummary | null
   clientId: string
-  // Phase D — most recent completion for this day if any. NULL means
-  // "no completion yet"; the section renders an empty state when the
-  // day is in the past, nothing when it's still ahead.
-  completion: CompletionSummary | null
-  todayIso: string
   onClose: () => void
   onCopy: () => void
   onRepeat: () => void
@@ -1162,8 +1100,6 @@ function DaySummaryPopover({
   day,
   program,
   clientId,
-  completion,
-  todayIso,
   onClose,
   onCopy,
   onRepeat,
@@ -1197,11 +1133,6 @@ function DaySummaryPopover({
     }
   }, [onClose])
 
-  // Phase D — popover widens to accommodate completion content when
-  // present. Without completion data, stays cell-width (the existing
-  // prescribed-only behaviour). Empty state ("Not yet completed") is a
-  // single quiet line, doesn't need extra width either.
-  const widenForCompletion = completion !== null
   return (
     <div
       ref={popoverRef}
@@ -1216,11 +1147,6 @@ function DaySummaryPopover({
         // stays exactly the cell's width and doesn't overflow.
         ...(anchorRight ? { right: 0 } : { left: 0 }),
         width: '100%',
-        // When there's completion data to display, pull the popover out
-        // to a minimum readable width. min-width wins over width when
-        // the cell is narrower than ~320px. 92vw caps the small-viewport
-        // case so it doesn't spill off-screen.
-        minWidth: widenForCompletion ? 'min(320px, 92vw)' : undefined,
         boxSizing: 'border-box',
         background: 'var(--color-card)',
         border: '1px solid var(--color-border-subtle)',
@@ -1387,179 +1313,8 @@ function DaySummaryPopover({
         </ol>
       )}
 
-      <CompletionSection
-        scheduledDate={day.scheduled_date}
-        completion={completion}
-        todayIso={todayIso}
-      />
     </div>
   )
-}
-
-
-// ============================================================================
-// CompletionSection — Phase D. Renders below the exercise list in the
-// DaySummaryPopover. Three states:
-//   1. `completion` set → full summary (date eyebrow, metric chips,
-//      feedback block). Popover widens via DaySummaryPopover's minWidth.
-//   2. `completion` null AND scheduledDate <= today → muted "Not yet
-//      completed" single line.
-//   3. `completion` null AND scheduledDate > today → nothing (future
-//      days don't need an empty state — the EP knows it hasn't happened).
-// ============================================================================
-
-interface CompletionSectionProps {
-  scheduledDate: string
-  completion: CompletionSummary | null
-  todayIso: string
-}
-
-function CompletionSection({
-  scheduledDate,
-  completion,
-  todayIso,
-}: CompletionSectionProps) {
-  if (!completion) {
-    if (scheduledDate > todayIso) return null
-    return (
-      <div
-        style={{
-          marginTop: 8,
-          paddingTop: 8,
-          borderTop: '1px solid var(--color-border-hairline)',
-          fontSize: '.7rem',
-          color: 'var(--color-muted)',
-        }}
-      >
-        Not yet completed
-      </div>
-    )
-  }
-
-  const completedDate = completion.completed_at.slice(0, 10)
-  return (
-    <div
-      style={{
-        marginTop: 8,
-        paddingTop: 8,
-        borderTop: '1px solid var(--color-border-hairline)',
-      }}
-    >
-      <div
-        className="eyebrow"
-        style={{ marginBottom: 6 }}
-      >
-        Last completion · {formatLongDate(completedDate)}
-      </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 4,
-          marginBottom: completion.feedback ? 8 : 0,
-        }}
-      >
-        <CompletionMetric
-          label="Duration"
-          value={formatDuration(completion.duration_minutes)}
-        />
-        <CompletionMetric
-          label="Sets"
-          value={String(completion.set_count)}
-        />
-        <CompletionMetric
-          label="Avg per-set RPE"
-          value={
-            completion.avg_rpe !== null
-              ? completion.avg_rpe.toFixed(1)
-              : '—'
-          }
-        />
-        <CompletionMetric
-          label="Session RPE"
-          value={
-            completion.session_rpe !== null
-              ? String(completion.session_rpe)
-              : '—'
-          }
-        />
-      </div>
-      {completion.feedback && (
-        <div
-          style={{
-            fontSize: '.78rem',
-            color: 'var(--color-text)',
-            lineHeight: 1.45,
-            padding: '6px 8px',
-            background: 'var(--color-surface)',
-            borderRadius: 'var(--radius-input)',
-            // Italics — the client's voice, not the app's. Mirrors the
-            // way clinical notes render free-text "subjective" content.
-            fontStyle: 'italic',
-            overflowWrap: 'break-word',
-          }}
-        >
-          {completion.feedback}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function CompletionMetric({
-  label,
-  value,
-}: {
-  label: string
-  value: string
-}) {
-  return (
-    <div
-      style={{
-        background: 'var(--color-surface)',
-        borderRadius: 'var(--radius-input)',
-        padding: '4px 8px',
-      }}
-    >
-      <div
-        style={{
-          fontSize: '.58rem',
-          fontWeight: 600,
-          color: 'var(--color-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '.04em',
-          marginBottom: 1,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.86rem',
-          color: 'var(--color-charcoal)',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  )
-}
-
-/**
- * "42m", "1h 7m", "1h", "<1m" (very short test runs), or "—" when the
- * generated column came back NULL (incomplete session — shouldn't fire
- * since the loader filters `completed_at IS NOT NULL`, but defensive).
- */
-function formatDuration(minutes: number | null): string {
-  if (minutes === null) return '—'
-  if (minutes <= 0) return '<1m'
-  if (minutes < 60) return `${minutes}m`
-  const h = Math.floor(minutes / 60)
-  const m = minutes % 60
-  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 // ============================================================================

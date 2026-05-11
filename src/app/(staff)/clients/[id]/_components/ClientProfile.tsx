@@ -123,6 +123,24 @@ export type ProfileProgramSummary = {
   days_per_week: number
 }
 
+// Phase D — completed-session feed for the Program tab's right panel.
+// Newest-first, capped at 10 by the loader. `scheduled_date` is null
+// only when the parent program_day was soft-deleted (sessions.program_day_id
+// is ON DELETE SET NULL); the row keeps the completion data but loses the
+// "what was this for" context.
+export type ProfileCompletion = {
+  id: string
+  day_label: string
+  scheduled_date: string | null
+  started_at: string
+  completed_at: string
+  duration_minutes: number | null
+  session_rpe: number | null     // 1-10 or NULL (client skipped)
+  feedback: string | null
+  set_count: number
+  avg_rpe: number | null         // avg of set_logs.rpe (per-set RPE)
+}
+
 export type Tab =
   | 'details'
   | 'notes'
@@ -145,6 +163,9 @@ interface ClientProfileProps {
   conditions: ProfileCondition[]
   notes: ProfileNote[]
   program: ProfileProgramSummary | null
+  // Phase D — most recent 10 completed sessions for this client. Feeds
+  // the Program tab's right-side CompletionsPanel.
+  completions: ProfileCompletion[]
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
   noteTemplates: ProfileNoteTemplate[]
@@ -206,6 +227,7 @@ export function ClientProfile({
   conditions,
   notes,
   program,
+  completions,
   statusLabel,
   statusKind,
   noteTemplates,
@@ -255,7 +277,11 @@ export function ClientProfile({
           />
         )}
         {tab === 'program' && (
-          <ProgramTab clientId={client.id} program={program} />
+          <ProgramTab
+            clientId={client.id}
+            program={program}
+            completions={completions}
+          />
         )}
         {tab === 'reports' && (
           <ReportsTab
@@ -833,10 +859,15 @@ function DetailRow({
 function ProgramTab({
   clientId,
   program,
+  completions,
 }: {
   clientId: string
   program: ProfileProgramSummary | null
+  completions: ProfileCompletion[]
 }) {
+  // No active program — keep the existing empty-state full-width.
+  // The Recent completions panel would feel orphaned without a
+  // program above it, so collapse to single column.
   if (!program) {
     return (
       <Panel
@@ -904,45 +935,224 @@ function ProgramTab({
         : null
 
   return (
-    <Panel
-      title={`${program.name} · ${weeksLabel}${
-        currentLabel ? ` · ${currentLabel}` : ''
-      }`}
-      action={
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Link
-            href={`/clients/${clientId}/program/new`}
-            className="btn outline"
-            style={{ fontSize: '.78rem', padding: '6px 12px' }}
-          >
-            <Plus size={13} aria-hidden />
-            New training block
-          </Link>
-          <Link
-            href={`/clients/${clientId}/program`}
-            className="btn primary"
-            style={{ fontSize: '.78rem', padding: '6px 12px' }}
-          >
-            Open calendar
-          </Link>
-        </div>
-      }
+    <div
+      style={{
+        display: 'grid',
+        // Mirrors the Invoices tab's 2:1 split. Empty right column when
+        // there are zero completions still renders a panel with an empty
+        // state — keeps the layout stable as the client logs sessions.
+        gridTemplateColumns: '2fr 1fr',
+        gap: 22,
+        alignItems: 'start',
+      }}
     >
-      <div
-        style={{
-          padding: '16px 20px',
-          color: 'var(--color-text-light)',
-          fontSize: '.86rem',
-          lineHeight: 1.55,
-        }}
+      <Panel
+        title={`${program.name} · ${weeksLabel}${
+          currentLabel ? ` · ${currentLabel}` : ''
+        }`}
+        action={
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link
+              href={`/clients/${clientId}/program/new`}
+              className="btn outline"
+              style={{ fontSize: '.78rem', padding: '6px 12px' }}
+            >
+              <Plus size={13} aria-hidden />
+              New training block
+            </Link>
+            <Link
+              href={`/clients/${clientId}/program`}
+              className="btn primary"
+              style={{ fontSize: '.78rem', padding: '6px 12px' }}
+            >
+              Open calendar
+            </Link>
+          </div>
+        }
       >
-        {program.days_per_week} day split
-        {program.start_date && ` · started ${formatDate(program.start_date)}`}
-        . Open the calendar for the full week grid plus the day-by-day Session
-        Builder.
-      </div>
+        <div
+          style={{
+            padding: '16px 20px',
+            color: 'var(--color-text-light)',
+            fontSize: '.86rem',
+            lineHeight: 1.55,
+          }}
+        >
+          {program.days_per_week} day split
+          {program.start_date && ` · started ${formatDate(program.start_date)}`}
+          . Open the calendar for the full week grid plus the day-by-day Session
+          Builder.
+        </div>
+      </Panel>
+
+      <CompletionsPanel completions={completions} />
+    </div>
+  )
+}
+
+/* =========================================================================
+ * Phase D — Recent completions panel.
+ *
+ * Right-column companion to the Program panel. Shows up to 10 most recent
+ * completed sessions for this client, newest first. Each row carries the
+ * day_label, the scheduled date, an inline metric line (Duration · Sets ·
+ * Avg per-set RPE · Session RPE), and the client's feedback truncated to
+ * two lines (full text on hover via `title`).
+ *
+ * The panel renders even when there are zero completions — an empty-state
+ * line "No sessions completed yet" keeps the layout stable, and the right
+ * column doesn't collapse the moment the client logs their first session.
+ * ========================================================================= */
+
+function CompletionsPanel({
+  completions,
+}: {
+  completions: ProfileCompletion[]
+}) {
+  return (
+    <Panel title="Recent completions">
+      {completions.length === 0 ? (
+        <div
+          style={{
+            padding: '28px 18px',
+            textAlign: 'center',
+            color: 'var(--color-muted)',
+            fontSize: '.86rem',
+            lineHeight: 1.5,
+          }}
+        >
+          No sessions completed yet.
+        </div>
+      ) : (
+        <ul
+          style={{
+            listStyle: 'none',
+            margin: 0,
+            padding: 12,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            // Cap height to ~10 rows; vertical scroll kicks in beyond.
+            // The loader limits to 10 so scrolling is rare; the cap is
+            // defensive for taller-than-expected feedback text.
+            maxHeight: 480,
+            overflowY: 'auto',
+          }}
+        >
+          {completions.map((c) => (
+            <CompletionRow key={c.id} completion={c} />
+          ))}
+        </ul>
+      )}
     </Panel>
   )
+}
+
+function CompletionRow({ completion }: { completion: ProfileCompletion }) {
+  // Compose the inline metric line from whichever fields have data.
+  // "—" placeholders would be noisy in a horizontal list; we drop the
+  // missing ones instead and rely on order to convey what's present.
+  const parts: string[] = []
+  parts.push(formatCompletionDuration(completion.duration_minutes))
+  parts.push(
+    `${completion.set_count} ${completion.set_count === 1 ? 'set' : 'sets'}`,
+  )
+  if (completion.avg_rpe !== null) {
+    parts.push(`avg RPE ${completion.avg_rpe.toFixed(1)}`)
+  }
+  if (completion.session_rpe !== null) {
+    parts.push(`RPE ${completion.session_rpe}`)
+  }
+
+  // Date header. Prefer scheduled_date — that's the "what day was this
+  // for" date the EP recognises from the calendar. Fall back to
+  // completed_at when the parent program_day was soft-deleted (orphan).
+  const headerDate =
+    completion.scheduled_date ?? completion.completed_at.slice(0, 10)
+
+  return (
+    <li
+      style={{
+        padding: '10px 12px',
+        borderRadius: 'var(--radius-input)',
+        border: '1px solid var(--color-border-hairline)',
+        background: 'var(--color-card)',
+      }}
+    >
+      <div
+        className="eyebrow"
+        style={{ marginBottom: 4, fontSize: '.64rem' }}
+      >
+        {completion.day_label} · {formatCompletionDate(headerDate)}
+      </div>
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '.9rem',
+          color: 'var(--color-charcoal)',
+          fontVariantNumeric: 'tabular-nums',
+          lineHeight: 1.3,
+        }}
+      >
+        {parts.join(' · ')}
+      </div>
+      {completion.feedback && (
+        <div
+          // `title` surfaces the full text on hover when the
+          // line-clamp truncates. Italics differentiate the client's
+          // voice from system labels.
+          title={completion.feedback}
+          style={{
+            marginTop: 6,
+            fontSize: '.8rem',
+            color: 'var(--color-text)',
+            fontStyle: 'italic',
+            lineHeight: 1.4,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            overflowWrap: 'break-word',
+          }}
+        >
+          {completion.feedback}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/**
+ * "Sat 10 May" — Australian English short. Mirrors the program
+ * calendar's formatLongDate so a session's date renders the same way
+ * regardless of which surface you read it from.
+ */
+function formatCompletionDate(iso: string): string {
+  try {
+    const [y, m, d] = iso.split('-').map(Number)
+    const dt = new Date(y!, (m ?? 1) - 1, d ?? 1)
+    return new Intl.DateTimeFormat('en-AU', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    }).format(dt)
+  } catch {
+    return iso
+  }
+}
+
+/**
+ * "42m", "1h 7m", "1h", "<1m" (very short test runs), or "—" when the
+ * generated column came back NULL.
+ */
+function formatCompletionDuration(minutes: number | null): string {
+  if (minutes === null) return '—'
+  if (minutes <= 0) return '<1m'
+  if (minutes < 60) return `${minutes}m`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
 /* =========================================================================

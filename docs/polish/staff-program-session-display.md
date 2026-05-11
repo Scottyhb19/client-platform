@@ -4,7 +4,7 @@
 **Parent gap doc:** [`client-portal.md`](./client-portal.md) §0.1 sign-off row B1 (locked) and §4 Phase D row.
 **Parent item:** B1 — capture post-session feedback + session RPE on the portal, display on the staff side. Phase C (portal capture) shipped on master in commits 12fbb18, fbee16f, 4a0c2c1. This doc covers the staff-side display half.
 **Scope:** Query + UI pass only. No schema changes expected; the columns (`sessions.feedback`, `sessions.session_rpe`) already exist and Phase C is writing to them.
-**Status:** Gap document — awaiting sign-off on §3 decisions.
+**Status:** Implemented 2026-05-11. **First implementation lived in the calendar popover (commit `4e4fe1a`); reverted same day and re-landed on the client profile Program tab right panel after EP pushback on the calendar placement.** See §8 for the redirect log.
 
 ---
 
@@ -284,3 +284,50 @@ All new code uses `var(--color-*)` and `var(--radius-*)` tokens. The 6px complet
 Per [`client-portal.md`](./client-portal.md) §4: Phase **E** (PWA manifest icons) and Phase **G** (legacy reports clickable file_url) are the remaining client-portal items. Phase E is the smallest unit of work — two PNG icons + a manifest JSON edit. Phase G needs a schema column check then a clickable wrap. Phase **I** is the manual session-resume test pass that gates the whole client-portal section's close-out.
 
 If you'd rather move sections, the **CLAUDE.md** polish-pass order suggests the next module-level pass is auth & onboarding. Phase E + G + I close out the portal first if you want to lock that surface before touching auth.
+
+---
+
+## 8. Redirect log — 2026-05-11
+
+**What happened.** Phase D first landed (commit `4e4fe1a`) with the completion display inside the program calendar's `DaySummaryPopover` — per the recommendation chosen at §3 Q4 (a). When the EP verified, the answer was **"I do not want it in the calendar section, that is wrong and throws out how it should look on that screen. It should be on the right hand side in that empty space in the programs section of the client ID."**
+
+The first design call had read the brief's "program day list" wording too narrowly and assumed *somewhere on the program-calendar surface* was the right place. Wrong assumption. The right place is the **client profile** at `/clients/[id]?tab=program` — the existing Program tab there is currently a single full-width Panel with no right column. That empty space is where the completion feed belongs. The calendar should stay pristine — strictly prescribed-data + scheduling actions, no actual-data overlay.
+
+**Why the calendar was wrong, in retrospect.**
+
+1. The calendar's job is "what is *programmed*". Mixing in "what was *completed*" muddied two concerns on one surface.
+2. The popover was already a controlled-state singleton — only one cell open at a time. Adding completion data to it meant the EP had to click each cell to see *any* completion data. The feed on the profile tab shows the last 10 in one glance.
+3. The cell-width-vs-widened popover dance was an aesthetic compromise, not a design.
+4. The green dot was a cheap signal but still added accent-green to a surface the design system reserves for primary CTAs + completion-state checkmarks. Calendar accent-green for "client did this" diluted the signal.
+
+**Re-implementation (2026-05-11, same chat).**
+
+| File | Change |
+|---|---|
+| [`src/app/(staff)/clients/[id]/program/_components/MonthCalendar.tsx`](../../src/app/(staff)/clients/[id]/program/_components/MonthCalendar.tsx) | Reverted entirely. No more `CompletionSummary` export, no green dot, no popover widening, no CompletionSection. Calendar is back to its original shape. |
+| [`src/app/(staff)/clients/[id]/program/page.tsx`](../../src/app/(staff)/clients/[id]/program/page.tsx) | Reverted the sessions loader. Calendar page now only fetches programs + days + exercises, same as pre-Phase-D. |
+| [`src/app/(staff)/clients/[id]/page.tsx`](../../src/app/(staff)/clients/[id]/page.tsx) | New sessions loader added to the existing `Promise.all`. Embeds `program_day(day_label, scheduled_date)` + `exercise_logs(set_logs(rpe))` for set_count + avg-rpe math. Limited to 10 newest-first per Q1+Q2 of the redirect sign-off. Builds `ProfileCompletion[]` and passes to `ClientProfile`. |
+| [`src/app/(staff)/clients/[id]/_components/ClientProfile.tsx`](../../src/app/(staff)/clients/[id]/_components/ClientProfile.tsx) | New `ProfileCompletion` type exported. `ClientProfileProps.completions` added. `ProgramTab` rewritten to render as a `2fr 1fr` grid (mirrors Invoices tab pattern) — program summary on the left, `CompletionsPanel` on the right. `CompletionsPanel` + `CompletionRow` + `formatCompletionDate` + `formatCompletionDuration` added inline. Empty state ("No sessions completed yet") renders when the list is empty; layout stays stable. |
+
+**Redirect sign-off** (2026-05-11 chat):
+
+| Q | Question | Answer |
+|---|---|---|
+| 1 | How many completions on the right panel? | 10 with internal scroll if more |
+| 2 | Sort order | Newest first |
+| 3 | Keep or remove the calendar's green completion dot? | Remove — keep the calendar pristine |
+
+**Acceptance bar — re-cut.**
+
+1. Open `/clients/0ff9c22b-57d1-4d13-afa2-73dc78986746?tab=program`.
+2. Left panel: existing program summary for "Scott Official Test Block" — unchanged.
+3. Right panel: **"Recent completions"** with up to 10 entries newest-first. Scott has three completions on the live DB (`b1d9d9c3` from 11 May with feedback "Fantastic for a test run" + RPE 8, plus two from 10 May with NULL feedback/RPE). All three should render.
+4. The 11 May entry shows the feedback in italics; the 10 May entries show only the metric line. Each row reads "Testing · Sun 10 May" (or similar) on top, "<1m · 0 sets · RPE 8" beneath (for the populated row), feedback below.
+5. Open `/clients/0ff9c22b-57d1-4d13-afa2-73dc78986746/program` (the calendar). No green dots. No completion section in any popover. Looks exactly like it did before Phase D.
+6. `npm run build` passes from inside the worktree. Master and worktree both report 216 token violations under `(staff)/clients/` — zero net new.
+
+**Cost of the wrong call.** ~2-3 hours of code that got reverted. Net of the redirect: the new shape is simpler (fewer props threaded through MonthCalendar, no green-dot styling, no popover-widening logic) and reads better on the page (10 sessions at a glance vs one per click). Lesson saved to a memory note (see §8.1).
+
+### 8.1 Memory note
+
+A feedback memory captures the rule the EP set: completion-state data lives on the client profile, not the program calendar. The calendar is for prescription + scheduling only.
