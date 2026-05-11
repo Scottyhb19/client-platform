@@ -1202,6 +1202,50 @@ body {
   line-height: 1.5;
 }
 
+/* --- RPE picker ---
+   1-10 horizontal scale used in the post-session feedback prompt. Buttons
+   share width via flex:1 — at iPhone 12 viewport (390px wide) inside the
+   completion prompt's default page padding, each cell lands ~32px wide.
+   Touch ergonomics ride on the 44px height + finger contact area; the
+   client is RPE-fluent by the time they're picking a session score. Selected
+   state is charcoal-fill — not accent green, which is reserved for
+   completion states (and would collide with the green check icon above). */
+.portal-rpe-picker {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+.portal-rpe-picker__btn {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-input);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--color-charcoal);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease),
+    color var(--motion-fast) var(--ease),
+    border-color var(--motion-fast) var(--ease);
+}
+.portal-rpe-picker__btn:hover {
+  border-color: var(--color-border);
+}
+.portal-rpe-picker__btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.portal-rpe-picker__btn.is-selected {
+  background: var(--color-charcoal);
+  border-color: var(--color-charcoal);
+  color: var(--color-card);
+}
+
 /* --- Bottom nav ---
    Sticky thumb-zone navigation. Column count is set per-instance via inline
    style (the nav has 5 or 6 items depending on whether Book is shown).

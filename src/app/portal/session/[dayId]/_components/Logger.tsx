@@ -651,22 +651,12 @@ function CompletePrompt({
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '2rem',
-          margin: '6px 0 14px',
+          margin: '6px 0 24px',
           letterSpacing: '-.01em',
         }}
       >
         All the work is in.
       </h2>
-      <p
-        style={{
-          fontSize: '.92rem',
-          color: 'var(--color-text-light)',
-          lineHeight: 1.5,
-          marginBottom: 24,
-        }}
-      >
-        One step left — tap below to wrap up and review the session.
-      </p>
 
       {/* Optional session RPE — 1-10 chips. Null = skipped. The RPC accepts
           NULL since 20260510130100_client_complete_session_v2. */}
@@ -677,28 +667,25 @@ function CompletePrompt({
         >
           Session RPE · optional
         </div>
-        <div style={{ display: 'flex', gap: 4 }}>
+        <div
+          className="portal-rpe-picker"
+          role="radiogroup"
+          aria-label="Session RPE, 1 to 10"
+        >
           {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => {
             const sel = sessionRpe === n
             return (
               <button
                 key={n}
                 type="button"
-                aria-pressed={sel}
+                role="radio"
+                aria-checked={sel}
                 onClick={() => setSessionRpe(sel ? null : n)}
-                style={{
-                  flex: 1,
-                  height: 40,
-                  border: '1px solid var(--color-border-subtle)',
-                  background: sel ? 'var(--color-accent)' : 'var(--color-card)',
-                  color: sel ? '#fff' : 'var(--color-charcoal)',
-                  borderRadius: 7,
-                  fontFamily: 'var(--font-display)',
-                  fontWeight: 700,
-                  fontSize: '0.92rem',
-                  padding: 0,
-                  cursor: 'pointer',
-                }}
+                className={
+                  sel
+                    ? 'portal-rpe-picker__btn is-selected'
+                    : 'portal-rpe-picker__btn'
+                }
               >
                 {n}
               </button>
@@ -708,7 +695,10 @@ function CompletePrompt({
       </div>
 
       {/* Optional free-text feedback. Empty string normalises to NULL on
-          submit so blank submissions don't store '' in sessions.feedback. */}
+          submit so blank submissions don't store '' in sessions.feedback.
+          maxLength is a hard cap; the counter only surfaces once the client
+          is approaching it (>400 chars) so the field stays quiet in the
+          common short-note case. */}
       <div style={{ marginBottom: 24, textAlign: 'left' }}>
         <div
           className="portal-eyebrow"
@@ -719,12 +709,13 @@ function CompletePrompt({
         <textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="Anything stand out?"
+          placeholder="How did that feel? Anything to flag for your EP?"
           rows={3}
+          maxLength={500}
           style={{
             width: '100%',
             border: '1px solid var(--color-border-subtle)',
-            borderRadius: 7,
+            borderRadius: 'var(--radius-input)',
             background: 'var(--color-surface)',
             padding: '10px 12px',
             fontFamily: 'inherit',
@@ -737,6 +728,18 @@ function CompletePrompt({
             boxSizing: 'border-box',
           }}
         />
+        {feedback.length > 400 && (
+          <div
+            style={{
+              fontSize: '.7rem',
+              color: 'var(--color-muted)',
+              textAlign: 'right',
+              marginTop: 4,
+            }}
+          >
+            {feedback.length} / 500
+          </div>
+        )}
       </div>
 
       <button
