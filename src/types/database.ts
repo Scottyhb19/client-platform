@@ -3456,6 +3456,10 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      soft_delete_availability_rule: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       soft_delete_client: { Args: { p_id: string }; Returns: undefined }
       soft_delete_client_publication: {
         Args: { p_id: string }

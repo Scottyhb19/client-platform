@@ -203,6 +203,29 @@ export default async function SettingsPage() {
       </Section>
 
       <Section
+        title="Practitioner hours"
+        desc="When you're available for client bookings. Edit the weekly grid and one-off exceptions."
+      >
+        <div
+          style={{
+            padding: '14px 22px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 14,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ fontSize: '.85rem', color: 'var(--color-text-light)' }}>
+            Author your weekly schedule and one-off exceptions.
+          </div>
+          <Link href="/settings/availability" className="btn outline">
+            Manage hours
+          </Link>
+        </div>
+      </Section>
+
+      <Section
         title="Tests"
         desc="Per-metric defaults, custom tests, disabled tests, and saved batteries. Schema overrides survive upgrades."
       >
