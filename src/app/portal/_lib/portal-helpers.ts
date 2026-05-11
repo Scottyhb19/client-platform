@@ -82,11 +82,20 @@ export type WeekDot = {
   date: Date
   dayLabel: string | null
   state: 'rest' | 'done' | 'today' | 'upcoming'
+  // program_day_id when this date carries a published programmed day for
+  // the client. NULL on rest days. Used by TodayScreen to render the cell
+  // as a navigation Link to /portal/session/<dayId> instead of an inert
+  // button — without it the week strip is decorative and the only entry
+  // into a non-today session is via a direct URL.
+  dayId: string | null
 }
 
 export function buildWeekDots(
   weekStart: Date,
-  programmedByWeekday: Map<number, { dayLabel: string | null; done: boolean }>,
+  programmedByWeekday: Map<
+    number,
+    { dayLabel: string | null; done: boolean; dayId: string | null }
+  >,
 ): WeekDot[] {
   const out: WeekDot[] = []
   const today = new Date()
@@ -102,7 +111,12 @@ export function buildWeekDots(
       else if (isToday) state = 'today'
       else state = 'upcoming'
     }
-    out.push({ date, dayLabel: entry?.dayLabel ?? null, state })
+    out.push({
+      date,
+      dayLabel: entry?.dayLabel ?? null,
+      state,
+      dayId: entry?.dayId ?? null,
+    })
   }
   return out
 }

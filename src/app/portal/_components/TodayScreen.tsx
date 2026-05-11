@@ -151,17 +151,16 @@ export function TodayScreen({
         </div>
       </div>
 
-      {/* Week strip */}
+      {/* Week strip — cells with a programmed (published) day for the
+          caller render as Links into the Logger for that day; rest days
+          stay as inert buttons that update the local selection highlight
+          (the existing pre-navigation idiom). */}
       <div className="portal-week-strip">
         {weekDots.map((d, i) => {
           const sel = i === selectedIdx
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setSelectedIdx(i)}
-              className={`portal-day-cell${sel ? ' is-selected' : ''}`}
-            >
+          const cls = `portal-day-cell${sel ? ' is-selected' : ''}`
+          const inner = (
+            <>
               <span className="portal-day-cell__weekday">
                 {weekdayShort(d.date)}
               </span>
@@ -177,6 +176,24 @@ export function TodayScreen({
               {d.state !== 'rest' && (
                 <span className="portal-day-cell__dot" />
               )}
+            </>
+          )
+          return d.dayId ? (
+            <Link
+              key={i}
+              href={`/portal/session/${d.dayId}`}
+              className={cls}
+            >
+              {inner}
+            </Link>
+          ) : (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setSelectedIdx(i)}
+              className={cls}
+            >
+              {inner}
             </button>
           )
         })}

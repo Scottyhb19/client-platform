@@ -1063,6 +1063,11 @@ body {
   gap: 3px;
   min-height: 68px;
   cursor: pointer;
+  /* Suppress link styling when the cell renders as an <a> (programmed
+     days are Links into the Logger; rest days stay <button>). Child spans
+     carry their own colour, so the parent colour only matters as a base. */
+  text-decoration: none;
+  color: var(--color-charcoal);
   transition:
     background var(--motion-fast) var(--ease),
     border-color var(--motion-fast) var(--ease);

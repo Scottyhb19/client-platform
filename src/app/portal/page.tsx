@@ -93,16 +93,19 @@ export default async function PortalTodayPage({
   }
 
   // Map weekday → programmed day for the week strip. Derive the
-  // weekday locally from scheduled_date.
+  // weekday locally from scheduled_date. dayId is carried so the strip
+  // cells can render as navigation Links into /portal/session/<dayId>
+  // for any programmed day, not just today.
   const programmedByWeekday = new Map<
     number,
-    { dayLabel: string | null; done: boolean }
+    { dayLabel: string | null; done: boolean; dayId: string | null }
   >()
   for (const d of weekDays) {
     const dow = parseIso(d.scheduled_date).getDay()
     programmedByWeekday.set(dow, {
       dayLabel: d.day_label,
       done: false, // "done" wires in once sessions table is populated
+      dayId: d.program_day_id,
     })
   }
 
