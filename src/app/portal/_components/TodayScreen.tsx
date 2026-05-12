@@ -30,6 +30,11 @@ export type TodaySession = {
   dayTitle: string // e.g. "Day C — Full Body"
   metaLine: string // e.g. "6 exercises · Block 2, Wk 3"
   exercises: TodaySessionExercise[]
+  // True when today's program_day already has a completed (non-deleted)
+  // session. Toggles the CTA to "Session complete · view summary"
+  // pointing at /complete instead of "Begin session" pointing at the
+  // live Logger — and pairs with the v3 client_start_session backstop.
+  isCompleted: boolean
 }
 
 
@@ -295,12 +300,21 @@ export function TodayScreen({
             )}
           </div>
           <div style={{ padding: '12px 16px 16px' }}>
-            <Link
-              href={`/portal/session/${session.dayId}`}
-              className="portal-btn-primary"
-            >
-              Begin session
-            </Link>
+            {session.isCompleted ? (
+              <Link
+                href={`/portal/session/${session.dayId}/complete`}
+                className="portal-btn-primary"
+              >
+                Session complete · view summary
+              </Link>
+            ) : (
+              <Link
+                href={`/portal/session/${session.dayId}`}
+                className="portal-btn-primary"
+              >
+                Begin session
+              </Link>
+            )}
           </div>
         </div>
       ) : (

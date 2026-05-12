@@ -102,7 +102,7 @@ export function buildWeekDots(
   today.setHours(0, 0, 0, 0)
   for (let i = 0; i < 7; i++) {
     const date = addDays(weekStart, i)
-    const entry = programmedByWeekday.get((date.getDay() + 6) % 7)
+    const entry = programmedByWeekday.get(weekdayIndex(date))
     const isToday = sameCalendarDay(date, today)
     const isPast = date.getTime() < today.getTime()
     let state: WeekDot['state'] = 'rest'

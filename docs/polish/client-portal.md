@@ -136,7 +136,7 @@ Phases run sequentially in this chat unless noted otherwise. Each phase closes s
 | **F** | C1 (handed off — α full build) | **Handed off — see [`client-portal-handoffs.md`](./client-portal-handoffs.md).** Runs in parallel chat after Phase A lands. Full booking flow per locked decisions: instant-confirm, 24h free cancel, email-only reminders at launch. Builds: slot computation RPC, picker UI, `client_book_appointment` RPC, upcoming bookings panel + cancellation, email reminders at T-24h and T-1h. **Soft prerequisite: Phase A landed** so Phase F uses `.portal-card` / `.portal-btn-primary` directly instead of inline styles. | A (soft) |
 | **G** ✓ | C3 — **closed 2026-05-12.** | Extended reports SELECT to include `storage_bucket`/`storage_path` via the per-row route handler at `/portal/reports/file/[id]/route.ts` (60s signed URL + 307 redirect, mirroring the staff `getClientFileSignedUrlAction` pattern). `LegacyView` rows now render as `<Link target="_blank" rel="noopener noreferrer">` with an `ExternalLink` icon. Decisions: §4.3. | A (so the row uses `.portal-card`) |
 | **H** ✓ | C2 + portal sub-tab rename — **closed 2026-05-12.** | Added RLS-scoped `sessions` SELECT in [`portal/page.tsx`](../../src/app/portal/page.tsx) filtered by this week's `program_day_id` list + `completed_at IS NOT NULL` + `deleted_at IS NULL`. Built a `Set<program_day_id>` of completed days, wired into `weekStats.completed`, `weekStats.remaining`, and per-day `done` flag in `programmedByWeekday`. Empty-program edge case (`weekDays.length === 0`) short-circuits the query. Folded in the EP's 2026-05-12 ask: renamed portal Reports sub-tab "Files" → "Reports" (label, URL param `tab=files → tab=reports`, page discriminator + type, empty-state copy). Decisions: §4.4. | A (so `.portal-stat` renders the value) |
-| **I** | C4, B3 watch-list activation | Manual test pass: (1) close-PWA-mid-session resume; (2) load session card; (3) log 3 sets; (4) close PWA; (5) reopen, confirm state. Plus: add B3 watch-list to follow-up tracking — note the trigger ("first 5 clients × 10 sessions, monitor for data-loss reports"). | All other phases done |
+| **I** ✓ | C4 + B3 — **closed 2026-05-13.** | Resume test passed clean: PWA backgrounded mid-session, reopened, same session row resumed with logged state intact. Pre-flight verification surfaced two Phase H regressions + a UX wart on the v3 RPC user-facing path; all folded into Phase I per §4.5.1 (I-R1..R5). Decisions, root causes, shipped files: §4.5 + §4.5.1. | All other phases done |
 | **J** | E1 | Data-tab redesign per session-builder reports panel. Collapsible battery hierarchy, baseline-vs-previous toggle, percentage-change deltas, standalone-test render variant. **Own gap doc required** (`docs/polish/client-portal-data-tab.md`) — opens with its own sub-protocol pass: design audit of the session builder reports panel + battery grouping data model + comparison toggle semantics. Likely spawns 2-3 sub-phases. Cross-references the active testing-module polish at [`testing-module.md`](./testing-module.md). | A (uses `.portal-card`); independent of G |
 
 ### 4.1 Phase E — PWA install icons (decisions locked, chat 2026-05-12)
@@ -216,7 +216,66 @@ Implements gap C2 (Today's "completed this week" stat hardcoded to 0) and folds 
 
 **Verification result.** `npm run build` passes clean (12.5s compile, all routes generated). Design-token grep on `src/app/portal/` returns only pre-existing matches (Phase B targets); Phase H added zero new hex literals, raw radii, or shadow strings. `tab=files` / `'files'` grep on `src/app/portal/` returns zero matches.
 
+### 4.5 Phase I — Mid-session resume manual test + B3 watch-list activation (decisions locked, chat 2026-05-12)
 
+Closes gap **C4** (manual field test of close-PWA-mid-session resume — not a code change unless the test fails) and **B3** (docs-only activation of the watch-list bullet already in §5). Zero schema migrations expected.
+
+| # | Question | Answer | Notes |
+|---|----------|--------|-------|
+| I-Q1 | Test device | **(a) iPhone PWA install.** No Android device available to the EP at this stage. | iOS is the higher-signal test anyway — the visibility-change resync in [`BottomNav.tsx`](../../src/app/portal/_components/BottomNav.tsx) and [`ClientThread.tsx`](../../src/app/portal/messages/_components/ClientThread.tsx) (§1.3) was designed for the iOS WebSocket-suspension case. |
+| I-Q2 | Tap-out depth | **(ii) default + (iii) stress.** Default: background → lock screen → ~30s wait → reopen from home-screen icon. Stress: hard-kill via the recents tray, then reopen from home-screen icon. | (ii) mimics a real client pocketing the phone between sets. (iii) forces the OS to throw the page away entirely — the harshest version of the same code path. |
+| I-Q3 | Wire test result into §4.5 regardless of outcome | **(a) yes** — pass / pass-after-fix / fail all get recorded. | Polish doc's value is the audit trail. Clean passes get one paragraph; failures + fixes get more. |
+| I-Q4 | If `buildWeekDots` skipped-past finding surfaces during the test | **Fix in-phase.** EP-chosen principle (2026-05-12): "best for the software, not rest." One-line change at [`portal-helpers.ts:110`](../../src/app/portal/_lib/portal-helpers.ts) — drop `\|\| isPast`, let `entry.done` be the single truth. | Tracked in §5 since Phase H closed. In-phase fix means Phase I closes with a complete trail rather than punting to a micro-phase. |
+
+**B3 watch-list activation.** The trigger bullet is already in §5 from when Phase H closed: *"Once first 5 real clients have completed 10 sessions each, review session log integrity for data-loss reports. If any, escalate offline queue work to launch-blocker. If none, leave the v1 SW as-is."* Phase I formally activates it — the clock starts the day the first real client logs in. No code change to [`public/sw.js`](../../public/sw.js); v1 no-op SW stays.
+
+**Test sequence (five steps per §4 row I).**
+
+1. EP opens the installed PWA from the iPhone home screen → taps today's session card.
+2. Begins the session and logs 3 sets across the first exercise with real numbers + RPE (not zeros / placeholder values).
+3. Backgrounds the PWA, locks the phone, waits ~30s with the screen off.
+4. Reopens the PWA from the home-screen icon (not Safari).
+5. Confirms: same session row resumed (no new in-progress session created), the 3 logged sets are visible with their values intact, and the next-set focus lands on set 4.
+
+**Stress repeat (after step 5 passes).** Hard-kill via the iPhone app switcher (swipe the Odyssey card off the top), reopen from the home-screen icon, run the same five checks.
+
+### 4.5.1 Pre-flight discovery — Phase H regression fixes (decisions locked, chat 2026-05-13)
+
+EP attempted the test setup and surfaced two distinct bugs on the portal Today card. Neither was in §5 follow-ups nor in the original C4 surface — both were Phase H surface-area issues (one latent and only made observable by Phase H, one introduced by Phase H by omission). Folded into Phase I per I-R1 rather than spinning a separate Phase H+1.
+
+| # | Question | Answer | Notes |
+|---|----------|--------|-------|
+| I-R1 | Phase boundary for these fixes | **(a)** Fold both into Phase I. | ~30 lines diff across 3 TS files + 1 migration; lower ceremony than spinning a separate phase. |
+| I-R2 | Bug 1 (week-strip date misalignment) fix direction | **(α)** Align the SET side in [`page.tsx`](../../src/app/portal/page.tsx) to the canonical Mon-first index. | Mon-first is canonical throughout the portal; the SET side was the divergent one. `buildWeekDots`'s contract stays unchanged. Both sides now consume the existing [`weekdayIndex`](../../src/app/portal/_lib/portal-helpers.ts) helper — single source of truth, drift can't recur. |
+| I-R3 | Bug 2 (completed-session-repeatable) UI behaviour | **(i)** Conditional CTA. "Session complete · view summary" → `/complete` when today is done; existing "Begin session" → Logger otherwise. | Restrained voice; pairs with the "another one in the bank" framing already on `/complete`. (ii) too quiet, (iii) introduces complexity for an edge case. |
+| I-R4 | Bug 2 RPC defence-in-depth | **(p)** Add an `IF EXISTS` refusal to `client_start_session` v3. Refuses when this `program_day_id` already has a completed session for this client. | Body-only change → CREATE OR REPLACE without DROP. Closes the front door on the AM/PM split-session edge case; opens it explicitly via a separate `client_restart_session` RPC if/when needed. |
+| I-R5 | Completed-day URL handling (discovered during EP iPhone verification) | **(b)** Server-side redirect in [`/portal/session/[dayId]/page.tsx`](../../src/app/portal/session/[dayId]/page.tsx) before `startOrResumeSessionAction`. RLS-scoped lookup; if a completed session exists for this `program_day_id`, redirect to `/complete`. | Covers every entry to that URL — strip-cell tap, deep link, browser back, shared URL — not just the Today CTA. (a) client-side strip-cell-only is incomplete; (c) both is redundant. v3 RPC stays as defence-in-depth for any path that bypasses the page-level guard. |
+
+**Bug 1 root cause.** [`page.tsx`](../../src/app/portal/page.tsx) set keys on `programmedByWeekday` via native `getDay()` (Sun=0..Sat=6) while [`portal-helpers.ts`](../../src/app/portal/_lib/portal-helpers.ts) `buildWeekDots` looked them up via `(getDay()+6)%7` (Mon=0..Sun=6). Effect: each programmed day rendered one cell forward on the strip — Tue's data appeared on Wed, Thu's on Fri, Sat's on Sun. Pre-existing bug; Phase H was the surface that made it observable (before Phase H, `programmedByWeekday` carried no cross-checkable data). Fix: a single use of the existing `weekdayIndex` helper on both sides.
+
+**Bug 2 root cause.** `TodayScreen` rendered "Begin session" unconditionally; tapping it hit `startOrResumeSessionAction` whose only refusal check filters on in-progress (`completed_at IS NULL`), so a completed session never matched and the RPC created a fresh row each tap. Two-layer fix: UI passes `isCompleted` through and renders a different CTA; RPC adds a defence-in-depth refusal.
+
+**What shipped.**
+
+- [`src/app/portal/page.tsx`](../../src/app/portal/page.tsx) — imports `weekdayIndex`; SET key now uses the helper; `isCompleted` populated on `TodaySession` from `completedDayIds`.
+- [`src/app/portal/_lib/portal-helpers.ts`](../../src/app/portal/_lib/portal-helpers.ts) — `buildWeekDots` lookup now uses `weekdayIndex(date)` instead of the inline `(getDay()+6)%7` (no behaviour change in isolation — closes the drift loop with `page.tsx`).
+- [`src/app/portal/_components/TodayScreen.tsx`](../../src/app/portal/_components/TodayScreen.tsx) — `TodaySession.isCompleted: boolean`; CTA renders conditionally between "Begin session" → live Logger and "Session complete · view summary" → `/complete`.
+- [`supabase/migrations/20260513120000_client_start_session_v3.sql`](../../supabase/migrations/20260513120000_client_start_session_v3.sql) — `IF EXISTS` block refuses a second completed session on the same `program_day_id`. Body-only change, signature unchanged.
+- [`src/app/portal/session/[dayId]/page.tsx`](../../src/app/portal/session/[dayId]/page.tsx) — completion guard between the `published_at` redirect and the exercise fetch. RLS-scoped lookup; redirects to `/complete` if a completed session exists for this `program_day_id`. (Added during step-2 verification — EP saw the v3 RPC refusal surface as the `SessionError` card on a past-completed-day tap; the page-level guard is the user-friendly path while v3 stays as defence-in-depth.)
+
+**Verification (TS).** `npm run build` passes clean on both fix rounds — 13.9s compile + 24.3s TypeScript on first round (I-R1..R4); subsequent build with I-R5 added also clean. All 12 static pages, all 40 routes registered.
+
+**Verification (DB).** Migration applied — EP confirmed `supabase db push` clean on 2026-05-13.
+
+**Verification (phone).** Week-strip alignment ✓ verified by EP on iPhone. Completed-day CTA (Today card) ✓ verified — routes to `/complete`. Strip-cell tap on a completed past day initially surfaced the v3 RPC refusal (I-R5 discovery); after the page-level redirect fix, taps land on `/complete` directly. Main five-step resume test still pending — needs a fresh published day to run against.
+
+**Follow-up tracked in §5.** Strip-cell routing on future days (creates a session in advance — pre-existing) and skipped-past days (creates a session for a past date — pre-existing) is unchanged. Both are separate concerns from the completed-day case Phase I closed.
+
+**Result.** Resume test passed clean 2026-05-13. EP backgrounded the session mid-flow and reopened — the same session row resumed with the previously logged sets intact, focus on the next set. Phase I closed; commit lands the I-R1..R5 fixes for production verification on the installed PWA.
+
+Next phases (signed off 2026-05-13): **K** — portal per-day card view, then **L** — staff + dashboard completed-session expander, then existing **J** — Data-tab redesign. Handoff prompts captured in [`client-portal-handoff-phase-k.md`](./client-portal-handoff-phase-k.md) and [`client-portal-handoff-phase-l.md`](./client-portal-handoff-phase-l.md).
+
+## 5. Open follow-ups
 
 Tracked here so they don't get lost.
 
@@ -225,6 +284,7 @@ Tracked here so they don't get lost.
 - **B3 watch-list trigger:** Once first 5 real clients have completed 10 sessions each, review session log integrity for data-loss reports. If any, escalate offline queue work to launch-blocker. If none, leave the v1 SW as-is.
 - **Seq tone naming:** When Phase B renames the Seq tones (`primary → muted`, `accent → parchment`), audit the `TodayScreen` consumers to make sure the new names are read at the call sites and produce the intended visual.
 - **`buildWeekDots` skipped-past handling:** [`portal-helpers.ts:110`](../../src/app/portal/_lib/portal-helpers.ts) currently marks any past programmed day as `state: 'done'` via the `isPast` short-circuit, regardless of actual completion. Post-Phase-H the data exists to tell "skipped Monday" from "completed Monday"; drop the `|| isPast` and let `entry.done` be the single truth. Likely surfaces during Phase I manual testing.
+- **Strip-cell routing on future + skipped-past days:** the completed-day case was closed in §4.5.1 I-R5 (page-level redirect to `/complete`). Pre-existing concerns remain: tapping a future programmed day's strip cell creates a session in advance (`started_at = now()`, mismatched against `scheduled_date`); tapping a skipped-past day creates a session for a date long gone. Neither is a Phase H regression — both pre-date Phase I — but both are worth polishing before launch. Likely a small client-side change in [`TodayScreen.tsx`](../../src/app/portal/_components/TodayScreen.tsx) to render past + far-future cells as inert (no Link wrapper) while keeping today + recent-past completed cells navigable.
 
 ---
 

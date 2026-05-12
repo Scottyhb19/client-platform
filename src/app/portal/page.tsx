@@ -12,6 +12,7 @@ import {
   isoFromDate,
   mondayFromIso,
   mondayOfCurrentWeek,
+  weekdayIndex,
   type WeekDot,
 } from './_lib/portal-helpers'
 
@@ -122,7 +123,11 @@ export default async function PortalTodayPage({
     { dayLabel: string | null; done: boolean; dayId: string | null }
   >()
   for (const d of weekDays) {
-    const dow = parseIso(d.scheduled_date).getDay()
+    // Canonical Mon-first index — must match the lookup side of
+    // buildWeekDots(). Pre-Phase-I this set used native getDay() (Sun=0)
+    // while the lookup used Mon=0, shifting every programmed day one
+    // cell forward on the strip. Single helper now → no drift.
+    const dow = weekdayIndex(parseIso(d.scheduled_date))
     programmedByWeekday.set(dow, {
       dayLabel: d.day_label,
       done: completedDayIds.has(d.program_day_id),
@@ -146,6 +151,7 @@ export default async function PortalTodayPage({
           program?.duration_weeks ?? null,
         ),
         exercises: buildExerciseList(todayDay.exercises),
+        isCompleted: completedDayIds.has(todayDay.program_day_id),
       }
     : null
 

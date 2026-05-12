@@ -28,6 +28,26 @@ export default async function PortalSessionPage({
     redirect('/portal')
   }
 
+  // If this program_day already has a completed session for the caller,
+  // route to the summary page. Belt-and-braces with the v3
+  // client_start_session backstop: the RPC will refuse a duplicate
+  // completion, but landing on the SessionError card is user-hostile.
+  // This guard covers every path to /portal/session/<dayId> — strip-cell
+  // tap, deep link, browser back, shared URL — not just the Today CTA.
+  // RLS on `sessions` scopes the lookup to the caller's own rows.
+  const { data: completedSession } = await supabase
+    .from('sessions')
+    .select('id')
+    .eq('program_day_id', dayId)
+    .not('completed_at', 'is', null)
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle()
+
+  if (completedSession) {
+    redirect(`/portal/session/${dayId}/complete`)
+  }
+
   // Load the exercise list via the SECURITY DEFINER RPC. Using the RPC
   // rather than a direct SELECT because the exercises table isn't
   // client-readable under RLS; the RPC pins the query to auth.uid().
