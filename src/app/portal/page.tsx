@@ -92,6 +92,27 @@ export default async function PortalTodayPage({
     }))
   }
 
+  // Which of this week's programmed days has a completed session? RLS on
+  // `sessions` scopes to the caller's own rows; the .in() filter scopes
+  // to this week's program_day_ids. Set-based so a (rare) re-run of the
+  // same program_day doesn't double-count — the meaningful number is
+  // "days completed", not "session rows written".
+  const completedDayIds = new Set<string>()
+  if (weekDays.length > 0) {
+    const { data: completedSessions } = await supabase
+      .from('sessions')
+      .select('program_day_id')
+      .in(
+        'program_day_id',
+        weekDays.map((d) => d.program_day_id),
+      )
+      .not('completed_at', 'is', null)
+      .is('deleted_at', null)
+    for (const s of completedSessions ?? []) {
+      if (s.program_day_id) completedDayIds.add(s.program_day_id)
+    }
+  }
+
   // Map weekday → programmed day for the week strip. Derive the
   // weekday locally from scheduled_date. dayId is carried so the strip
   // cells can render as navigation Links into /portal/session/<dayId>
@@ -104,7 +125,7 @@ export default async function PortalTodayPage({
     const dow = parseIso(d.scheduled_date).getDay()
     programmedByWeekday.set(dow, {
       dayLabel: d.day_label,
-      done: false, // "done" wires in once sessions table is populated
+      done: completedDayIds.has(d.program_day_id),
       dayId: d.program_day_id,
     })
   }
@@ -144,8 +165,8 @@ export default async function PortalTodayPage({
       weekDots={weekDots}
       session={session}
       weekStats={{
-        completed: 0, // wires to sessions table
-        remaining: weekDays.length - 0,
+        completed: completedDayIds.size,
+        remaining: weekDays.length - completedDayIds.size,
         avgRpe: null,
       }}
       monthLabel={monthLabel}

@@ -11,13 +11,13 @@ import { LegacyView, type LegacyReport } from './_components/LegacyView'
 
 export const dynamic = 'force-dynamic'
 
-type ActiveTab = 'data' | 'files'
+type ActiveTab = 'data' | 'reports'
 
 export default async function PortalReportsPage(props: {
   searchParams: Promise<{ tab?: string }>
 }) {
   const sp = await props.searchParams
-  const active: ActiveTab = sp.tab === 'files' ? 'files' : 'data'
+  const active: ActiveTab = sp.tab === 'reports' ? 'reports' : 'data'
 
   const supabase = await createSupabaseServerClient()
 
@@ -57,7 +57,7 @@ export default async function PortalReportsPage(props: {
     )
   }
 
-  // Files tab — the legacy HTML report flow. RLS: clients see reports
+  // Reports tab — the legacy HTML report flow. RLS: clients see reports
   // where is_published=true AND it's their row.
   const { data: legacy } = await supabase
     .from('reports')
@@ -74,8 +74,8 @@ export default async function PortalReportsPage(props: {
       <ReportsTabs active={active} />
       {reports.length === 0 ? (
         <PortalEmpty
-          title="No files yet"
-          message="When your EP shares an assessment file or summary, it will land here."
+          title="No reports yet"
+          message="When your EP shares an assessment report, it will land here."
         />
       ) : (
         <LegacyView reports={reports} />
