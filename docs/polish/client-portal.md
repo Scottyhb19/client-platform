@@ -90,6 +90,12 @@ Every server-side query in the portal correctly uses `is('deleted_at', null)`. T
 | **C3** | Legacy reports list renders rows but they aren't clickable; SELECT doesn't pull a file URL. **Verified.** | [`reports/page.tsx:64`](../../src/app/portal/reports/page.tsx), [`LegacyView.tsx:23-55`](../../src/app/portal/reports/_components/LegacyView.tsx) | Two fixes: (1) extend the SELECT to include `file_url` (or whatever the storage column is — confirm against `reports` schema); (2) wrap the row `<div>` in a `<Link href={r.file_url} target="_blank">` and remove the decorative `<ChevronRight>` (it's not navigation, it's a download). |
 | **C4** | Mid-session resume path not field-tested. | [`actions.ts:14-47`](../../src/app/portal/session/[dayId]/actions.ts), [`Logger.tsx`](../../src/app/portal/session/[dayId]/_components/Logger.tsx) | Manual test: start a session, log 2 sets, close the PWA, reopen, confirm logged sets are visible and the "next set" focus is on set 3. Not a code change unless the test fails. |
 
+### E. Data-tab redesign (deferred to Phase J)
+
+| # | Gap | Files | Why it matters |
+|---|-----|-------|----------------|
+| **E1** | Portal `?tab=data` renders test results as a flat list of cards. EP wants it to behave like the staff session-builder reports panel: collapsible **battery → test → metric** hierarchy; toggle baseline vs previous comparison; explicit percentage-change deltas; standalone tests render as their own entry when not part of a battery. | [`DataView.tsx`](../../src/app/portal/reports/_components/DataView.tsx), [`PortalTestCard.tsx`](../../src/app/portal/reports/_components/PortalTestCard.tsx); likely new shared comparison components, possibly shared with `(staff)/clients/[id]/_components/reports/`. | The structured testing module is the active polish section (CLAUDE.md). The portal Data tab is its client-facing surface and currently doesn't carry the comparison story that makes the module valuable for the client to interpret on their own. |
+
 ### D. Token violations (closed wholesale by Phase B)
 
 These are listed for traceability. None require independent fix — Phase B's refactor onto `.portal-*` primitives removes them all by replacement.
@@ -131,6 +137,7 @@ Phases run sequentially in this chat unless noted otherwise. Each phase closes s
 | **G** | C3 | Extend reports SELECT to include `file_url` (verify column name against `reports` schema first). Wrap `LegacyView` rows in clickable `<Link>` to the file URL. Replace decorative `ChevronRight` with `Download` or `ExternalLink` icon. | A (so the row uses `.portal-card`) |
 | **H** | C2 | Add a `sessions` count query to `portal/page.tsx`. Filter by current week's `program_day_id` IN list, `completed_at IS NOT NULL`, RLS-scoped to the client. Wire into `weekStats.completed` and per-day `done` flag in `programmedByWeekday`. | A (so `.portal-stat` renders the value) |
 | **I** | C4, B3 watch-list activation | Manual test pass: (1) close-PWA-mid-session resume; (2) load session card; (3) log 3 sets; (4) close PWA; (5) reopen, confirm state. Plus: add B3 watch-list to follow-up tracking — note the trigger ("first 5 clients × 10 sessions, monitor for data-loss reports"). | All other phases done |
+| **J** | E1 | Data-tab redesign per session-builder reports panel. Collapsible battery hierarchy, baseline-vs-previous toggle, percentage-change deltas, standalone-test render variant. **Own gap doc required** (`docs/polish/client-portal-data-tab.md`) — opens with its own sub-protocol pass: design audit of the session builder reports panel + battery grouping data model + comparison toggle semantics. Likely spawns 2-3 sub-phases. Cross-references the active testing-module polish at [`testing-module.md`](./testing-module.md). | A (uses `.portal-card`); independent of G |
 
 ### 4.1 Phase E — PWA install icons (decisions locked, chat 2026-05-12)
 
@@ -173,6 +180,20 @@ When Phase F lands:
 
 The handoff prompt instructs the parallel agent to write its own gap doc (`docs/polish/client-portal-booking.md`) following the polish-pass protocol before writing code. Sub-tasks are pre-listed in the prompt; the gap doc captures the EP's sign-off on each before implementation begins.
 
+### 4.3 Phase G — Legacy reports clickable (decisions locked, chat 2026-05-12)
+
+Implements gap C3. Single functional change: legacy report rows on `/portal/reports?tab=files` open the file when tapped. Zero schema migrations.
+
+| # | Question | Answer | Notes |
+|---|----------|--------|-------|
+| G-Q1 | File URL column on `reports` | **(b)** `storage_bucket` + `storage_path`. Schema is `storage_bucket text NOT NULL DEFAULT 'reports'` + `storage_path text NOT NULL`. No `file_url` column exists — rendered HTML lives in Supabase Storage. | Confirmed against [migration 20260420102200](../../supabase/migrations/20260420102200_reports_and_vald.sql) lines 47-70 and live types at [`database.ts:2346`](../../src/types/database.ts). |
+| G-Q1.1 | Where to generate the signed URL | **(ii)** New route handler at `/portal/reports/file/[id]/route.ts`. Row link is `/portal/reports/file/{id}`; handler resolves to a fresh 60-second signed URL and 307-redirects. Signed URL never lands in HTML; never expires from the client's view. | Mirrors the staff `getClientFileSignedUrlAction` pattern at [`files-actions.ts:240-278`](../../src/app/(staff)/clients/[id]/files-actions.ts). Auth-gated by `proxy.ts` middleware. RLS scopes the lookup; handler also restates `is_published = true` + `deleted_at IS NULL` (defense in depth). |
+| G-Q2 | Tap behaviour | **(a)** Open in new tab — `target="_blank" rel="noopener noreferrer"`. Portal stays open in the original tab; HTML/PDF render inline in the new tab. | Same-tab would lose the client's place. Force-download is wrong for HTML reports that should render inline. |
+| G-Q3 | NULL file URL handling | **No-op.** `storage_path` is `NOT NULL` at the schema level + SELECT filters `is_published = true`. The DB-level NULL case doesn't exist. Edge case "file missing in storage" collapses to a 404 from the route handler — no UI change needed. | |
+| G-Q4 | Icon | **(b)** `ExternalLink` (square with arrow). Matches Q2 "opens elsewhere" semantic. Replaces the misleading `ChevronRight` (which reads as "drill into a detail page within the portal"). | |
+
+**Scope clarification (chat 2026-05-12).** EP raised wanting the portal Reports surface to also show structured testing data with collapsible battery → test → metric drill-down, baseline/previous toggle, and percentage-change deltas — the way the session builder right rail does. Surfaced that this maps to the existing `?tab=data` view (`DataView.tsx` + `PortalTestCard.tsx`), not the `?tab=files` view Phase G covers, and that it's a significantly larger redesign. **Decision: Option A (split).** Phase G stays narrow on the legacy file click fix. New gap §2.E + follow-up Phase J in §4 capture the Data-tab redesign as separate work with its own gap doc.
+
 ---
 
 ## 5. Open follow-ups (post-polish-pass)
@@ -190,7 +211,7 @@ Tracked here so they don't get lost.
 
 The portal pass is signed off when:
 
-1. All Phase A-E + G + H code lands and renders without console errors at `/portal`, `/portal/program`, `/portal/session/[dayId]`, `/portal/session/[dayId]/complete`, `/portal/reports?tab=data`, `/portal/reports?tab=files`, `/portal/messages`, `/portal/you`.
+1. All Phase A-E + G + H + J code lands and renders without console errors at `/portal`, `/portal/program`, `/portal/session/[dayId]`, `/portal/session/[dayId]/complete`, `/portal/reports?tab=data`, `/portal/reports?tab=files`, `/portal/messages`, `/portal/you`.
 2. A manual session can be started, paused, resumed, and completed end-to-end on a real mobile device. Feedback + RPE are captured. Stats are correct.
 3. The staff program view shows captured feedback for that completed session in a collapsible per-session row.
 4. The PWA install prompt fires correctly on Android Chrome and the installed app opens to `/portal` with the correct theme color.

@@ -1,4 +1,5 @@
-import { ChevronRight } from 'lucide-react'
+import Link from 'next/link'
+import { ExternalLink } from 'lucide-react'
 
 export interface LegacyReport {
   id: string
@@ -14,27 +15,29 @@ interface Props {
 
 /**
  * The Cowork-skill rendered-HTML report flow continues in parallel
- * with the structured testing module (per brief §9). This view lifts
- * the original portal/reports list verbatim — no behaviour change.
+ * with the structured testing module (per brief §9). Tapping a row
+ * opens the file in a new tab via the /portal/reports/file/[id]
+ * route handler, which resolves storage_path to a short-lived
+ * signed URL.
  */
 export function LegacyView({ reports }: Props) {
   return (
     <div style={{ padding: '0 16px 16px' }}>
       {reports.map((r) => (
-        <div
+        <Link
           key={r.id}
-          className="portal-card"
+          href={`/portal/reports/file/${r.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="portal-card is-compact"
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '14px 16px',
-            // Compact list-row radius — matches legacy --radius-chip (10px),
-            // not the full --radius-card (14px). Phase G makes the row
-            // clickable; the smaller radius reads as "list item" not
-            // "content card".
-            borderRadius: 'var(--radius-chip)',
             marginBottom: 8,
+            textDecoration: 'none',
+            color: 'inherit',
           }}
         >
           <div>
@@ -49,12 +52,12 @@ export function LegacyView({ reports }: Props) {
               {formatShort(r.test_date)} · {r.report_type}
             </div>
           </div>
-          <ChevronRight
+          <ExternalLink
             size={16}
             aria-hidden
             style={{ color: 'var(--color-muted)' }}
           />
-        </div>
+        </Link>
       ))}
     </div>
   )
