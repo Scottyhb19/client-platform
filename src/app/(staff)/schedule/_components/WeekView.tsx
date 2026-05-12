@@ -50,6 +50,8 @@ export type Appointment = {
   location: string | null
   notes: string | null
   staff_user_id: string
+  created_by_role: 'staff' | 'client_portal' | 'system' | null
+  cancelled_by_role: 'staff' | 'client_portal' | 'system' | null
   client: {
     id: string
     first_name: string
@@ -1113,6 +1115,35 @@ type DragState =
 const DRAG_THRESHOLD_PX = 4
 const RESIZE_HANDLE_HEIGHT = 8
 
+/**
+ * Odyssey wordmark, scaled down for use as a corner badge on app-booked
+ * appointment blocks. Mirrors the brand-mark pattern from the email
+ * templates (Barlow Condensed 700 + accent-green dot baked into the
+ * period). Non-interactive — pointer-events disabled so it doesn't
+ * intercept clicks on the underlying block.
+ */
+function OdysseyMark() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        position: 'absolute',
+        right: 4,
+        bottom: 2,
+        fontFamily: 'var(--font-display)',
+        fontWeight: 700,
+        fontSize: 9,
+        letterSpacing: '0.01em',
+        color: 'var(--color-charcoal)',
+        pointerEvents: 'none',
+        lineHeight: 1,
+      }}
+    >
+      Odyssey<span style={{ color: 'var(--color-accent)' }}>.</span>
+    </span>
+  )
+}
+
 function AppointmentBlock({
   appointment,
   gridRef,
@@ -1143,7 +1174,9 @@ function AppointmentBlock({
 
   // Colour priority:
   //   1. cancelled / no_show → red tone (overrides the type colour so the
-  //      status is unmissable)
+  //      status is unmissable). Cancelled gets the softer .05 fill so it
+  //      reads as "softly past tense" rather than "alert"; no_show stays
+  //      at .22 because it IS a needs-your-attention flag.
   //   2. appointment has a known session-type colour → use it
   //   3. fallback → status-based tone (default accent green)
   const tone = toneForStatus(appointment.status)
@@ -1152,8 +1185,16 @@ function AppointmentBlock({
     typeColor !== null &&
     appointment.status !== 'cancelled' &&
     appointment.status !== 'no_show'
-  const bg = useTypeColor ? hexToRgba(typeColor!, 0.22) : statusTone.bg
+  const bg = useTypeColor
+    ? hexToRgba(typeColor!, 0.22)
+    : appointment.status === 'cancelled'
+      ? 'rgba(214,64,69,0.05)'
+      : statusTone.bg
   const border = useTypeColor ? typeColor! : statusTone.border
+  const isCancelled = appointment.status === 'cancelled'
+  const isAppBooked = appointment.created_by_role === 'client_portal'
+  const isAppCancellation =
+    isCancelled && appointment.cancelled_by_role === 'client_portal'
 
   const [drag, setDrag] = useState<DragState>(null)
   const dragRef = useRef<DragState>(null)
@@ -1341,52 +1382,62 @@ function AppointmentBlock({
         touchAction: 'none',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 6,
-          fontSize: '.76rem',
-          fontWeight: 600,
-          color: 'var(--color-charcoal)',
-        }}
-      >
-        <span
+      {/* Block content. Opacity drops to 0.72 when cancelled so the row
+          reads as "past tense" without losing the red border signal. */}
+      <div style={{ opacity: isCancelled ? 0.72 : 1 }}>
+        <div
           style={{
-            flex: 1,
-            minWidth: 0,
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 6,
+            fontSize: '.76rem',
+            fontWeight: 600,
+            color: 'var(--color-charcoal)',
+          }}
+        >
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {appointment.client.first_name} {appointment.client.last_name}
+            {isAppCancellation && ' · App Cancellation'}
+          </span>
+          <span
+            style={{
+              flexShrink: 0,
+              fontSize: '.66rem',
+              fontWeight: 600,
+              color: 'var(--color-text-light)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {formatTime(start)}
+          </span>
+        </div>
+        <div
+          style={{
+            fontSize: '.66rem',
+            color: 'var(--color-text-light)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
           }}
         >
-          {appointment.client.first_name} {appointment.client.last_name}
-        </span>
-        <span
-          style={{
-            flexShrink: 0,
-            fontSize: '.66rem',
-            fontWeight: 600,
-            color: 'var(--color-text-light)',
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {formatTime(start)}
-        </span>
+          {drag
+            ? formatDragPreview(appointment, drag)
+            : appointment.appointment_type}
+        </div>
       </div>
-      <div
-        style={{
-          fontSize: '.66rem',
-          color: 'var(--color-text-light)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {drag
-          ? formatDragPreview(appointment, drag)
-          : appointment.appointment_type}
-      </div>
+
+      {/* Odyssey brand mark on app-booked sessions. Hidden on blocks
+          shorter than ~36px (≤30-min appointment at low pxPerQuarter)
+          where it would crowd the time + name row. */}
+      {isAppBooked && liveHeight >= 36 && <OdysseyMark />}
 
       {/* Bottom resize handle */}
       <div
@@ -1616,6 +1667,9 @@ function AppointmentPopover({
             }}
           >
             {c.first_name} {c.last_name}
+            {appt.status === 'cancelled' &&
+              appt.cancelled_by_role === 'client_portal' &&
+              ' · App Cancellation'}
           </div>
           <div
             style={{

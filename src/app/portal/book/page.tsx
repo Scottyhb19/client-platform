@@ -35,9 +35,10 @@ export default async function PortalBookPage({
 
   const { data: org } = await supabase
     .from('organizations')
-    .select('timezone')
+    .select('timezone, phone')
     .maybeSingle()
   const timezone = org?.timezone ?? 'Australia/Sydney'
+  const practicePhone = org?.phone?.trim() || null
 
   const nowIso = new Date().toISOString()
   const { data: rows } = await supabase
@@ -153,17 +154,18 @@ export default async function PortalBookPage({
                     {canCancel ? (
                       <CancelButton appointmentId={appt.id} />
                     ) : (
-                      <Link
-                        href="/portal/messages"
+                      <p
                         style={{
+                          margin: 0,
                           fontSize: '.86rem',
-                          color: 'var(--color-primary)',
-                          textDecoration: 'none',
-                          fontWeight: 600,
+                          lineHeight: 1.5,
+                          color: 'var(--color-text-light)',
                         }}
                       >
-                        Need to change this? Message your EP →
-                      </Link>
+                        {practicePhone
+                          ? `Please call the practice on ${practicePhone} to cancel this session as it is within 24 hours.`
+                          : 'Please call the practice to cancel this session as it is within 24 hours.'}
+                      </p>
                     )}
                   </div>
                 </div>

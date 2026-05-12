@@ -63,6 +63,7 @@ export function PracticeInfoForm({ info }: { info: PracticeInfo }) {
           label="Phone"
           type="tel"
           defaultValue={info.phone ?? ''}
+          placeholder="e.g. (07) 1234 5678"
         />
         <div>
           <FieldLabel>Timezone</FieldLabel>
@@ -179,6 +180,7 @@ function Field({
   defaultValue,
   required,
   span,
+  placeholder,
 }: {
   name: string
   label: string
@@ -186,6 +188,7 @@ function Field({
   defaultValue?: string
   required?: boolean
   span?: number
+  placeholder?: string
 }) {
   return (
     <div style={{ gridColumn: span === 2 ? '1 / -1' : undefined }}>
@@ -195,6 +198,7 @@ function Field({
         type={type}
         defaultValue={defaultValue}
         required={required}
+        placeholder={placeholder}
         style={inputStyle}
       />
     </div>

@@ -114,6 +114,7 @@ export async function createAppointmentAction(
       notes: input.notes,
       status: 'confirmed',
       confirmed_at: new Date().toISOString(),
+      created_by_role: 'staff',
     })
     .select('id')
     .single()
@@ -137,6 +138,7 @@ export async function cancelAppointmentAction(
       status: 'cancelled',
       cancelled_at: new Date().toISOString(),
       cancellation_reason: reason,
+      cancelled_by_role: 'staff',
     })
     .eq('id', appointmentId)
 

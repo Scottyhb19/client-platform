@@ -78,9 +78,11 @@ export type Database = {
           appointment_type: string
           cancellation_reason: string | null
           cancelled_at: string | null
+          cancelled_by_role: string | null
           client_id: string
           confirmed_at: string | null
           created_at: string
+          created_by_role: string
           deleted_at: string | null
           end_at: string
           id: string
@@ -97,9 +99,11 @@ export type Database = {
           appointment_type?: string
           cancellation_reason?: string | null
           cancelled_at?: string | null
+          cancelled_by_role?: string | null
           client_id: string
           confirmed_at?: string | null
           created_at?: string
+          created_by_role?: string
           deleted_at?: string | null
           end_at: string
           id?: string
@@ -116,9 +120,11 @@ export type Database = {
           appointment_type?: string
           cancellation_reason?: string | null
           cancelled_at?: string | null
+          cancelled_by_role?: string | null
           client_id?: string
           confirmed_at?: string | null
           created_at?: string
+          created_by_role?: string
           deleted_at?: string | null
           end_at?: string
           id?: string

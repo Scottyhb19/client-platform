@@ -122,7 +122,7 @@ export default async function SchedulePage({
       .from('appointments')
       .select(
         `id, start_at, end_at, appointment_type, status, location, notes,
-         staff_user_id,
+         staff_user_id, created_by_role, cancelled_by_role,
          client:clients(id, first_name, last_name,
            category:client_categories(name))`,
       )
@@ -167,6 +167,10 @@ export default async function SchedulePage({
       location: a.location,
       notes: a.notes,
       staff_user_id: a.staff_user_id,
+      created_by_role:
+        a.created_by_role as Appointment['created_by_role'],
+      cancelled_by_role:
+        a.cancelled_by_role as Appointment['cancelled_by_role'],
       client: {
         id: a.client!.id,
         first_name: a.client!.first_name,
