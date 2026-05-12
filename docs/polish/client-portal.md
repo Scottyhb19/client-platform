@@ -126,13 +126,38 @@ Phases run sequentially in this chat unless noted otherwise. Each phase closes s
 | **B** | A1 (refactor), D1-D5 | Refactor `BottomNav`, `TodayScreen`, `PortalTop`, `PortalEmpty`, `LegacyView`, `complete/page.tsx`, `Logger`'s static chrome (not the live form inputs) to use the Phase A classes. Delete inline `style` props that are now redundant. Visual diff: nothing should change. | A |
 | **C** | B1 (portal half) | Add a feedback textarea + 1-10 RPE picker to the portal completion path. Two options for placement to be decided in Phase C kickoff: (i) inline in the `CompletePrompt` component before `Finish session`; (ii) as a step on the post-completion `complete/page.tsx`. Logger passes the captured values to `completeSessionAction` (no longer `null, null`). | B |
 | **D** ✓ | B1 (staff half) — **closed 2026-05-11.** | Added per-session completion display in the `clients/[id]/program` view. **Pre-flight finding:** the view is a `MonthCalendar` not a list — so the expander lives inside the existing `DaySummaryPopover` rather than as a flat-row accordion. Eager loader pulls sessions + exercise_logs + set_logs per visible day, popover widens to ~320px when there's completion data, accent-green dot marks completed cells. Schema unchanged. Full gap doc + sign-off log: [`staff-program-session-display.md`](./staff-program-session-display.md). | C (test data via Scott's 2026-05-11 completion) |
-| **E** | B2 | Add 192px + 512px PNG icons to `/public/icons/`, update `manifest.json` `icons[]` array, smoke-test Android install via Chrome DevTools' application panel. | None |
+| **E** ✓ | B2 — **closed 2026-05-12.** | Added `icon-192.png`, `icon-512.png` (purpose `any`), `icon-maskable-512.png` (purpose `maskable`), `icon-apple-touch.png` (180×180 iOS) under `/public/icons/`. Composition: charcoal field, white "O" in Bahnschrift Condensed Bold (closest Windows-default to Barlow Condensed), accent-green dot to the right. Generation captured in `scripts/generate-pwa-icons.ps1` so the EP can regenerate with a different font/mark once ExCo's brand asset lands. Manifest `icons[]` rewritten to reference the new files; `background_color` changed from `#E8ECE9` (desktop wrap surface) to `#F7F4F0` (parchment page surface) so the phone splash matches what loads behind it. Apple touch icon wired via Next.js Metadata API in `portal/layout.tsx` (`icons.apple`). Decisions: §4.1. | None |
 | **F** | C1 (handed off — α full build) | **Handed off — see [`client-portal-handoffs.md`](./client-portal-handoffs.md).** Runs in parallel chat after Phase A lands. Full booking flow per locked decisions: instant-confirm, 24h free cancel, email-only reminders at launch. Builds: slot computation RPC, picker UI, `client_book_appointment` RPC, upcoming bookings panel + cancellation, email reminders at T-24h and T-1h. **Soft prerequisite: Phase A landed** so Phase F uses `.portal-card` / `.portal-btn-primary` directly instead of inline styles. | A (soft) |
 | **G** | C3 | Extend reports SELECT to include `file_url` (verify column name against `reports` schema first). Wrap `LegacyView` rows in clickable `<Link>` to the file URL. Replace decorative `ChevronRight` with `Download` or `ExternalLink` icon. | A (so the row uses `.portal-card`) |
 | **H** | C2 | Add a `sessions` count query to `portal/page.tsx`. Filter by current week's `program_day_id` IN list, `completed_at IS NOT NULL`, RLS-scoped to the client. Wire into `weekStats.completed` and per-day `done` flag in `programmedByWeekday`. | A (so `.portal-stat` renders the value) |
 | **I** | C4, B3 watch-list activation | Manual test pass: (1) close-PWA-mid-session resume; (2) load session card; (3) log 3 sets; (4) close PWA; (5) reopen, confirm state. Plus: add B3 watch-list to follow-up tracking — note the trigger ("first 5 clients × 10 sessions, monitor for data-loss reports"). | All other phases done |
 
-### 4.1 Phase F — handoff acknowledgement (locked α full build)
+### 4.1 Phase E — PWA install icons (decisions locked, chat 2026-05-12)
+
+Implements gap B2. No service worker changes (B3 stays deferred per §0.1).
+
+| # | Question | Answer | Notes |
+|---|----------|--------|-------|
+| E-Q1 | Icon source | **(b)** Generate from the design system via a PowerShell `System.Drawing` script (`scripts/generate-pwa-icons.ps1`). No npm install, no external dependency. Script is committed so the EP can re-run with a different font / mark once ExCo's brand asset lands. | Composition: charcoal background, white "O" in a bold condensed system font (Bahnschrift Condensed → Impact → Arial Black fallback chain), accent-green dot to the O's right at baseline. Inner 80% safe zone respected on every variant so the same composition serves both `any` and `maskable`. |
+| E-Q2 | Maskable variant | **(a)** Both. `icon-192.png` + `icon-512.png` (`purpose: "any"`) plus `icon-maskable-512.png` (`purpose: "maskable"`). | Same charcoal background on both — composition already lives inside the maskable safe zone. |
+| E-Q3 | Apple touch icon | **(a)** In scope. Add `icon-apple-touch.png` at 180×180 and wire via Next.js Metadata API (`icons.apple`) in `portal/layout.tsx`. | iOS adds its own rounded-corner mask; no separate maskable variant needed for iOS. |
+| E-Q4 | Manifest theme + background | Keep `theme_color: "#1E1A18"` (already matches `--color-primary`). **Change `background_color` from `#E8ECE9` to `#F7F4F0`** (parchment, matches `--color-surface` — what loads behind the splash on phone install). | `#E8ECE9` is the desktop `.portal-shell` wrap surface, not the page surface. Phone install only sees the page surface. |
+| E-SQ1 | `favicon.ico` entry in `icons[]` | **Drop it.** Manifest `icons[]` is for PWA install assets only; tab favicons are served separately by Next.js from `src/app/favicon.ico`. | Removes a stale reference to a `/public/favicon.ico` that doesn't exist (was only resolving by Next.js app-router coincidence). |
+| E-SQ2 | `name` / `short_name` | **Leave as-is** — `"Odyssey"` for both. Under the 12-char Android home-screen limit, sentence case, Australian voice. | No change. |
+
+**Design-token trace.** Hex values used in the icons (auditable per CLAUDE.md "design tokens live in `globals.css` / `constants.ts` only" rule):
+
+| Where | Hex | Token |
+|-------|-----|-------|
+| Icon background | `#231f20` | `--color-charcoal` |
+| Icon "O" fill | `#ffffff` | (white literal — matches `.btn.primary` color, the topbar text colour) |
+| Icon dot fill | `#2db24c` | `--color-accent` |
+| Manifest `theme_color` | `#1E1A18` | `--color-primary` |
+| Manifest `background_color` | `#F7F4F0` | `--color-surface` |
+
+**Font fallback note.** Barlow Condensed (the design-system display font) is loaded via Next.js Google Fonts at runtime, not installed as a Windows system font. The icon-generation script uses `Bahnschrift Condensed` (Windows 10/11 default — closest condensed bold), with `Impact` and `Arial Black` as fallbacks. When ExCo provides a brand asset or Barlow Condensed gets installed as a system font, the EP can re-run the script for higher fidelity. Tracked as a post-launch nice-to-have, not a launch blocker — the "O" + green dot composition reads as Odyssey regardless of which heavy condensed sans renders the letter.
+
+### 4.2 Phase F — handoff acknowledgement (locked α full build)
 
 Phase F runs in a parallel chat per the user's instruction (2026-05-10). The handoff prompt is at [`client-portal-handoffs.md`](./client-portal-handoffs.md) §F. **Locked decisions:**
 

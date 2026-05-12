@@ -12,6 +12,9 @@ export const metadata: Metadata = {
     title: 'Odyssey',
     statusBarStyle: 'default',
   },
+  icons: {
+    apple: { url: '/icons/icon-apple-touch.png', sizes: '180x180', type: 'image/png' },
+  },
 }
 
 export const viewport: Viewport = {
