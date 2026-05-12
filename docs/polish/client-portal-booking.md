@@ -158,8 +158,14 @@ Architecture before features, features before polish — the standard pass.
 1. `booking-confirmation.ts` template (mirrors `client-invite.ts`).
 2. `booking-reminder.ts` template.
 3. `send-booking-confirmation.ts` server action — called immediately after `client_book_appointment` succeeds.
-4. Edge Function `send-appointment-reminders/index.ts`. Deploy guide in PR description; the user will deploy with `supabase functions deploy send-appointment-reminders` once API keys are set.
-5. pg_cron schedule (committed as a migration once we know the EF URL — Phase F can leave the cron line as a follow-up since the user can paste it via SQL Editor after deployment).
+4. Edge Function `send-appointment-reminders/index.ts`. **Deployed 2026-05-12** at `https://azjllcsffixswiigjqhj.supabase.co/functions/v1/send-appointment-reminders`. Config: `[functions.send-appointment-reminders] verify_jwt = false` in `supabase/config.toml` (cron auth is by `CRON_SHARED_SECRET` in bearer header, not a Supabase JWT). Secrets set in Supabase: `RESEND_API_KEY`, `CRON_SHARED_SECRET`.
+5. pg_cron schedule. **Scheduled 2026-05-12** as job `appointment-reminders-5min`, runs `*/5 * * * *`, jobid 1. Cron command is `SELECT net.http_post(...)` with the function URL and bearer token inlined (the documented `current_setting('app.cron_token')` indirection requires `ALTER DATABASE`, which hosted Supabase blocks — see `MEMORY.md` note). End-to-end verified: cron fires every 5 min (5 consecutive `succeeded` ticks observed), test reminder flipped to `status='sent'` with `provider_message_id` populated, email landed in Resend-verified inbox.
+
+**Pre-launch follow-ups for this phase (parked, not blocking):**
+- Verify a sending domain in Resend (`resend.com/domains`) and set `EMAIL_FROM` Supabase secret to a real address (e.g. `Odyssey <bookings@odyssey.com.au>`). Sandbox sender `onboarding@resend.dev` only delivers to the Resend-account-verified email, so this MUST happen before any real client books.
+- Set `NEXT_PUBLIC_APP_URL` Supabase secret so the email's "View booking" link resolves to the deployed URL instead of `#`.
+- Rotate `CRON_SHARED_SECRET` and `RESEND_API_KEY` — both appeared in chat transcript during deploy. Premortem checklist will surface this (see `feedback_premortem_secret_hygiene.md`).
+- Migrate cron credential from inline literal to Supabase Vault for defence-in-depth.
 
 ### F-Phase 5 — Polish
 1. Session-type colour stripes.

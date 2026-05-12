@@ -70,3 +70,10 @@ uri = "pg-functions://postgres/auth_hooks/custom_access_token"
 enabled = true
 policy = "oneshot"
 inspector_port = 8083
+
+# Cron-triggered reminder worker authenticates via CRON_SHARED_SECRET in the
+# bearer header (see function source), not a Supabase-issued JWT, so the
+# platform's JWT gate must be disabled for this function. Re-enabling it
+# would break the pg_cron → net.http_post → function path.
+[functions.send-appointment-reminders]
+verify_jwt = false
