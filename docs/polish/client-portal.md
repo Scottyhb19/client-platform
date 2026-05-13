@@ -139,6 +139,7 @@ Phases run sequentially in this chat unless noted otherwise. Each phase closes s
 | **I** ✓ | C4 + B3 — **closed 2026-05-13.** | Resume test passed clean: PWA backgrounded mid-session, reopened, same session row resumed with logged state intact. Pre-flight verification surfaced two Phase H regressions + a UX wart on the v3 RPC user-facing path; all folded into Phase I per §4.5.1 (I-R1..R5). Decisions, root causes, shipped files: §4.5 + §4.5.1. | All other phases done |
 | **J** | E1 | Data-tab redesign per session-builder reports panel. Collapsible battery hierarchy, baseline-vs-previous toggle, percentage-change deltas, standalone-test render variant. **Own gap doc required** (`docs/polish/client-portal-data-tab.md`) — opens with its own sub-protocol pass: design audit of the session builder reports panel + battery grouping data model + comparison toggle semantics. Likely spawns 2-3 sub-phases. Cross-references the active testing-module polish at [`testing-module.md`](./testing-module.md). | A (uses `.portal-card`); independent of G |
 | **K** ✓ | §5 strip-cell routing follow-up (future + skipped-past) — **closed 2026-05-13.** | Per-day card view replaces strip-cell-to-Logger routing. Strip cells now navigate to `/portal?d=YYYY-MM-DD`; the existing Today component renamed to `DayScreen` and rewired to render the selected day's card. Six CTA states render from a server-derived `DayState` discriminated union (today-not-started / today-in-progress / today-completed / past-completed / past-skipped / future-scheduled), plus rest-day fallback to `.portal-empty`. New `client_reschedule_program_day_to_today` RPC + server action `rescheduleAndStartSessionAction` handle "Begin session early" with a styled .portal-card overlay carrying the EP-locked verbatim copy. Phase I's page-level completion guard + v3 `client_start_session` backstop stay in place as defence in depth. Single combined session SELECT (Q-K6.1 most-robust choice) replaces Phase H's completed-only query — derives both `completedDayIds` and `inProgressDayIds` from one query. Gap doc + sign-off log: [`client-portal-day-card.md`](./client-portal-day-card.md). Decisions: §4.6. | I |
+| **L** ✓ | Completed-session exercise-summary expander on two staff surfaces — **closed 2026-05-14.** | Profile side: extended Phase D's completion SELECT to embed `program_exercise → exercise.name` + the full `set_logs` shape, then added a chevron-toggle expander on each `CompletionRow` that mounts a new shared `SessionExerciseSummary` component (per-exercise rows with A/A1/A2 sequence letters, sets with load × reps × RPE × optional metric). Dashboard side: per Q-L9 sign-off the existing `ActivityFeed` (notes + appointments mix) was removed and replaced with a new full-width `RecentlyCompletedPanel` at the bottom of `/dashboard` — 5 most recent completed sessions across all the EP's clients, RLS-scoped, same expander. AttentionPanel (clinical flags) untouched. Zero migrations; existing staff RLS on `sessions`/`exercise_logs`/`set_logs`/`exercises` was sufficient. Gap doc + sign-off log: [`staff-session-expander.md`](./staff-session-expander.md). Decisions: §4.7. | K |
 
 ### 4.1 Phase E — PWA install icons (decisions locked, chat 2026-05-12)
 
@@ -342,6 +343,50 @@ The backend operation is identical to future-scheduled's "Begin session early" (
 - [`src/app/portal/_components/DayScreen.tsx`](../../src/app/portal/_components/DayScreen.tsx) — `FutureScheduledCta` renamed to `RescheduleToTodayCta` and parameterised; past-skipped case calls it with the recovery copy + "message your EP" postNote. The 60% opacity on the exercise list stays (the day was still past).
 
 **Verification.** `npm run build` clean — 11.0s compile + 23.2s TypeScript.
+
+### 4.7 Phase L — staff completed-session expander (decisions locked, chat 2026-05-14)
+
+Implements the §0 "Phase L scope" handoff per [`staff-session-expander.md`](./staff-session-expander.md). Zero migrations. Replaces the dashboard's notes+appointments `ActivityFeed` with a dedicated completions panel; adds a per-row expander to Phase D's profile-side `CompletionsPanel`.
+
+Question summary (full sign-off log in the gap doc §8):
+
+| # | Question | Answer | Notes |
+|---|----------|--------|-------|
+| L1 | Component location | **(a)** `src/app/(staff)/_components/SessionExerciseSummary.tsx` — shared between both surfaces. | |
+| L2 | Data fetch timing | **(a)** Eager. Mirrors the Phase D pattern. | |
+| L3 | Detail level | **(a)** Full — sets, reps, load, RPE, optional metric. | |
+| L4 | Recent-completed sort + filter | **(a)** Last 5 across all clients, `completed_at DESC`. | EP delegated; Claude picked (a) over (c) for prototype-match + simpler RPC promotion path + dashboard-as-"what's happening now" framing. |
+| L5 | Collapsed-row shape | Avatar + linked client name + `day_label · RPE N` + relative time + chevron. | As recommended. |
+| L6 | Dashboard placement | Full-width bottom slot — REPLACES the existing `ActivityFeed`. | Refined after EP described the dashboard as three surfaces (Needs Attention, Today's sessions, Recent activity from client portal). |
+| L7 | Empty state | **(b)** Empty card with message. | |
+| L8 | Perf bound | **CONFIRM** — acceptable for v1. SECURITY DEFINER RPC `staff_get_recent_completions` deferred to telemetry trigger. | Watch-list in §5. |
+| L9 | Dashboard surface choice | **REPLACE.** New `RecentlyCompletedPanel` takes the bottom slot; ActivityFeed deleted. Flagged-notes still surface via the existing `AttentionPanel`. | EP's three-surface framing. |
+| L6/L9 follow-up | Rename "Today's sessions" → "Today's schedule"? | **No** — EP wording was descriptive, not prescriptive. | |
+| L10 | Profile expander multi-row | **(a)** Single-row-expanded. Mirrors the now-deleted ActivityFeed pattern + Q-K6.1 cleanliness preference. | |
+| L11 | Zero-sets display | **(b)** Hide the chevron entirely when `set_count === 0`. | |
+
+**Pre-flight handoff-staleness findings.** §0 of the gap doc surfaced four corrections before any code went in:
+1. Phase D's redirect log meant the staff-profile target is `CompletionsPanel` (right rail of `/clients/[id]?tab=program`), not the calendar's `DaySummaryPopover` as the handoff named.
+2. The dashboard's existing `ActivityFeed` was real wired code (notes + appointments + flags with chip filters), not the "placeholder" the handoff named.
+3. The prototype's "Recently completed" panel is distinct from the `ActivityFeed` concept; the handoff's "Recent Activity" terminology collided with both.
+4. If completions had been added as a chip filter (alternative reading), the existing "Sessions" filter chip would have needed renaming to "Appointments" to dispel the session-vs-training ambiguity. Mooted by the chosen replace path.
+
+**What shipped.**
+
+- [`src/app/(staff)/clients/[id]/page.tsx`](../../src/app/(staff)/clients/[id]/page.tsx) — extended the Phase D completions SELECT to include `program_exercise:program_exercises(...exercise:exercises(name))` + full `set_logs` columns. Single-pass JS reduce projects per-exercise + per-set detail alongside the existing `set_count` / `avg_rpe` aggregates. `weight_value` coerced through `Number()` (PostgREST numeric can land as string).
+- [`src/app/(staff)/clients/[id]/_components/ClientProfile.tsx`](../../src/app/(staff)/clients/[id]/_components/ClientProfile.tsx) — new exported types `ProfileCompletionSet` + `ProfileCompletionExercise`. `ProfileCompletion.exercises` added. `CompletionsPanel` lifts `expandedId` state; `CompletionRow` accepts `isExpanded` + `onToggle`, renders a chevron when `set_count > 0`, mounts `<SessionExerciseSummary>` beneath when open. Token-only styling — chevron radius uses `var(--radius-button)`.
+- [`src/app/(staff)/_components/SessionExerciseSummary.tsx`](../../src/app/(staff)/_components/SessionExerciseSummary.tsx) — new shared component. Computes A/A1/A2/B sequence letters inline (same shape as portal `DayScreen.buildExerciseList`). Set lines render `{load} × {reps}` / `{reps} reps` / `{optional_value}` with the U+00D7 multiplication sign; RPE chip right-aligned when present. Pure presentation, no state.
+- [`src/app/(staff)/dashboard/page.tsx`](../../src/app/(staff)/dashboard/page.tsx) — `recentAppointments` + `recentNotes` loaders REMOVED; new `recentCompletions` SELECT with the same embed shape as the profile loader plus `client:clients(id, first_name, last_name)`. The `activityItems` composition + 5 unused helpers (`isFlagNote`, `titleFromNote`, `metaFromNote`, `excerptFromNote`, `prettifyNoteType`, `formatDayTime`) removed. `<ActivityFeed>` replaced with `<RecentlyCompletedPanel>`.
+- [`src/app/(staff)/dashboard/_components/RecentlyCompletedPanel.tsx`](../../src/app/(staff)/dashboard/_components/RecentlyCompletedPanel.tsx) — new component. Grid-row Link to `/clients/[id]` for the row body; chevron button as a sibling (no nested-interactive), reserved-column trick keeps rows aligned when `set_count === 0`. Inline `relativeTime` helper. `SessionExerciseSummary` mounted in the expanded panel beneath.
+- [`src/app/(staff)/dashboard/_components/ActivityFeed.tsx`](../../src/app/(staff)/dashboard/_components/) — DELETED. Replaced wholesale per Q-L9.
+
+**Verification (TS).** `npm run build` passes clean — 11.0s compile + 22.8s TypeScript, all 12 static pages, all 40 routes registered.
+
+**Verification (preview).** Live dev server's last several `/dashboard` requests after the final edit returned 200. Intermediate hot-reload errors during the multi-step edit are visible in the log history but resolved by the final state. Full visual verification on the EP's logged-in session is pending (the preview verification ran against an unauthenticated session that redirects to `/login`).
+
+**Token-violation grep on the changed files** returns zero new matches (`#xxx` literals, raw `borderRadius:` integers, inline `boxShadow:` strings).
+
+**Phase L addendum — avg-RPE trim (chat 2026-05-14, post initial sign-off).** EP feedback after visual verification: the right-rail "Recent completions" row was showing both `avg RPE X.X` (computed per-set) and `RPE N` (session-level) in the same metric line. EP asked to drop the per-set average — session_rpe is the EP-meaningful number; the per-set values are already visible via the expander. Cleaned up wholesale: removed the display line, removed `avg_rpe` from `ProfileCompletion`, removed `rpeSum`/`rpeCount` from the loader's reduce. `DashboardCompletion` never carried `avg_rpe`, so the dashboard surface needed no change. `npm run build` re-verified clean (10.5s compile + 22.2s TypeScript).
 
 ## 5. Open follow-ups
 

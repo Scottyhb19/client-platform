@@ -6,7 +6,9 @@ import { useState, useTransition } from 'react'
 import { getOrCreateThreadAction } from '../../../messages/actions'
 import { archiveClientAction } from '../actions'
 import {
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CreditCard,
   Edit3,
   Mail,
@@ -16,6 +18,7 @@ import {
 } from 'lucide-react'
 import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
+import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
@@ -128,6 +131,34 @@ export type ProfileProgramSummary = {
 // only when the parent program_day was soft-deleted (sessions.program_day_id
 // is ON DELETE SET NULL); the row keeps the completion data but loses the
 // "what was this for" context.
+//
+// Phase L (2026-05-14) — extended with per-exercise + per-set detail to
+// feed the SessionExerciseSummary expander. Aggregates (set_count, avg_rpe)
+// are unchanged.
+export type ProfileCompletionSet = {
+  set_number: number
+  reps: number | null
+  // numeric coerced through Number() in the loader (PostgREST can return
+  // numeric as string depending on driver settings).
+  weight_value: number | null
+  weight_metric: string | null
+  optional_metric: string | null
+  optional_value: string | null
+  rpe: number | null
+}
+
+export type ProfileCompletionExercise = {
+  exercise_log_id: string
+  // program_exercise_id is null when the underlying program_exercise was
+  // soft-deleted between completion and now (FK is ON DELETE SET NULL).
+  program_exercise_id: string | null
+  sort_order: number
+  section_title: string | null
+  superset_group_id: string | null
+  exercise_name: string
+  sets: ProfileCompletionSet[]
+}
+
 export type ProfileCompletion = {
   id: string
   day_label: string
@@ -138,7 +169,9 @@ export type ProfileCompletion = {
   session_rpe: number | null     // 1-10 or NULL (client skipped)
   feedback: string | null
   set_count: number
-  avg_rpe: number | null         // avg of set_logs.rpe (per-set RPE)
+  // Phase L — ordered by sort_order. Empty array on skip-to-complete
+  // sessions (no exercise_logs written).
+  exercises: ProfileCompletionExercise[]
 }
 
 export type Tab =
@@ -1009,6 +1042,10 @@ function CompletionsPanel({
 }: {
   completions: ProfileCompletion[]
 }) {
+  // Phase L — single-row-expanded state per Q-L10 (a). Lifted to the panel
+  // so opening one row collapses any previously-open row in the same list.
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+
   return (
     <Panel title="Recent completions">
       {completions.length === 0 ? (
@@ -1034,13 +1071,21 @@ function CompletionsPanel({
             gap: 8,
             // Cap height to ~10 rows; vertical scroll kicks in beyond.
             // The loader limits to 10 so scrolling is rare; the cap is
-            // defensive for taller-than-expected feedback text.
+            // defensive for taller-than-expected feedback text + the
+            // Phase L expander's per-exercise rows.
             maxHeight: 480,
             overflowY: 'auto',
           }}
         >
           {completions.map((c) => (
-            <CompletionRow key={c.id} completion={c} />
+            <CompletionRow
+              key={c.id}
+              completion={c}
+              isExpanded={expandedId === c.id}
+              onToggle={() =>
+                setExpandedId((prev) => (prev === c.id ? null : c.id))
+              }
+            />
           ))}
         </ul>
       )}
@@ -1048,7 +1093,15 @@ function CompletionsPanel({
   )
 }
 
-function CompletionRow({ completion }: { completion: ProfileCompletion }) {
+function CompletionRow({
+  completion,
+  isExpanded,
+  onToggle,
+}: {
+  completion: ProfileCompletion
+  isExpanded: boolean
+  onToggle: () => void
+}) {
   // Compose the inline metric line from whichever fields have data.
   // "—" placeholders would be noisy in a horizontal list; we drop the
   // missing ones instead and rely on order to convey what's present.
@@ -1057,9 +1110,6 @@ function CompletionRow({ completion }: { completion: ProfileCompletion }) {
   parts.push(
     `${completion.set_count} ${completion.set_count === 1 ? 'set' : 'sets'}`,
   )
-  if (completion.avg_rpe !== null) {
-    parts.push(`avg RPE ${completion.avg_rpe.toFixed(1)}`)
-  }
   if (completion.session_rpe !== null) {
     parts.push(`RPE ${completion.session_rpe}`)
   }
@@ -1069,6 +1119,11 @@ function CompletionRow({ completion }: { completion: ProfileCompletion }) {
   // completed_at when the parent program_day was soft-deleted (orphan).
   const headerDate =
     completion.scheduled_date ?? completion.completed_at.slice(0, 10)
+
+  // Phase L — Q-L11 (b): hide the chevron entirely when no sets were
+  // logged. The row stays in the list but isn't expandable; expanding an
+  // empty body would be misleading.
+  const canExpand = completion.set_count > 0
 
   return (
     <li
@@ -1080,43 +1135,91 @@ function CompletionRow({ completion }: { completion: ProfileCompletion }) {
       }}
     >
       <div
-        className="eyebrow"
-        style={{ marginBottom: 4, fontSize: '.64rem' }}
-      >
-        {completion.day_label} · {formatCompletionDate(headerDate)}
-      </div>
-      <div
         style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.9rem',
-          color: 'var(--color-charcoal)',
-          fontVariantNumeric: 'tabular-nums',
-          lineHeight: 1.3,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 8,
         }}
       >
-        {parts.join(' · ')}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            className="eyebrow"
+            style={{ marginBottom: 4, fontSize: '.64rem' }}
+          >
+            {completion.day_label} · {formatCompletionDate(headerDate)}
+          </div>
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.9rem',
+              color: 'var(--color-charcoal)',
+              fontVariantNumeric: 'tabular-nums',
+              lineHeight: 1.3,
+            }}
+          >
+            {parts.join(' · ')}
+          </div>
+          {completion.feedback && (
+            <div
+              // `title` surfaces the full text on hover when the
+              // line-clamp truncates. Italics differentiate the client's
+              // voice from system labels.
+              title={completion.feedback}
+              style={{
+                marginTop: 6,
+                fontSize: '.8rem',
+                color: 'var(--color-text)',
+                fontStyle: 'italic',
+                lineHeight: 1.4,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                overflowWrap: 'break-word',
+              }}
+            >
+              {completion.feedback}
+            </div>
+          )}
+        </div>
+        {canExpand && (
+          <button
+            type="button"
+            aria-label={isExpanded ? 'Hide exercise detail' : 'Show exercise detail'}
+            aria-expanded={isExpanded}
+            onClick={onToggle}
+            style={{
+              flexShrink: 0,
+              width: 28,
+              height: 28,
+              display: 'inline-grid',
+              placeItems: 'center',
+              borderRadius: 'var(--radius-button)',
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--color-text-light)',
+              cursor: 'pointer',
+              transition: 'all 150ms cubic-bezier(0.4,0,0.2,1)',
+            }}
+          >
+            {isExpanded ? (
+              <ChevronUp size={16} aria-hidden />
+            ) : (
+              <ChevronDown size={16} aria-hidden />
+            )}
+          </button>
+        )}
       </div>
-      {completion.feedback && (
+      {canExpand && isExpanded && (
         <div
-          // `title` surfaces the full text on hover when the
-          // line-clamp truncates. Italics differentiate the client's
-          // voice from system labels.
-          title={completion.feedback}
           style={{
-            marginTop: 6,
-            fontSize: '.8rem',
-            color: 'var(--color-text)',
-            fontStyle: 'italic',
-            lineHeight: 1.4,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            overflowWrap: 'break-word',
+            marginTop: 10,
+            paddingTop: 10,
+            borderTop: '1px solid var(--color-border-hairline)',
           }}
         >
-          {completion.feedback}
+          <SessionExerciseSummary exercises={completion.exercises} />
         </div>
       )}
     </li>

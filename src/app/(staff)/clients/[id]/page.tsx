@@ -8,6 +8,8 @@ import {
   type ProfileAppointment,
   type ProfileClient,
   type ProfileCompletion,
+  type ProfileCompletionExercise,
+  type ProfileCompletionSet,
   type ProfileCondition,
   type ProfileNote,
   type ProfileNoteTemplate,
@@ -164,13 +166,30 @@ export default async function ClientProfilePage({
     // day_label + scheduled_date so each entry can render "Day 1 · Sat
     // 10 May" without a second lookup. Sessions with program_day_id
     // NULL (orphan from soft-deleted parent) get a defaulted label.
+    //
+    // Phase L (2026-05-14) — extended embed: per-exercise rows + the
+    // full per-set shape (set_number, reps, load, optional metric, RPE)
+    // feed the new SessionExerciseSummary expander. program_exercise +
+    // exercise are LEFT-joined implicitly through PostgREST; soft-deleted
+    // parents come back as null and the page-side mapper defaults them
+    // rather than failing the row.
     supabase
       .from('sessions')
       .select(
         `id, program_day_id, started_at, completed_at, duration_minutes,
          session_rpe, feedback,
          program_day:program_days(day_label, scheduled_date),
-         exercise_logs(id, set_logs(rpe))`,
+         exercise_logs(
+           id, program_exercise_id,
+           program_exercise:program_exercises(
+             sort_order, section_title, superset_group_id,
+             exercise:exercises(name)
+           ),
+           set_logs(
+             set_number, reps_performed, weight_value, weight_metric,
+             optional_metric, optional_value, rpe
+           )
+         )`,
       )
       .eq('client_id', id)
       .not('completed_at', 'is', null)
@@ -321,9 +340,16 @@ export default async function ClientProfilePage({
 
   const files: ClientFile[] = (fileRows ?? []) as ClientFile[]
 
-  // Phase D — fold per-session set_count + avg per-set RPE in JS rather
-  // than via PostgREST aggregate (which is awkward for the avg-of-rpe
-  // case). Each row's exercise_logs[].set_logs[] is walked once.
+  // Phase D — fold per-session set_count in JS. Each row's
+  // exercise_logs[].set_logs[] is walked once.
+  //
+  // Phase L (2026-05-14) — the same walk now also projects per-exercise
+  // and per-set detail for the expander. Aggregates and detail come from
+  // a single pass to avoid re-walking the embed. Phase L addendum
+  // (2026-05-14) — `avg_rpe` removed after EP feedback that the panel
+  // shouldn't show both avg per-set RPE and overall session_rpe (one is
+  // enough; session_rpe is the EP-meaningful one). The rpe walk dropped
+  // with it.
   type CompletionsRow = {
     id: string
     program_day_id: string | null
@@ -334,24 +360,66 @@ export default async function ClientProfilePage({
     feedback: string | null
     program_day: { day_label: string; scheduled_date: string } | null
     exercise_logs:
-      | Array<{ id: string; set_logs: Array<{ rpe: number | null }> | null }>
+      | Array<{
+          id: string
+          program_exercise_id: string | null
+          program_exercise: {
+            sort_order: number
+            section_title: string | null
+            superset_group_id: string | null
+            exercise: { name: string } | null
+          } | null
+          set_logs: Array<{
+            set_number: number
+            reps_performed: number | null
+            // numeric coming through PostgREST can land as string; the
+            // mapper coerces with Number() below.
+            weight_value: number | string | null
+            weight_metric: string | null
+            optional_metric: string | null
+            optional_value: string | null
+            rpe: number | null
+          }> | null
+        }>
       | null
   }
   const completions: ProfileCompletion[] = (
     (completionsRaw ?? []) as unknown as CompletionsRow[]
   ).map((row) => {
     let setCount = 0
-    let rpeSum = 0
-    let rpeCount = 0
-    for (const el of row.exercise_logs ?? []) {
-      for (const sl of el.set_logs ?? []) {
-        setCount += 1
-        if (sl.rpe !== null) {
-          rpeSum += sl.rpe
-          rpeCount += 1
+
+    const exercises: ProfileCompletionExercise[] = (row.exercise_logs ?? [])
+      .map((el) => {
+        const sets: ProfileCompletionSet[] = (el.set_logs ?? [])
+          .map((sl) => {
+            setCount += 1
+            return {
+              set_number: sl.set_number,
+              reps: sl.reps_performed,
+              weight_value:
+                sl.weight_value !== null ? Number(sl.weight_value) : null,
+              weight_metric: sl.weight_metric,
+              optional_metric: sl.optional_metric,
+              optional_value: sl.optional_value,
+              rpe: sl.rpe,
+            }
+          })
+          .sort((a, b) => a.set_number - b.set_number)
+        return {
+          exercise_log_id: el.id,
+          program_exercise_id: el.program_exercise_id,
+          sort_order: el.program_exercise?.sort_order ?? 0,
+          section_title: el.program_exercise?.section_title ?? null,
+          superset_group_id: el.program_exercise?.superset_group_id ?? null,
+          // exercise.name comes back null only if the underlying exercise
+          // row was soft-deleted between completion and now. Fallback to
+          // a generic label rather than failing the row.
+          exercise_name: el.program_exercise?.exercise?.name ?? 'Exercise',
+          sets,
         }
-      }
-    }
+      })
+      .sort((a, b) => a.sort_order - b.sort_order)
+
     return {
       id: row.id,
       // program_day is null when the parent program_day was soft-deleted
@@ -365,7 +433,7 @@ export default async function ClientProfilePage({
       session_rpe: row.session_rpe,
       feedback: row.feedback,
       set_count: setCount,
-      avg_rpe: rpeCount > 0 ? rpeSum / rpeCount : null,
+      exercises,
     }
   })
 

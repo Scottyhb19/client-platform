@@ -7,9 +7,13 @@ import {
   type AvatarTone,
 } from '../clients/_lib/client-helpers'
 import {
-  ActivityFeed,
-  type ActivityItem,
-} from './_components/ActivityFeed'
+  RecentlyCompletedPanel,
+  type DashboardCompletion,
+} from './_components/RecentlyCompletedPanel'
+import type {
+  ProfileCompletionExercise,
+  ProfileCompletionSet,
+} from '../clients/[id]/_components/ClientProfile'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,12 +54,18 @@ export default async function DashboardPage() {
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
 
   // Parallel fetches.
+  //
+  // Phase L (2026-05-14) — the old activity feed pulled `recentAppointments`
+  // and `recentNotes` and mixed them into a single timeline. Per Q-L9
+  // sign-off the dashboard's bottom panel was reframed as "recent activity
+  // from the client portal" — i.e. completed training sessions only.
+  // Notes/appointments mix retired. Flagged notes still loaded below for
+  // the AttentionPanel; that surface is untouched.
   const [
     { data: activeClients },
     { data: newClients },
     { data: todaysAppointments },
-    { data: recentAppointments },
-    { data: recentNotes },
+    { data: recentCompletionRows },
     { data: activePrograms },
     { data: flaggedNotes },
   ] = await Promise.all([
@@ -81,26 +91,33 @@ export default async function DashboardPage() {
       .is('deleted_at', null)
       .neq('status', 'cancelled')
       .order('start_at'),
+    // Phase L — 5 most recent completed sessions across all of this EP's
+    // clients (RLS scopes to own org). Same embed shape as the profile
+    // page's completions loader plus client identity. Fan-out is ≤ 5×~5×
+    // ~5 rows pre-launch; promote to a SECURITY DEFINER RPC if telemetry
+    // later says otherwise (Q-L8 watch-list item).
     supabase
-      .from('appointments')
+      .from('sessions')
       .select(
-        `id, start_at, appointment_type, status,
-         client:clients(id, first_name, last_name)`,
+        `id, completed_at, session_rpe,
+         client:clients(id, first_name, last_name),
+         program_day:program_days(day_label, scheduled_date),
+         exercise_logs(
+           id, program_exercise_id,
+           program_exercise:program_exercises(
+             sort_order, section_title, superset_group_id,
+             exercise:exercises(name)
+           ),
+           set_logs(
+             set_number, reps_performed, weight_value, weight_metric,
+             optional_metric, optional_value, rpe
+           )
+         )`,
       )
-      .gte('start_at', fourteenDaysAgo.toISOString())
+      .not('completed_at', 'is', null)
       .is('deleted_at', null)
-      .order('start_at', { ascending: false })
-      .limit(12),
-    supabase
-      .from('clinical_notes')
-      .select(
-        `id, note_date, note_type, title, subjective, body_rich,
-         flag_body_region, is_pinned, created_at,
-         client:clients(id, first_name, last_name)`,
-      )
-      .is('deleted_at', null)
-      .order('note_date', { ascending: false })
-      .limit(12),
+      .order('completed_at', { ascending: false })
+      .limit(5),
     supabase
       .from('programs')
       .select(
@@ -151,41 +168,86 @@ export default async function DashboardPage() {
     return weeksIn + 1 >= p.duration_weeks
   })
 
-  // Activity feed: mix recent notes + recent appointments, sort by time.
-  const activityItems: ActivityItem[] = [
-    ...(recentNotes ?? [])
-      .filter((n) => n.client !== null)
-      .map(
-        (n): ActivityItem => ({
-          id: `note-${n.id}`,
-          bucket: isFlagNote(n.note_type) ? 'flag' : 'note',
-          timestamp: n.created_at ?? n.note_date,
-          client_id: n.client!.id,
-          client_first_name: n.client!.first_name,
-          client_last_name: n.client!.last_name,
-          title: titleFromNote(n),
-          meta: metaFromNote(n),
-          excerpt: excerptFromNote(n),
-        }),
-      ),
-    ...(recentAppointments ?? [])
-      .filter((a) => a.client !== null)
-      .map(
-        (a): ActivityItem => ({
-          id: `appt-${a.id}`,
-          bucket: 'appointment',
-          timestamp: a.start_at,
-          client_id: a.client!.id,
-          client_first_name: a.client!.first_name,
-          client_last_name: a.client!.last_name,
-          title: `${a.appointment_type} · ${a.status}`,
-          meta: formatDayTime(new Date(a.start_at)),
-          excerpt: null,
-        }),
-      ),
-  ]
-    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-    .slice(0, 20)
+  // Phase L — project the recent-completions rows into the dashboard
+  // panel shape. Same single-pass shape as the profile loader: walk
+  // exercise_logs once for set_count + the per-exercise/per-set detail.
+  // Rows with `client === null` are dropped (shouldn't happen for active
+  // completed sessions, but defensive against soft-deleted edges).
+  type RecentCompletionRow = {
+    id: string
+    completed_at: string
+    session_rpe: number | null
+    client: { id: string; first_name: string; last_name: string } | null
+    program_day: { day_label: string; scheduled_date: string } | null
+    exercise_logs:
+      | Array<{
+          id: string
+          program_exercise_id: string | null
+          program_exercise: {
+            sort_order: number
+            section_title: string | null
+            superset_group_id: string | null
+            exercise: { name: string } | null
+          } | null
+          set_logs: Array<{
+            set_number: number
+            reps_performed: number | null
+            weight_value: number | string | null
+            weight_metric: string | null
+            optional_metric: string | null
+            optional_value: string | null
+            rpe: number | null
+          }> | null
+        }>
+      | null
+  }
+  const recentCompletions: DashboardCompletion[] = (
+    (recentCompletionRows ?? []) as unknown as RecentCompletionRow[]
+  )
+    .filter((row) => row.client !== null)
+    .map((row) => {
+      let setCount = 0
+      const exercises: ProfileCompletionExercise[] = (row.exercise_logs ?? [])
+        .map((el) => {
+          const sets: ProfileCompletionSet[] = (el.set_logs ?? [])
+            .map((sl) => {
+              setCount += 1
+              return {
+                set_number: sl.set_number,
+                reps: sl.reps_performed,
+                weight_value:
+                  sl.weight_value !== null ? Number(sl.weight_value) : null,
+                weight_metric: sl.weight_metric,
+                optional_metric: sl.optional_metric,
+                optional_value: sl.optional_value,
+                rpe: sl.rpe,
+              }
+            })
+            .sort((a, b) => a.set_number - b.set_number)
+          return {
+            exercise_log_id: el.id,
+            program_exercise_id: el.program_exercise_id,
+            sort_order: el.program_exercise?.sort_order ?? 0,
+            section_title: el.program_exercise?.section_title ?? null,
+            superset_group_id: el.program_exercise?.superset_group_id ?? null,
+            exercise_name: el.program_exercise?.exercise?.name ?? 'Exercise',
+            sets,
+          }
+        })
+        .sort((a, b) => a.sort_order - b.sort_order)
+      return {
+        id: row.id,
+        client_id: row.client!.id,
+        client_first_name: row.client!.first_name,
+        client_last_name: row.client!.last_name,
+        day_label: row.program_day?.day_label ?? 'Ad-hoc',
+        scheduled_date: row.program_day?.scheduled_date ?? null,
+        completed_at: row.completed_at,
+        session_rpe: row.session_rpe,
+        set_count: setCount,
+        exercises,
+      }
+    })
 
   const greeting = `${greetingFor(now)}, ${profile?.first_name ?? 'there'}.`
 
@@ -278,7 +340,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <ActivityFeed items={activityItems} />
+      <RecentlyCompletedPanel completions={recentCompletions} />
     </div>
   )
 }
@@ -647,50 +709,6 @@ function TodaysSessionsPanel({
 
 /* ====================== Helpers ====================== */
 
-function isFlagNote(t: string | null | undefined): boolean {
-  return t === 'injury_flag' || t === 'contraindication'
-}
-
-function titleFromNote(n: {
-  title: string | null
-  note_type: string
-  flag_body_region: string | null
-}): string {
-  if (n.title) return n.title
-  if (n.note_type === 'injury_flag') return 'Injury flag raised'
-  if (n.note_type === 'contraindication') return 'Contraindication flagged'
-  if (n.note_type === 'progress_note') return 'Progress note added'
-  if (n.note_type === 'initial_assessment') return 'Initial assessment'
-  if (n.note_type === 'discharge') return 'Discharge note'
-  return 'Note added'
-}
-
-function metaFromNote(n: {
-  note_type: string
-  flag_body_region: string | null
-  note_date: string
-}): string {
-  const bits: string[] = [prettifyNoteType(n.note_type)]
-  if (n.flag_body_region) bits.push(n.flag_body_region)
-  return bits.join(' · ')
-}
-
-function excerptFromNote(n: {
-  subjective: string | null
-  body_rich: string | null
-}): string | null {
-  const body = (n.body_rich ?? n.subjective ?? '').trim()
-  if (!body) return null
-  return body.length > 240 ? body.slice(0, 240) + '…' : body
-}
-
-function prettifyNoteType(t: string): string {
-  return t
-    .split('_')
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join(' ')
-}
-
 function greetingFor(d: Date): string {
   const h = d.getHours()
   if (h < 12) return 'Good morning'
@@ -708,17 +726,6 @@ function formatDateLong(d: Date): string {
 
 function formatTime(d: Date): string {
   return new Intl.DateTimeFormat('en-AU', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(d)
-}
-
-function formatDayTime(d: Date): string {
-  return new Intl.DateTimeFormat('en-AU', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
