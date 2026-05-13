@@ -138,6 +138,7 @@ Phases run sequentially in this chat unless noted otherwise. Each phase closes s
 | **H** ✓ | C2 + portal sub-tab rename — **closed 2026-05-12.** | Added RLS-scoped `sessions` SELECT in [`portal/page.tsx`](../../src/app/portal/page.tsx) filtered by this week's `program_day_id` list + `completed_at IS NOT NULL` + `deleted_at IS NULL`. Built a `Set<program_day_id>` of completed days, wired into `weekStats.completed`, `weekStats.remaining`, and per-day `done` flag in `programmedByWeekday`. Empty-program edge case (`weekDays.length === 0`) short-circuits the query. Folded in the EP's 2026-05-12 ask: renamed portal Reports sub-tab "Files" → "Reports" (label, URL param `tab=files → tab=reports`, page discriminator + type, empty-state copy). Decisions: §4.4. | A (so `.portal-stat` renders the value) |
 | **I** ✓ | C4 + B3 — **closed 2026-05-13.** | Resume test passed clean: PWA backgrounded mid-session, reopened, same session row resumed with logged state intact. Pre-flight verification surfaced two Phase H regressions + a UX wart on the v3 RPC user-facing path; all folded into Phase I per §4.5.1 (I-R1..R5). Decisions, root causes, shipped files: §4.5 + §4.5.1. | All other phases done |
 | **J** | E1 | Data-tab redesign per session-builder reports panel. Collapsible battery hierarchy, baseline-vs-previous toggle, percentage-change deltas, standalone-test render variant. **Own gap doc required** (`docs/polish/client-portal-data-tab.md`) — opens with its own sub-protocol pass: design audit of the session builder reports panel + battery grouping data model + comparison toggle semantics. Likely spawns 2-3 sub-phases. Cross-references the active testing-module polish at [`testing-module.md`](./testing-module.md). | A (uses `.portal-card`); independent of G |
+| **K** ✓ | §5 strip-cell routing follow-up (future + skipped-past) — **closed 2026-05-13.** | Per-day card view replaces strip-cell-to-Logger routing. Strip cells now navigate to `/portal?d=YYYY-MM-DD`; the existing Today component renamed to `DayScreen` and rewired to render the selected day's card. Six CTA states render from a server-derived `DayState` discriminated union (today-not-started / today-in-progress / today-completed / past-completed / past-skipped / future-scheduled), plus rest-day fallback to `.portal-empty`. New `client_reschedule_program_day_to_today` RPC + server action `rescheduleAndStartSessionAction` handle "Begin session early" with a styled .portal-card overlay carrying the EP-locked verbatim copy. Phase I's page-level completion guard + v3 `client_start_session` backstop stay in place as defence in depth. Single combined session SELECT (Q-K6.1 most-robust choice) replaces Phase H's completed-only query — derives both `completedDayIds` and `inProgressDayIds` from one query. Gap doc + sign-off log: [`client-portal-day-card.md`](./client-portal-day-card.md). Decisions: §4.6. | I |
 
 ### 4.1 Phase E — PWA install icons (decisions locked, chat 2026-05-12)
 
@@ -275,6 +276,73 @@ EP attempted the test setup and surfaced two distinct bugs on the portal Today c
 
 Next phases (signed off 2026-05-13): **K** — portal per-day card view, then **L** — staff + dashboard completed-session expander, then existing **J** — Data-tab redesign. Handoff prompts captured in [`client-portal-handoff-phase-k.md`](./client-portal-handoff-phase-k.md) and [`client-portal-handoff-phase-l.md`](./client-portal-handoff-phase-l.md).
 
+### 4.6 Phase K — Portal per-day card view (decisions locked, chat 2026-05-13)
+
+Closes the §5 strip-cell routing follow-up. Strip-cell taps on programmed days previously routed directly to `/portal/session/[dayId]` (the Logger URL), bypassing the rich card surface that today's day gets. Phase K makes the card the canonical surface for every day in the week — the Logger URL becomes the CTA destination, not the strip-cell landing.
+
+Full gap doc + sign-off log: [`client-portal-day-card.md`](./client-portal-day-card.md). Question summary:
+
+| # | Question | Answer | Notes |
+|---|----------|--------|-------|
+| K1 | URL structure | **(a)** `?d=YYYY-MM-DD` on `/portal`. | EP guidance: "least resistance for the client, good data for the EP." |
+| K2 | Component name | **(a)** Rename `TodayScreen` → `DayScreen`. | |
+| K3 | Future-day mechanics | **(α)** New `client_reschedule_program_day_to_today` RPC; UPDATE `program_days.scheduled_date` to today. | |
+| K3.i | Same-date refusal | **(α.i)** Refuse with a hint when today already has a programmed day for this client. | "Today already has a session — finish or skip it first." |
+| K3.iii | Confirmation modal style | **Styled `.portal-card` overlay.** EP-locked verbatim copy renders inside; two stacked CTAs (Yes, move it / Cancel). | Native `confirm()` would corrupt the copy on iOS (system prompt prefixes the page URL). Default call by Claude — flag for revert if EP prefers native. |
+| K4 | Past-skipped treatment | **(a)** Muted card (60% opacity on exercise list) + actionable "Move to today" CTA + "message your EP" sub-link. | Initially shipped inert per Q-K4 (a); EP raised the recovery gap 2026-05-13 — past-skipped sessions should be recoverable to today without surrendering a future day. CTA reuses the future-scheduled reschedule mechanism (same RPC, same server action). Refused unilaterally inert framing; clinical-flag pattern still reserved for clinical flags. |
+| K5 | Week strip dot semantics | **(a)** Keep single green dot = "session here." Card carries the state. | |
+| K6 | RPC data coverage | No change to `client_get_week_overview`. | |
+| K6.1 | In-progress detection | Single combined SELECT in `page.tsx` for `program_day_id, started_at, completed_at`. Derive both `completedDayIds` and `inProgressDayIds` from one query. | EP guidance: "do not choose the easy route choose the most effective long term and robust solution." Cleaner than two parallel SELECTs; extensible to future session states. |
+| K7 | Rest-day strip cell tap | **(a)** Every cell navigates to `/portal?d=<iso>`. Rest days render `.portal-empty` "Rest day." | Consistency wins. |
+
+**What shipped.**
+
+- [`supabase/migrations/20260513140000_client_reschedule_program_day_to_today.sql`](../../supabase/migrations/20260513140000_client_reschedule_program_day_to_today.sql) — new SECURITY DEFINER RPC. Six refusals stacked: auth, no-active-day, not-future, same-date collision, in-progress-anywhere, this-day-already-completed. Audit captured via the existing `program_days` UPDATE trigger.
+- [`src/app/portal/session/[dayId]/actions.ts`](../../src/app/portal/session/[dayId]/actions.ts) — new `rescheduleAndStartSessionAction(programDayId)` server action. Two-step: RPC reschedules `scheduled_date` to today, then `startOrResumeSessionAction` begins the session. RPC error messages surface to the caller verbatim.
+- [`src/app/portal/_lib/portal-helpers.ts`](../../src/app/portal/_lib/portal-helpers.ts) — added `DayCompletionEntry` (`done: boolean` + `inProgress: boolean` + ids), `DayState` discriminated union (7 kinds), `deriveDayState()` pure function. `buildWeekDots` signature updated to take the new entry shape — Phase I's `|| isPast` semantics already removed.
+- [`src/app/portal/_components/DayScreen.tsx`](../../src/app/portal/_components/DayScreen.tsx) — new component (replaces the deleted `TodayScreen.tsx`). Renders selected-day card via the `DayState` switch. Strip cells now Links (rest days included). `FutureScheduledCta` opens the `ConfirmOverlay` carrying the EP-locked verbatim copy + a server-action transition. Past-skipped renders an inert footer with the "message your EP" path forward.
+- [`src/app/portal/page.tsx`](../../src/app/portal/page.tsx) — reads `?d=YYYY-MM-DD` via `resolveSelectedDayIso()` (defaults to today; invalid or out-of-week falls back to today). Single combined `sessions` SELECT replaces Phase H's completed-only query — same set semantics, plus the in-progress derivation. Per-cell hrefs (`/portal?w=…&d=…`) built once server-side and handed to the screen. `composeDayLabel()` switches the eyebrow between "Today · Day C" and "Tue 14 May · Day C" based on whether the selected day is today.
+- [`src/app/globals.css`](../../src/app/globals.css) — two stale `TodayScreen` doc comments renamed to `DayScreen`. No CSS changes.
+
+**Verification (TS).** `npm run build` passes clean — 16.6s compile + 35.6s TypeScript, all 12 static pages, all 40 routes registered.
+
+**Verification (DB).** Migration to apply: `supabase db push` from the project root will pick up `20260513140000_client_reschedule_program_day_to_today.sql`. Run `supabase gen types typescript --linked > src/types/database.ts` after push to regenerate types (the action currently casts to `as never` per the project's other client RPCs; the cast becomes optional once types regenerate).
+
+**Verification (manual).** Six CTA states reach via constructed `?d=` URLs:
+1. `today-not-started` — default landing for a day with a published program and no session → "Begin session".
+2. `today-in-progress` — landing on today with an existing in-progress session → "Resume session".
+3. `today-completed` — landing on today after completion → "Session complete · view summary".
+4. `past-completed` — `?d=<past iso>` for a day with a completed session → "View summary".
+5. `past-skipped` — `?d=<past iso>` for a day without a completed session → inert footer + "message your EP".
+6. `future-scheduled` — `?d=<future iso>` → "Scheduled for {date}" label + "Begin session early" button → confirm overlay verbatim copy → confirm → Logger.
+
+**Defence-in-depth check.** Hitting `/portal/session/<completed-dayId>` directly still redirects to `/complete` via the page-level guard (Phase I I-R5). v3 `client_start_session` still refuses a second completed session. Both backstops remain unchanged.
+
+**Phase K addendum — past-skipped recovery (chat 2026-05-13, post initial sign-off).**
+
+EP feedback after the initial Phase K landed: past-skipped sessions shouldn't be inert. "If someone misses their session and wants it to be completed today, they can only take a future session away. Therefore the 'skipped' title, when clicked should come up with a 'Move to today' message when clicked." Without this addition, the only recovery path is to surrender a future day via "Begin session early" — an asymmetric and slightly hostile UX.
+
+The backend operation is identical to future-scheduled's "Begin session early" (reschedule + start). The two states differ only in presentation, so the implementation extracts a shared `RescheduleToTodayCta` component and parameterises:
+
+| Prop | future-scheduled | past-skipped |
+|------|------------------|--------------|
+| `preLabel` | "Scheduled for {date}" | (none — card eyebrow already states the date) |
+| `buttonLabel` | "Begin session early" | "Move to today" |
+| `confirmMessage` | EP-locked verbatim (see Q-K3) | "Move this session to today and start it now?" *(default Claude copy — flag for EP revision)* |
+| `confirmCtaLabel` | "Yes, move it" | "Yes, move it" |
+| `postNote` | (none) | "Or [message your EP] for a different fix." |
+
+**RPC change.** The `client_reschedule_program_day_to_today` function's refusal (c) was relaxed from "must be future" to "must not already be today." Past + future both reschedule freely now. The other five refusals (auth, no-active-day, same-date collision, in-progress, this-day-completed) stay unchanged — the same-date collision refusal is the load-bearing safety net: if today already has a programmed day, the move refuses with a hint surfaced to the user via the `ConfirmOverlay`'s error slot.
+
+**Migration shape.** v1 of the migration was applied to remote Supabase before the EP raised the past-skipped recovery ask, so editing v1 in place would have been silently skipped on next `supabase db push` (filename-based migration tracking; project memory `project_supabase_migration_timestamp_collision`). The relaxation lives in a body-only follow-up migration `20260513150000_client_reschedule_program_day_to_today_v2.sql` — `CREATE OR REPLACE FUNCTION` only, signature unchanged, refusal (c) rewritten, all other refusals identical. v1's header carries a NOTE pointing forward to v2 so future readers see both migrations and understand the audit trail.
+
+**Files touched in the addendum.**
+- [`supabase/migrations/20260513140000_client_reschedule_program_day_to_today.sql`](../../supabase/migrations/20260513140000_client_reschedule_program_day_to_today.sql) — v1 header carries a forward-pointing NOTE to v2; function body restored to the as-applied "must be future" form (the in-place edit during the addendum was wrong-shape; reverted).
+- [`supabase/migrations/20260513150000_client_reschedule_program_day_to_today_v2.sql`](../../supabase/migrations/20260513150000_client_reschedule_program_day_to_today_v2.sql) — new body-only follow-up. EP needs to run `supabase db push` to land it, then `supabase gen types typescript --linked > src/types/database.ts` (with proper UTF-8 encoding) to refresh types.
+- [`src/app/portal/_components/DayScreen.tsx`](../../src/app/portal/_components/DayScreen.tsx) — `FutureScheduledCta` renamed to `RescheduleToTodayCta` and parameterised; past-skipped case calls it with the recovery copy + "message your EP" postNote. The 60% opacity on the exercise list stays (the day was still past).
+
+**Verification.** `npm run build` clean — 11.0s compile + 23.2s TypeScript.
+
 ## 5. Open follow-ups
 
 Tracked here so they don't get lost.
@@ -284,7 +352,7 @@ Tracked here so they don't get lost.
 - **B3 watch-list trigger:** Once first 5 real clients have completed 10 sessions each, review session log integrity for data-loss reports. If any, escalate offline queue work to launch-blocker. If none, leave the v1 SW as-is.
 - **Seq tone naming:** When Phase B renames the Seq tones (`primary → muted`, `accent → parchment`), audit the `TodayScreen` consumers to make sure the new names are read at the call sites and produce the intended visual.
 - **`buildWeekDots` skipped-past handling:** [`portal-helpers.ts:110`](../../src/app/portal/_lib/portal-helpers.ts) currently marks any past programmed day as `state: 'done'` via the `isPast` short-circuit, regardless of actual completion. Post-Phase-H the data exists to tell "skipped Monday" from "completed Monday"; drop the `|| isPast` and let `entry.done` be the single truth. Likely surfaces during Phase I manual testing.
-- **Strip-cell routing on future + skipped-past days:** the completed-day case was closed in §4.5.1 I-R5 (page-level redirect to `/complete`). Pre-existing concerns remain: tapping a future programmed day's strip cell creates a session in advance (`started_at = now()`, mismatched against `scheduled_date`); tapping a skipped-past day creates a session for a date long gone. Neither is a Phase H regression — both pre-date Phase I — but both are worth polishing before launch. Likely a small client-side change in [`TodayScreen.tsx`](../../src/app/portal/_components/TodayScreen.tsx) to render past + far-future cells as inert (no Link wrapper) while keeping today + recent-past completed cells navigable.
+- ~~**Strip-cell routing on future + skipped-past days**~~ — **closed 2026-05-13 by Phase K.** Strip cells now navigate to `/portal?d=<iso>` (the card view) instead of `/portal/session/[dayId]` (the Logger URL). Future-day cells render the "Scheduled for…" card with a confirm-modal "Begin session early" CTA backed by the new `client_reschedule_program_day_to_today` RPC. Skipped-past cells render a muted card with an inert footer pointing the client at `/portal/messages`. See §4.6.
 
 ---
 

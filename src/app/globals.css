@@ -1040,7 +1040,7 @@ body {
 
 /* --- Week strip ---
    Seven-day grid at the top of the Today screen. Matches the inline shape
-   currently in TodayScreen but tokenised. */
+   currently in DayScreen but tokenised. */
 .portal-week-strip {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -1115,7 +1115,7 @@ body {
 
 /* --- Sequence bubble ---
    The A / A1 / B letter circles next to each exercise. Tone variants are
-   selected via [data-tone="..."]. Renamed from the inline TodayScreen
+   selected via [data-tone="..."]. Renamed from the inline DayScreen
    tone names (charcoal/primary/accent/amber) to match what they actually
    render: default (the strong primary), muted (warm grey), parchment
    (soft warm tan), outline (parchment with hairline ring).

@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       appointment_reminders: {
@@ -3379,6 +3404,10 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: boolean
       }
+      client_reschedule_program_day_to_today: {
+        Args: { p_program_day_id: string }
+        Returns: string
+      }
       client_start_session: {
         Args: { p_program_day_id: string }
         Returns: string
@@ -3735,6 +3764,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       appointment_reminder_status: [

@@ -5,6 +5,53 @@ import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
+ * Phase K (2026-05-13). "Begin session early" on a future programmed day.
+ * Two-step: (1) reschedule the program_day's scheduled_date to today via
+ * the client_reschedule_program_day_to_today RPC; (2) start a session
+ * normally via startOrResumeSessionAction. Sequencing in the server
+ * action (not inside one RPC) so each RPC keeps a single responsibility
+ * and the v3 client_start_session refusal stack (in-progress, completed-
+ * already) applies unchanged after the date has moved.
+ *
+ * The reschedule RPC enforces its own refusals (future-only, no same-date
+ * collision, no in-progress, no completed). Surface any error message
+ * back to the caller — DayScreen renders it inline beneath the confirm
+ * dialog so the client knows what went wrong without losing the card.
+ */
+export async function rescheduleAndStartSessionAction(
+  programDayId: string,
+): Promise<{ sessionId: string | null; error: string | null }> {
+  const supabase = await createSupabaseServerClient()
+
+  // Auth check upfront so the RPC's identical check is purely defensive.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) return { sessionId: null, error: 'Not authenticated.' }
+
+  // Step 1: move scheduled_date → today. RPC returns the program_day_id
+  // on success (or RAISEs an exception that supabase-js surfaces as an
+  // error object). Generated types don't yet know about the new RPC —
+  // cast to never matches the same idiom used by logSetAction and
+  // completeSessionAction below.
+  const { error: rescheduleErr } = await supabase.rpc(
+    'client_reschedule_program_day_to_today' as never,
+    { p_program_day_id: programDayId } as never,
+  )
+  if (rescheduleErr) {
+    // Pass the RPC's user-facing message through unchanged. The RPC
+    // attaches HINT strings via USING HINT; supabase-js exposes them
+    // on .message + .hint, and we surface .message to the user.
+    return { sessionId: null, error: rescheduleErr.message }
+  }
+
+  // Step 2: start (or resume — defensive idempotency) the session.
+  // After step 1, the day's scheduled_date = today, so this is now
+  // structurally identical to "Begin session" on today's card.
+  return startOrResumeSessionAction(programDayId)
+}
+
+/**
  * Start a new session against a published program_day, OR resume an
  * existing in-progress session for the same day. Returns the session id.
  * The SECURITY DEFINER `client_start_session` RPC refuses to create a

@@ -1,18 +1,20 @@
 import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
-  TodayScreen,
-  type TodaySession,
-  type TodaySessionExercise,
-} from './_components/TodayScreen'
+  DayScreen,
+  type DaySession,
+  type DaySessionExercise,
+} from './_components/DayScreen'
 import {
   addDays,
   buildWeekDots,
+  deriveDayState,
   greetingFor,
   isoFromDate,
   mondayFromIso,
   mondayOfCurrentWeek,
   weekdayIndex,
+  type DayCompletionEntry,
   type WeekDot,
 } from './_lib/portal-helpers'
 
@@ -21,12 +23,13 @@ export const dynamic = 'force-dynamic'
 export default async function PortalTodayPage({
   searchParams,
 }: {
-  // ?w=YYYY-MM-DD navigates the week strip to a different week. Missing or
-  // invalid → snaps to mondayOfCurrentWeek().
-  searchParams: Promise<{ w?: string }>
+  // ?w=YYYY-MM-DD navigates the week strip to a different week.
+  // ?d=YYYY-MM-DD selects which day's card the screen renders (Phase K).
+  // Both missing or invalid → snap to current week + today.
+  searchParams: Promise<{ w?: string; d?: string }>
 }) {
   const supabase = await createSupabaseServerClient()
-  const { w: weekParam } = await searchParams
+  const { w: weekParam, d: dayParam } = await searchParams
 
   // Get this client's row (RLS allows self-SELECT via user_id = auth.uid()).
   const {
@@ -61,12 +64,17 @@ export default async function PortalTodayPage({
   const isCurrentWeek =
     weekStart.getTime() === mondayOfCurrentWeek(now).getTime()
 
+  // Phase K: selected-day ISO. Defaults to today on missing/invalid.
+  // Invalid means: not parseable as YYYY-MM-DD or outside this week.
+  // Outside-this-week falls back to today (rather than auto-navigating
+  // weeks) so the URL parsing stays predictable.
+  const selectedDayIso = resolveSelectedDayIso(dayParam, weekStart, todayIso)
+  const selectedDate = parseIso(selectedDayIso)
+
   // Days for THIS calendar week — load via client_get_week_overview RPC.
-  // The PostgREST embed exercise:exercises(name) we used previously
-  // returned NULL because the exercises table is staff-only at the RLS
-  // layer (see 20260420102600_rls_enable_and_policies.sql:445-465). The
-  // RPC is SECURITY DEFINER pinned to auth.uid() and returns the exercise
-  // summary as a jsonb array per day in a single round trip.
+  // SECURITY DEFINER + auth.uid()-pinned join; the PostgREST embed
+  // exercise:exercises(name) silently drops under the staff-only
+  // exercises RLS, so we use the RPC.
   type WeekDayRow = {
     program_day_id: string
     day_label: string
@@ -93,72 +101,86 @@ export default async function PortalTodayPage({
     }))
   }
 
-  // Which of this week's programmed days has a completed session? RLS on
-  // `sessions` scopes to the caller's own rows; the .in() filter scopes
-  // to this week's program_day_ids. Set-based so a (rare) re-run of the
-  // same program_day doesn't double-count — the meaningful number is
-  // "days completed", not "session rows written".
+  // Phase K (Q-K6.1): single combined SELECT against sessions, derive
+  // both completed and in-progress sets from one query. Pulls
+  // started_at + completed_at so future state additions (abandoned /
+  // paused) can be derived without re-querying. RLS scopes to the
+  // caller's own rows; the .in() filter scopes to this week's
+  // program_day_ids.
   const completedDayIds = new Set<string>()
+  const inProgressDayIds = new Set<string>()
   if (weekDays.length > 0) {
-    const { data: completedSessions } = await supabase
+    const { data: sessionRows } = await supabase
       .from('sessions')
-      .select('program_day_id')
+      .select('program_day_id, started_at, completed_at')
       .in(
         'program_day_id',
         weekDays.map((d) => d.program_day_id),
       )
-      .not('completed_at', 'is', null)
       .is('deleted_at', null)
-    for (const s of completedSessions ?? []) {
-      if (s.program_day_id) completedDayIds.add(s.program_day_id)
+    for (const s of sessionRows ?? []) {
+      if (!s.program_day_id) continue
+      if (s.completed_at !== null) {
+        completedDayIds.add(s.program_day_id)
+      } else if (s.started_at !== null) {
+        inProgressDayIds.add(s.program_day_id)
+      }
     }
   }
 
   // Map weekday → programmed day for the week strip. Derive the
-  // weekday locally from scheduled_date. dayId is carried so the strip
-  // cells can render as navigation Links into /portal/session/<dayId>
-  // for any programmed day, not just today.
-  const programmedByWeekday = new Map<
-    number,
-    { dayLabel: string | null; done: boolean; dayId: string | null }
-  >()
+  // weekday locally from scheduled_date. dayId carried so every strip
+  // cell can render as a Link (rest days included, per Q-K7).
+  const programmedByWeekday = new Map<number, DayCompletionEntry>()
   for (const d of weekDays) {
-    // Canonical Mon-first index — must match the lookup side of
-    // buildWeekDots(). Pre-Phase-I this set used native getDay() (Sun=0)
-    // while the lookup used Mon=0, shifting every programmed day one
-    // cell forward on the strip. Single helper now → no drift.
     const dow = weekdayIndex(parseIso(d.scheduled_date))
     programmedByWeekday.set(dow, {
       dayLabel: d.day_label,
       done: completedDayIds.has(d.program_day_id),
+      inProgress: inProgressDayIds.has(d.program_day_id),
       dayId: d.program_day_id,
     })
   }
 
   const weekDots: WeekDot[] = buildWeekDots(weekStart, programmedByWeekday)
 
-  // Today's session, if any.
-  const todayDay = weekDays.find((d) => d.scheduled_date === todayIso)
-  const session: TodaySession | null = todayDay
+  // Phase K (Q-K7): every cell navigates. Per-cell hrefs keyed by index
+  // — programmed and rest days alike land at /portal?d=<iso>&w=<weekIso>.
+  // Week token preserved so cross-week navigation doesn't lose the user's
+  // place on the strip.
+  const cellHrefs = weekDots.map((d) => {
+    const iso = isoFromDate(d.date)
+    return `/portal?w=${weekStartIso}&d=${iso}`
+  })
+
+  // Selected day's session card data, if any. Find the matching
+  // program_day for the selected ISO, then derive the card state.
+  const selectedDay = weekDays.find((d) => d.scheduled_date === selectedDayIso)
+  const session: DaySession | null = selectedDay
     ? {
-        dayId: todayDay.program_day_id,
-        dayLabel: `Today · ${todayDay.day_label}`,
-        dayTitle: formatDayTitle(todayDay.day_label, program?.name ?? ''),
+        dayId: selectedDay.program_day_id,
+        dayLabel: composeDayLabel(selectedDate, todayIso, selectedDay.day_label),
+        dayTitle: formatDayTitle(selectedDay.day_label, program?.name ?? ''),
         metaLine: composeMetaLine(
-          todayDay.exercises.length,
+          selectedDay.exercises.length,
           program?.name ?? '',
-          weekNumberFor(program, todayIso),
+          weekNumberFor(program, selectedDayIso),
           program?.duration_weeks ?? null,
         ),
-        exercises: buildExerciseList(todayDay.exercises),
-        isCompleted: completedDayIds.has(todayDay.program_day_id),
+        exercises: buildExerciseList(selectedDay.exercises),
+        state: deriveDayState(
+          selectedDate,
+          true,
+          completedDayIds.has(selectedDay.program_day_id),
+          inProgressDayIds.has(selectedDay.program_day_id),
+        ),
       }
     : null
 
   const weekNumber = weekNumberFor(program, todayIso)
 
   return (
-    <TodayScreen
+    <DayScreen
       greeting={greetingFor(now)}
       name={client.first_name}
       weekHeading={
@@ -180,6 +202,8 @@ export default async function PortalTodayPage({
       nextWeekHref={`/portal?w=${nextWeekIso}`}
       isCurrentWeek={isCurrentWeek}
       backToTodayHref="/portal"
+      selectedDayIso={selectedDayIso}
+      cellHrefs={cellHrefs}
     />
   )
 }
@@ -206,6 +230,29 @@ function formatDayTitle(
   return dayLabel
 }
 
+/**
+ * Phase K: day-label eyebrow varies by selected day.
+ *   Today  → "Today · Day C"
+ *   Other  → "Tue 14 May · Day C" (short weekday + date + day_label)
+ *
+ * The "Today · " prefix is load-bearing — it's the only signal on the
+ * card that the user is looking at *today* vs another day in the week.
+ */
+function composeDayLabel(
+  selectedDate: Date,
+  todayIso: string,
+  dayLabel: string,
+): string {
+  const isoSel = isoFromDate(selectedDate)
+  if (isoSel === todayIso) return `Today · ${dayLabel}`
+  const short = new Intl.DateTimeFormat('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(selectedDate)
+  return `${short} · ${dayLabel}`
+}
+
 function composeMetaLine(
   count: number,
   programName: string,
@@ -225,9 +272,9 @@ function composeMetaLine(
 }
 
 // Shape of one exercise object inside the client_get_week_overview RPC's
-// per-day jsonb array (see 20260510140000_client_get_week_overview.sql).
-// The RPC pre-resolves exercises.name through the SECURITY DEFINER barrier
-// so it lands here as a top-level field rather than via a nested join.
+// per-day jsonb array. The RPC pre-resolves exercises.name through the
+// SECURITY DEFINER barrier so it lands here as a top-level field rather
+// than via a nested join.
 type RawExercise = {
   program_exercise_id: string
   sort_order: number
@@ -242,7 +289,7 @@ type RawExercise = {
 
 function buildExerciseList(
   raw: RawExercise[],
-): TodaySessionExercise[] {
+): DaySessionExercise[] {
   const sorted = [...raw].sort((a, b) => a.sort_order - b.sort_order)
 
   // Determine superset group membership to generate A / A1 / A2 letters.
@@ -256,10 +303,8 @@ function buildExerciseList(
     }
   }
 
-  // Tone names match the .portal-seq[data-tone] selectors. Renamed in
-  // Phase B from charcoal/primary/accent/amber — the new names describe
-  // what the bubble actually looks like rather than what it was meant to.
-  const tones: TodaySessionExercise['tone'][] = [
+  // Tone names match the .portal-seq[data-tone] selectors.
+  const tones: DaySessionExercise['tone'][] = [
     'default',
     'muted',
     'parchment',
@@ -306,19 +351,39 @@ function buildRx(e: RawExercise): string {
   return bits.join(' · ') || '—'
 }
 
-// Date helper — local-time interpretation to dodge UTC shift on date-only
-// ISO strings. Local because used only here; isoFromDate is shared and
-// lives in portal-helpers.ts.
+// Local-time interpretation to dodge UTC shift on date-only ISO strings.
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y!, (m ?? 1) - 1, d ?? 1)
 }
 
-// Compute which week-of-program contains the given ISO date. Returns
-// undefined for clients with no active program or with a program that
-// hasn't started yet. Post D-PROG-001 weeks are derived from dates on
-// the fly; week_number is no longer the addressing field, so we compute
-// from start_date.
+/**
+ * Phase K: resolve ?d=YYYY-MM-DD to a valid ISO inside the current
+ * week. Invalid / out-of-week falls back to todayIso so navigating to
+ * a different week with a stale ?d= reads as "no selection." If today
+ * itself isn't in the current week (e.g. user navigated to next week
+ * via ?w=), fall back to the week's Monday.
+ */
+function resolveSelectedDayIso(
+  raw: string | undefined,
+  weekStart: Date,
+  todayIso: string,
+): string {
+  const inWeek = (iso: string): boolean => {
+    const d = parseIso(iso)
+    const diffMs = d.getTime() - weekStart.getTime()
+    const days = Math.floor(diffMs / (24 * 60 * 60 * 1000))
+    return days >= 0 && days < 7
+  }
+
+  if (raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) && inWeek(raw)) {
+    return raw
+  }
+  if (inWeek(todayIso)) return todayIso
+  return isoFromDate(weekStart)
+}
+
+// Compute which week-of-program contains the given ISO date.
 function weekNumberFor(
   program: { start_date: string | null; duration_weeks: number | null } | null | undefined,
   todayIso: string,
