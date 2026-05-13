@@ -1119,24 +1119,22 @@ const RESIZE_HANDLE_HEIGHT = 8
  * Odyssey wordmark, scaled down for use as a corner badge on app-booked
  * appointment blocks. Mirrors the brand-mark pattern from the email
  * templates (Barlow Condensed 700 + accent-green dot baked into the
- * period). Non-interactive — pointer-events disabled so it doesn't
- * intercept clicks on the underlying block.
+ * period). Inline element — placed in the top-right above the time so
+ * it stays visible on short (≤45-min) blocks where a bottom-right
+ * placement would be clipped by the resize handle.
  */
 function OdysseyMark() {
   return (
     <span
       aria-hidden
       style={{
-        position: 'absolute',
-        right: 4,
-        bottom: 2,
         fontFamily: 'var(--font-display)',
         fontWeight: 700,
         fontSize: 9,
         letterSpacing: '0.01em',
         color: 'var(--color-charcoal)',
-        pointerEvents: 'none',
         lineHeight: 1,
+        pointerEvents: 'none',
       }}
     >
       Odyssey<span style={{ color: 'var(--color-accent)' }}>.</span>
@@ -1388,7 +1386,7 @@ function AppointmentBlock({
         <div
           style={{
             display: 'flex',
-            alignItems: 'baseline',
+            alignItems: 'flex-start',
             gap: 6,
             fontSize: '.76rem',
             fontWeight: 600,
@@ -1402,22 +1400,38 @@ function AppointmentBlock({
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
+              lineHeight: 1.1,
             }}
           >
             {appointment.client.first_name} {appointment.client.last_name}
             {isAppCancellation && ' · App Cancellation'}
           </span>
-          <span
+          {/* Right column: Odyssey mark stacks above the time on app-booked
+              blocks so it stays visible even on 45-min slots (where a
+              bottom-right placement would be clipped by the resize handle). */}
+          <div
             style={{
               flexShrink: 0,
-              fontSize: '.66rem',
-              fontWeight: 600,
-              color: 'var(--color-text-light)',
-              fontVariantNumeric: 'tabular-nums',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: 1,
+              lineHeight: 1,
             }}
           >
-            {formatTime(start)}
-          </span>
+            {isAppBooked && <OdysseyMark />}
+            <span
+              style={{
+                fontSize: '.66rem',
+                fontWeight: 600,
+                color: 'var(--color-text-light)',
+                fontVariantNumeric: 'tabular-nums',
+                lineHeight: 1,
+              }}
+            >
+              {formatTime(start)}
+            </span>
+          </div>
         </div>
         <div
           style={{
@@ -1433,11 +1447,6 @@ function AppointmentBlock({
             : appointment.appointment_type}
         </div>
       </div>
-
-      {/* Odyssey brand mark on app-booked sessions. Hidden on blocks
-          shorter than ~36px (≤30-min appointment at low pxPerQuarter)
-          where it would crowd the time + name row. */}
-      {isAppBooked && liveHeight >= 36 && <OdysseyMark />}
 
       {/* Bottom resize handle */}
       <div
