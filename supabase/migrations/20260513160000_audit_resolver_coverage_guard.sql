@@ -237,14 +237,19 @@ DECLARE
   v_err_msg text;
 BEGIN
   FOR v_table_name IN
-    SELECT DISTINCT c.relname::text
+    SELECT DISTINCT c.relname::text AS table_name
       FROM pg_trigger t
       JOIN pg_class c     ON c.oid = t.tgrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
      WHERE NOT t.tgisinternal
        AND t.tgname LIKE 'audit_%'
        AND n.nspname = 'public'
-     ORDER BY c.relname
+     -- ORDER BY 1 (the alias above) is mandatory with SELECT DISTINCT —
+     -- Postgres requires ORDER BY expressions to appear in the select
+     -- list when DISTINCT is present. Ordering is non-essential for
+     -- correctness but gives deterministic error messages when more
+     -- than one branch is missing.
+     ORDER BY 1
   LOOP
     BEGIN
       PERFORM public.audit_resolve_org_id(v_table_name, v_synthetic);
