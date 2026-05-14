@@ -16,6 +16,7 @@
  */
 
 import type { MetricHistory } from '@/lib/testing/loader-types'
+import type { ComparisonMode } from '@/lib/testing/comparison'
 import { BarChartCard } from '../charts/BarChartCard'
 import { LineChartCard } from '../charts/LineChartCard'
 import { MilestoneChart } from './MilestoneChart'
@@ -26,6 +27,10 @@ interface ClientChartFactoryProps {
   thisSessionValues: { left?: number; right?: number; unilateral?: number }
   thisSessionDate: string
   framingText: string | null
+  /** Per Q-J3 + Q-J4 (c) — only consumed by MilestoneChart. Optional
+   *  + default 'baseline' so staff publish-dialog previews (which
+   *  don't pass it) keep their previous behaviour. */
+  comparisonMode?: ComparisonMode
 }
 
 export function ClientChartFactory({
@@ -33,6 +38,7 @@ export function ClientChartFactory({
   thisSessionValues,
   thisSessionDate,
   framingText,
+  comparisonMode,
 }: ClientChartFactoryProps) {
   const chart = metric.settings.client_view_chart
   switch (chart) {
@@ -42,6 +48,7 @@ export function ClientChartFactory({
           metric={metric}
           thisSessionValues={thisSessionValues}
           thisSessionDate={thisSessionDate}
+          comparisonMode={comparisonMode}
         />
       )
     case 'narrative_only':

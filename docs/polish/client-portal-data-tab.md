@@ -443,3 +443,68 @@ J-2's spec'd scope shipped first (hierarchical render + standalone variant + emp
 **Phase M prerequisite confirmed live:** Q-J8 + the RLS policy together unblock the future Test Battery view — sessions can now carry battery names visible from the client side. Phase M decisions (Q-J11/12/13) are locked in `docs/deferred-prompts.md`.
 
 J-3 opens next: comparison toggle (Q-J3 per-card) + MilestoneChart anchor-swap (Q-J4 (c)) + first-capture caption pattern when "previous" mode anchors on a missing point (Q-J4.1).
+
+### 9.6 J-3 — Comparison toggle + MilestoneChart anchor-swap (closed pending EP sign-off, 2026-05-15)
+
+Per the Q-J3 + Q-J4 (c) + Q-J4.1 + Q-J14 + Q-J15 contract. Pure presentation layer — no schema, no RLS, no new server actions.
+
+**What shipped:**
+
+- [`MilestoneChart.tsx`](../../src/app/(staff)/clients/[id]/_components/reports/client-charts/MilestoneChart.tsx) — accepts a new optional `comparisonMode?: ComparisonMode` (default `'baseline'`). A `pickComparisonFor(side)` helper inside the component picks the left endpoint per side: `pickBaseline(...)` in baseline mode, `pickPreviousBefore(metric.points, thisSessionDate, side)` in previous mode. The "baseline" caption under `Endpoint` becomes dynamic — `'previous'` when the parent's mode is `'previous'`.
+- `SideMilestone` renamed its `baseline` prop to `comparisonPoint` to make the variable's role explicit (it can hold either anchor depending on mode). Refactor is internal; no caller signature change because MilestoneChart owns the picker.
+- `BaselineToLatest` now takes `comparisonPoint` + `comparisonMode` and renders `'baseline'` / `'previous'` as the caption — single source of truth for the label string.
+- [`ClientChartFactory.tsx`](../../src/app/(staff)/clients/[id]/_components/reports/client-charts/ClientChartFactory.tsx) — accepts optional `comparisonMode?: ComparisonMode`, passes through only to the `milestone` case. `line` / `bar` / `narrative_only` / `hidden` ignore it (Q-J4 (c) v1 scope).
+- [`PortalTestCard.tsx`](../../src/app/portal/reports/_components/PortalTestCard.tsx) — now a client component (`'use client'`). Owns `useState<ComparisonMode>('baseline')` per Q-J3 (a) + Q-J15. Renders a `ComparisonToggle` (segmented control, rounded pills, mirrors the staff session-builder `ReportsPanel.tsx` visual per Q-J14) in the card header right side; test name takes the remaining flex with ellipsis. Mode threads down to each `MetricBlock` → `ClientChartFactory`.
+- File-local `ComparisonToggle` + `ToggleSegment` in `PortalTestCard.tsx`. Slightly larger padding than the staff version (4px vertical instead of 3px) for mobile tap targets — design-token-only otherwise (`--color-surface`, `--color-charcoal`, `--color-muted`, the 0.4-0-0.2-1 motion easing).
+- Q-J4.1 first-capture fallback in "previous" mode is automatic — when `pickPreviousBefore` returns null, `isFirstCapture` evaluates true and the existing J-2-β compact two-line caption renders. No extra code needed.
+
+**Staff side untouched:**
+
+- `TestPublishDialog`'s chart preview passes no `comparisonMode`, gets the default `'baseline'`, renders identically to pre-J-3.
+- Staff Reports tab's `TestCard` / `MetricBadge` / staff chart family unrelated — they use `ChartFactory` (Recharts), not `ClientChartFactory`. No regression risk.
+- Staff session-builder right-rail `ReportsPanel.tsx` has its OWN per-card toggle (text-rows, not milestone-chart) — independent of this work.
+
+**Files changed:**
+
+MODIFIED: `MilestoneChart.tsx`, `ClientChartFactory.tsx`, `PortalTestCard.tsx`.
+
+**Verification:**
+
+- `npm run type-check` + `npm run build` clean against a HEAD `database.ts` (drift stashed/popped one cycle).
+- Browser-verified by EP (chat 2026-05-15):
+  - Toggle visible in card header, defaults to `Baseline`.
+  - Tap `Previous` → left endpoint swaps, delta arrow + percentage update, caption changes `baseline` → `previous`.
+  - Single-capture metrics collapse to the compact "First capture · {date}" caption in `Previous` mode.
+  - Per-card independence works (KOOS in `Previous` while Knee flexion stays on `Baseline`).
+  - Staff publish-dialog preview unchanged.
+
+**What didn't ship (intentional):**
+
+- `line` / `bar` chart variants don't respond to the toggle. Per Q-J4 (c) v1 scope. Revisit if the EP discovers a line/bar metric that wants a comparison hint.
+- No mode persistence across mounts (tab switch / collapse-reopen resets to `Baseline`). Per Q-J6 sign-off — `useState` only.
+- No animation on the value swap. The 150ms colour/background transition on the toggle pill itself was kept; adding a content cross-fade would be motion-overkill per design-system restraint.
+
+---
+
+## Phase J overall — closed 2026-05-15
+
+All three sub-phases shipped:
+
+| Sub-phase | Commit | Scope |
+|---|---|---|
+| **J-1** | `827ee8a` | Comparison helpers + session grouping (pure-helper extraction) |
+| **J-2** | `535ee58` | Hierarchical render + collapsibility + compaction + staff tagging + RLS migration |
+| **J-3** | pending | Comparison toggle + MilestoneChart anchor-swap |
+
+**Acceptance bar from the handoff brief:**
+
+- [x] `?tab=data` renders the new hierarchical layout: batteries (collapsible) → tests → metrics with charts/narrative.
+- [x] Baseline-vs-previous toggle works on each metric (per Q-J3 per-card scope).
+- [x] Percentage deltas render with direction-of-good colour (via `colourFor`).
+- [x] Standalone tests render as top-level entries (Q-J6 (a) degenerate one-test group).
+- [x] All six client states render correctly (verified pragmatically — same code paths, edge cases covered).
+- [x] `npm run build` passes clean (verified at each sub-phase landing).
+- [x] Each sub-phase's gap doc / sign-off log lives in §9.4 / §9.5 / §9.6.
+- [x] Parent doc `client-portal.md` §4 row **J** marked ✓ (in this commit).
+
+**Phase J is the final phase in the client-portal polish pass.** Per CLAUDE.md the suggested next pass is **auth & onboarding** — but this milestone is a natural pause for the EP to redirect to the open gates (external IT advisor review of `auth.md` + `rls-policies.md`) before any further polish work.

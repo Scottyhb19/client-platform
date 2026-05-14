@@ -27,6 +27,10 @@ import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react'
 import type { MetricHistory } from '@/lib/testing/loader-types'
 import type { Side } from '@/lib/testing/types'
 import { colourFor, formatPctChange } from '@/lib/testing/direction'
+import {
+  pickPreviousBefore,
+  type ComparisonMode,
+} from '@/lib/testing/comparison'
 import { formatShortDate, pickBaseline } from '../helpers'
 
 interface MilestoneChartProps {
@@ -38,15 +42,35 @@ interface MilestoneChartProps {
   thisSessionValues: { left?: number; right?: number; unilateral?: number }
   /** ISO date of the session being previewed. */
   thisSessionDate: string
+  /** Per Q-J3 + Q-J4 (c) sign-off: the per-card comparison toggle on
+   *  the portal Data tab swaps the left endpoint between the first
+   *  capture (`baseline`) and the most recent prior session
+   *  (`previous`). Default `baseline` matches the staff session-
+   *  builder Reports panel and the previous portal behaviour. The
+   *  staff publish-dialog preview keeps the default — no toggle
+   *  there. */
+  comparisonMode?: ComparisonMode
 }
 
 export function MilestoneChart({
   metric,
   thisSessionValues,
   thisSessionDate,
+  comparisonMode = 'baseline',
 }: MilestoneChartProps) {
   const isBilateral = metric.settings.side_left_right
   const unit = metric.settings.unit
+
+  // Per-side comparison endpoint picker. In 'previous' mode this can
+  // return null when the anchor session is itself the first capture
+  // on that side — SideMilestone treats null/equal-to-anchor as the
+  // first-capture case and renders the compact caption (Q-J4.1).
+  function pickComparisonFor(side: Side) {
+    if (comparisonMode === 'previous') {
+      return pickPreviousBefore(metric.points, thisSessionDate, side)
+    }
+    return pickBaseline(metric.points, side ?? undefined)
+  }
 
   if (isBilateral) {
     return (
@@ -59,7 +83,8 @@ export function MilestoneChart({
       >
         <SideMilestone
           label="Left"
-          baseline={pickBaseline(metric.points, 'left')}
+          comparisonPoint={pickComparisonFor('left')}
+          comparisonMode={comparisonMode}
           latestValue={thisSessionValues.left}
           latestDate={thisSessionDate}
           unit={unit}
@@ -67,7 +92,8 @@ export function MilestoneChart({
         />
         <SideMilestone
           label="Right"
-          baseline={pickBaseline(metric.points, 'right')}
+          comparisonPoint={pickComparisonFor('right')}
+          comparisonMode={comparisonMode}
           latestValue={thisSessionValues.right}
           latestDate={thisSessionDate}
           unit={unit}
@@ -80,7 +106,8 @@ export function MilestoneChart({
   return (
     <SideMilestone
       label={null}
-      baseline={pickBaseline(metric.points)}
+      comparisonPoint={pickComparisonFor(null)}
+      comparisonMode={comparisonMode}
       latestValue={thisSessionValues.unilateral}
       latestDate={thisSessionDate}
       unit={unit}
@@ -91,14 +118,19 @@ export function MilestoneChart({
 
 function SideMilestone({
   label,
-  baseline,
+  comparisonPoint,
+  comparisonMode,
   latestValue,
   latestDate,
   unit,
   direction,
 }: {
   label: 'Left' | 'Right' | null
-  baseline: { value: number; conducted_at: string } | null
+  /** Either the baseline (first capture) or the previous session's
+   *  point depending on the parent's comparisonMode. Null when no
+   *  prior point exists on this side; treated as first capture. */
+  comparisonPoint: { value: number; conducted_at: string } | null
+  comparisonMode: ComparisonMode
   latestValue: number | undefined
   latestDate: string
   unit: string
@@ -125,14 +157,17 @@ function SideMilestone({
     )
   }
 
-  const isFirstCapture = !baseline || baseline.conducted_at === latestDate
-  const pct = baseline ? formatPctChange(baseline.value, latestValue) : '—'
-  const colour = baseline
-    ? colourFor(direction, baseline.value, latestValue)
+  const isFirstCapture =
+    !comparisonPoint || comparisonPoint.conducted_at === latestDate
+  const pct = comparisonPoint
+    ? formatPctChange(comparisonPoint.value, latestValue)
+    : '—'
+  const colour = comparisonPoint
+    ? colourFor(direction, comparisonPoint.value, latestValue)
     : 'var(--color-muted)'
   const arrow =
-    baseline && baseline.value !== latestValue ? (
-      latestValue > baseline.value ? (
+    comparisonPoint && comparisonPoint.value !== latestValue ? (
+      latestValue > comparisonPoint.value ? (
         <ArrowUp size={14} aria-hidden />
       ) : (
         <ArrowDown size={14} aria-hidden />
@@ -144,8 +179,9 @@ function SideMilestone({
   // Per Q-J10b sign-off (chat 2026-05-14): first-capture renders as a
   // compact two-line layout — label + value + unit inline on row 1,
   // small "First capture · {date}" caption on row 2. No bordered box.
-  // The bordered-box treatment is retained for the comparison branch
-  // (BaselineToLatest); J-3 will revisit that with the toggle.
+  // Q-J4.1 reuses this branch when `comparisonMode === 'previous'`
+  // but the metric has no prior point on this side — the message is
+  // still "First capture" because that's what it factually is.
   if (isFirstCapture) {
     return (
       <FirstCapture
@@ -184,7 +220,8 @@ function SideMilestone({
         </div>
       )}
       <BaselineToLatest
-        baseline={baseline!}
+        comparisonPoint={comparisonPoint!}
+        comparisonMode={comparisonMode}
         latestValue={latestValue}
         latestDate={latestDate}
         unit={unit}
@@ -263,7 +300,8 @@ function FirstCapture({
 }
 
 function BaselineToLatest({
-  baseline,
+  comparisonPoint,
+  comparisonMode,
   latestValue,
   latestDate,
   unit,
@@ -271,7 +309,8 @@ function BaselineToLatest({
   pct,
   colour,
 }: {
-  baseline: { value: number; conducted_at: string }
+  comparisonPoint: { value: number; conducted_at: string }
+  comparisonMode: ComparisonMode
   latestValue: number
   latestDate: string
   unit: string
@@ -279,6 +318,12 @@ function BaselineToLatest({
   pct: string
   colour: string
 }) {
+  // Lowercase label per the design — sits below the value as a small
+  // muted caption. "baseline" when comparing against the first capture,
+  // "previous" when comparing against the immediate prior session.
+  const comparisonLabel =
+    comparisonMode === 'previous' ? 'previous' : 'baseline'
+
   return (
     <div
       style={{
@@ -289,10 +334,10 @@ function BaselineToLatest({
       }}
     >
       <Endpoint
-        value={baseline.value}
+        value={comparisonPoint.value}
         unit={unit}
-        date={baseline.conducted_at}
-        label="baseline"
+        date={comparisonPoint.conducted_at}
+        label={comparisonLabel}
         align="left"
       />
       <div
