@@ -26,6 +26,11 @@ import {
   publishTestAction,
   unpublishPublicationAction,
 } from '../../publish-actions'
+import {
+  getSessionBatteryContextAction,
+  setSessionBatteryAction,
+  type SessionBatteryContext,
+} from '../../test-actions'
 import { ClientChartFactory } from './client-charts/ClientChartFactory'
 import { formatShortDate } from './helpers'
 import {
@@ -283,6 +288,10 @@ function PendingSessionForm({
         </strong> — {metricsThisSession.length} metric
         {metricsThisSession.length === 1 ? '' : 's'} captured for this test.
       </div>
+      <SessionBatteryTag
+        clientId={clientId}
+        sessionId={session.session_id}
+      />
       <div
         style={{
           display: 'flex',
@@ -506,6 +515,10 @@ function PublishedRow({
           Published without framing.
         </p>
       )}
+      <SessionBatteryTag
+        clientId={clientId}
+        sessionId={publication.test_session_id}
+      />
       {error && (
         <div
           role="alert"
@@ -556,6 +569,143 @@ function SectionLabel({
       >
         {text}
       </h3>
+    </div>
+  )
+}
+
+/**
+ * Per-session "Applied battery" tag (Phase J-2-γ, Q-J8 + Q-J8.1).
+ *
+ * Loads its own data on mount (active org batteries + the session's
+ * current `applied_battery_id`) so it can live inside the dialog
+ * without prop-drilling batteries through ReportsTab → CategoryDetail
+ * → TestCard → TestPublishButton → TestPublishDialog. Single server
+ * roundtrip; results stable while the dialog is open.
+ *
+ * The portal Data tab reads `test_sessions.applied_battery_id` via the
+ * loader join to `test_batteries.name` and surfaces the resolved name
+ * as the session-group header second line. Tagging here updates that
+ * field; `revalidatePath` invalidates the staff client profile + the
+ * portal Reports cache.
+ *
+ * If two test-publish dialogs are opened for sibling tests in the
+ * same session (different times, different dialogs), the last write
+ * wins. The risk is small — the EP is normally publishing tests for
+ * the same session in one sitting and the value is visible in every
+ * dialog open.
+ */
+function SessionBatteryTag({
+  clientId,
+  sessionId,
+}: {
+  clientId: string
+  sessionId: string
+}) {
+  const router = useRouter()
+  const [ctx, setCtx] = useState<SessionBatteryContext | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [busy, startTransition] = useTransition()
+  const [currentValue, setCurrentValue] = useState<string>('')
+
+  useEffect(() => {
+    let cancelled = false
+    getSessionBatteryContextAction({ clientId, sessionId }).then((res) => {
+      if (cancelled) return
+      if (res.data === null) {
+        setLoadError(res.error ?? 'Unknown error')
+        return
+      }
+      setCtx(res.data)
+      setCurrentValue(res.data.currentBatteryId ?? '')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [clientId, sessionId])
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value === '' ? null : e.target.value
+    const prev = currentValue
+    setCurrentValue(e.target.value)
+    setSaveError(null)
+    startTransition(async () => {
+      const res = await setSessionBatteryAction({
+        clientId,
+        sessionId,
+        batteryId: next,
+      })
+      if (!res.ok) {
+        setSaveError(res.error)
+        setCurrentValue(prev)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+      }}
+    >
+      <label
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontSize: '.66rem',
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          color: 'var(--color-muted)',
+          fontWeight: 700,
+        }}
+      >
+        Session battery
+      </label>
+      <select
+        value={currentValue}
+        onChange={handleChange}
+        disabled={busy || ctx === null}
+        style={{
+          padding: '4px 8px',
+          fontFamily: 'var(--font-sans)',
+          fontSize: '.8rem',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 'var(--radius-input)',
+          background: '#fff',
+          color: 'var(--color-text)',
+          outline: 'none',
+          minWidth: 180,
+        }}
+      >
+        <option value="">Not tagged</option>
+        {ctx?.batteries.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name}
+          </option>
+        ))}
+      </select>
+      {busy && (
+        <span style={{ fontSize: '.72rem', color: 'var(--color-muted)' }}>
+          Saving…
+        </span>
+      )}
+      {loadError && (
+        <span style={{ fontSize: '.72rem', color: 'var(--color-alert)' }}>
+          Couldn&rsquo;t load batteries — {loadError}
+        </span>
+      )}
+      {saveError && (
+        <span
+          role="alert"
+          style={{ fontSize: '.72rem', color: 'var(--color-alert)' }}
+        >
+          {saveError}
+        </span>
+      )}
     </div>
   )
 }

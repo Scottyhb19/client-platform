@@ -4,10 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
+  loadActiveBatteries,
   resolveMetricSettings,
   validateMetricValue,
   type ResolvedMetricSettings,
 } from '@/lib/testing'
+import type { BatteryRow } from '@/lib/testing/loader-types'
 
 /**
  * Input shape for createTestSession. Mirrors the brief's three-state
@@ -212,4 +214,111 @@ export async function softDeleteTestSessionAction(
 
   revalidatePath(`/clients/${clientId}`)
   return { data: { ok: true }, error: null }
+}
+
+// ---------------------------------------------------------------------------
+// Session battery tagging (Phase J-2-γ)
+//
+// The TestPublishDialog gains a "Session battery" select so the EP can
+// retroactively tag a test_session with a saved battery — necessary
+// when the battery template wasn't applied at capture time. The portal
+// Data tab reads test_sessions.applied_battery_id via the loader join
+// to test_batteries.name and surfaces it as the session-group header.
+// ---------------------------------------------------------------------------
+
+export type SessionBatteryContext = {
+  /** Active saved batteries available for tagging, sorted by name. */
+  batteries: BatteryRow[]
+  /** Current applied_battery_id on the session, or null when untagged. */
+  currentBatteryId: string | null
+}
+
+/**
+ * Load the data the SessionBatteryTag UI needs: the org's active
+ * saved batteries + the session's current applied_battery_id. Single
+ * round-trip via parallel queries.
+ *
+ * Returns null on the session lookup if the session doesn't exist or
+ * the caller can't see it (RLS). The component falls back to a
+ * "not tagged" treatment in that case.
+ */
+export async function getSessionBatteryContextAction(input: {
+  clientId: string
+  sessionId: string
+}): Promise<
+  | { data: SessionBatteryContext; error: null }
+  | { data: null; error: string }
+> {
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const [batteries, sessionRes] = await Promise.all([
+    loadActiveBatteries(supabase, organizationId),
+    supabase
+      .from('test_sessions')
+      .select('applied_battery_id')
+      .eq('id', input.sessionId)
+      .is('deleted_at', null)
+      .maybeSingle(),
+  ])
+
+  if (sessionRes.error) {
+    return { data: null, error: sessionRes.error.message }
+  }
+
+  return {
+    data: {
+      batteries,
+      currentBatteryId: sessionRes.data?.applied_battery_id ?? null,
+    },
+    error: null,
+  }
+}
+
+/**
+ * Set (or clear) the applied battery on a test_session. RLS enforces
+ * org-scope on the UPDATE; an additional same-org check on the
+ * battery itself prevents cross-org tagging via a forged id.
+ *
+ * Passing batteryId = null clears the tag.
+ */
+export async function setSessionBatteryAction(input: {
+  clientId: string
+  sessionId: string
+  batteryId: string | null
+}): Promise<{ ok: true; error: null } | { ok: false; error: string }> {
+  const { organizationId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  // Defence in depth — if a non-null battery id is supplied, confirm it
+  // belongs to the caller's org and is live. RLS would block a
+  // cross-org write to test_sessions, but this short-circuits to a
+  // clearer error message before the UPDATE.
+  if (input.batteryId !== null) {
+    const { data: battery, error: bErr } = await supabase
+      .from('test_batteries')
+      .select('id, organization_id, deleted_at')
+      .eq('id', input.batteryId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (bErr) return { ok: false, error: bErr.message }
+    if (!battery || battery.organization_id !== organizationId) {
+      return { ok: false, error: 'Battery not found in your practice.' }
+    }
+  }
+
+  const { error } = await supabase
+    .from('test_sessions')
+    .update({ applied_battery_id: input.batteryId })
+    .eq('id', input.sessionId)
+
+  if (error) return { ok: false, error: error.message }
+
+  // Staff Reports tab + the portal Data tab both read this. Force-
+  // dynamic on /portal/reports means it re-renders fresh on every
+  // request; the revalidate is for the staff client profile cache.
+  revalidatePath(`/clients/${input.clientId}`)
+  revalidatePath('/portal/reports')
+
+  return { ok: true, error: null }
 }

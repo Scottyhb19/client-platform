@@ -1,30 +1,44 @@
 import type {
   MetricHistory,
-  PublicationRow,
   TestHistory,
 } from '@/lib/testing/loader-types'
+import { valuesAtSession } from '@/lib/testing/comparison'
 import { ClientChartFactory } from '@/app/(staff)/clients/[id]/_components/reports/client-charts/ClientChartFactory'
 import { PortalFramingBlock } from './PortalFramingBlock'
 
 interface Props {
   test: TestHistory
-  publications: PublicationRow[]
+  /** The session-group's anchor session_id. Per Q-J5 (revised
+   *  2026-05-14): each card is a frozen snapshot of THIS session, not
+   *  the test's latest capture. */
+  sessionId: string
+  /** Anchor session's conducted_at — passed to ClientChartFactory as
+   *  thisSessionDate, used by MilestoneChart to decide first-capture
+   *  vs baseline → latest rendering. */
+  sessionConductedAt: string
+  /** Framing text from the live publication for (sessionId, test_id),
+   *  null when the EP wrote no framing for this publication. Phase E
+   *  Q3's "latest publication's framing" rule revised by Q-J5 — each
+   *  publication carries its own framing. */
+  framing: string | null
 }
 
 /**
- * One card per test, sorted into the page by most-recent activity (see
- * DataView). Per Q3 sign-off, framing text is drawn from the most
- * recent live publication for this test and shown once at the top —
- * not repeated per metric.
+ * One test card inside a PortalSessionGroup. Renders per-metric via
+ * ClientChartFactory, anchoring all metric values on the group's
+ * session_id. Framing block (when present) sits above the metrics.
  *
- * Each metric inside the card dispatches via ClientChartFactory on the
- * resolved `client_view_chart`. Metrics with `client_view_chart =
- * 'hidden'` render nothing; if every metric is hidden, DataView upstream
- * filters the test out so the card never appears.
+ * Metrics where this session captured no value (defensive — the
+ * per-publication grouping already filters at the test level) render
+ * nothing. Metrics with client_view_chart = 'hidden' render nothing
+ * via ClientChartFactory's dispatch.
  */
-export function PortalTestCard({ test, publications }: Props) {
-  const framing = pickLatestFramingForTest(test.test_id, publications)
-
+export function PortalTestCard({
+  test,
+  sessionId,
+  sessionConductedAt,
+  framing,
+}: Props) {
   return (
     <article
       className="portal-card is-compact"
@@ -66,17 +80,14 @@ export function PortalTestCard({ test, publications }: Props) {
           gap: 10,
         }}
       >
-        {test.metrics.map((metric) => {
-          const latest = pickLatestSession(metric)
-          if (!latest) return null
-          return (
-            <MetricBlock
-              key={metric.settings.metric_id}
-              metric={metric}
-              latest={latest}
-            />
-          )
-        })}
+        {test.metrics.map((metric) => (
+          <MetricBlock
+            key={metric.settings.metric_id}
+            metric={metric}
+            sessionId={sessionId}
+            sessionConductedAt={sessionConductedAt}
+          />
+        ))}
       </div>
     </article>
   )
@@ -84,15 +95,16 @@ export function PortalTestCard({ test, publications }: Props) {
 
 function MetricBlock({
   metric,
-  latest,
+  sessionId,
+  sessionConductedAt,
 }: {
   metric: MetricHistory
-  latest: LatestSession
+  sessionId: string
+  sessionConductedAt: string
 }) {
-  // Multi-metric tests (KOOS, CMJ) want a per-metric label so the client
-  // knows which subscale is which. Single-metric tests (most ROM) skip
-  // it — the card header carries the test name and there's nothing to
-  // disambiguate.
+  const values = valuesAtSession(metric, sessionId)
+  if (!values) return null
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div
@@ -109,69 +121,10 @@ function MetricBlock({
       </div>
       <ClientChartFactory
         metric={metric}
-        thisSessionValues={{
-          left: latest.left,
-          right: latest.right,
-          unilateral: latest.unilateral,
-        }}
-        thisSessionDate={latest.date}
+        thisSessionValues={values}
+        thisSessionDate={sessionConductedAt}
         framingText={null}
       />
     </div>
   )
-}
-
-interface LatestSession {
-  date: string
-  left?: number
-  right?: number
-  unilateral?: number
-}
-
-/**
- * Find the latest session for this metric and pull every side captured
- * in that session. Bilateral metrics record both sides at the same
- * conducted_at, so this groups them correctly.
- */
-function pickLatestSession(metric: MetricHistory): LatestSession | null {
-  if (metric.points.length === 0) return null
-  let latestSessionId: string | null = null
-  let latestDate: string | null = null
-  for (const p of metric.points) {
-    if (latestDate === null || p.conducted_at > latestDate) {
-      latestDate = p.conducted_at
-      latestSessionId = p.session_id
-    }
-  }
-  if (!latestSessionId || !latestDate) return null
-
-  const result: LatestSession = { date: latestDate }
-  for (const p of metric.points) {
-    if (p.session_id !== latestSessionId) continue
-    if (p.side === 'left') result.left = p.value
-    else if (p.side === 'right') result.right = p.value
-    else if (p.side === null) result.unilateral = p.value
-  }
-  return result
-}
-
-/**
- * Most recent live publication for this test. Per Q3 sign-off, the
- * framing on the latest publication is the one shown — earlier
- * publications' framing is superseded.
- */
-function pickLatestFramingForTest(
-  testId: string,
-  publications: PublicationRow[],
-): string | null {
-  let latest: PublicationRow | null = null
-  for (const p of publications) {
-    if (p.test_id !== testId) continue
-    if (latest === null || p.published_at > latest.published_at) {
-      latest = p
-    }
-  }
-  if (!latest) return null
-  if (!latest.framing_text || latest.framing_text.trim() === '') return null
-  return latest.framing_text
 }

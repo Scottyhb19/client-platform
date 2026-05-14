@@ -141,6 +141,22 @@ function SideMilestone({
       <ArrowRight size={14} aria-hidden />
     )
 
+  // Per Q-J10b sign-off (chat 2026-05-14): first-capture renders as a
+  // compact two-line layout — label + value + unit inline on row 1,
+  // small "First capture · {date}" caption on row 2. No bordered box.
+  // The bordered-box treatment is retained for the comparison branch
+  // (BaselineToLatest); J-3 will revisit that with the toggle.
+  if (isFirstCapture) {
+    return (
+      <FirstCapture
+        label={label}
+        value={latestValue}
+        unit={unit}
+        date={latestDate}
+      />
+    )
+  }
+
   return (
     <div
       style={{
@@ -167,49 +183,71 @@ function SideMilestone({
           {label}
         </div>
       )}
-      {isFirstCapture ? (
-        <FirstCapture value={latestValue} unit={unit} date={latestDate} />
-      ) : (
-        <BaselineToLatest
-          baseline={baseline!}
-          latestValue={latestValue}
-          latestDate={latestDate}
-          unit={unit}
-          arrow={arrow}
-          pct={pct}
-          colour={colour}
-        />
-      )}
+      <BaselineToLatest
+        baseline={baseline!}
+        latestValue={latestValue}
+        latestDate={latestDate}
+        unit={unit}
+        arrow={arrow}
+        pct={pct}
+        colour={colour}
+      />
     </div>
   )
 }
 
 function FirstCapture({
+  label,
   value,
   unit,
   date,
 }: {
+  label: 'Left' | 'Right' | null
   value: number
   unit: string
   date: string
 }) {
+  // Compact two-line layout per Q-J10b. Label (when present) sits
+  // inline with value+unit on row 1 — `LEFT  -5 deg`; small caption
+  // on row 2 — `First capture · 14 May 2026`. No bordered box.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 6,
+          flexWrap: 'wrap',
+        }}
+      >
+        {label && (
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '.62rem',
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: 'var(--color-muted)',
+              fontWeight: 700,
+            }}
+          >
+            {label}
+          </span>
+        )}
         <span
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
-            fontSize: '1.6rem',
+            fontSize: '1.25rem',
             color: 'var(--color-charcoal)',
-            lineHeight: 1,
+            lineHeight: 1.1,
           }}
         >
           {value}
         </span>
         <span
           style={{
-            fontSize: '.78rem',
+            fontSize: '.74rem',
             color: 'var(--color-text-light)',
             fontWeight: 500,
           }}
@@ -217,7 +255,7 @@ function FirstCapture({
           {unit}
         </span>
       </div>
-      <div style={{ fontSize: '.74rem', color: 'var(--color-muted)' }}>
+      <div style={{ fontSize: '.7rem', color: 'var(--color-muted)' }}>
         First capture · {formatShortDate(date)}
       </div>
     </div>

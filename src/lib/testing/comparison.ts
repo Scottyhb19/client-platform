@@ -21,6 +21,7 @@
 
 import type {
   ClientTestHistory,
+  MetricHistory,
   MetricSeriesPoint,
   PublicationRow,
   SessionInfo,
@@ -90,15 +91,36 @@ export function pickPreviousBefore(
 // ---------------------------------------------------------------------------
 
 /**
+ * A test within a session-group, paired with the framing_text from
+ * the live publication that put it in this group. Per Q-J5 (revised
+ * 2026-05-14) the framing comes from THIS publication, not the
+ * latest publication for this test_id — different sessions can carry
+ * different framings.
+ *
+ * `framing_text` is null when the publication carried no framing OR
+ * when the EP wrote an empty string. The portal renderer treats
+ * both as "no framing block to render."
+ */
+export interface SessionGroupTest {
+  test: TestHistory
+  framing_text: string | null
+}
+
+/**
  * One session-as-battery group for the portal Data tab. The header
  * carries the battery name (or null when no battery template was
  * applied) and the session's conducted_at; the tests inside are the
- * tests whose most-recent live publication landed in this session.
+ * tests with a live publication for this session.
  *
- * Per Q-J1 sign-off (chat 2026-05-14): each test appears in exactly
- * one group, anchored on its most-recent live publication. Same
- * battery captured 5× produces 5 distinct groups, distinguished by
- * date — the date IS the disambiguator (EP rationale).
+ * Per Q-J5 sign-off (revised 2026-05-14): per-publication
+ * frozen-snapshot. A test with N live publications appears in N
+ * groups — each group is a "what was tested in this session"
+ * snapshot. Hiding a test from an older group would make that
+ * session look like it was missing a test.
+ *
+ * Per Q-J6 (a): standalone captures (no battery_name) render as a
+ * single-test group with no special bucket label — degenerate case
+ * of the same shape.
  */
 export interface SessionGroup {
   /** Anchor session's id — used as a React key. */
@@ -106,12 +128,11 @@ export interface SessionGroup {
   /** Session's conducted_at, used for the group header. */
   conducted_at: string
   /** Battery template name when one was applied; null for standalone
-   *  captures (per Q-J6 sign-off: render as a one-test group, no
-   *  special bucket). */
+   *  captures. */
   battery_name: string | null
-  /** Tests anchored on this session, in catalog order (preserve the
-   *  loader's metric_id sort within each test). */
-  tests: TestHistory[]
+  /** Tests with live publications in this session, paired with each
+   *  publication's framing_text. */
+  tests: SessionGroupTest[]
 }
 
 /**
@@ -167,15 +188,21 @@ export function groupHistoryBySession(
 
     // Dedupe by test_id within the session (defensive — the
     // unique-active partial index on client_publications already
-    // enforces one live publication per (session, test) pair).
+    // enforces one live publication per (session, test) pair). Each
+    // test carries the framing_text from its publication; empty
+    // strings collapse to null.
     const seenTestIds = new Set<string>()
-    const tests: TestHistory[] = []
+    const tests: SessionGroupTest[] = []
     for (const pub of sessionPubs) {
       if (seenTestIds.has(pub.test_id)) continue
       const test = testById.get(pub.test_id)
       if (!test) continue
       seenTestIds.add(pub.test_id)
-      tests.push(test)
+      const framing =
+        pub.framing_text && pub.framing_text.trim() !== ''
+          ? pub.framing_text
+          : null
+      tests.push({ test, framing_text: framing })
     }
     if (tests.length === 0) continue
 
@@ -190,4 +217,36 @@ export function groupHistoryBySession(
   // 5. Newest first per Q-J1.1.
   groups.sort((a, b) => b.conducted_at.localeCompare(a.conducted_at))
   return groups
+}
+
+// ---------------------------------------------------------------------------
+// Per-(metric, session) value bundling — for ClientChartFactory input
+// ---------------------------------------------------------------------------
+
+/**
+ * Bundle of this-session values for a metric, grouped by side. Mirrors
+ * the shape ClientChartFactory consumes (`thisSessionValues`). Returns
+ * null when this session captured no values for this metric (e.g. the
+ * test wasn't part of this session, or a bilateral metric was captured
+ * on neither side — defensive; the per-publication grouping in
+ * groupHistoryBySession already excludes such tests).
+ */
+export function valuesAtSession(
+  metric: MetricHistory,
+  sessionId: string,
+): { left?: number; right?: number; unilateral?: number } | null {
+  const sides: Side[] = metric.settings.side_left_right
+    ? ['left', 'right']
+    : [null]
+  const result: { left?: number; right?: number; unilateral?: number } = {}
+  let hasAny = false
+  for (const side of sides) {
+    const point = pointAtSession(metric.points, sessionId, side)
+    if (!point) continue
+    if (side === 'left') result.left = point.value
+    else if (side === 'right') result.right = point.value
+    else result.unilateral = point.value
+    hasAny = true
+  }
+  return hasAny ? result : null
 }

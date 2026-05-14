@@ -383,3 +383,63 @@ Walk-through — client has KOOS captured Jan 1 (published Jan 2) and re-capture
 This matches the EP's intent: "session-as-a-whole" snapshot, no test mysteriously absent from an older group.
 
 Sign off this contract + the J-1 close, and J-2 opens (rewrites `DataView.tsx` + adds `PortalSessionGroup` + per-card session-anchored render + standalone-test variant + empty-state).
+
+### 9.5 J-2 — Hierarchical render + collapsibility + compaction + staff tagging (closed pending EP sign-off, 2026-05-15)
+
+J-2's spec'd scope shipped first (hierarchical render + standalone variant + empty-state). Three live-test feedback items extended the sub-phase within the same effort — collapsibility (J-2-α), first-capture compaction (J-2-β), staff tagging affordance + portal RLS migration (J-2-γ). EP verified each independently in the browser before the next opened.
+
+**What shipped — J-2 base** (per Q-J1..Q-J7 contract):
+
+- [`DataView.tsx`](../../src/app/portal/reports/_components/DataView.tsx) — rewritten. Calls `groupHistoryBySession(history, publications)`; renders one `PortalSessionGroup` per result. Empty state when `groups.length === 0` (Q-J7 (a) one-message variant). Standalone-test case (Q-J6 (a)) falls out naturally as a one-test group.
+- [`PortalSessionGroup.tsx`](../../src/app/portal/reports/_components/PortalSessionGroup.tsx) — NEW. Header eyebrow (date + battery name when applied, or "N tests" when not). Children are `PortalTestCard`s anchored on this group's `session_id`.
+- [`PortalTestCard.tsx`](../../src/app/portal/reports/_components/PortalTestCard.tsx) — rewritten signature: `{ test, sessionId, sessionConductedAt, framing }`. Reads metric values via `valuesAtSession(metric, sessionId)` — no longer `pickLatestSession`. Framing comes from the publication that put the test in THIS group, per Q-J5 (revised) frozen-snapshot semantic.
+- [`comparison.ts`](../../src/lib/testing/comparison.ts) — extended: `SessionGroupTest` interface (test + per-publication framing); `groupHistoryBySession` populates `framing_text`; new `valuesAtSession(metric, sessionId)` helper.
+
+**What shipped — J-2-α (Q-J9, collapsibility):**
+
+- `PortalSessionGroup` uses `useState<boolean>(defaultExpanded)`; `DataView` sets `defaultExpanded={index === 0}` so newest is expanded, all older collapsed (Q-J9a (b)).
+- Header is a full-width `<button>` (entire row tap-target); `aria-expanded` + `aria-controls` for screen-readers.
+- `ChevronDown` rotates `0deg → -90deg` on collapse; body reveal via `grid-template-rows: 1fr` ⇄ `0fr` with `overflow:hidden` inner div. Transition: 300ms `cubic-bezier(0.4, 0, 0.2, 1)` matching the design-system motion token.
+
+**What shipped — J-2-β (Q-J10b, first-capture compaction):**
+
+- [`MilestoneChart.tsx`](../../src/app/(staff)/clients/[id]/_components/reports/client-charts/MilestoneChart.tsx) `SideMilestone`: first-capture branch becomes borderless two-line layout — row 1 = label inline with value+unit (label `.62rem` uppercase, value `1.25rem` display, unit `.74rem` muted); row 2 = `.7rem` caption "First capture · {date}".
+- Outer bordered box retained for the `BaselineToLatest` branch — J-3 owns the comparison rendering refresh.
+- Same component renders the staff publish-dialog preview; the staff preview is now compact too, which is correct — the preview must reflect what the client sees.
+- Observed effect: multi-metric tests like Knee flexion / extension (4 metric boxes) roughly half the previous vertical footprint.
+
+**What shipped — J-2-γ (Q-J8 + Q-J8.1 (a), staff tagging + RLS):**
+
+- [`test-actions.ts`](../../src/app/(staff)/clients/[id]/test-actions.ts) — two new server actions:
+  - `getSessionBatteryContextAction({ clientId, sessionId })` → `{ batteries: BatteryRow[], currentBatteryId: string | null }`. Parallel load of `loadActiveBatteries` + a single-row SELECT for the session's current `applied_battery_id`.
+  - `setSessionBatteryAction({ clientId, sessionId, batteryId: string | null })` → `{ ok }` | `{ ok: false, error }`. Same-org defence-in-depth check on the battery before UPDATE; `revalidatePath` on both `/clients/[id]` and `/portal/reports`.
+- [`TestPublishDialog.tsx`](../../src/app/(staff)/clients/[id]/_components/reports/TestPublishDialog.tsx) — new `SessionBatteryTag` component (file-local). Loads its own data on mount via the new context action — avoids prop-drilling `batteries` through ReportsTab → CategoryDetail → TestCard → TestPublishButton. Auto-saves on `<select>` change with optimistic state + revert-on-error. Renders inside both `PendingSessionForm` (under the session-of date line) and each `PublishedRow` (under the framing text).
+- Portal RLS gap surfaced during verification: `test_batteries` was Pattern A (staff-only SELECT) per migration `20260428120800_testing_module_rls.sql`. The portal loader's `battery:test_batteries(name)` join silently resolved to null for client callers. Migration `20260515120000_client_select_test_batteries.sql` adds:
+  - SECURITY DEFINER helper `battery_in_clients_published_session(uuid)` — returns true iff the battery is applied to a `test_session` the caller owns AND has a live `client_publications` row. Uses `auth.uid()` (un-spoofable); STABLE + SECURITY DEFINER avoids RLS recursion across `test_sessions` / `client_publications` (same pattern as the existing `client_owns_test_session` family from migration `20260428150000`).
+  - Client SELECT policy `"client select test_batteries via own published session"` calling the helper. Narrow: same-org guarantee inherits via the session join; clients cannot enumerate batteries.
+  - Staff SELECT policy untouched (OR'd at the policy layer).
+- Applied via `npx supabase db push` (project `azjllcsffixswiigjqhj`); no type regen needed (no column changes).
+
+**Verification:**
+
+- `npm run type-check` + `npm run build` clean at every sub-piece. Pre-existing `database.ts` BOM drift stashed for each verify, restored byte-identically (4 stash-pop cycles total across J-2).
+- Browser-verified by EP (chat 2026-05-14/15):
+  - J-2-α — newest group expanded, others collapsed, 300ms reveal smooth, full-row tap target.
+  - J-2-β — multi-metric test box height ~halved.
+  - J-2-γ — tag persists in the staff dialog (re-opening shows the saved battery selected). Initial portal render after tagging still showed "N tests" → diagnosed as RLS gap → migration applied → portal session-group header now reads `ACL RTR · 6 tests`.
+- Live SQL check confirmed the save landed pre-migration: session `a97e21fe-…` carries `applied_battery_id = 3e21de6b-…` + `battery_name = ACL RTR`.
+
+**What didn't ship (intentional, J-3 territory):**
+
+- No comparison toggle UI yet (per-card Baseline ↔ Previous segmented control). Q-J3 (a) per-card placement signed off; J-3 builds it.
+- No MilestoneChart anchor-swap on the toggle. Q-J4 (c) signed off; J-3 builds it.
+- `BaselineToLatest` rendering not touched — its bordered-box treatment stays until J-3 redesigns it alongside the toggle.
+
+**Open follow-ups surfaced during J-2:**
+
+- The compact first-capture rendering uses inline styles (font sizes, weights, paddings). Aligns with existing portal-side patterns (PortalTop, etc.); not a new violation. A future portal-design-system pass could lift these into a `.portal-metric-row` primitive — flagged but not Phase J scope.
+- `SessionBatteryTag` shows "Saving…" inline; doesn't announce success. Optimistic state + persistence on dialog re-open is the success signal. Fine for v1.
+
+**Phase M prerequisite confirmed live:** Q-J8 + the RLS policy together unblock the future Test Battery view — sessions can now carry battery names visible from the client side. Phase M decisions (Q-J11/12/13) are locked in `docs/deferred-prompts.md`.
+
+J-3 opens next: comparison toggle (Q-J3 per-card) + MilestoneChart anchor-swap (Q-J4 (c)) + first-capture caption pattern when "previous" mode anchors on a missing point (Q-J4.1).
