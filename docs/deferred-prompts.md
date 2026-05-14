@@ -86,3 +86,35 @@ The session-builder Phase I duplicate flow (`duplicate_program_day` migration `2
 > Fix per-set fan-out in `copy_program_day` and `repeat_program_day_weekly`. Both RPCs (defined in `supabase/migrations/20260503120000_program_days_copy_repeat.sql`) clone the day + program_exercises but don't fan out `program_exercise_sets` — so calendar copies/repeats land with empty set rows in the post-Phase-C per-set shape. The session-builder `duplicate_program_day` RPC (migration `20260508100000_duplicate_program_day.sql`) shows the correct pattern: a CTE-with-RETURNING `cloned`, then `INSERT INTO program_exercise_sets SELECT … FROM cloned JOIN program_exercises src_pe ON sort_order JOIN program_exercise_sets src_set ON program_exercise_id`. Apply the same pattern inside `copy_program_day`'s body and inside the per-iteration block of `repeat_program_day_weekly`'s WHILE loop. CREATE OR REPLACE — signatures don't change. No types regen needed. Add a pgTAP test asserting per-set rows clone 1:1. Don't backfill existing data (pre-launch — no real client data). Reference: `docs/deferred-prompts.md` "Calendar copy/repeat: per-set fan-out fix".
 
 ---
+
+## Staff Reports — by-test ↔ by-session view toggle
+
+**Surfaced:** 2026-05-14 during client-portal Phase J-1 sign-off. Idea raised for the portal, scope-clarified back to staff-only.
+
+**Idea.** Add a view-mode toggle on the staff Reports surfaces that flips between:
+
+- **By-test view** (today's staff `ReportsTab.tsx` — category → subcategory → test cards with time-series charts; primary lens for "how has this metric trended"). Already built.
+- **By-session view** (mirror the staff session-builder `ReportsPanel.tsx`'s frozen-snapshot semantic — session-groups containing the tests captured/published in that session; primary lens for "what does this testing session look like as a whole").
+
+Two surfaces in scope:
+
+1. **Staff client-profile Reports tab** — `src/app/(staff)/clients/[id]/_components/ReportsTab.tsx` + the whole `_components/reports/` family (`CategoryGrid`, `CategoryDetail`, `TestCard`, `MetricBadge`, charts).
+2. **Staff session-builder right-rail Reports panel** — `src/app/(staff)/clients/[id]/_components/ReportsPanel.tsx`. Today this is by-session only; adding by-test would let the EP review a metric's trend from inside the program builder without leaving the session.
+
+**Explicitly NOT in scope:** the client portal. Phase J locks the client portal to session-grouped only — adding a toggle to a behaviour-change surface creates clutter the client doesn't need. The toggle is an EP-control feature.
+
+**Decisions still open** (none signed off — sketching only):
+
+- Where the toggle lives on the client profile (page-level vs Reports-tab-local).
+- Does the session-builder rail's toggle need its own state or follow the profile's?
+- Does the rail need both views or only one extra (by-test) since it's already by-session?
+- Sticky-per-EP via a `practice_preferences` row, or local state only?
+- Does the by-session view on the client-profile Reports tab reuse the portal's `groupHistoryBySession` from `src/lib/testing/comparison.ts` (Phase J-1)? Likely yes — the data shape is the same; the rendering treatment is different (denser, more analytics-y).
+
+**Why deferred:** Phase J's portal scope is the priority through 2026-05-mid; the staff toggle is a follow-on idea that benefits from Phase J landing first (the portal's session-grouped renderer is the cleaner reference for what "by-session" feels like). No urgency — staff today has a complete by-test view + a complete by-session view on the session-builder rail; this is convenience, not a missing capability.
+
+**Self-contained prompt for a fresh chat:**
+
+> Add a by-test ↔ by-session view-mode toggle to the staff Reports surfaces. **In scope:** (1) `src/app/(staff)/clients/[id]/_components/ReportsTab.tsx` + the `_components/reports/` family, (2) `src/app/(staff)/clients/[id]/_components/ReportsPanel.tsx` in the session-builder right rail. **Out of scope:** the client portal `/portal/reports?tab=data` — that surface is locked to session-grouped only (Phase J). Likely reuse: `groupHistoryBySession` and `pointAtSession` from `src/lib/testing/comparison.ts` (landed in Phase J-1). Read `docs/polish/client-portal-data-tab.md` for the session-grouped contract this would mirror. Decisions to surface in a gap doc before code: toggle placement, sticky vs local state, whether the session-builder rail gets one extra view or both. Reference: `docs/deferred-prompts.md` "Staff Reports — by-test ↔ by-session view toggle".
+
+---

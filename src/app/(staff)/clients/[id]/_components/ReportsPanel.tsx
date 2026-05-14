@@ -28,13 +28,18 @@ import {
   colourFor,
   formatPctChange,
 } from '@/lib/testing/direction'
+import {
+  pickPreviousBefore,
+  pointAtSession,
+  type ComparisonMode,
+} from '@/lib/testing/comparison'
 import type {
   ClientTestHistory,
   MetricHistory,
-  MetricSeriesPoint,
   TestHistory,
 } from '@/lib/testing/loader-types'
 import type { Side } from '@/lib/testing/types'
+import { pickBaseline } from './reports/helpers'
 
 const INK = '#1E1A18'
 const MUTED = '#78746F'
@@ -59,8 +64,6 @@ export type SessionReport = {
   /** Pre-resolved battery name (for the chip); null when no battery applied. */
   battery_name: string | null
 }
-
-type ComparisonMode = 'baseline' | 'previous'
 
 export function ReportsPanel({
   reports,
@@ -518,7 +521,7 @@ function MetricRow({
   const current = pointAtSession(metric.points, sessionId, side)
   const comparison =
     mode === 'baseline'
-      ? pickFirstCapture(metric.points, side)
+      ? pickBaseline(metric.points, side)
       : pickPreviousBefore(metric.points, sessionConductedAt, side)
 
   // No value captured for this metric/side in this session — show a
@@ -631,45 +634,6 @@ function MetricRow({
 }
 
 // ---------- helpers ----------
-
-function pointAtSession(
-  points: MetricSeriesPoint[],
-  sessionId: string,
-  side: Side,
-): MetricSeriesPoint | null {
-  for (const p of points) {
-    if (p.session_id === sessionId && p.side === side) return p
-  }
-  return null
-}
-
-function pickFirstCapture(
-  points: MetricSeriesPoint[],
-  side: Side,
-): MetricSeriesPoint | null {
-  // Loader sorts ASC by conducted_at; the first matching side is the
-  // earliest capture for that side.
-  for (const p of points) {
-    if (p.side === side) return p
-  }
-  return null
-}
-
-function pickPreviousBefore(
-  points: MetricSeriesPoint[],
-  conductedAt: string,
-  side: Side,
-): MetricSeriesPoint | null {
-  // Latest point with conducted_at strictly less than the open session's,
-  // on the same side. Returns null if this is the first measurement.
-  let best: MetricSeriesPoint | null = null
-  for (const p of points) {
-    if (p.side !== side) continue
-    if (p.conducted_at >= conductedAt) continue
-    if (best === null || p.conducted_at > best.conducted_at) best = p
-  }
-  return best
-}
 
 function sideLabel(side: Side): string | null {
   if (side === 'left') return 'L'
