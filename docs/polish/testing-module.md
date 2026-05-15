@@ -345,6 +345,17 @@ The implementation is one focused commit:
 - Specialised client variants of `LineChartCard` / `BarChartCard` — defer until visual fit on a 480px column proves wrong.
 - Tone-pass on chart tooltips and date formatters — bundled into the existing component-copy pass.
 
+### Phase M — Staff Reports view toggle (closed 2026-05-15)
+
+Gap doc: [`staff-reports-view-toggle.md`](./staff-reports-view-toggle.md). Four sub-phases, all signed off by the EP:
+
+- **M-1** — Data shape: extends `SessionInfo` with `applied_battery_id`, adds `groupHistoryByBattery` to `src/lib/testing/comparison.ts`, adds `filterPointsBySessions` to the Reports helpers. Pure helpers, no UI.
+- **M-2** — Top-level Category ↔ Test battery toggle in the staff Reports tab header (Q-M1 (a)). New `BatteryView` family lists saved batteries (Q-M9 (a) — zero-applied ones render "Not yet applied" muted) with the orphan pseudo-group at the bottom (Q-J12).
+- **M-3** — Per-battery Sessions ↔ Progression sub-toggle (Q-J13). Sessions = expand-in-place clickable session rows (Q-M4 (c)) with per-metric values via `valuesAtSession`. Progression = filtered TestCards via `filterPointsBySessions` (Q-M5 (a)); tests with zero filtered points hidden (Q-M5.1 (a)).
+- **M-4** — `ReportsPanel.tsx` (session-builder rail + program calendar side panel) rewritten as a session-grouped collapsible feed with localStorage pinning (per the EP's Q-M7 refinement — no Category mode on the rail). `SessionBuilder.tsx` byte-identical (load-bearing protect rule).
+
+No schema migration; no RLS change. Verified via `npm run type-check` + `npm run build` (clean across all sub-phases) + EP browser sign-off per sub-phase. All sign-off detail in [`staff-reports-view-toggle.md`](./staff-reports-view-toggle.md) §7.
+
 ---
 
 ## 8. Phase C manual UI acceptance checklist

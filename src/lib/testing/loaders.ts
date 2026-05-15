@@ -430,6 +430,7 @@ export async function loadCapturedSessionsForClient(
 interface RawHistoryRow {
   session_id: string
   conducted_at: string
+  applied_battery_id: string | null
   battery_name: string | null
   test_id: string
   metric_id: string
@@ -457,7 +458,7 @@ export async function loadTestHistoryForClient(
     .select(
       `test_id, metric_id, side, value,
        session:test_sessions!inner(
-         id, conducted_at, deleted_at, client_id,
+         id, conducted_at, deleted_at, client_id, applied_battery_id,
          battery:test_batteries(name)
        )`,
     )
@@ -478,6 +479,7 @@ export async function loadTestHistoryForClient(
     session: {
       id: string
       conducted_at: string
+      applied_battery_id: string | null
       battery: { name: string } | null
     } | null
   }
@@ -488,6 +490,7 @@ export async function loadTestHistoryForClient(
     rows.push({
       session_id: row.session.id,
       conducted_at: row.session.conducted_at,
+      applied_battery_id: row.session.applied_battery_id,
       battery_name: battery?.name ?? null,
       test_id: row.test_id,
       metric_id: row.metric_id,
@@ -650,13 +653,19 @@ export async function loadTestHistoryForClient(
   // to what the EP physically did).
   const sessionBuckets = new Map<
     string,
-    { conducted_at: string; battery_name: string | null; count: number }
+    {
+      conducted_at: string
+      applied_battery_id: string | null
+      battery_name: string | null
+      count: number
+    }
   >()
   for (const r of rows) {
     let s = sessionBuckets.get(r.session_id)
     if (!s) {
       s = {
         conducted_at: r.conducted_at,
+        applied_battery_id: r.applied_battery_id,
         battery_name: r.battery_name,
         count: 0,
       }
@@ -668,6 +677,7 @@ export async function loadTestHistoryForClient(
     .map(([sid, s]) => ({
       session_id: sid,
       conducted_at: s.conducted_at,
+      applied_battery_id: s.applied_battery_id,
       battery_name: s.battery_name,
       result_count: s.count,
     }))

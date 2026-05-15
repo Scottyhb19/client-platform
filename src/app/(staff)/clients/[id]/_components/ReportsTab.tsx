@@ -25,6 +25,7 @@ import { GitCompare, Plus } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { TestCaptureModal } from './TestCaptureModal'
+import { BatteryView } from './reports/battery/BatteryView'
 import { CategoryDetail } from './reports/CategoryDetail'
 import { CategoryGrid } from './reports/CategoryGrid'
 import { ComparisonOverlay } from './reports/ComparisonOverlay'
@@ -36,6 +37,21 @@ import type {
   LastUsedBatteryHint,
   PublicationRow,
 } from '@/lib/testing/loader-types'
+
+/**
+ * Phase M view-mode toggle (Q-M1 (a) — placed inside the Reports tab
+ * header, left of the existing buttons).
+ *
+ * - `'category'` — existing CategoryGrid → CategoryDetail flow.
+ *   Regression-safe default; matches pre-Phase-M behaviour.
+ * - `'battery'` — new BatteryView showing one card per saved battery.
+ *
+ * Per Q-M2 (a) + Q-M3 (c) the state is per-surface and session-only;
+ * no URL param, no localStorage, no DB. DB-backed persistence is on
+ * the bench for a premortem reconsideration (see project memory
+ * `project_premortem_view_mode_persistence`).
+ */
+type ViewMode = 'category' | 'battery'
 
 interface ReportsTabProps {
   clientId: string
@@ -65,6 +81,7 @@ export function ReportsTab({
   const [compareOpen, setCompareOpen] = useState(false)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [window, setWindow] = useState<TimeWindow>('all')
+  const [viewMode, setViewMode] = useState<ViewMode>('category')
 
   // Compare button only makes sense when there's at least 2 sessions to
   // diff between. With 0 it's nonsense; with 1 the table is just one
@@ -118,7 +135,15 @@ export function ReportsTab({
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <ViewModeToggle mode={viewMode} onChange={setViewMode} />
           {canCompare && (
             <button
               type="button"
@@ -140,7 +165,14 @@ export function ReportsTab({
         </div>
       </header>
 
-      {selectedCategory && selectedCategoryId !== null ? (
+      {viewMode === 'battery' ? (
+        <BatteryView
+          clientId={clientId}
+          history={history}
+          batteries={bs}
+          publications={publications ?? []}
+        />
+      ) : selectedCategory && selectedCategoryId !== null ? (
         <CategoryDetail
           clientId={clientId}
           categoryName={selectedCategory.category_name}
@@ -179,5 +211,82 @@ export function ReportsTab({
         />
       )}
     </div>
+  )
+}
+
+/**
+ * Segmented control for the Reports tab's Category ↔ Test battery
+ * view-mode toggle. File-local — Phase M's Q-M7 refinement removed the
+ * rail's equivalent toggle, so there's no second consumer to lift this
+ * to a shared component for.
+ *
+ * Pattern mirrors the comparison toggles in `ReportsPanel.tsx` and
+ * `PortalTestCard.tsx`: warm-grey pill background, white active segment
+ * with a single subtle shadow per the design system.
+ */
+function ViewModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: ViewMode
+  onChange: (next: ViewMode) => void
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="View mode"
+      style={{
+        display: 'inline-flex',
+        background: '#EDE8E2',
+        borderRadius: 999,
+        padding: 2,
+        flexShrink: 0,
+      }}
+    >
+      <ModeSegment
+        active={mode === 'category'}
+        onClick={() => onChange('category')}
+        label="Category"
+      />
+      <ModeSegment
+        active={mode === 'battery'}
+        onClick={() => onChange('battery')}
+        label="Test battery"
+      />
+    </div>
+  )
+}
+
+function ModeSegment({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      style={{
+        background: active ? '#fff' : 'transparent',
+        border: 'none',
+        padding: '4px 12px',
+        borderRadius: 999,
+        fontSize: '.78rem',
+        fontWeight: 600,
+        cursor: 'pointer',
+        color: active ? 'var(--color-charcoal)' : 'var(--color-muted)',
+        boxShadow: active ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+        whiteSpace: 'nowrap',
+        transition:
+          'background 150ms cubic-bezier(0.4, 0, 0.2, 1), color 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
+    >
+      {label}
+    </button>
   )
 }

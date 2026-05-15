@@ -55,6 +55,23 @@ export function filterPointsByWindow(
   return points.filter((p) => new Date(p.conducted_at).getTime() >= cutoff)
 }
 
+/**
+ * Filter points to only those whose session_id is in the given set.
+ * Order is preserved. Empty set produces an empty array.
+ *
+ * Drives the staff Reports tab Battery view's Progression sub-view
+ * (Phase M Q-M5 (a)) — the caller passes the session_ids where the
+ * saved battery was applied; this helper trims each MetricHistory's
+ * time-series down to just those moments.
+ */
+export function filterPointsBySessions(
+  points: MetricSeriesPoint[],
+  sessionIds: Set<string>,
+): MetricSeriesPoint[] {
+  if (sessionIds.size === 0) return []
+  return points.filter((p) => sessionIds.has(p.session_id))
+}
+
 // ---------------------------------------------------------------------------
 // Baseline and latest
 // ---------------------------------------------------------------------------

@@ -151,6 +151,14 @@ export interface CategorySummary {
 export interface SessionInfo {
   session_id: string
   conducted_at: string // ISO timestamp
+  /** Saved battery applied at capture (Phase J-2-γ tagging) or null when
+   *  the session was captured outside any saved battery. Stable id;
+   *  prefer over `battery_name` when grouping (battery names can collide
+   *  and can be renamed). */
+  applied_battery_id: string | null
+  /** Joined display name from `test_batteries.name` at load time. Lags
+   *  renames until the next page load. May be set even if the battery
+   *  has been archived, since the join doesn't filter soft-deletes. */
   battery_name: string | null
   result_count: number
 }

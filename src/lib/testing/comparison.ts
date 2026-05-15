@@ -20,6 +20,7 @@
  */
 
 import type {
+  BatteryRow,
   ClientTestHistory,
   MetricHistory,
   MetricSeriesPoint,
@@ -216,6 +217,132 @@ export function groupHistoryBySession(
 
   // 5. Newest first per Q-J1.1.
   groups.sort((a, b) => b.conducted_at.localeCompare(a.conducted_at))
+  return groups
+}
+
+// ---------------------------------------------------------------------------
+// Battery grouping for the staff Reports tab Battery view (Phase M)
+// ---------------------------------------------------------------------------
+
+/**
+ * One saved-battery (or orphan pseudo-) group on the staff Reports tab
+ * Battery view.
+ *
+ * Per Phase M Q-M9 (a): every active saved battery in `batteries[]`
+ * produces a group, even when no sessions have applied it — the empty
+ * group renders the "Not yet applied" muted state.
+ *
+ * Per Q-J12 (locked): sessions with `applied_battery_id = NULL` collect
+ * into a single orphan pseudo-group at the end, displayed as "Not in a
+ * saved battery", emitted iff at least one such session exists.
+ *
+ * Archived batteries (sessions reference a battery id not present in
+ * the active `batteries[]` list) are emitted as their own groups in
+ * between, using the joined `battery_name` on the session as the
+ * label. They are not orphans — the EP did tag the session at capture
+ * time; the battery was simply retired later.
+ */
+export interface BatteryGroup {
+  /** Saved battery id, or null for the orphan pseudo-group. */
+  battery_id: string | null
+  /** Display name — saved battery name, archived battery's joined name,
+   *  or "Not in a saved battery" for the orphan group. */
+  battery_name: string
+  /** True iff this is the orphan pseudo-group. */
+  is_orphan: boolean
+  /** True iff battery_id is non-null but not in the active batteries
+   *  list — preserves the historical tag when an EP archives a battery
+   *  template later. */
+  is_archived: boolean
+  /** Sessions for this group, newest-first by conducted_at. May be
+   *  empty for an active saved battery that has not yet been applied
+   *  to this client (Q-M9 (a)). */
+  sessions: SessionInfo[]
+}
+
+/**
+ * Pivot the per-client test history into one group per saved battery
+ * (plus an optional orphan pseudo-group at the end). Drives the staff
+ * Reports tab Battery view (Phase M M-2 onwards).
+ *
+ * Order:
+ * 1. Active saved batteries from `batteries[]`, alphabetical by name.
+ *    Empty session lists allowed (Q-M9 (a)).
+ * 2. Archived batteries (id seen in sessions but not in `batteries[]`),
+ *    alphabetical by joined name.
+ * 3. Orphan pseudo-group (`applied_battery_id = NULL`), emitted iff
+ *    non-empty (Q-J12).
+ *
+ * Pure function. No DB, no React state. Importable from server and
+ * client components.
+ */
+export function groupHistoryByBattery(
+  history: ClientTestHistory,
+  batteries: BatteryRow[],
+): BatteryGroup[] {
+  // 1. Bucket every session by applied_battery_id (null = orphan).
+  //    Also record the joined name for any non-null id we see — we
+  //    fall back to this when a session points at an archived battery
+  //    that's no longer in `batteries[]`.
+  const byBatteryId = new Map<string | null, SessionInfo[]>()
+  const seenNames = new Map<string, string>() // battery_id -> battery_name
+  for (const s of history.sessions) {
+    const key = s.applied_battery_id
+    const list = byBatteryId.get(key) ?? []
+    list.push(s)
+    byBatteryId.set(key, list)
+    if (key !== null && s.battery_name !== null) {
+      seenNames.set(key, s.battery_name)
+    }
+  }
+
+  const sortNewestFirst = (xs: SessionInfo[]): SessionInfo[] =>
+    [...xs].sort((a, b) => b.conducted_at.localeCompare(a.conducted_at))
+
+  // 2. Active saved batteries — emit a group even with zero sessions.
+  const activeIds = new Set(batteries.map((b) => b.id))
+  const sortedBatteries = [...batteries].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  )
+  const groups: BatteryGroup[] = sortedBatteries.map((b) => ({
+    battery_id: b.id,
+    battery_name: b.name,
+    is_orphan: false,
+    is_archived: false,
+    sessions: sortNewestFirst(byBatteryId.get(b.id) ?? []),
+  }))
+
+  // 3. Archived batteries — referenced by sessions but not in the
+  //    active list. Preserves the historical tag.
+  const archivedIds = Array.from(byBatteryId.keys())
+    .filter((id): id is string => id !== null && !activeIds.has(id))
+    .sort((a, b) =>
+      (seenNames.get(a) ?? '').localeCompare(seenNames.get(b) ?? ''),
+    )
+  for (const id of archivedIds) {
+    groups.push({
+      battery_id: id,
+      battery_name: seenNames.get(id) ?? 'Archived battery',
+      is_orphan: false,
+      is_archived: true,
+      sessions: sortNewestFirst(byBatteryId.get(id) ?? []),
+    })
+  }
+
+  // 4. Orphan pseudo-group — emitted iff at least one such session
+  //    exists. Q-J12 keeps the gap visible to encourage tagging;
+  //    suppressing it when empty avoids a meaningless "0 sessions" card.
+  const orphans = byBatteryId.get(null) ?? []
+  if (orphans.length > 0) {
+    groups.push({
+      battery_id: null,
+      battery_name: 'Not in a saved battery',
+      is_orphan: true,
+      is_archived: false,
+      sessions: sortNewestFirst(orphans),
+    })
+  }
+
   return groups
 }
 
