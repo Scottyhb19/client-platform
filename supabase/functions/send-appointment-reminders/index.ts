@@ -74,13 +74,8 @@ Deno.serve(async (req) => {
   }
 
   const expectedToken = Deno.env.get('CRON_SHARED_SECRET')
-  const authHeader = req.headers.get('Authorization') ?? ''
-  if (
-    expectedToken &&
-    authHeader !== `Bearer ${expectedToken}`
-  ) {
-    return new Response('unauthorized', { status: 401 })
-  }
+  const denied = authorizeCronRequest(req, expectedToken)
+  if (denied) return denied
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -193,6 +188,22 @@ Deno.serve(async (req) => {
     failed,
   })
 })
+
+// Fail closed: verify_jwt=false means this is the only barrier — an unset secret must 500, never fall through.
+export function authorizeCronRequest(
+  req: Request,
+  expectedToken: string | undefined,
+): Response | null {
+  if (!expectedToken || expectedToken.trim().length === 0) {
+    console.error('CRON_SHARED_SECRET is not configured — refusing request.')
+    return new Response('server misconfigured', { status: 500 })
+  }
+  const authHeader = req.headers.get('Authorization') ?? ''
+  if (authHeader !== `Bearer ${expectedToken}`) {
+    return new Response('unauthorized', { status: 401 })
+  }
+  return null
+}
 
 async function loadAppointmentContext(
   supabase: ReturnType<typeof createClient>,
