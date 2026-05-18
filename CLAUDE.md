@@ -10,12 +10,18 @@ When something breaks, diagnose the root cause, don't just patch the symptom. Ex
 ## What this is
 **Odyssey** is a unified Exercise Physiology practice management platform combining clinical case management (replacing Cliniko) with exercise programming (replacing TrainHeroic). Built for a solo EP practitioner in Australia with an architecture that scales to multi-practitioner. Owned by ExCo.
 
+**Scope (2026-05-18):** Personal tool plus one trusted EP collaborator — a friends-and-family beta. No paying clinical client is routed through this system; the existing 40–50 clinical clients stay on Cliniko. The long-term destination is undetermined — possibly a joint clinic tool, possibly SaaS for other EPs, possibly a permanent personal tool — and none of these is committed. The architecture stays multi-tenant and multi-practitioner-ready regardless.
+
+**Entity:** Sole trader (accountant-advised 2026-05-17). Conversion to a Pty Ltd company is a future option, gated on whether paying clients ever enter the picture (see Open gates).
+
 Two surfaces:
 - **Staff platform** — desktop-first. Dashboard, client list and profile, program calendar, session builder (the core differentiator), exercise library, schedule, settings.
 - **Client portal** — mobile-first PWA. Program week strip, session card preview, guided in-session logging (sets × reps × weight × RPE), bookings, reports.
 
 ## Project state
 **Phase 1 is functionally complete.** All 14 steps from the original build order have working code in the repo. The system is **pre-launch** — only fake/seed data, no real client has logged in.
+
+**Launch shape: friends-and-family beta only.** When this opens, it opens to the operator, one trusted EP collaborator, and a small friends-and-family circle — never to paying clinical clients, and never as anyone's primary clinical record system. The existing 40–50 clinical clients remain on Cliniko. The hard rule, and the only conditions under which this can ever change, are in Open gates below.
 
 **Current mode: section-by-section polish pass.** Each surface is being elevated from "working" to "superior" before launch. Pace is deliberate. We do not move on from a section until it meets the design system, the brief, and the Steve Jobs bar.
 
@@ -25,7 +31,7 @@ Two surfaces:
 - Breaking API changes don't break clients.
 - Acceptance tests can be re-run end-to-end without consequence.
 
-These advantages disappear the day the first real client logs in. Anything load-bearing should be hardened *before* that day.
+These advantages disappear the day the first real user — including a friends-and-family beta tester — logs in and creates data. Anything load-bearing should be hardened *before* that day.
 
 ## Active section
 **Testing & reports module.** A version of this module is already built in the repo. The target state is specified in `CLAUDE_CODE_BUILD_PROMPT_testing_module.md`. Work on this section follows the polish-pass protocol below.
@@ -61,13 +67,23 @@ If two documents disagree, the most specific one wins (testing module brief > v2
 
 The repo `README.md` (if present) is for newcomers and is **not** authoritative. Defer to CLAUDE.md, the design system, and `/docs/` for any architectural call.
 
-## Open gates (must close before production launch)
-These are flagged here so they do not get forgotten:
+## Open gates (must close before any paying clinical client)
+These are flagged here so they do not get forgotten.
 
-- **External IT advisor review of `auth.md` and `rls-policies.md`.** The docs were self-reviewed with Claude Code's help. Independent human review by a security-competent reviewer (pentester, AppSec consultant, or healthtech-experienced peer) is required before the first real client onboards. This is non-negotiable for production healthcare software handling Privacy Act 1988 data. RLS holes are the highest-impact failure mode in multi-tenant systems and the hardest to spot without independent eyes.
-- **External review of the schema (`schema.md`).** Same requirement, same reviewer, same gate.
+**The hard rule.** No paying clinical client may be onboarded to OdysseyHQ as their primary clinical record system until all three of the following are true:
 
-Do not treat these gates as closed in any context — including marketing language, terms of service drafts, or anything client-facing — until external review is documented in `/docs/external-reviews.md`.
+- **(a)** An external IT security review (below) is completed and documented in `/docs/external-reviews.md`.
+- **(b)** Anthropic has established a BAA meeting Australian health-privacy standards. Assessed 12–24 month horizon; treat as not-yet-met until documented.
+- **(c)** The entity structure has been reviewed against the increased liability surface (sole trader → likely Pty Ltd; see "What this is" → Entity).
+
+Until all three hold, the existing 40–50 clinical clients stay on Cliniko and OdysseyHQ runs as a friends-and-family beta only. This rule is not waivable by convenience, deadline, or "just one client".
+
+**External IT-advisor review of `auth.md`, `rls-policies.md`, and `schema.md`.** The docs were self-reviewed with Claude Code's help. Independent human review by a security-competent reviewer (pentester, AppSec consultant, or healthtech-experienced peer) is:
+
+- **Recommended, not required, for the current friends-and-family-beta scope.** A bounded circle of non-paying users (operator, one EP collaborator, and explicitly-invited friends-and-family beta testers — not a public signup) not relying on this as their clinical record is a materially lower-stakes surface than production healthcare.
+- **Required — non-negotiable — before any paying clinical client onboards** (hard rule (a)). RLS holes are the highest-impact failure mode in multi-tenant systems and the hardest to spot without independent eyes; for Privacy Act 1988 clinical data this is mandatory, not advisory.
+
+Do not represent the system as externally reviewed or production-clinical-ready in any context — marketing language, terms of service drafts, or anything client-facing — until that review is documented in `/docs/external-reviews.md`. The downgrade above changes *when* the review is required; it does not permit claiming a review that has not happened.
 
 ## Reference prototypes
 These prototypes validated the UX decisions captured in the briefs. They are reference for design intent, **not** scaffolding to port code from. The polish pass refers to them when the brief or design system is silent on a flow.
@@ -169,7 +185,9 @@ This order is suggested because each section informs the next (e.g. testing modu
 - AI-drafted check-ins based on adherence patterns
 - Communication templates with personalisation tokens
 
-Phase 2 begins only when Phase 1 polish is complete and external IT review (Open gates above) has closed.
+Phase 2 begins only when Phase 1 polish is complete.
+
+*Note: Phase 2 introduces a new privacy surface — AI processing of clinical-adjacent data (adherence patterns, drafted clinical communications). It is not gated by the hard rule (it does not elevate stakes to the paying-client threshold), but the AI data flow must be documented before any Phase 2 feature is enabled in the friends-and-family beta — see the runbook README backlog.*
 
 ## What NOT to build
 - No social features
