@@ -66,6 +66,16 @@ interface AppointmentContext {
 
 const BATCH_SIZE = 50
 
+// Mirrors src/lib/email/client.ts EmailConfigError. Deno can't import from
+// the Next app's src/lib, so the class name and the thrown message string
+// are duplicated verbatim here; if either changes, both files change together.
+class EmailConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EmailConfigError'
+  }
+}
+
 Deno.serve(async (req) => {
   // Allow only POST + a small auth check via a shared secret. Cron callers
   // include the bearer token; manual debug calls can use the same.
@@ -80,8 +90,12 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const resendKey = Deno.env.get('RESEND_API_KEY') ?? ''
-  const fromAddress =
-    Deno.env.get('EMAIL_FROM') ?? 'Odyssey <onboarding@resend.dev>'
+  const fromAddress = Deno.env.get('EMAIL_FROM')
+  if (!fromAddress) {
+    throw new EmailConfigError(
+      'EMAIL_FROM environment variable is not set. Refusing to send email from the Resend sandbox sender. Set EMAIL_FROM to a verified-domain address in your environment configuration.',
+    )
+  }
   const appUrl = Deno.env.get('NEXT_PUBLIC_APP_URL') ?? ''
 
   if (!supabaseUrl || !serviceKey) {

@@ -23,10 +23,28 @@ export function getResendClient(): Resend {
 }
 
 /**
- * The address Resend's onboarding domain accepts. Use this until a custom
- * sending domain is verified in the Resend dashboard. Switch by setting the
- * EMAIL_FROM env var, e.g. EMAIL_FROM="Odyssey <invites@yourpractice.com.au>"
+ * Configuration error thrown when a required email env var is missing.
+ * Mirrors the fail-loud, first-use throw pattern in getResendClient().
+ */
+export class EmailConfigError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EmailConfigError'
+  }
+}
+
+/**
+ * The verified-domain sender address, read from EMAIL_FROM at call time.
+ * Throws EmailConfigError if unset — we refuse to fall back to the Resend
+ * sandbox sender, which only delivers to the Resend-account-verified
+ * address and silently blocks every other recipient.
  */
 export function defaultFromAddress(): string {
-  return process.env.EMAIL_FROM ?? 'Odyssey <onboarding@resend.dev>'
+  const from = process.env.EMAIL_FROM
+  if (!from) {
+    throw new EmailConfigError(
+      'EMAIL_FROM environment variable is not set. Refusing to send email from the Resend sandbox sender. Set EMAIL_FROM to a verified-domain address in your environment configuration.',
+    )
+  }
+  return from
 }
