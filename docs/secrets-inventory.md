@@ -1,10 +1,10 @@
 # Secrets Inventory
 
 **Last updated:** 2026-05-18
-**Audited at commit:** `0a29535` (HEAD). File:line citations are valid as of this commit — Commits 1–2 of the Foundation Hardening pass touched only `docs/` and `CLAUDE.md`, no code paths.
+**Audited at commit:** `ff42cff` (latest landed at write-time). Most file:line citations were authored at `0a29535`; the Build Prompt #2 code phase (`1656859`, `8780e7c`, `63b6942`, `ff42cff`) shifted some line numbers — notably the EMAIL_FROM paths in `client.ts` and the reminder Edge Function — so treat cited line numbers as approximate, not exact. Re-audit and bump this reference whenever a commit touches a path cited in this file.
 **Companion documents:**
 - Rotation history → [`secrets-rotation-log.md`](secrets-rotation-log.md)
-- How to rotate → [`runbooks/rotate-a-secret.md`](runbooks/rotate-a-secret.md) *(lands in the next commit of this foundation pass)*
+- How to rotate → [`runbooks/rotate-a-secret.md`](runbooks/rotate-a-secret.md)
 
 **Scope.** Every environment variable the codebase reads, classified by sensitivity. Section 1 is the true secrets (exposure = security incident). Section 2 is everything else — public, operator-set-but-not-sensitive, or platform-injected — listed for completeness so future-me has the full runtime picture.
 
@@ -72,10 +72,11 @@ Nothing here is a credential. Leaking any of it is not a security incident. List
 | `NEXT_PUBLIC_SITE_URL` | Absolute base URL for signup confirmation redirects | `src/app/signup/actions.ts:27` | Vercel env vars; `.env.local` | Public site address |
 | `NEXT_PUBLIC_APP_URL` | Absolute base URL for booking links + reminder emails | `src/app/portal/book/new/actions.ts:137`, `supabase/functions/send-appointment-reminders/index.ts:85` | Vercel env vars; Edge Function secret | Public app address |
 | `EMAIL_FROM` | Sender identity for all outbound email | `src/lib/email/client.ts:31`, `supabase/functions/send-appointment-reminders/index.ts:84` | Vercel env vars; Edge Function secret | A From: address, not a credential |
+| `SENTRY_DSN` | Optional error-tracking DSN; the observability stub reads it but never branches on it (console-only until the real SDK is wired) | `src/lib/observability/sentry.ts:12` (plumbing landed by commit `63b6942`) | Vercel env vars (optional; unset → console-only) | Sentry DSNs are designed to be embeddable in client bundles — not a credential |
 
 **`NEXT_PUBLIC_SITE_URL` vs `NEXT_PUBLIC_APP_URL` — failure mode (Flag E).** Same logical value, two different keys. Signup uses `NEXT_PUBLIC_SITE_URL`; booking and reminder emails use `NEXT_PUBLIC_APP_URL`. If only one is set in an environment, the other code path emits broken signup/booking confirmation URLs. Both must be set and kept in sync until reconciled. Tracked in the runbook README backlog.
 
-**`EMAIL_FROM` — in-flight change.** As of commit `0a29535` the code still falls back to the Resend sandbox sender `Odyssey <onboarding@resend.dev>` when unset (`client.ts:31`, `index.ts:84`) — diagnostic CRITICAL Finding #1, which blocks email to anyone but the Resend-verified account. The EMAIL_FROM commit later in this foundation pass removes the fallback and makes both paths fail loud if unset.
+**`EMAIL_FROM` — fail-loud enforcement.** Both code paths — `src/lib/email/client.ts` (`defaultFromAddress()`) and the `send-appointment-reminders` Edge Function — now throw `EmailConfigError` when `EMAIL_FROM` is unset; the Resend sandbox-sender fallback was removed by commit `1656859` (resolves diagnostic CRITICAL Finding #1). The booking-confirmation caller path was hardened by commit `8780e7c` (Flag F) to re-throw `EmailConfigError` rather than swallow it via `.catch(() => null)`. There is no fallback — set `EMAIL_FROM` to a verified-domain address before deploying, e.g. `EMAIL_FROM="OdysseyHQ <noreply@odysseyhq.com.au>"`.
 
 ### 2b — Platform-injected (operator never sets these)
 
@@ -85,15 +86,6 @@ Nothing here is a credential. Leaking any of it is not a security incident. List
 | `NODE_ENV` | Next.js / Node | `src/app/portal/_components/RegisterSW.tsx:13` | `development` / `production` / `test`; framework-managed |
 | `SUPABASE_URL` | Supabase Edge runtime | `supabase/functions/send-appointment-reminders/index.ts:80` | Edge-only (no `NEXT_PUBLIC_` prefix); auto-injected into deployed functions |
 | `SUPABASE_SERVICE_ROLE_KEY` *(Edge context)* | Supabase Edge runtime | `supabase/functions/send-appointment-reminders/index.ts:81` | Same value as the Section 1 secret, but in the Edge Function it is platform-injected, not operator-set. Listed here so the injection path is visible; the credential itself is governed by Section 1. |
-
----
-
-## Pending additions (Foundation Hardening pass — not yet in code at `0a29535`)
-
-Approved and in-flight in this same work-stream. Update this file when they land:
-
-- **`SENTRY_DSN`** — optional observability config (not a high-value secret; Sentry DSNs are embeddable). Introduced by the observability-stub commit. Unset → log to console only. Belongs in Section 2a when it lands.
-- **`EMAIL_FROM` fail-loud enforcement** — the EMAIL_FROM commit removes the sandbox fallback (see Section 2a note).
 
 ---
 
