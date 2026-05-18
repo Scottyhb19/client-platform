@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
+import { EmailConfigError } from '@/lib/email/client'
 import { formatBookingDateLine, formatBookingTimeRange } from './_lib/format'
 
 export interface ConfirmBookingResult {
@@ -82,7 +83,10 @@ export async function confirmBookingAction(
   // Email the confirmation. Best-effort — failures don't block the booking.
   await sendBookingConfirmationEmailForAppointment(
     appointmentId as string,
-  ).catch(() => null)
+  ).catch((e) => {
+    if (e instanceof EmailConfigError) throw e
+    return null
+  })
 
   revalidatePath('/portal/book')
   redirect('/portal/book?booked=1')
