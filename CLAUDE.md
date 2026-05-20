@@ -8,7 +8,7 @@ Be a kind but ruthless mentor. Challenge assumptions, stress test everything, an
 When something breaks, diagnose the root cause, don't just patch the symptom. Explain what went wrong so it doesn't happen again. Never install packages without explaining what they do. Never create files without explaining where they fit in the architecture. Never skip error handling. Never build features that aren't in the brief without asking first.
 
 ## What this is
-**Odyssey** is a unified Exercise Physiology practice management platform combining clinical case management (replacing Cliniko) with exercise programming (replacing TrainHeroic). Built for a solo EP practitioner in Australia with an architecture that scales to multi-practitioner. Owned by ExCo.
+**Odyssey** is a unified Exercise Physiology practice management platform combining clinical case management (replacing Cliniko) with exercise programming (replacing TrainHeroic). Built for a solo EP practitioner in Australia with an architecture that scales to multi-practitioner.
 
 **Scope (2026-05-18):** Personal tool plus one trusted EP collaborator — a friends-and-family beta. No paying clinical client is routed through this system; the existing 40–50 clinical clients stay on Cliniko. The long-term destination is undetermined — possibly a joint clinic tool, possibly SaaS for other EPs, possibly a permanent personal tool — and none of these is committed. The architecture stays multi-tenant and multi-practitioner-ready regardless.
 
@@ -34,19 +34,40 @@ Two surfaces:
 These advantages disappear the day the first real user — including a friends-and-family beta tester — logs in and creates data. Anything load-bearing should be hardened *before* that day.
 
 ## Active section
-**Testing & reports module.** A version of this module is already built in the repo. The target state is specified in `CLAUDE_CODE_BUILD_PROMPT_testing_module.md`. Work on this section follows the polish-pass protocol below.
+**Auth and Onboarding for staff. Active as of 2026-05-21.** This is the foundation layer of the polish pass. Work follows the polish-pass protocol below. The previous active section, the testing and reports module, is complete and is recorded as such in the polish-pass order.
 
 ## Polish-pass protocol (mandatory)
 Before modifying any section, follow this sequence:
 
-1. **Read the target brief** for the section (e.g. `CLAUDE_CODE_BUILD_PROMPT_testing_module.md` for the testing module). Treat it as the desired end state, not a greenfield spec.
-2. **Audit the existing implementation** in the repo. Identify what's there, what works, what doesn't.
-3. **Produce a gap list** — bullet-pointed, grouped by severity (P0 architectural, P1 functional, P2 polish). Do this in a markdown file in `/docs/polish/<section>.md`.
-4. **Wait for approval** of the gap list before changing code. The list is the contract.
-5. **Address gaps in dependency order** — architecture before features, features before polish. Each gap closes with a brief note in the polish doc.
-6. **Run acceptance tests** at the end of the section pass. The test suite is the gate, not "looks fine."
+1. **Read the target brief** for the section. Treat it as the desired end state, not a greenfield spec.
+2. **Audit the existing implementation** in the repo. Identify what is there, what works, what does not.
+3. **Run a focused premortem.** Given the audit results and the friends-and-family beta scope, ask: what is most likely to fail when a real user touches this section? Weight infrastructure and security failure modes at production-grade. Weight operational, UX, and workflow failure modes at friends-and-family scope. Output a ranked failure-mode list. Append it to the polish doc for the section.
+4. **Produce a gap list** in `/docs/polish/[section].md`, grouped by severity (P0 architectural, P1 functional, P2 polish) and cross-referenced against the premortem failure-mode list. A gap that closes a high-likelihood failure mode is automatically promoted in priority.
+5. **Wait for approval** of the gap list before changing code. The list is the contract.
+6. **Address gaps in dependency order.** Architecture before features, features before polish. Each gap closes with a brief note in the polish doc.
+7. **Run acceptance tests** at the end of the section pass. The test suite is the gate, not "looks fine."
 
 Do not start by writing migrations. Do not start by deleting files. Do not assume the existing code is wrong without auditing it. The existing code may already be correct in places where the brief is silent.
+
+## Section sign-off ritual (mandatory)
+Claude Code implements. The operator's claude.ai project chat reviews. External advisors review code-level later. These three tiers are deliberately separate.
+
+When the seven-step polish-pass protocol is complete for a section, Claude Code writes a closing commit to the bottom of `/docs/polish/[section].md` under a "Closing commit" heading. The closing commit contains:
+
+- What was changed, in plain language. Reference the gap list items by number.
+- What acceptance tests ran and their results.
+- What gaps from the gap list were deliberately deferred and why, with the trigger that would re-activate them.
+- What premortem failure modes were mitigated, and what failure modes were deliberately accepted rather than mitigated, with rationale.
+
+Claude Code's job ends at writing the closing commit. The section is not closed until the operator pastes the closing commit into the claude.ai project chat and receives a sign-off there. The operator pastes the sign-off response back into `/docs/polish/[section].md` under a "Sign-off" heading at the very bottom. The sign-off entry contains three lines:
+
+- Date signed off
+- Reviewer (claude.ai project chat, referenced by chat title)
+- Decision (Closed, Closed with deferred items, or Returned for revision)
+
+If the decision is "Returned for revision," the reviewer's gap items are added to the existing gap list as a follow-up section and the seven-step protocol re-engages from step 5. If the decision is "Closed with deferred items," the deferred items are listed beneath the sign-off with rationale and re-trigger.
+
+This review is logical and documentary, not code-level. The reviewer in the claude.ai chat does not have access to the codebase and is reviewing the closing commit's logic, completeness against the gap list, and completeness against the premortem failure modes. Code-level verification is the job of the external security advisor and the IT review gate per the Open gates section.
 
 ## The core differentiator — protect it
 The session builder with clinical notes adjacent to the programming calendar is the single most important screen in this platform. It is what makes Odyssey different from everything else on the market. When the polish pass reaches the session builder, it gets the most time, the most care, and the highest bar. Everything else can be functional — this must be exceptional.
@@ -140,6 +161,16 @@ Full treatment in `Odyssey_Design_System.pdf` Section 02. Load-bearing rules:
 
 See `/docs/` for the authoritative design decisions. Any tech-stack change must be reconciled with those documents.
 
+## Operational state (current)
+The following operational infrastructure was landed in Build Prompt 2 and is current as of the date in the active section line:
+
+- Operational runbooks live in `/docs/runbooks/`. Reference these for incident response, deployment procedures, and routine operational tasks.
+- Secrets inventory lives in `/docs/secrets-inventory.md`. Every secret used by the platform is documented there with rotation procedure and ownership.
+- `EMAIL_FROM` is plumbed end-to-end in code. Both the Next.js send path (`src/lib/email/client.ts` → `defaultFromAddress()`) and the Edge Function path (`send-appointment-reminders`) read `EMAIL_FROM` and fail loud (throw / HTTP 500) if it is unset. The Resend testing-default (sandbox) sender path has been removed — there is no fallback.
+- **Email infrastructure is closed end-to-end.** The Resend sending domain `mail.odysseyhq.com.au` is verified at Resend with SPF, DKIM, and DMARC live at VentraIP. `EMAIL_FROM` is set in Vercel across All Environments to the verified-domain address with RFC 5322 display-name formatting intact. Outbound email is deliverable and has been confirmed end-to-end with a real recipient at a third-party Gmail address. The apex domain `odysseyhq.com.au` and the parked defensive domain `theodysseyhq.com` are both live on Vercel with redirects working.
+
+If any of the above is found to have drifted from this stated position, surface it before proceeding with section work. CLAUDE.md drift on operational state is a contamination risk for every subsequent polish-pass prompt.
+
 ## Local dev gotchas
 - **CSS edits not appearing after a hot reload**: Turbopack's dev cache (`.next/dev/`) sometimes hangs onto a stale CSS chunk that pre-dates a globals.css edit. A plain `npm run dev` restart does NOT invalidate it. Cure: stop the server, `Remove-Item .next -Recurse -Force` (PowerShell) or `rm -rf .next`, then `npm run dev`. Symptom: classes you just added don't appear in the served chunk at `/_next/static/chunks/[root-of-the-server]__*.css`.
 
@@ -164,21 +195,23 @@ See `/docs/` for the authoritative design decisions. Any tech-stack change must 
 - Use plain language. The person you're working with is not a developer — they are an Exercise Physiologist learning to build. Explain technical concepts when they come up, but don't be patronising.
 - If you think the person is about to make a mistake or go down a wrong path, say so immediately.
 
-## Polish-pass order (suggested, not binding)
-A suggested order for the polish pass. Each section is its own focused effort. Move on only when the current section meets its bar.
+## Polish-pass order (locked)
+The polish pass works through the platform in foundation-upward order. Each layer's failure modes depend on the layer beneath, so the foundation is polished first. Move on only when the current section meets its bar and has been signed off per the ritual above.
 
-1. **Testing & reports module** — currently active. Brief: `CLAUDE_CODE_BUILD_PROMPT_testing_module.md`. Includes the v1.1 schema + runtime config + publish gate.
-2. Auth & onboarding — flow polish, error states, email invite copy, password reset edges.
-3. Exercise library — search, tagging, video preview, default prescription patterns.
-4. Client profile + clinical notes — note template structure, flag banners, history rendering.
-5. Program engine + session builder — **the differentiator**. Highest care. Drag-and-drop, supersetting, shared right panel.
-6. Program calendar — collapsible weeks, batch operations, side panel pinning.
-7. Client portal PWA — week strip, in-session logging UX, completion flow.
-8. Scheduling — availability management, booking flow, reminder cadence.
-9. EP Dashboard — stat cards, attention panel, today's sessions strip.
-10. Email + SMS — template tone, delivery reliability, preference handling.
+1. **Auth and Onboarding (staff)** — clinic-side setup. Account creation, organisation setup, settings, first-run experience for the EP. Active.
+2. **Auth and Onboarding (client)** — client-side first contact. Email invite, password creation, first login, day-one experience.
+3. **Client profile and clinical notes** — note template, flag banners, medical history, history rendering.
+4. **Exercise library** — search, tagging, video preview, default prescription patterns.
+5. **Program engine and session builder** — the differentiator. Highest care. Drag-and-drop, supersetting, shared right panel, clinical notes adjacency.
+6. **Program calendar** — collapsible weeks, batch operations, side panel pinning.
+7. **Client portal PWA** — week strip, in-session logging UX, completion flow.
+8. **Testing and reports module** — complete. Not for re-polishing in this cycle.
+9. **Scheduling** — availability management, booking flow, reminder cadence.
+10. **Messaging** — in-app messaging between staff and client portal. Texting-style feel, privacy preserved.
+11. **EP Dashboard** — stat cards, attention panel, today's sessions strip.
+12. **Email and SMS** — template tone, delivery reliability, preference handling. Email is in scope for the friends-and-family beta. SMS is in scope but deferred until the friends-and-family beta closes and paying clients are onboarded per the hard rule in Open gates. When this section is polished, email is taken end-to-end and SMS is stubbed and wired but not activated.
 
-This order is suggested because each section informs the next (e.g. testing module schema influences how reports render in the client portal, which influences the dashboard's "needs attention" panel). Deviate if a different order serves the work better — but deviate deliberately, not by drift.
+This order is locked, not suggested. Deviation requires updating CLAUDE.md first.
 
 ## Phase 2 (not yet started)
 - AI assistant for personalised client communications
@@ -194,6 +227,6 @@ Phase 2 begins only when Phase 1 polish is complete.
 - No video hosting (YouTube links only)
 - No payment processing
 - No native mobile app (PWA only)
-- No in-app messaging (email only)
+- No SMS notifications during friends-and-family beta — Twilio stays installed but inactive until SMS is re-activated post-beta per polish-pass section 12. Gmail Send-mail-as for outbound replies from the operator's personal inbox to appear as `scott@mail.odysseyhq.com.au` is wired-and-ready conceptually but not activated — enabling it requires charging for an ImprovMX SMTP relay plan, deferred until a paying client surfaces a reply-threading friction point post-beta. Both SMS and Gmail Send-mail-as activate only if and when paying clients onboard, never before.
 - No multi-practitioner UI (architect for it, don't build it)
 - No features outside this brief without asking first
