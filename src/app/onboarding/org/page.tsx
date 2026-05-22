@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createOrganization } from "./actions";
+import { FinishSetup } from "./_components/FinishSetup";
 
 export default async function OnboardingOrgPage({
   searchParams,
@@ -16,9 +17,27 @@ export default async function OnboardingOrgPage({
 
   if (!user) redirect("/login");
 
-  // If already part of an org, skip onboarding.
+  // (a) Org claim present → onboarding already complete.
   const { data: orgId } = await supabase.rpc("user_organization_id");
   if (orgId) redirect("/dashboard");
+
+  // (b) Claim absent but a membership row exists → the post-bootstrap JWT
+  // refresh didn't land (G-2 stale-JWT state). A5: with a claimless JWT the
+  // caller can still SELECT their own row via the `user_id = auth.uid()` branch
+  // of the user_organization_roles SELECT policy. Render the recovery state,
+  // NOT the form — re-rendering the form here is what produced the misleading
+  // "User already belongs to an organization" loop.
+  const { data: membership } = await supabase
+    .from("user_organization_roles")
+    .select("organization_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (membership) {
+    return <FinishSetup />;
+  }
+
+  // (c) No claim and no membership → genuinely new user; show the form below.
 
   return (
     <main className="flex flex-1 items-center justify-center px-6 py-16">

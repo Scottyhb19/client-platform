@@ -39,7 +39,30 @@ export async function createOrganization(formData: FormData) {
   }
 
   // Force a JWT refresh so organization_id + user_role claims are picked up.
-  await supabase.auth.refreshSession();
+  // G-2: refreshSession() returns { error } on ordinary failure (A3); the thin
+  // try/catch guards the rare non-AuthError / lock-timeout throw. On failure —
+  // or if the refreshed JWT still carries no org claim — route to the recovery
+  // state on /onboarding/org, NOT through /dashboard. Sending a still-claimless
+  // user to /dashboard is what requireRole bounces back, causing the loop.
+  let needsRecovery = false;
+  try {
+    const { error: refreshErr } = await supabase.auth.refreshSession();
+    if (refreshErr) needsRecovery = true;
+  } catch {
+    needsRecovery = true;
+  }
+
+  if (!needsRecovery) {
+    // Post-refresh claim re-check: only go to /dashboard if the new JWT actually
+    // carries the org claim; otherwise the redirect would bounce.
+    const { data: orgId } = await supabase.rpc("user_organization_id");
+    if (!orgId) needsRecovery = true;
+  }
+
+  // redirect() throws NEXT_REDIRECT, so it stays outside the try/catch above.
+  if (needsRecovery) {
+    redirect("/onboarding/org");
+  }
 
   redirect("/dashboard");
 }
