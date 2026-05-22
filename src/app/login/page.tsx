@@ -67,15 +67,9 @@ export default async function LoginPage({
           />
         </div>
 
-        <label className="mt-1 flex cursor-pointer items-center gap-2 text-[0.82rem] text-text-light">
-          <input
-            type="checkbox"
-            name="remember"
-            defaultChecked
-            className="h-4 w-4 accent-primary"
-          />
-          Keep me signed in for 30 days
-        </label>
+        <p className="mt-1 text-[0.82rem] text-text-light">
+          You'll stay signed in for 30 days.
+        </p>
 
         <input type="hidden" name="next" value={next} />
 
