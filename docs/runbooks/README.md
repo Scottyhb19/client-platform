@@ -7,6 +7,8 @@ Operational procedures for OdysseyHQ. Each runbook is self-contained and follows
 - [`rotate-a-secret.md`](rotate-a-secret.md) — Rotate `RESEND_API_KEY` or `CRON_SHARED_SECRET`. Service-role-key rotation is an explicit TODO.
 - [`deploy-an-edge-function.md`](deploy-an-edge-function.md) — Deploy `send-appointment-reminders` (or any Edge Function) and (re)schedule its pg_cron trigger.
 - [`check-cron-health.md`](check-cron-health.md) — Inspect pg_cron job + Edge Function health and triage failures.
+- [`verify-auth-config.md`](verify-auth-config.md) — Verify the four dashboard-config security properties (custom-access-token hook, HIBP, refresh-token lifetime, email confirmations) via `scripts/verify-auth-config.mjs` + documented value. Cadence: quarterly + on every RLS/auth migration.
+- [`verify-cross-tenant-isolation.md`](verify-cross-tenant-isolation.md) — Manual by-hand confirmation that one org cannot read/write another org's rows. The interim compensation for suggested-runbook #1 (the automated pgTAP cross-tenant test) while it stays deferred.
 
 ## Not yet written
 
