@@ -142,8 +142,8 @@ After `create_organization_with_owner` succeeds, the user has a valid membership
 **G-4 — Refresh-token lifetime is not configured to 30 days in code.** Closes F-3.
 `config.toml` sets only `jwt_expiry`, rotation enabled, and reuse interval. The 30-day refresh-token lifetime (§12.3) lives in the Supabase dashboard (Auth → Sessions → Refresh Token Expiry). Closing this requires (a) setting it explicitly in the production project, and (b) recording it in `docs/runbooks/` alongside G-3. Requirement (traceable to §12.3).
 
-**G-5 — Password reset flow for EP owner is not implemented.** Closes F-6.
-"Forgot?" link on `/login` returns to `/login`. No `/reset` route, no `resetPasswordForEmail` call site, no recovery email path. `docs/auth.md §5.5` specifies the flow (`supabase.auth.resetPasswordForEmail` → `/reset` with token in URL → `supabase.auth.updateUser({password})`). The `auth/callback` route already types `recovery` so the plumbing partially supports it. Requirement (traceable to docs/auth.md §5.5 — part of the composite target's constraint set even though the polish-pass active section is §5.1; §5.5 is the obvious peer that must exist for §5.1 to be operationally complete).
+**G-5 — Password reset flow for EP owner: SHIPPED (commit a045e53).** Closes F-6.
+Forgot-password request flow + set-new-password flow built: `/forgot-password` request page calling `resetPasswordForEmail` with no email enumeration, redirect through `/auth/callback?next=/auth/reset-password`, and an `/auth/reset-password` set-new-password page with a tier-one session-presence guard. The previously-dead "Forgot?" link on `/login` was retargeted to the real route. Recovery email uses Supabase's default template for beta. Closed per Track B outcome below; see that section for the inherited silent-origin-fallback note and the runtime-verification status.
 
 **G-6 — No auth-event audit log.** Closes F-10.
 `docs/auth.md §11` lists ten auth events (signup success/failure, login success/failure, password reset requested/completed, invite sent/accepted, JWT hook failure, cross-tenant access attempt). None are emitted to Sentry or a structured log. The `audit_log` table captures table mutations only. Closing this requires either a `pg_log_auth_event` audit table written by the relevant server actions, or Sentry/structured logging plumbed end-to-end. Requirement at the production-grade-security level (traceable to §11 and to master brief §7.4's "audit logging for all data access and modifications").
@@ -361,26 +361,19 @@ Sequenced lead-with-P0 → lead-P1 → remaining-requirement-P1/P2 → recommend
 
 **Interaction with onboarding flow:** this gap and the §5.1 step 9–10 transition are the same code path. Closing G-2 may slightly refactor `OnboardingOrgPage` + `createOrganization` action; will not touch `create_organization_with_owner` semantics.
 
-#### B.2 — G-5 (P1, promoted): Password reset for EP owner
+#### B.2 — G-5 (P1, promoted): Password reset for EP owner — SHIPPED
 
-**Closes premortem F-6.** Promoted to lead P1 per Revision 1.
+**Closes premortem F-6.** Promoted to lead P1 per Revision 1. Shipped under commit a045e53; recorded in the Track B outcome section below.
 
-**Dependencies / things to verify before designing the fix:**
+**What shipped (supersedes the pre-build plan that follows):** the flow was built as `/forgot-password` (request page + action) and `/auth/reset-password` (set-new-password page + action), not the `/reset-request` and `/reset` route names this plan originally proposed. The "Forgot?" link on `src/app/login/page.tsx` was retargeted to `/forgot-password` and relabelled "Forgot password?". The redirect target is `/auth/callback?next=/auth/reset-password`. Email uses Supabase's default recovery template for beta.
 
-- **Verify this works:** the existing `src/app/auth/callback/route.ts:22-29` already types `'recovery'` as a callback type and exchanges code-for-session correctly. Confirm that `next` parameter handling routes correctly to a `/reset` page for the recovery flow.
-- **Verify this works:** does `supabase.auth.resetPasswordForEmail(email, { redirectTo })` use the project's verified sending domain (`mail.odysseyhq.com.au` per CLAUDE.md operational state) or a separate Supabase template path? If it uses Supabase's own email-template path, the deliverability depends on the cloud project's Auth → Email Templates → Reset Password configuration — not on the application's `EMAIL_FROM`.
-- **Verify this works:** Supabase's `auth.updateUser({password})` requires a valid session. The recovery flow grants a short-lived session via the magic-link callback. Confirm the session is in place before `/reset` calls `updateUser`.
+**Original pre-build plan, retained for the audit trail:**
 
-**Approach to verify (not yet build):**
+- The existing `auth/callback` route already typed `'recovery'` and exchanged code-for-session; this was confirmed and left unchanged.
+- `resetPasswordForEmail(email, { redirectTo })` deliverability depends on the project's recovery-email configuration; beta uses Supabase's default template path rather than the application's `EMAIL_FROM`.
+- `updateUser({password})` requires the short-lived recovery session granted via the callback; the set-new-password action runs on that session.
 
-- Wire `/login`'s "Forgot?" link (`src/app/login/page.tsx:54`) to a new `/reset-request` route.
-- `/reset-request` page: simple email form + server action calling `supabase.auth.resetPasswordForEmail(email, { redirectTo: '${origin}/auth/callback?next=/reset' })`.
-- `/reset` page: form to set new password + server action calling `supabase.auth.updateUser({password})`. Requires authenticated session (the recovery flow grants it via the callback).
-- `/auth/callback`: confirm the `next` parameter is honoured and routes recovery flow correctly to `/reset`.
-
-**Shared plumbing with existing recovery type:** yes — `auth/callback` already handles recovery. The work is mostly new pages + actions; the callback may need a small adjustment to route recovery → `/reset` by default if `next` is unset.
-
-**Tightly couples to G-11 (fail-loud `NEXT_PUBLIC_SITE_URL`):** the new `/reset-request` action will also need to build a redirect URL from origin. Close G-11 first OR close them together so origin handling is uniform across signup and reset.
+**Origin-handling coupling to G-11 (as built):** the request action shipped using the same env-var origin idiom as signup (`NEXT_PUBLIC_SITE_URL` then `VERCEL_URL` then localhost). The plan had been to close G-5 and G-11 together so origin handling was uniform; in practice G-5 shipped the idiom and G-11 removed it from both signup and forgot-password the same session. See the Track B outcome note on this.
 
 #### B.3 — G-11 (P2 requirement): Fail-loud on `NEXT_PUBLIC_SITE_URL`
 
@@ -813,4 +806,14 @@ A.3 built `scripts/verify-auth-config.mjs` + `docs/runbooks/verify-auth-config.m
 
 **Net Track A:** G-1 closed (verified green, automated). G-3/G-7 toggles set with a documented manual verification pending. G-4 deferred (Pro-gated). Script, runbooks, and inert org in place. R-4 (manual cross-tenant procedure, `verify-cross-tenant-isolation.md`) is built but not yet run — a separate step, not part of this dashboard-config closure.
 
+## Track B — gap-closure pass: outcome (2026-05-22)
 
+Track B closed the three sequenced auth/onboarding gaps below, foundation-upward, each as its own commit. Outcome per property:
+
+- **G-2 (P0 refreshSession recovery): GREEN — behaviourally verified.** The claimless-session dead-end after org bootstrap is resolved: `actions.ts` checks the `refreshSession` error and re-checks the org claim, routing recovery through `/onboarding/org` with the redirect kept outside the try/catch; `page.tsx` branches on claim-present / membership-without-claim / neither; new `FinishSetup.tsx` makes exactly one browser-side `refreshSession` attempt, hard-navigates to `/dashboard` on success, and offers a bounded sign-out escape on failure. Acceptance tested: failed-refresh lands on the escape with a confirmed 400 then graceful login redirect on re-load; successful refresh renders the dashboard; happy path and branch-C render unaffected. **Closes G-2.**
+
+- **G-5 (P1 password reset): SHIPPED — code-verified, runtime-unexercised at commit.** Forgot-password and set-new-password flows built with no email enumeration, a tier-one session-presence guard, and the dead "Forgot?" link retargeted. G-5's own commit recorded "no acceptance tests have been run," so the flow was code-complete but not behaviourally exercised at closure; runtime verification is a cheap future check. Honesty note on origin handling: the request action shipped carrying the same silent origin fallback (`NEXT_PUBLIC_SITE_URL` then `VERCEL_URL` then localhost) that signup carried — a sibling instance of the signup idiom. G-5's commit message described this idiom neutrally and did not list the silent fallback among its four KNOWN OPEN ITEMS; it was carried without being flagged as a risk, not concealed. G-11 removed it from forgot-password the same session, ~3.5 hours later, as B.2 had planned to co-deliver. One correction to the record: G-11's commit message (fe1aa3b) characterised this as retiring "the duplicated origin idiom that G-5 logged as accepted de-duplication debt" — that overstates G-5, which logged de-duplication debt against the 12-char password minimum, not the origin idiom. The origin idiom carried no debt label in G-5. **Closes G-5.**
+
+- **G-11 (fail-loud unset site URL): SHIPPED — typecheck-green, runtime-unexercised.** New `src/lib/env/site-url.ts` exposes `getPublicOrigin()`, which reads `NEXT_PUBLIC_SITE_URL` and throws a locally-minted `EnvConfigError` when unset (no environment branch, no `VERCEL_URL`/localhost fallback) — Posture A, unconditional fail-loud, chosen to match the unconditional-throw precedent of `EMAIL_FROM` in `src/lib/email/client.ts`. Wired into both signup and forgot-password actions, replacing the silent fallback chain at each and dropping the now-redundant `startsWith("http")` normalisation. Typecheck green; runtime throw-on-unset and happy-path link are recorded as unexercised, not passed, per the browser-acceptance rule. **Closes G-11.**
+
+**Net Track B:** G-2 closed (behaviourally verified). G-5 closed (code-verified, runtime-unexercised at commit; carried and then-removed silent origin fallback recorded above, with G-11's de-dup-debt characterisation corrected). G-11 closed (typecheck-green, runtime-unexercised; uniform fail-loud origin handling across signup and reset). All three committed and pushed (c2a7111, a045e53, fe1aa3b). Three origin-construction idioms still exist codebase-wide (env-chain now fail-loud, a header-derived chain in clients/new, and a booking placeholder-chain) — consolidation tracked separately, not part of this closure.
