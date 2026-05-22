@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getPublicOrigin } from "@/lib/env/site-url";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function signup(formData: FormData) {
@@ -22,17 +23,13 @@ export async function signup(formData: FormData) {
 
   const supabase = await createSupabaseServerClient();
 
-  // Site URL used for the email confirmation callback.
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.VERCEL_URL ??
-    "http://localhost:3000";
+  const origin = getPublicOrigin();
 
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: `${origin.startsWith("http") ? origin : `https://${origin}`}/auth/callback`,
+      emailRedirectTo: `${origin}/auth/callback`,
     },
   });
 

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { getPublicOrigin } from "@/lib/env/site-url";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function requestPasswordReset(formData: FormData) {
@@ -12,21 +13,13 @@ export async function requestPasswordReset(formData: FormData) {
 
   const supabase = await createSupabaseServerClient();
 
-  // Site URL used for the reset callback. Same idiom as signup/actions.ts:
-  // NEXT_PUBLIC_SITE_URL ?? VERCEL_URL ?? localhost, with the same
-  // https-prefixing. NOT the header-derived host/proto pattern.
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.VERCEL_URL ??
-    "http://localhost:3000";
+  const origin = getPublicOrigin();
 
   // The reset link lands on /auth/callback, which exchanges the recovery token
   // and forwards to `next`. `next` is URL-encoded exactly as the invite flow
   // encodes its next param (clients/new/actions.ts).
   const next = "/auth/reset-password";
-  const redirectTo = `${
-    origin.startsWith("http") ? origin : `https://${origin}`
-  }/auth/callback?next=${encodeURIComponent(next)}`;
+  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
     redirectTo,
