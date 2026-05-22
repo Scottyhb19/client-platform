@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       appointment_reminders: {
@@ -3293,6 +3268,7 @@ export type Database = {
         Args: { p_organization_id: string; p_role: string; p_user_id: string }
         Returns: undefined
       }
+      assert_audit_resolver_coverage: { Args: never; Returns: undefined }
       audit_diff_fields: {
         Args: { p_new: Json; p_old: Json }
         Returns: string[]
@@ -3302,6 +3278,10 @@ export type Database = {
         Returns: string
       }
       audit_trim_row: { Args: { p_row: Json; p_table: string }; Returns: Json }
+      battery_in_clients_published_session: {
+        Args: { p_battery_id: string }
+        Returns: boolean
+      }
       client_accept_invite: {
         Args: { p_client_id: string }
         Returns: undefined
@@ -3764,9 +3744,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       appointment_reminder_status: [

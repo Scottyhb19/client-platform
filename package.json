@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "type-check": "tsc --noEmit",
-    "supabase:types": "npx supabase gen types typescript --project-id azjllcsffixswiigjqhj --schema public > src/types/database.ts"
+    "supabase:types": "node scripts/gen-types.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
