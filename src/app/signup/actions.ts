@@ -2,9 +2,14 @@
 
 import { redirect } from "next/navigation";
 import { getPublicOrigin } from "@/lib/env/site-url";
+import { isPublicSignupEnabled } from "@/lib/env/signup";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function signup(formData: FormData) {
+  if (!isPublicSignupEnabled()) {
+    redirect("/signup?closed=1");
+  }
+
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
 
