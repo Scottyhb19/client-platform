@@ -295,6 +295,7 @@ Supabase applies the following per-project rate limits to auth endpoints (config
 | Endpoint | Default | Our setting |
 |---|---|---|
 | Sign up | 30 per hour per IP | Keep default — v1 traffic is tiny |
+| Resend confirmation | Email-send cap (not the signup 30/hr) — tight on default mailer | Confirm in dashboard before relying on it; observed "email rate limit exceeded" in testing |
 | Sign in | 30 per hour per IP | Keep default |
 | Password reset | 4 per hour per email | Keep default — matches industry norm |
 | Magic link | 4 per hour per email | N/A in v1 (magic link not used) |
