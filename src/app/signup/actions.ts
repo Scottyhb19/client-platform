@@ -44,5 +44,5 @@ export async function signup(
     redirect("/onboarding/org");
   }
 
-  redirect("/signup?info=check-email");
+  return { status: "check-email", email, error: null };
 }

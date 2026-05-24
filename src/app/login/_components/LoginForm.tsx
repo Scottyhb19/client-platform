@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useActionState } from 'react'
 import { AuthAlert } from '@/components/auth/AuthShell'
+import { ResendConfirmationButton } from '@/components/auth/ResendConfirmationButton'
 import { login } from '../actions'
 import { initialLoginState } from '../types'
 
@@ -16,10 +17,12 @@ export function LoginForm({
   const [state, formAction, pending] = useActionState(login, initialLoginState)
 
   const shownError = state.error ?? urlError ?? null
+  const showResend = shownError === 'Email not confirmed' && state.email !== ''
 
   return (
     <>
       {shownError && <AuthAlert>{shownError}</AuthAlert>}
+      {showResend && <ResendConfirmationButton email={state.email} />}
 
       <form action={formAction} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">

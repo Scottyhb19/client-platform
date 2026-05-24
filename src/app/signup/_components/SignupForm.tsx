@@ -1,7 +1,8 @@
 'use client'
 
 import { useActionState } from 'react'
-import { AuthAlert } from '@/components/auth/AuthShell'
+import { AuthAlert, AuthSubtitle } from '@/components/auth/AuthShell'
+import { ResendConfirmationButton } from '@/components/auth/ResendConfirmationButton'
 import { signup } from '../actions'
 import { initialSignupState } from '../types'
 
@@ -11,10 +12,28 @@ export function SignupForm({ urlError }: { urlError?: string }) {
     initialSignupState,
   )
 
+  if (state.status === 'check-email') {
+    return (
+      <>
+        <AuthSubtitle>One more step.</AuthSubtitle>
+        <AuthAlert kind="info">
+          Check your email. We sent a confirmation link — click it to
+          finish creating your account.
+        </AuthAlert>
+        <ResendConfirmationButton email={state.email} />
+      </>
+    )
+  }
+
   const shownError = state.error ?? urlError ?? null
 
   return (
     <>
+      <AuthSubtitle>
+        Create an account. You&rsquo;ll name your practice on the next
+        screen.
+      </AuthSubtitle>
+
       {shownError && <AuthAlert>{shownError}</AuthAlert>}
 
       <form action={formAction} className="flex flex-col gap-4">
