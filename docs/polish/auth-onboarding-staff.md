@@ -171,6 +171,9 @@ An EP who just completed onboarding lands on an empty `/dashboard` with four zer
 **G-13 — `'Pending'` placeholder coupling between trigger and bootstrap RPC is fragile.** Closes F-12 / R-5.
 `handle_new_auth_user()` inserts `('Pending','Pending')`; `create_organization_with_owner` UPDATEs `user_profiles SET first_name=..., last_name=... WHERE first_name = 'Pending' OR last_name = 'Pending'`. If a future change to the trigger alters the placeholder strings, the UPDATE silently does nothing and every new staff user's profile is left at the new placeholder. No test guards this. Closing this: either (a) remove the WHERE filter on `'Pending'` and trust the SECURITY DEFINER context (the RPC is only called from `/onboarding/org`, and the pre-flight `IF EXISTS (...) RAISE EXCEPTION` already guards against double-updates from re-onboarding); (b) reference a constant in both places via a Postgres `CREATE FUNCTION pending_name() RETURNS text` or similar; (c) add a pgTAP test asserting the round-trip. Option (a) is the cleanest. **Recommendation** (no UX-visible impact today; this is robustness against a future code change).
 
+**G-14 — `/login` and `/signup` discard the typed email on every error, blocking in-place recovery.** Prerequisite for G-10.
+Both pages are Server Components whose actions communicate only via `redirect()`, so after a failed login or successful signup the typed email is gone — not in the form, state, or action return. Convert the form portion of each into a small `'use client'` child that holds the email in React state across a failed attempt or post-signup state change. The outer page stays a Server Component so it continues to read `?error=` from the URL (the login page is the display surface for errors redirected in by `auth/callback/route.ts` and `welcome/page.tsx:35` — losing this breaks those silently), relay the `next` deep-link param (middleware-set, consumed at `login/actions.ts:22`), and run the server-only signup closed-gate `isPublicSignupEnabled()` (reads `PUBLIC_SIGNUP_ENABLED`, cannot run client-side). The login and signup actions gain a returned error/info state (`useActionState`) so the client form renders errors in place without losing the email. Matches the existing server-shell-plus-client-child convention (`FinishSetup`, `WelcomeForm`, `InstallScreen`, `ContinueGate`). Scope: `/login` and `/signup` only — the five sibling auth pages (`forgot-password`, `reset-password`, `onboarding/org`, `welcome`, `welcome/install`) deliberately stay on the existing pattern.
+
 ---
 
 ## Documentation-sync flags (non-blocking)
@@ -439,11 +442,22 @@ Pulled forward from "approved recommendations" because of the dependency from B.
 - Regen `src/types/database.ts` via `npm run supabase:types` (per CLAUDE.md memory item "Schema/migration/push correctness").
 - No code change in `src/`.
 
+#### B.9 — G-14: Stateful auth form conversion
+
+**Things that MUST be preserved across the conversion (verified against HEAD 9a19bca):**
+
+- `/login?error=` is written from OUTSIDE `login/actions.ts` — by `auth/callback/route.ts` and `welcome/page.tsx:35`. The converted login page MUST still read and display `?error=` from the URL or those external error redirects go silent. Highest-risk item.
+- `next` deep-link chain: middleware sets `/login?next=<path>`, page relays via hidden field, action redirects there on success (`login/actions.ts:22`). Must survive.
+- Signup closed-gate is a server-only env check `isPublicSignupEnabled()` (`src/lib/env/signup.ts`), NOT a URL param read; `?closed=1` is vestigial. Gate stays server-side; only the inner form becomes client.
+- `AuthShell`/`AuthAlert` (`src/components/auth/AuthShell.tsx`) is a universal module with no `'use client'`; a client child imports it unchanged. Do NOT add `'use client'` to `AuthShell` itself — that pushes all seven consumers into client bundles. The directive belongs on the new form child.
+- **Verify this works (runtime, not doc-drift):** the `useActionState` return-shape wiring against the project's pinned Next.js version. Front door of a health app — browser-test before commit: log in, log out, bad password, unconfirmed-email error, expired-invite redirect showing its error, deep-link return via `next`.
+- **Out of scope:** the five sibling auth pages. G-10 (resend UI) rides on top AFTER this lands.
+
 ---
 
 ### Sequencing summary
 
-Track A runs partly in the operator's chair (A.2) and partly in Claude Code's chair (A.1, A.3 build, A.4 doc). Track B is local code, sequenced B.1 → B.2 (paired with B.3) → B.4 → B.5 → B.6 → B.7 → B.8.
+Track A runs partly in the operator's chair (A.2) and partly in Claude Code's chair (A.1, A.3 build, A.4 doc). Track B is local code, sequenced B.1 → B.2 (paired with B.3) → B.4 → B.5 → B.6 → B.7 → B.8 → B.9.
 
 Each item closes in its own task and returns here for review before the next begins. The first step-6 task should pick up A.1 (design the verification mechanism, as a written design note for operator approval) — that is the prerequisite for the entire Track A workstream and surfaces the open framework/library questions before any code is built.
 
