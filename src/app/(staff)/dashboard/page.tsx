@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Calendar as CalendarIcon } from 'lucide-react'
+import { Calendar as CalendarIcon, UserPlus as UserPlusIcon } from 'lucide-react'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
@@ -333,7 +333,35 @@ export default async function DashboardPage() {
           marginBottom: 28,
         }}
       >
-        <AttentionPanel items={attention} />
+        {activeClientCount === 0 ? (
+          <div className="card" style={{ padding: '22px 26px' }}>
+            <div
+              style={{
+                padding: '28px 0',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 12,
+                textAlign: 'center',
+                color: 'var(--color-muted)',
+                fontSize: '.88rem',
+              }}
+            >
+              <UserPlusIcon
+                size={28}
+                strokeWidth={2}
+                color="var(--color-muted)"
+                aria-hidden
+              />
+              <div>No clients yet.</div>
+              <Link href="/clients/new" className="btn outline">
+                Add your first client
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <AttentionPanel items={attention} />
+        )}
         <TodaysSessionsPanel
           items={todaysAppointments ?? []}
           now={now}
