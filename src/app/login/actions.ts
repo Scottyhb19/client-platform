@@ -2,21 +2,25 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { LoginState } from "./types";
 
-export async function login(formData: FormData) {
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
+export async function login(
+  _prev: LoginState,
+  formData: FormData,
+): Promise<LoginState> {
+  const email = (formData.get("email") as string) ?? "";
+  const password = (formData.get("password") as string) ?? "";
   const next = (formData.get("next") as string) || "/dashboard";
 
   if (!email || !password) {
-    redirect(`/login?error=${encodeURIComponent("Email and password required")}`);
+    return { error: "Email and password required", email };
   }
 
   const supabase = await createSupabaseServerClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    return { error: error.message, email };
   }
 
   redirect(next);
