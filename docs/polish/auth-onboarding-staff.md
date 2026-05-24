@@ -60,9 +60,9 @@ Verified against the code:
 
 ### First-run EP experience
 
-After onboarding the EP lands on `/dashboard`. Page renders four stat cards (Sessions today / Active clients / Need attention / Programs ending) — all zeroed — plus an empty Needs-attention panel ("Nothing flagged. Nice."), an empty Today's-sessions panel ("No sessions booked for today."), and an empty Recently-completed panel. Greeting is "Good morning/afternoon/evening, [FirstName]. You're clear. Take a breath."
+After onboarding the EP lands on `/dashboard`. Page renders four stat cards (Sessions today / Active clients / Need attention / Programs ending) — all zeroed — plus a Needs-attention panel that renders its empty state ("Nothing flagged. Nice.") when the org has active clients and is replaced by the first-client card built in b6e1068 when `activeClientCount === 0`, an empty Today's-sessions panel ("No sessions booked for today."), and an empty Recently-completed panel. Greeting is "Good morning/afternoon/evening, [FirstName]. You're clear. Take a breath."
 
-There is no "let's get started" guidance, no contextual prompt to create the first client / configure availability / set notification preferences / review the Settings page. The first-run experience is correctly calm and not patronising (matches CLAUDE.md voice: "encouragement is earned, not free"), but it offers no signposting to the next action. This is a P2 polish item carried as **recommendation, not requirement** — §5.1 step 10 only specifies the redirect target, not what greets the user on arrival.
+The first-run experience is correctly calm and not patronising (matches CLAUDE.md voice: "encouragement is earned, not free"). It now offers a single quiet signpost to the next action: when the org has zero active clients, a first-client card is shown linking to `/clients/new` — built in b6e1068. There is still no contextual prompt to configure availability, set notification preferences, or review the Settings page, but that is acceptable — this was carried as a P2 **recommendation, not requirement**, since §5.1 step 10 only specifies the redirect target, not what greets the user on arrival.
 
 ### Settings surface
 
@@ -101,7 +101,7 @@ Ranked by likelihood × impact. Infrastructure/security items weighted productio
 | **F-6** | **EP forgets password.** "Forgot?" link is dead. EP has no self-serve recovery path. | Medium × Medium | **G-5** |
 | **F-7** | **`enable_confirmations` toggled off in dashboard.** Application has no defence-in-depth — trusts Supabase's toggle. Unverified sessions silently accepted. | Low × High | **G-7** |
 | **F-8** | **`NEXT_PUBLIC_SITE_URL` unset in production.** Signup action falls back to `VERCEL_URL` (deployment-specific, changes per deploy). Confirmation-email link points to a URL that may no longer be the canonical app URL by the time the user clicks it. | Low × Medium | **G-11** |
-| **F-9** | **First-run EP sees empty dashboard with no signposting.** Calm copy ("you're clear, take a breath") fits the voice but offers no path to the next action (first client, availability, notifications). EP bounces. | Medium × Low | **G-12 (recommendation)** |
+| **F-9** | **First-run EP sees empty dashboard with no signposting.** Calm copy ("you're clear, take a breath") fits the voice but offers no path to the next action (first client, availability, notifications). EP bounces. | Medium × Low | **G-12 (BUILT — b6e1068)** |
 | **F-10** | **Credential-incident forensics impossible.** No auth-event log. If collaborator credentials leak, no way to identify when/where they were used or by whom. | Low × High | **G-6** |
 | **F-11** | **`/signup` publicly reachable on the open internet.** Random visitor discovers the URL, creates a vanity organisation in the production database. RLS isolates them so no data leak, but production data is polluted with stranger orgs. | Low × Low | **G-9 (recommendation)** |
 | **F-12** | **`'Pending'` placeholder coupling between trigger and bootstrap RPC.** A change to `handle_new_auth_user()` (e.g. changing placeholder strings or removing them) silently breaks `create_organization_with_owner`'s name-update — first/last name stay 'Pending'. No test catches this. | Low × Medium | **G-13** |
@@ -165,7 +165,7 @@ Previously, if the EP's confirmation email was lost or expired, the only paths w
 **G-11 — `NEXT_PUBLIC_SITE_URL` falls back silently in the signup action.** Closes F-8.
 `src/app/signup/actions.ts:26-29` falls back to `VERCEL_URL` (deployment-specific) or `localhost:3000` if `NEXT_PUBLIC_SITE_URL` is unset. CLAUDE.md operational state names a precedent for fail-loud env handling (`EMAIL_FROM` throws / 500s if unset); the same posture should apply here. Closing this: throw on unset `NEXT_PUBLIC_SITE_URL` in production (detect via `NODE_ENV` or `VERCEL_ENV === 'production'`). **Requirement** (traceable to CLAUDE.md code standards — "Environment variables for all secrets and configuration. Nothing hardcoded.").
 
-**G-12 — First-run dashboard has no signposting to the next action.** Closes F-9.
+**G-12 — First-run dashboard has no signposting to the next action — BUILT (b6e1068).** Closes F-9.
 An EP who just completed onboarding lands on an empty `/dashboard` with four zeroed stat cards and three "Nothing here" panels. Calm and clinical (matches design-system voice) but offers no path forward. Suggested closure: when `activeClientCount === 0`, replace the empty Needs-attention panel with a single quiet card — "Add your first client" → links to `/clients/new`. No exclamation points, no "Let's get started!", no decorative imagery. **Recommendation** (§5.1 does not specify the dashboard's first-run content; this is a design-system-and-product-judgement call).
 
 **G-13 — `'Pending'` placeholder coupling between trigger and bootstrap RPC is fragile.** Closes F-12 / R-5.
@@ -258,7 +258,7 @@ G-6 (structured auth-event audit log, ten events from `docs/auth.md §11`) is de
 - **G-9** (`/signup` operational gating) — P2 recommendation, approved.
 - **G-10** (resend-confirmation UI for staff signup) — P2 recommendation, BUILT.
 - **G-11** (fail-loud on `NEXT_PUBLIC_SITE_URL`) — P2 requirement, approved.
-- **G-12** (first-run "Add your first client" quiet card when `activeClientCount === 0`) — P2 recommendation, **approved to implement**.
+- **G-12** (first-run "Add your first client" quiet card when `activeClientCount === 0`) — P2 recommendation, BUILT (b6e1068).
 - **G-13** (`'Pending'` placeholder coupling cleanup) — P2 recommendation, approved.
 
 ### Documentation-sync flags carry forward unchanged
@@ -413,11 +413,11 @@ Pulled forward from "approved recommendations" because of the dependency from B.
 
 **Built, not as originally planned:** the original approach proposed carrying the email in the query string on a check-email redirect (`&email=`). That was rejected in favour of keeping the email out of the URL entirely. The signup success path no longer redirects — it returns a stateful check-email view that the mounted client form renders, holding the email in React state. The resend control reads the email from that state. On the `/login` error path, when the error is "Email not confirmed", the same control reads the email from the already-mounted login form state. No email ever touches a URL.
 
-#### B.7 — G-12 (P2 recommendation): First-run signposting on dashboard
+#### B.7 — G-12 (P2 recommendation): First-run signposting on dashboard — BUILT (b6e1068)
 
-**Approach to verify (not yet build):**
+**As built:**
 
-- In `src/app/(staff)/dashboard/page.tsx`, when `activeClientCount === 0`, replace the empty Needs-attention panel (or the Today's-sessions panel — design call) with a single quiet card: "Add your first client" → links to `/clients/new`.
+- In `src/app/(staff)/dashboard/page.tsx`, when `activeClientCount === 0`, the empty Needs-attention panel (the wide left column) — not the Today's-sessions panel — is replaced with a single quiet card: "Add your first client" → links to `/clients/new`.
 - Match design-system voice: no exclamation, no decorative imagery, no "Let's get started!". Lucide stroke icon (UserPlus or similar) at 2px stroke is acceptable.
 - **No dependency on other gaps.** Pure UI addition.
 
