@@ -816,7 +816,7 @@ A.3 built `scripts/verify-auth-config.mjs` + `docs/runbooks/verify-auth-config.m
 
 ## Track B — gap-closure pass: outcome (2026-05-22)
 
-Track B closed the three sequenced auth/onboarding gaps below, foundation-upward, each as its own commit. Outcome per property:
+Track B closed the three sequenced auth/onboarding gaps below, foundation-upward, each as its own commit. (G-10 was added later as a separate commit on 2026-05-24, riding on the G-14 form-conversion work — not part of the original sequenced three.) Outcome per property:
 
 - **G-2 (P0 refreshSession recovery): GREEN — behaviourally verified.** The claimless-session dead-end after org bootstrap is resolved: `actions.ts` checks the `refreshSession` error and re-checks the org claim, routing recovery through `/onboarding/org` with the redirect kept outside the try/catch; `page.tsx` branches on claim-present / membership-without-claim / neither; new `FinishSetup.tsx` makes exactly one browser-side `refreshSession` attempt, hard-navigates to `/dashboard` on success, and offers a bounded sign-out escape on failure. Acceptance tested: failed-refresh lands on the escape with a confirmed 400 then graceful login redirect on re-load; successful refresh renders the dashboard; happy path and branch-C render unaffected. **Closes G-2.**
 
