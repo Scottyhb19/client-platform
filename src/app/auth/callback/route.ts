@@ -38,6 +38,23 @@ export async function GET(request: Request) {
   // src/lib/auth/safe-next.ts.
   const next = safeNext(url.searchParams.get('next'), '/onboarding/org')
 
+  // Forward the password-recovery ticket (Gate-2 wiring; see migration
+  // 20260527140000_password_recovery_tickets, commit 1152df8) as a
+  // SEPARATE query param, never inside `next`. safeNext validates only
+  // the next path; the ticket is an opaque UUID appended after the
+  // validated path via encodeURIComponent. Non-recovery callback flows
+  // (signup confirmation, OAuth, magic-link) won't carry a ticket, so
+  // appendTicket is a no-op for them. Applied at every redirect sink
+  // below — defense-in-depth so the ticket survives regardless of
+  // which branch (code, tokenHash, or implicit-flow bridge) Supabase
+  // happens to route through.
+  const ticket = url.searchParams.get('ticket')
+  const appendTicket = (validatedNext: string): string => {
+    if (!ticket) return validatedNext
+    const sep = validatedNext.includes('?') ? '&' : '?'
+    return `${validatedNext}${sep}ticket=${encodeURIComponent(ticket)}`
+  }
+
   const supabase = await createSupabaseServerClient()
 
   if (code) {
@@ -50,7 +67,7 @@ export async function GET(request: Request) {
         ),
       )
     }
-    return NextResponse.redirect(new URL(safeNext(next, '/onboarding/org'), url.origin))
+    return NextResponse.redirect(new URL(appendTicket(safeNext(next, '/onboarding/org')), url.origin))
   }
 
   if (tokenHash && type) {
@@ -66,7 +83,7 @@ export async function GET(request: Request) {
         ),
       )
     }
-    return NextResponse.redirect(new URL(safeNext(next, '/onboarding/org'), url.origin))
+    return NextResponse.redirect(new URL(appendTicket(safeNext(next, '/onboarding/org')), url.origin))
   }
 
   // Supabase's implicit flow puts BOTH outcomes in the URL fragment:
@@ -78,11 +95,13 @@ export async function GET(request: Request) {
   // supabase.auth.setSession), then redirects to `next`. On error it
   // redirects to /login with the real error in the query.
   // safeNext() wraps `next` again at this sink so the bridge can only ever
-  // receive a validated local path even when this block is read in isolation.
-  // JSON.stringify then JS-literal-escapes the result for XSS-safe
+  // receive a validated local path; appendTicket() then appends the
+  // forwarded recovery ticket (if any) as a separate query param.
+  // JSON.stringify finally JS-literal-escapes the result for XSS-safe
   // interpolation into the script body. Idempotent: when the source-level
-  // validation already passed, the wrap here is a no-op.
-  const nextJsLiteral = JSON.stringify(safeNext(next, '/onboarding/org'))
+  // validation already passed, the safeNext wrap is a no-op; appendTicket
+  // is a no-op when no ticket param is present (most callback flows).
+  const nextJsLiteral = JSON.stringify(appendTicket(safeNext(next, '/onboarding/org')))
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Signing you in…</title></head>
 <body style="font-family:-apple-system,sans-serif;padding:32px;color:#78746f;background:#F7F4F0;">

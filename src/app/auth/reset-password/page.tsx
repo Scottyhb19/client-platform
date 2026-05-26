@@ -12,21 +12,38 @@ import { setNewPassword } from './actions'
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; ticket?: string }>
 }) {
   const params = await searchParams
 
-  // Tier-one session-PRESENCE guard only. It confirms that some authenticated
-  // session exists before rendering the set-new-password form; it does NOT
-  // distinguish a Supabase recovery session from an ordinary authenticated one.
-  // The codebase exposes no recovery/aal/amr discriminator today (confirmed by
-  // inspection), so a logged-in non-recovery user reaching this page is a known
-  // open risk deferred to a dedicated follow-up — it is NOT closed here.
+  // Two presence gates — both must hold before the form is rendered.
+  // Neither is the security gate; the security gate lives in actions.ts,
+  // which calls consume_recovery_ticket(p_ticket_id) atomically before
+  // updateUser (Gate 2 of the recovery-session conflation fix; the
+  // table + RPC landed in Gate 1, commit 1152df8). consume_recovery_
+  // ticket's WHERE-clause binds the ticket's email to auth.uid()'s
+  // auth.users row inside one UPDATE, so a hostile session with no
+  // matching ticket-email pair gets a NULL consume and the password
+  // write is refused at the action.
+  //
+  // The page-level checks here are UX, not security: don't render a
+  // form that cannot possibly submit successfully — bounce to
+  // /forgot-password instead.
+  //
+  // Critically, this page MUST NOT call consume_recovery_ticket itself.
+  // Consuming on render would either (a) burn the single-use ticket
+  // before the user submits, or (b) split validation from consumption
+  // across two requests and reintroduce a time-of-check-to-time-of-
+  // use gap. Consumption belongs in the action, immediately before
+  // the password write.
   const supabase = await createSupabaseServerClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
+    redirect('/forgot-password')
+  }
+  if (!params.ticket) {
     redirect('/forgot-password')
   }
 
@@ -39,6 +56,7 @@ export default async function ResetPasswordPage({
       {params.error && <AuthAlert>{params.error}</AuthAlert>}
 
       <form action={setNewPassword} className="flex flex-col gap-4">
+        <input type="hidden" name="ticket" value={params.ticket} />
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor="password"
