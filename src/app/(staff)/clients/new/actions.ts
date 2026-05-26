@@ -1,10 +1,10 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
 import { sendClientInviteEmail } from '@/lib/email/send-client-invite'
+import { getPublicOrigin } from '@/lib/env/site-url'
 import {
   createSupabaseServerClient,
   createSupabaseServiceRoleClient,
@@ -140,12 +140,14 @@ export async function inviteClientAction(
   // the token for a session and forwards to /welcome → /welcome/install.
   if (sendInvite) {
     const admin = createSupabaseServiceRoleClient()
-    const host = (await headers()).get('host') ?? 'localhost:3000'
-    const proto =
-      (await headers()).get('x-forwarded-proto') ??
-      (host.startsWith('localhost') ? 'http' : 'https')
+    // Anchor the outbound invite URLs to the env-configured canonical
+    // origin, not to request headers (host / x-forwarded-proto). Matches
+    // the G-11 fail-loud posture in signup/actions.ts and
+    // forgot-password/actions.ts; closes the header-trust sibling that
+    // G-11 did not reach.
+    const origin = getPublicOrigin()
     const welcomeNext = `/welcome?client_id=${data.id}`
-    const redirectTo = `${proto}://${host}/auth/callback?next=${encodeURIComponent(welcomeNext)}`
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(welcomeNext)}`
 
     // Step 1: create the auth user + accept URL without firing Supabase's
     // email. Two paths:
@@ -217,7 +219,7 @@ export async function inviteClientAction(
       }
     }
     const tokenId = tokenInsert.data.id
-    const gateUrl = `${proto}://${host}/i/${tokenId}`
+    const gateUrl = `${origin}/i/${tokenId}`
 
     // Step 3: pull the practice + practitioner names so the email reads
     // human. Both fall back to gentle defaults — we never block the

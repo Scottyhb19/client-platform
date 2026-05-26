@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { safeNext } from "@/lib/auth/safe-next";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { LoginState } from "./types";
 
@@ -10,7 +11,9 @@ export async function login(
 ): Promise<LoginState> {
   const email = (formData.get("email") as string) ?? "";
   const password = (formData.get("password") as string) ?? "";
-  const next = (formData.get("next") as string) || "/dashboard";
+  // Validate `next` as a local same-origin path before honouring it on
+  // successful sign-in. Open-redirect protection — see src/lib/auth/safe-next.ts.
+  const next = safeNext(formData.get("next"));
 
   if (!email || !password) {
     return { error: "Email and password required", email };

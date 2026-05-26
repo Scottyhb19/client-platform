@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { safeNext } from '@/lib/auth/safe-next'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
@@ -27,7 +28,15 @@ export async function GET(request: Request) {
     | 'email_change'
     | 'email'
     | null
-  const next = url.searchParams.get('next') ?? '/onboarding/org'
+  // Validate `next` at the source AND again at each downstream sink (the
+  // two NextResponse.redirect calls below and the implicit-flow HTML
+  // bridge wrap `next` again with safeNext). safeNext is idempotent — a
+  // value that already passes returns unchanged — so the layered wraps
+  // are no-ops on the happy path; the value is that each redirect line
+  // is independently safe to read in isolation and the protection cannot
+  // be undone by editing one place. Open-redirect defence; see
+  // src/lib/auth/safe-next.ts.
+  const next = safeNext(url.searchParams.get('next'), '/onboarding/org')
 
   const supabase = await createSupabaseServerClient()
 
@@ -41,7 +50,7 @@ export async function GET(request: Request) {
         ),
       )
     }
-    return NextResponse.redirect(new URL(next, url.origin))
+    return NextResponse.redirect(new URL(safeNext(next, '/onboarding/org'), url.origin))
   }
 
   if (tokenHash && type) {
@@ -57,7 +66,7 @@ export async function GET(request: Request) {
         ),
       )
     }
-    return NextResponse.redirect(new URL(next, url.origin))
+    return NextResponse.redirect(new URL(safeNext(next, '/onboarding/org'), url.origin))
   }
 
   // Supabase's implicit flow puts BOTH outcomes in the URL fragment:
@@ -68,7 +77,12 @@ export async function GET(request: Request) {
   // /auth/set-session (which writes them into the session cookie via
   // supabase.auth.setSession), then redirects to `next`. On error it
   // redirects to /login with the real error in the query.
-  const safeNext = JSON.stringify(next) // safe interpolation into JS literal
+  // safeNext() wraps `next` again at this sink so the bridge can only ever
+  // receive a validated local path even when this block is read in isolation.
+  // JSON.stringify then JS-literal-escapes the result for XSS-safe
+  // interpolation into the script body. Idempotent: when the source-level
+  // validation already passed, the wrap here is a no-op.
+  const nextJsLiteral = JSON.stringify(safeNext(next, '/onboarding/org'))
   const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Signing you in…</title></head>
 <body style="font-family:-apple-system,sans-serif;padding:32px;color:#78746f;background:#F7F4F0;">
@@ -107,7 +121,7 @@ export async function GET(request: Request) {
       }
       // Drop the fragment so refreshes on /welcome don't leak the tokens
       // back into anything; replace() history-cleans the redirect.
-      location.replace(${safeNext});
+      location.replace(${nextJsLiteral});
     } catch (e) {
       var u4 = new URL('/login', location.origin);
       u4.searchParams.set('error', 'Sign-in failed: ' + (e && e.message ? e.message : e));
