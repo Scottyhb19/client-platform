@@ -1712,6 +1712,30 @@ export type Database = {
         }
         Relationships: []
       }
+      password_recovery_tickets: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
       physical_markers_schema_seed: {
         Row: {
           category_display_order: number
@@ -3390,6 +3414,10 @@ export type Database = {
       }
       client_start_session: {
         Args: { p_program_day_id: string }
+        Returns: string
+      }
+      consume_recovery_ticket: {
+        Args: { p_ticket_id: string }
         Returns: string
       }
       copy_program: {
