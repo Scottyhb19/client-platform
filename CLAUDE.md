@@ -34,7 +34,7 @@ Two surfaces:
 These advantages disappear the day the first real user — including a friends-and-family beta tester — logs in and creates data. Anything load-bearing should be hardened *before* that day.
 
 ## Active section
-**Auth and Onboarding for staff. Active as of 2026-05-21.** This is the foundation layer of the polish pass. Work follows the polish-pass protocol below. The previous active section, the testing and reports module, is complete and is recorded as such in the polish-pass order.
+**Auth and Onboarding for clients. Active as of 2026-05-27.** This is the client-side first-contact layer of the polish pass — email invite, password creation, first login, day-one experience. Work follows the polish-pass protocol below. The previous active section, Auth and Onboarding (staff), is closed under the formal section sign-off ritual and is recorded as such in the polish-pass order; the Closing commit and Sign-off live at `docs/polish/auth-onboarding-staff.md`.
 
 ## Polish-pass protocol (mandatory)
 Before modifying any section, follow this sequence:
@@ -198,8 +198,8 @@ If any of the above is found to have drifted from this stated position, surface 
 ## Polish-pass order (locked)
 The polish pass works through the platform in foundation-upward order. Each layer's failure modes depend on the layer beneath, so the foundation is polished first. Move on only when the current section meets its bar and has been signed off per the ritual above.
 
-1. **Auth and Onboarding (staff)** — clinic-side setup. Account creation, organisation setup, settings, first-run experience for the EP. Active.
-2. **Auth and Onboarding (client)** — client-side first contact. Email invite, password creation, first login, day-one experience.
+1. **Auth and Onboarding (staff)** — clinic-side setup. Account creation, organisation setup, settings, first-run experience for the EP. Closed 2026-05-27.
+2. **Auth and Onboarding (client)** — client-side first contact. Email invite, password creation, first login, day-one experience. Active.
 3. **Client profile and clinical notes** — note template, flag banners, medical history, history rendering.
 4. **Exercise library** — search, tagging, video preview, default prescription patterns.
 5. **Program engine and session builder** — the differentiator. Highest care. Drag-and-drop, supersetting, shared right panel, clinical notes adjacency.
