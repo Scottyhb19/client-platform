@@ -883,3 +883,18 @@ Not a planned track. While double-checking G-14's `next` deep-link, the link was
 **Deliberately accepted rather than mitigated:** **F-10** (credential-incident forensics) — accepted for the beta via the **G-6** deferral; the operator is the security team at this scale. The runtime-unexercised status of **G-5** and **G-11** is accepted at commit time as cheap-to-close later rather than gating the section close.
 
 A note on the recurring lesson of this section: the most dangerous defects were not in the gap list but in the shared machinery beneath it, and "felt verified" was the failure mode that let **G-14**'s deep-link claim ship false. Exercised-not-assumed is the standard this close is written to.
+
+## Sign-off
+
+**Date signed off:** 2026-05-27.
+
+**Reviewer:** claude.ai chat titled "Clarifying scope against actual document evidence" (the handover/working session that produced the Closing commit; recorded as reviewer of record per the operator's decision for this section). The operator is separately surfacing this close in the Odyssey project chat; that does not override this entry.
+
+**Decision:** Closed with deferred items.
+
+Deferred items, with rationale and re-activation trigger:
+
+- **G-3** (HIBP leaked-password protection): deferred, Pro-gated; confirmed locked on the free tier in-dashboard 2026-05-27. **Trigger:** the Supabase Pro upgrade, itself gated on before any real client data enters the project.
+- **G-4** (30-day refresh-token lifetime): deferred, Pro-gated. **Trigger:** the Pro upgrade, same trigger family as **G-3**.
+- **G-6** (structured auth-event audit log): deferred as disproportionate for a two-person friends-and-family beta where the operator is the security team. Master brief section 7.4 names audit logging as a requirement, so this is deferred, not cut. **Trigger:** before any paying clinical client onboards.
+- **R-4** (automated cross-tenant pgTAP regression test): deferred until a second practitioner account exists. The compensating manual procedure at `runbooks/verify-cross-tenant-isolation.md` is built but has not yet been run, so the multi-tenant boundary's independent verification is pending rather than complete; the boundary currently rests on the **G-1** automated hook check (green) plus that as-yet-unexercised manual tripwire. **Trigger to run the manual procedure:** before first real data, and on any migration touching RLS, the JWT hook, or the auth helpers. **Trigger to land the automated test:** a second practitioner account.
