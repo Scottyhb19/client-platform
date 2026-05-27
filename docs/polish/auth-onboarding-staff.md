@@ -851,3 +851,35 @@ Not a planned track. While double-checking G-14's `next` deep-link, the link was
 - **Recovery-session conflation at `/auth/reset-password`: CLOSED (two gates).** The set-new-password page accepted ANY active session, converting any session foothold into permanent account takeover via `updateUser({password})` under that session's `auth.uid()` — a documented-and-deferred in-code risk that had never been closed. Fixed Shape B (server-minted ticket): Gate 1 (`1152df8`) adds the `password_recovery_tickets` table and the `consume_recovery_ticket` RPC — one atomic UPDATE with the email-match bound to `auth.uid()` inside the WHERE (no time-of-check-to-time-of-use seam), RLS enabled with no permissive policy (RPC-and-service-role-only). Gate 2 (`c705aeb`) wires it: forgot-password mints a row, the ticket rides a `ticket=` param kept clear of `safeNext`, reset-password consumes-before-updateUser and skips the write on a null consume. Exercised end-to-end on a burner account through the real PKCE code branch. Caveat — test infrastructure, not the fix: the six adversarial pgTAP assertions (cross-email block, happy path, replay, expiry, RLS SELECT denial, RLS INSERT denial) were proven green against the live production project via BEGIN/ROLLBACK, as the project has no non-prod test target. That is a standing liability tracked on the go-live gate, not a defect in this fix.
 
 **Net Track C:** Three account-takeover-class defects closed (open-redirect a81c1ca, login-CSRF a7cc273, recovery-conflation 1152df8 + c705aeb), all shipped and pushed. Each carries an honesty note recorded above. Forward-dependencies that this pass created or assumes — HttpOnly/token-rotation confirmation (CSRF threat model), production-origin env var set before launch (the open-redirect fix made auth fail-closed if it is unset), and the production-only pgTAP target — are collected on the go-live gate, not duplicated here.
+
+## Closing commit
+
+**Date:** 2026-05-27. **Author:** Claude Code. This closes the seven-step polish-pass for the Auth and Onboarding (staff) section, the foundation layer of the polish-pass order. Per the section sign-off ritual, this Closing commit is written for the reviewer; the section is not closed until a Sign-off entry is recorded beneath it.
+
+### What changed, by gap number
+
+**Track A (dashboard-config verification):** **G-1** closed — the custom-access-token hook is verified green and automated via `scripts/verify-auth-config.mjs` at a quarterly-and-on-migration cadence; the catastrophic hook-disabled failure mode is ruled out. **G-7** closed — email confirmations verified end-to-end on 2026-05-26 (an unconfirmed signup was refused at login, then admitted after the confirmation link).
+
+**Track B (code gaps):** **G-2** closed — `refreshSession` failure recovery in the org-bootstrap flow, behaviourally verified. **G-5** closed — password reset for the EP owner, code-verified but runtime-unexercised at commit. **G-8** closed — the decorative keep-me-signed-in checkbox removed and replaced with a factual caption. **G-9** closed — public signup gated behind a fail-closed flag. **G-10** closed — resend-confirmation UI, behaviourally verified, email never placed in a URL. **G-11** closed — fail-loud on unset `NEXT_PUBLIC_SITE_URL` via `getPublicOrigin`, uniform across signup and reset. **G-13** closed — the Pending-placeholder coupling removed with a pgTAP round-trip test. **G-14** closed for its form-conversion scope only.
+
+**Track C (unplanned security pass, 2026-05-26/27):** three account-takeover-class defects closed — open redirect at `auth/callback`, login-CSRF at `/auth/set-session`, and recovery-session conflation at `/auth/reset-password` (two gates). None were in the original gap list; all were in the shared auth machinery the tracked gaps ran through.
+
+**Project-wide gate:** the go-live checklist was created at `docs/go-live-checklist.md` as the Gate 3 deliverable, giving every deferred item below a recorded home.
+
+### What acceptance tests ran and their results
+
+**G-1**, **G-2**, **G-7**, **G-9**, **G-10** were behaviourally verified in the browser. **G-5** and **G-11** are code-verified and typecheck-green but were runtime-unexercised at their commits; runtime verification is a cheap outstanding check, not a passed result. **G-13** shipped a pgTAP round-trip test, run green against production. The Track C recovery fix shipped six adversarial pgTAP assertions, all green — but run only against the live production project via `BEGIN-ROLLBACK`, because no non-prod test target exists; that is a standing liability recorded on the go-live gate, not a property of the fix.
+
+### What was deferred, and the trigger to re-activate
+
+**G-3** (HIBP leaked-password protection) — deferred, Pro-gated; confirmed locked on the free tier in-dashboard 2026-05-27. **Trigger:** the Supabase Pro upgrade, itself gated on before any real client data. **G-4** (30-day refresh-token lifetime) — deferred, Pro-gated. **Trigger:** the Pro upgrade, same family as **G-3**. **G-6** (structured auth-event audit log) — deferred as disproportionate for a two-person beta. **Trigger:** before any paying clinical client. **R-4** (automated cross-tenant pgTAP regression test) — deferred until a second practitioner account exists; the manual procedure at `runbooks/verify-cross-tenant-isolation.md` compensates in the interim and is built but not yet run.
+
+### Premortem failure modes — mitigated versus accepted
+
+**Mitigated:** **F-1** (hook silently disabled) by **G-1**; **F-4** (`refreshSession` dead-end) by **G-2**; **F-6** (no password recovery) by **G-5**; **F-5** (lost confirmation email) by **G-10**; **F-7** (confirmations toggled off) by **G-7**; **F-8** (unset site URL) by **G-11**; **F-11** (public signup pollution) by **G-9**; **F-12** (Pending coupling) by **G-13**. Plus three account-takeover modes not in the original premortem, surfaced and closed in Track C.
+
+**Partially mitigated, with the remainder deferred:** **F-3** (refresh-token lifetime) — the decorative-control half is closed by **G-8**, but the actual 30-day lifetime is **G-4**, deferred and Pro-gated. **F-2** (breached password accepted) — depends on **G-3** HIBP, deferred and Pro-gated; accepted for the friends-and-family beta on the reasoning that the operator controls the small known account set until Pro cutover.
+
+**Deliberately accepted rather than mitigated:** **F-10** (credential-incident forensics) — accepted for the beta via the **G-6** deferral; the operator is the security team at this scale. The runtime-unexercised status of **G-5** and **G-11** is accepted at commit time as cheap-to-close later rather than gating the section close.
+
+A note on the recurring lesson of this section: the most dangerous defects were not in the gap list but in the shared machinery beneath it, and "felt verified" was the failure mode that let **G-14**'s deep-link claim ship false. Exercised-not-assumed is the standard this close is written to.
