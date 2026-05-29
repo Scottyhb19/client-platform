@@ -18,7 +18,7 @@
   - **12.3 session duration:** 30-day refresh-token lifetime applies uniformly to all roles (Supabase dashboard setting; staff Track A G-4 documents). See **open question 1** below for whether to differentiate client session length.
   - **12.4 invite-link lifetime:** **8 hours** (operator decision 2026-05-28). Code already at 8h at `supabase/migrations/20260426100000_invite_tokens.sql:38`; the spec's "24h vs 7d" range is now settled in favour of the tighter end. The short window forces a fresh-invite habit during beta; the missing Resend-invite UI (**C-5**) is the operational compensation.
   - **12.5 MFA:** deferred to Phase 2 for clients. Absence is not a gap.
-- **Scope decision 2026-05-28:** staff-side touchpoints that only matter because of clients are in scope for this section — specifically the missing Resend-invite UI on the client profile (**C-5**) and the missing session-revocation in `archiveClientAction` (**C-3**). These could have been picked up in the staff section but were not; the staff section is closed, they gate the client lifecycle end-to-end, and they have nowhere else to live.
+- **Scope decision 2026-05-28:** staff-side touchpoints that only matter because of clients are in scope for this section — specifically the missing Resend-invite UI on the client profile (**C-5**) and the missing session-revocation in `archiveClientAction` (**C-3**). These sit in staff-side files but are not staff-authentication concerns — neither touches staff sign-in, clinic creation, or staff identity. Both are client-onboarding-lifecycle steps (issuing or re-issuing a client's first credential; terminating a client's access), and this section owns that lifecycle end-to-end. They live here by correct ecosystem ownership, not because a closed staff section left them homeless.
 
 ---
 
@@ -338,3 +338,65 @@ Dependency-ordered. Each item closes in its own step-6 task; each returns here f
 Documentation-sync flags (P-D / P-E / P-F / P-G) land alongside the gaps they document, not as separate Track B items.
 
 Stopping here. No track or item is started in this task — this section is the sequencing, not the execution.
+
+---
+
+## Reviewer revisions (2026-05-29)
+
+This section supersedes the body above where they conflict. The seven-step protocol re-engages from step 5 with these in force. Each superseded location is named explicitly.
+
+### 1. Severity re-rankings (severity axis only; sequencing in item 5)
+
+- **C-4 → P0.** Fires deterministically on every client password-reset: the reset terminal hard-codes `redirect('/dashboard')` at `src/app/auth/reset-password/actions.ts:95`, a Medium-likelihood path, and lands the client on the same `/unauthorized` dead-end as C-1's Low-likelihood `refreshSession()` failure. A deterministic break of the recovery path outranks a probabilistic one; severity matches C-1. The body's placement of C-4 under "### P1 — functional" is superseded — read C-4 as P0 architectural and security.
+- **C-7 → P0, blocked-by staff Track A.** Severity and sequencing are separate axes. If Supabase does not enforce HIBP at `updateUser`, the §12.1 password-strength commitment carries a permanent hole on the client recovery path — production-grade-security severity. C-7 stays sequenced last in Track B because its probe depends on Track A's framework existing; the P0 label reflects severity, not readiness. The body's placement under "### P1 — functional" is superseded — read C-7 as P0, annotated blocked-by Track A.
+- **C-8 → P1 Requirement, locked regardless of BottomNav verification.** The bar for this section is not "sign-out is reachable somewhere in the component tree" — it is "sign-out is a deliberate, discoverable, design-system-conformant affordance." A control buried in an overflow menu that took a deep-trace to find does not meet that bar even if it technically works. §5.7 step 1 requires the client to be able to sign out; this section requires it to be findable without instruction. Verification of `BottomNav` (traced from `portal/layout.tsx:91` but not deep-read) and any `/portal/you`-equivalent surface is still required, but it now governs only the scope of the fix (net-new affordance vs. promoting a buried one), not the severity. The body's placement under "### P2 — polish" and its "Requirement if absent / Recommendation if reachable today" framing are both superseded.
+
+**Updated severity roster for this section.** P0: C-1, C-2, C-3, C-4, C-7. P1: C-5, C-6, C-8, C-14. P2: C-9, C-10, C-11, C-12, C-13. The "Severity grouping" line at the head of the Gap list and the three "### P0 / ### P1 / ### P2" section memberships are superseded by this roster.
+
+### 2. C-6 resolution — build `rate_limit_log` now
+
+**Operator decision 2026-05-29:** build `rate_limit_log` in this section and close the §7.2 commitment across all three named operations together — `client_accept_invite`, `staffInviteClient`, `sendCommunication`. Rationale: §7.2 has sat unenforced for all three since the doc was written; the build is one migration plus one helper plus three call sites (small); and friends-and-family beta is simultaneously when an unauthenticated rate-limit attack is least likely and when the build cost is smallest — both vectors favour building now rather than deferring to a later sweep that only grows. **Verify this works:** confirm the helper's IP-derivation source exposes a trustworthy per-client IP server-side before relying on per-IP limits. If the only available IP is a shared proxy or edge IP, a per-IP limit is meaningless and the limit key must change — per `auth.uid()` for the authenticated operations, per-email for the unauthenticated ones. Open question 2 is resolved by this decision.
+
+### 3. New gap — C-14 (P1)
+
+**C-14 — Anti-prefetch invite gate is unverified against a real mail-client prefetcher.** Closes F-14. P1 Requirement (reviewer pass 2026-05-29, wide scope).
+
+The §5.3 step-3 and step-4 deviation builds an entire architectural defence — the `/i/[id]` gate rendering a "One tap to continue" button and firing `window.location.assign(action_link)` rather than an `<a href>` — specifically to stop link-prefetchers consuming the one-time invite token before the human clicks. The defence is plausible (button plus JS navigation is the standard mitigation) but the threat it defends against has never been verified: no recorded test proves a real prefetcher fails to consume the token. An unverified defence on the single most fragile point of client onboarding is a hopeful assertion, not a defensible design.
+
+Closing this is verification-first. Send a real invite to a seeded mailbox on at least Gmail (the prefetcher named in the source comments) and one corporate-style scanner if reachable (Outlook Safe Links or equivalent — these are more aggressive consumers than Gmail in practice, so a Gmail-only pass is partial). Confirm the invite token is NOT consumed by delivery or scanning and IS consumed only on a real human tap. Record the result — mail client, date, outcome — in a runbook entry alongside the auth-config runbooks. This verification gates the section's "complete" bar. If the test passes, C-14 closes as a documented verification with no code change. If it fails, the gate design is inadequate and a contingent code fix opens — candidate mitigations: requiring an explicit POST rather than any GET to consume the token, or deferring token exchange to a server action triggered by the button and never reachable by a GET prefetch. That fix is sequenced as new work, not pre-built before the test result is known.
+
+Requirement (traceable to §5.3 step 3 and step 4 — the deviation is load-bearing for the entire invite flow; an unverified load-bearing defence does not meet the section's bar).
+
+Append this row to the forward-looking premortem table:
+
+| # | Failure mode | Likelihood × Impact | Closed by gap |
+|---|---|---|---|
+| F-14 | The `/i/[id]` gate's anti-prefetch design (button plus `window.location.assign`, no `<a href>`) has never been verified against a live mail-client link-prefetcher. If a prefetcher (Gmail, Outlook Safe Links, corporate scanners) reaches the `action_link` despite the gate, it exchanges the one-time token before the human clicks; the client lands on an already-consumed invite and cannot onboard — onboarding silently broken at first contact. | Low–Medium × High | C-14 |
+
+### 4. Open-question resolutions
+
+- **OQ2 — resolved:** build `rate_limit_log` now, all three operations (item 2 above).
+- **OQ5 — resolved, tightened:** the section may write its gap list independently of Track A, but C-1 and C-4 may NOT be closed before Track A's hook-verification probe lands. Both fixes assume the Custom Access Token Hook can populate `user_role` correctly; if the hook is the broken thing, C-1's recovery logic loops forever and C-4's `user_role` RPC returns NULL. Track A's verification is a hard pre-condition of B.1 and B.4, not a parallel track. R-1 and C-7 still inherit Track A's closure as before.
+- **OQ6 — resolved:** C-8 is P1 regardless of verification (item 1 above). The BottomNav deep-read still happens; it sets fix-scope, not severity.
+
+### 5. Track A / Track B sequencing override
+
+Track A gains one operator task — "No new operator work" in the Step-six section is superseded.
+
+- **A.2 — C-14 prefetcher verification.** Operator-run. Gates the section's "complete" bar alongside R-1 and C-7's inherited closures.
+
+Track A hook-verification is now a hard pre-condition of Track B B.1 and B.4. Sequence the hook-verification probe to land before either is touched. Rationale: it preserves debugging signal — a C-1 or C-4 bug surfacing in beta is then known to be fix-logic, not hook-config.
+
+**Track B label and scope updates:**
+
+- **B.4 (C-4)** — now P0. Gated behind Track A hook-verification (above).
+- **B.6 (C-6)** — scope is the wider build: one migration plus one helper plus three call sites (`rate_limit_log` across all three §7.2 operations), per item 2.
+- **B.7 (C-7)** — now P0, still sequenced last (blocked-by Track A).
+- **B.8 (C-8)** — now P1.
+- **New B.14 (C-14)** — operator verification, see A.2. Runs early in execution despite its B-number: it is cheap and a failing result reshapes the invite flow, so its result should be known before late code work proceeds.
+
+**Execution-order nudge:** move C-13 (humane error copy) ahead of C-11 and C-12 in execution order. C-13's accusatory error strings reach the client today; C-11 and C-12 have zero user-visible impact now.
+
+### 6. Scope-decision reasoning correction
+
+The body's original phrasing — that C-3 and C-5 live here because "they have nowhere else to live" — is not the reason and has been replaced in the Composite target brief. The correct reason is ecosystem ownership: both are client-onboarding-lifecycle steps implemented in staff-side files, and this section owns that lifecycle end-to-end. "Nowhere else to live" was the smell, not the rationale.
