@@ -400,3 +400,22 @@ Track A hook-verification is now a hard pre-condition of Track B B.1 and B.4. Se
 ### 6. Scope-decision reasoning correction
 
 The body's original phrasing — that C-3 and C-5 live here because "they have nowhere else to live" — is not the reason and has been replaced in the Composite target brief. The correct reason is ecosystem ownership: both are client-onboarding-lifecycle steps implemented in staff-side files, and this section owns that lifecycle end-to-end. "Nowhere else to live" was the smell, not the rationale.
+
+### 7. C-3 reclassified — closed as documented closure, no code (mechanism correction)
+
+A read-only trace of `soft_delete_client` (in `supabase/migrations/20260429130000_soft_delete_rpcs_clients_and_program_exercises.sql`, NOT the `20260429120000` predecessor the body cites — the predecessor explicitly carves clients out of scope) established that the function performs exactly one DML statement: an `UPDATE clients SET deleted_at = now(), archived_at = now()`. It does NOT remove the `user_organization_roles` role row, does NOT touch `clients.user_id`, and does NOT touch any `auth.*` object. The body of this document is wrong on this mechanism in four places, all superseded here:
+
+- The §5.8 client archive audit paragraph, which states the RPC "removes the `user_organization_roles` row." It does not.
+- The F-3 premortem row, which states "RLS shuts them out at next refresh because the role row is gone." The role row is not removed, and the lockout is not at refresh.
+- The C-3 gap entry, whose fix sequence and "≤1h window" residual are built on the role-row-removal premise.
+- The severity roster in item 1 above, which lists C-3 in the P0 set.
+
+**Corrected mechanism.** Data-access denial for an archived client is immediate at archive commit, not at token TTL expiry. Every client-readable RLS policy carries `AND deleted_at IS NULL` as a top-level conjunct, and the client-branch policies gate through `client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)`. The instant the UPDATE commits, every subsequent SELECT, RPC, and realtime delivery for that client returns zero rows — including queries by the row's own owner via `user_id = auth.uid()`. The role row's presence is irrelevant to this gate: `public.user_role()` reads the JWT claim, not the table, so the role row affects nothing until the next token issuance regardless.
+
+**Consequence for C-3.** The residual the gap was opened to close — a window of authenticated read access to clinical data after archive — does not exist. What remains after archive is only content already rendered into the client's browser DOM and held in component memory before the commit; no server-side session revocation (`signOut('global')`, an `auth.sessions` delete, a ban, or a password scramble) can reclaim already-rendered client-side state. Server-side revocation therefore closes no real residual.
+
+**C-3 is closed as a documented closure with no code change.** The application is correct as built; the audit that opened C-3 as a P0 misread the archive mechanism. C-3 is removed from the P0 set. The corrected roster is: P0 — C-1, C-2, C-4, C-7. P1 — C-5, C-6, C-8, C-14. P2 — C-9, C-10, C-11, C-12, C-13. The Track B sequence item B.3 (C-3) is struck; the early unblocked code item is now C-6 (sequenced before or with C-5, per the SHARED SURFACE finding), with B.1 and B.4 still gated behind Track A hook-verification.
+
+**Residual cosmetic note, not a gap.** With data access closed at commit, a longer access-token TTL only means a stale archived tab keeps displaying already-rendered content, and keeps a realtime socket open delivering empty payloads, until the token expires. This is cosmetic, not a data exposure, and is explicitly accepted for all scopes. It is noted only because it is the same lever as open question 1 (client session duration), which remains separately open.
+
+**Documentation-sync flags raised by this correction (non-blocking):** the §5.8 body paragraph, the F-3 row, and the C-3 entry should be corrected in place in a future doc-hygiene pass to name the real mechanism, so a reader who skips the revisions section is not misled; the migration citation `20260429120000` should be corrected to `20260429130000` wherever it appears. These join the existing P-D through P-H sync flags; they are non-blocking because this revisions entry is authoritative in the interim.
