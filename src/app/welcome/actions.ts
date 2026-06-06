@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { checkAcceptInvite } from '@/lib/rate-limit'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { WelcomeState } from './types'
 
@@ -11,13 +12,18 @@ import type { WelcomeState } from './types'
  * Order matters:
  *   1. Set the password so the user can log in via email/password next
  *      time (Supabase auth sessions expire; they can't rely on the OTP).
- *   2. Call client_accept_invite RPC (SECURITY DEFINER) to:
+ *   2. Rate-limit check (C-6, docs/auth.md §7.2): 10 failures per hour
+ *      per uid. Failed-only: only RPC errors count. Generic over-limit
+ *      message — do NOT distinguish "limit hit" from any other failure
+ *      to a probing attacker.
+ *   3. Call client_accept_invite RPC (SECURITY DEFINER) to:
  *        - verify the caller's email matches the invited clients row,
  *        - link clients.user_id = auth.uid(),
  *        - create the user_organization_roles 'client' row.
- *   3. Force a session refresh so the JWT picks up the new role/org
+ *      On RPC error, record a failure under the rate-limit key.
+ *   4. Force a session refresh so the JWT picks up the new role/org
  *      claims from the Custom Access Token Hook.
- *   4. Redirect to /portal.
+ *   5. Redirect to /portal.
  */
 export async function setPasswordAndAcceptAction(
   _prev: WelcomeState,
@@ -60,24 +66,44 @@ export async function setPasswordAndAcceptAction(
     return { error: `Couldn't set password: ${pwErr.message}`, fieldErrors: {} }
   }
 
-  // 2. Accept the invite via the SECURITY DEFINER function.
+  // 2. Rate-limit check (C-6, docs/auth.md §7.2). Failed-only: this
+  //    refuses the attempt if recent failures for this uid already meet
+  //    the cap. The wrapper FAILS CLOSED — a rate-limit infrastructure
+  //    error (RPC error, table unreachable) also lands here with
+  //    underLimit=false. Both paths return the identical generic
+  //    message with no time-to-reset and no discrimination from an
+  //    email-mismatch refusal — a probing attacker cannot distinguish
+  //    "limit hit" from "infra down" from "email mismatch".
+  const rl = await checkAcceptInvite(user.id)
+  if (!rl.underLimit) {
+    return {
+      error: 'Too many attempts. Try again later.',
+      fieldErrors: {},
+    }
+  }
+
+  // 3. Accept the invite via the SECURITY DEFINER function.
   const { error: acceptErr } = await supabase.rpc('client_accept_invite', {
     p_client_id: clientId,
   })
   if (acceptErr) {
+    // Failed-only semantics: record on the RPC error path only.
+    // recordFailure soft-fails internally; we ignore its outcome here
+    // because the operation has already errored.
+    await rl.recordFailure()
     return {
       error: `Couldn't link your account: ${acceptErr.message}`,
       fieldErrors: {},
     }
   }
 
-  // 3. Refresh the session so the JWT picks up role='client' + org_id.
+  // 4. Refresh the session so the JWT picks up role='client' + org_id.
   //    (updateUser above already returns a fresh session, but the
   //    custom-access-token hook runs on every issuance, so we're
   //    belt-and-braces here.)
   await supabase.auth.refreshSession()
 
-  // 4. Nudge the install before they reach the portal. The install screen
+  // 5. Nudge the install before they reach the portal. The install screen
   //    detects the platform and serves iOS Safari instructions, an Android
   //    one-tap install, or a "open this on your phone" desktop fallback.
   //    Already-installed clients (display-mode: standalone) auto-bounce

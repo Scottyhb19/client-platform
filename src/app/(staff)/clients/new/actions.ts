@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
 import { sendClientInviteEmail } from '@/lib/email/send-client-invite'
 import { getPublicOrigin } from '@/lib/env/site-url'
+import { checkAndRecordStaffInvite } from '@/lib/rate-limit'
 import {
   createSupabaseServerClient,
   createSupabaseServiceRoleClient,
@@ -139,6 +140,21 @@ export async function inviteClientAction(
   // The accept URL still routes through /auth/callback, which exchanges
   // the token for a session and forwards to /welcome → /welcome/install.
   if (sendInvite) {
+    // Rate limit (C-6, docs/auth.md §7.2): 20 attempts per hour per
+    // staff uid, all-attempts semantics. Placed at the TOP of the
+    // sendInvite block so when C-5 extracts this block into a shared
+    // helper for the Resend-invite UI, the rate-limit gate lifts out
+    // cleanly with it and the resend action inherits the limit by
+    // construction.
+    const rl = await checkAndRecordStaffInvite(userId)
+    if (!rl.underLimit) {
+      const minutes = Math.max(1, Math.ceil(rl.secondsToReset / 60))
+      return {
+        error: `Too many invites sent. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+        fieldErrors: {},
+      }
+    }
+
     const admin = createSupabaseServiceRoleClient()
     // Anchor the outbound invite URLs to the env-configured canonical
     // origin, not to request headers (host / x-forwarded-proto). Matches
