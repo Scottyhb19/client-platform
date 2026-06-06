@@ -2325,6 +2325,27 @@ export type Database = {
           },
         ]
       }
+      rate_limit_log: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          outcome: Database["public"]["Enums"]["rate_outcome"]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          outcome?: Database["public"]["Enums"]["rate_outcome"]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          outcome?: Database["public"]["Enums"]["rate_outcome"]
+        }
+        Relationships: []
+      }
       report_versions: {
         Row: {
           format_notes: string | null
@@ -3469,6 +3490,15 @@ export type Database = {
         Args: { p_after_pe_id: string; p_day_id: string; p_exercise_id: string }
         Returns: string
       }
+      rate_limit_check_and_record: {
+        Args: { p_key: string; p_max: number; p_window: string }
+        Returns: Record<string, unknown>
+      }
+      rate_limit_check_failures: {
+        Args: { p_key: string; p_max: number; p_window: string }
+        Returns: Record<string, unknown>
+      }
+      rate_limit_record_failure: { Args: { p_key: string }; Returns: undefined }
       reorder_program_exercises: {
         Args: {
           p_day_id: string
@@ -3644,6 +3674,7 @@ export type Database = {
         | "discharge"
         | "general"
       program_status: "draft" | "active" | "archived"
+      rate_outcome: "attempt" | "failure"
       test_side_t: "left" | "right"
       test_source_t: "manual" | "vald" | "imported"
       user_role: "owner" | "staff" | "client"
@@ -3847,6 +3878,7 @@ export const Constants = {
         "general",
       ],
       program_status: ["draft", "active", "archived"],
+      rate_outcome: ["attempt", "failure"],
       test_side_t: ["left", "right"],
       test_source_t: ["manual", "vald", "imported"],
       user_role: ["owner", "staff", "client"],

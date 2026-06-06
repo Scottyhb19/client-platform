@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import type { Database } from '@/types/database'
 
 /**
  * Application-level rate limiting (per `docs/auth.md §7.2`).
@@ -90,25 +91,34 @@ type RpcCheckShape = {
   seconds_to_reset: number
 }
 
+type RpcReturns = {
+  rate_limit_check_and_record: RpcCheckShape
+  rate_limit_check_failures: RpcCheckShape
+  rate_limit_record_failure: undefined
+}
+
 /**
- * Call an RPC bypassing the not-yet-narrowed Functions union in
- * `src/types/database.ts`. The three RPCs in
- * `supabase/migrations/20260604120000_rate_limit_log.sql` will land
- * in the generated types on the next `supabase gen types` run after
- * deploy; until then, this helper localizes the bypass.
+ * Call one of the rate-limit RPCs.
  *
- * The runtime contract is the SQL OUT parameters; the generic `T`
- * here is the wrapper's own assertion of that shape.
+ * `args` is type-checked against the generated schema
+ * (`Database['public']['Functions'][FnName]['Args']`): a wrong,
+ * missing, or mistyped argument is a compile error. The `data` return
+ * shape comes from `RpcReturns` — `supabase gen types` degrades the
+ * two check-style RPCs' SQL OUT-parameter composites to
+ * `Record<string, unknown>` (it does not introspect OUT params into a
+ * named record), so the generated `Returns` cannot type the
+ * `data.under_limit` / `data.seconds_to_reset` reads. `RpcReturns` is
+ * verified field-for-field against the OUT params in
+ * `supabase/migrations/20260604120000_rate_limit_log.sql`; keep it in
+ * sync if the SQL OUT params change.
  */
-async function callRpc<T>(
-  fn: 'rate_limit_check_and_record' | 'rate_limit_check_failures' | 'rate_limit_record_failure',
-  args: Record<string, unknown>,
-): Promise<{ data: T | null; error: { message: string } | null }> {
+async function callRpc<FnName extends keyof RpcReturns>(
+  fn: FnName,
+  args: Database['public']['Functions'][FnName]['Args'],
+): Promise<{ data: RpcReturns[FnName] | null; error: { message: string } | null }> {
   const supabase = await createSupabaseServerClient()
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const rpc = supabase.rpc as any
-  const result = await rpc(fn, args)
-  return result as { data: T | null; error: { message: string } | null }
+  const result = await supabase.rpc(fn, args)
+  return result as { data: RpcReturns[FnName] | null; error: { message: string } | null }
 }
 
 /**
@@ -132,7 +142,7 @@ async function callRpc<T>(
 export async function checkAndRecordStaffInvite(
   uid: string,
 ): Promise<RateLimitResult> {
-  const { data, error } = await callRpc<RpcCheckShape>(
+  const { data, error } = await callRpc(
     'rate_limit_check_and_record',
     {
       p_key: `staff_invite:${uid}`,
@@ -200,7 +210,7 @@ export async function checkAcceptInvite(
   const key = `accept_invite:${uid}`
 
   const recordFailure = async (): Promise<void> => {
-    const { error } = await callRpc<undefined>(
+    const { error } = await callRpc(
       'rate_limit_record_failure',
       { p_key: key },
     )
@@ -214,7 +224,7 @@ export async function checkAcceptInvite(
     }
   }
 
-  const { data, error } = await callRpc<RpcCheckShape>(
+  const { data, error } = await callRpc(
     'rate_limit_check_failures',
     {
       p_key: key,
