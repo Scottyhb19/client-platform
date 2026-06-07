@@ -142,6 +142,23 @@ export async function sendInviteForClient(args: {
     }
   }
 
+  // Send succeeded. Refresh invited_at so the client profile's
+  // "Last invite sent" reflects this send, and so the audit_clients
+  // trigger lands an audit_log row for it (the trigger fires on any
+  // UPDATE to clients; this is the audit mechanism for a resend).
+  // Soft-fail: the email has already gone out, so a failure here must
+  // NOT be reported as a send failure — that would prompt a resend and
+  // double-email the client. Log and continue; the send succeeded.
+  const { error: stampErr } = await admin
+    .from('clients')
+    .update({ invited_at: new Date().toISOString() })
+    .eq('id', args.clientId)
+  if (stampErr) {
+    console.warn(
+      `[invite] send succeeded but invited_at refresh failed: client=${args.clientId} err=${stampErr.message}`,
+    )
+  }
+
   return { error: null }
 }
 
