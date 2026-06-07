@@ -17,6 +17,13 @@ import type {
 import type { DirectionOfGood, Side } from '@/lib/testing/types'
 
 // ---------------------------------------------------------------------------
+// Re-exports — formatters hoisted to src/lib/format/
+// ---------------------------------------------------------------------------
+
+export { timeAgo } from '@/lib/format/time-ago'
+export { formatShortDate } from '@/lib/format/short-date'
+
+// ---------------------------------------------------------------------------
 // Time window
 // ---------------------------------------------------------------------------
 
@@ -176,20 +183,6 @@ export function sortTestsByRecency(tests: TestHistory[]): TestHistory[] {
 // ---------------------------------------------------------------------------
 // Date formatting
 // ---------------------------------------------------------------------------
-
-/** AU short date — "Sat 11 Apr 2026" per design system §02 voice. */
-export function formatShortDate(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
-}
 
 /** Compact "12 Jan 2026" — for axis ticks. */
 export function formatCompactDate(iso: string): string {
@@ -456,24 +449,4 @@ export function hasPendingPublishWorkflow(
     }
   }
   return false
-}
-
-/** Relative-time-ago — "9 days ago", "3 weeks ago". */
-export function timeAgo(iso: string, now = Date.now()): string {
-  try {
-    const ms = now - new Date(iso).getTime()
-    if (ms < 0) return formatShortDate(iso)
-    const days = Math.floor(ms / (1000 * 60 * 60 * 24))
-    if (days === 0) return 'today'
-    if (days === 1) return 'yesterday'
-    if (days < 14) return `${days} days ago`
-    const weeks = Math.floor(days / 7)
-    if (weeks < 8) return `${weeks} weeks ago`
-    const months = Math.floor(days / 30)
-    if (months < 18) return `${months} months ago`
-    const years = Math.floor(days / 365)
-    return `${years} years ago`
-  } catch {
-    return iso
-  }
 }
