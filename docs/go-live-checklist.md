@@ -67,11 +67,11 @@ All pgTAP, including the Track C recovery-ticket tests, runs only against the li
 
 **Gate:** stand up a non-prod target before identifiable client health data enters the project.
 
-## 6. Manual cross-tenant isolation run (execution gate)
+## 6. Cross-tenant isolation regression test (execution gate)
 
-The manual cross-tenant verification procedure exists at `runbooks/verify-cross-tenant-isolation.md`. Per Track A it is built but has not yet been run. It is the manual tripwire compensating for the deferred automated cross-tenant pgTAP test (R-4).
+R-4 is closed. The automated pgTAP test `supabase/tests/database/17_cross_tenant_isolation.sql` landed 2026-06-07 and passed 8/8 against the live project — read isolation on `clients`/`clinical_notes`/`programs`, write isolation on `clients` (UPDATE affects 0 rows; foreign-org INSERT raises 42501), plus anti-trivial controls. The manual procedure at `runbooks/verify-cross-tenant-isolation.md` was also run for the first time the same day (all checks pass, recorded in its run log) and is downgraded to a quarterly broader-surface check (it covers all eight core tenant tables; the automated test covers the regression-prone core).
 
-**Gate:** run it before first real data, and re-run on any migration touching RLS, the JWT hook, or the auth helpers. Record the dated result in the runbook.
+**Gate:** run the automated test (`17_cross_tenant_isolation.sql`, one batch in the SQL editor) on any migration touching RLS, the JWT hook, or the auth helpers, and before first real data. It runs against prod via `BEGIN … ROLLBACK` until the §5 non-prod target exists. Re-run the broader manual procedure quarterly or whenever the automated test's table coverage is in doubt.
 
 ## 7. Auth-config verification (cadence gate)
 

@@ -120,7 +120,9 @@ N/A for the test itself — every impersonation block is wrapped in `BEGIN … R
 
 **Retirement**
 
-When the automated pgTAP cross-tenant test lands (R-4 closure / README suggested-runbook #1), downgrade this manual procedure to a quarterly check or retire it. Note that here when it happens.
+The automated pgTAP cross-tenant test landed on 2026-06-07 as `supabase/tests/database/17_cross_tenant_isolation.sql` (R-4 closure / README suggested-runbook #1), verified green 8/8 against the live project via `BEGIN … ROLLBACK`. That test is self-fixturing — it creates and rolls back its own two orgs and two staff via `_test_set_jwt`, with no browser signup or manual teardown — and is now the **primary per-migration tripwire**: run it on every migration touching RLS, the JWT hook, or the auth helpers.
+
+This manual procedure is therefore **downgraded to a quarterly belt-and-suspenders check**, plus any time the automated test's coverage is in doubt. It is not retired, because it remains the broader-surface check: the automated test covers read isolation on `clients`/`clinical_notes`/`programs` and write isolation on `clients` (representative of the shared policy shape), whereas this manual run covers all eight core tenant tables for both read and write. Retire it entirely only if the automated test is expanded to all eight tables.
 
 ---
 
