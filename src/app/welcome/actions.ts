@@ -101,7 +101,21 @@ export async function setPasswordAndAcceptAction(
   //    (updateUser above already returns a fresh session, but the
   //    custom-access-token hook runs on every issuance, so we're
   //    belt-and-braces here.)
-  await supabase.auth.refreshSession()
+  //
+  //    C-1 — see docs/polish/auth-onboarding-client.md. refreshSession()
+  //    returns { error } on ordinary failure; the thin try/catch guards
+  //    the rare non-AuthError throw (lock timeout, transient network).
+  //    Either failure mode leaves a claimless JWT; the recovery is handled
+  //    one step downstream at /welcome/install, whose page-level branch
+  //    detects "membership row exists but user_role() claim absent" and
+  //    renders FinishSetup. The redirect destination below stays
+  //    /welcome/install unchanged because the install page IS the
+  //    recovery host.
+  try {
+    await supabase.auth.refreshSession()
+  } catch {
+    // Swallow — the install page's recovery branch handles it.
+  }
 
   // 5. Nudge the install before they reach the portal. The install screen
   //    detects the platform and serves iOS Safari instructions, an Android
