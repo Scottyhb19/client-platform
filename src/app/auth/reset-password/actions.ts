@@ -1,6 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { postAuthLanding } from "@/lib/auth/post-auth-landing";
+import type { UserRole } from "@/lib/auth/require-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function setNewPassword(formData: FormData) {
@@ -92,5 +94,10 @@ export async function setNewPassword(formData: FormData) {
     );
   }
 
-  redirect("/dashboard");
+  // Role-aware redirect (C-4). updateUser issued a fresh JWT through the
+  // Custom Access Token Hook, so user_role() reads the current claim.
+  // No `next` in this flow — postAuthLanding falls back to /dashboard for
+  // staff/owner and routes clients to /portal regardless.
+  const { data: role } = await supabase.rpc("user_role");
+  redirect(postAuthLanding(role as UserRole | null, "/dashboard"));
 }
