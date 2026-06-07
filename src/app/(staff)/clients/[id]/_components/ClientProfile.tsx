@@ -22,6 +22,7 @@ import { SessionExerciseSummary } from '../../../_components/SessionExerciseSumm
 import { NotesTab } from './NotesTab'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
+import { ResendInviteButton } from './ResendInviteButton'
 import type {
   BatteryRow,
   CatalogCategory,
@@ -201,6 +202,8 @@ interface ClientProfileProps {
   completions: ProfileCompletion[]
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
+  canResendInvite: boolean
+  lastInviteSentAt: string | null
   noteTemplates: ProfileNoteTemplate[]
   appointments: ProfileAppointment[]
   reports: ProfileReport[]
@@ -263,6 +266,8 @@ export function ClientProfile({
   completions,
   statusLabel,
   statusKind,
+  canResendInvite,
+  lastInviteSentAt,
   noteTemplates,
   appointments,
   reports,
@@ -286,6 +291,8 @@ export function ClientProfile({
         conditions={conditions}
         statusLabel={statusLabel}
         statusKind={statusKind}
+        canResendInvite={canResendInvite}
+        lastInviteSentAt={lastInviteSentAt}
         tab={tab}
         onTab={setTab}
       />
@@ -345,6 +352,8 @@ function ClientHeader({
   conditions,
   statusLabel,
   statusKind,
+  canResendInvite,
+  lastInviteSentAt,
   tab,
   onTab,
 }: {
@@ -352,6 +361,8 @@ function ClientHeader({
   conditions: ProfileCondition[]
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
+  canResendInvite: boolean
+  lastInviteSentAt: string | null
   tab: Tab
   onTab: (t: Tab) => void
 }) {
@@ -506,6 +517,14 @@ function ClientHeader({
               ))}
               <span className={`tag ${statusKind}`}>{statusLabel}</span>
             </div>
+            {canResendInvite && (
+              <div style={{ marginTop: 8 }}>
+                <ResendInviteButton
+                  clientId={client.id}
+                  lastInviteSentAt={lastInviteSentAt}
+                />
+              </div>
+            )}
             {openError && (
               <div
                 role="alert"

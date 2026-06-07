@@ -235,6 +235,12 @@ export default async function ClientProfilePage({
   const statusKind: 'active' | 'new' | 'archived' =
     status === 'active' ? 'active' : status === 'invited' ? 'new' : 'archived'
 
+  // Resend-invite affordance (C-5): show only pre-onboarding (user_id null)
+  // and only if an invite was previously sent (invited_at non-null). Read
+  // from the raw client row, not profileClient (which omits these columns).
+  const canResendInvite = client.user_id === null && client.invited_at !== null
+  const lastInviteSentAt = client.invited_at
+
   const profileClient: ProfileClient = {
     id: client.id,
     first_name: client.first_name,
@@ -446,6 +452,8 @@ export default async function ClientProfilePage({
       completions={completions}
       statusLabel={statusLabel}
       statusKind={statusKind}
+      canResendInvite={canResendInvite}
+      lastInviteSentAt={lastInviteSentAt}
       noteTemplates={noteTemplates}
       appointments={appointments}
       reports={reports}
