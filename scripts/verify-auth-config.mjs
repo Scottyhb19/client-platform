@@ -1,5 +1,5 @@
 // ============================================================================
-// verify-auth-config.mjs — dashboard-config verification (Track A: G-1/G-3/G-7)
+// verify-auth-config.mjs — dashboard-config verification (Track A: G-1/G-3/G-3u/G-7)
 // ============================================================================
 // Verifies four Supabase auth settings that live in the dashboard, are invisible
 // to application code, and silently degrade security if changed. See
@@ -8,6 +8,7 @@
 //
 //   G-1  custom-access-token hook enabled  — behaviourally asserted (the tripwire)
 //   G-3  HIBP leaked-password protection   — probed via front-door signUp
+//   G-3u HIBP on the updateUser path (C-7) — admin-create + sign-in + updateUser; sends no mail (free-tier-safe)
 //   G-7  email confirmations enabled       — partial assertion via signUp behaviour
 //   G-4  refresh-token lifetime (30 days)  — DOC-ONLY; this script does not assert it
 //
@@ -55,6 +56,8 @@ const VERIFY_ORG_SLUG = 'verify-auth-config-probe' // matches organizations.slug
 // be verified offline; the first run confirms it. If G-3 reports RED while the
 // dashboard shows HIBP enabled, swap this for another known-breached >=12-char
 // string (verify a candidate at https://haveibeenpwned.com/Passwords first).
+// CONFIRMED IN CORPUS (2026-06-10): verified via the HIBP k-anonymity range API
+// (SHA-1 prefix AE903) — 181,374 breach occurrences. Not a corpus false-negative.
 const DEFAULT_BREACHED_PASSWORD = 'password12345'
 
 // ---- Minimal .env.local reader (matches scripts/audit-spotcheck.mjs) --------
@@ -327,6 +330,134 @@ async function checkG3(svc, anon, env, runPrefix) {
   }
 }
 
+// ---- G-3u (C-7): HIBP leaked-password protection on the updateUser path -----
+// WHY THIS EXISTS, SEPARATELY FROM G-3:
+//   Clients are admin-INVITED and never hit signUp. They set their FIRST real
+//   password via supabase.auth.updateUser({password}) in the welcome/accept flow
+//   (src/app/welcome/actions.ts) and again in password reset
+//   (src/app/auth/reset-password/actions.ts). checkG3 only proves HIBP on signUp.
+//   This proves — or disproves — HIBP on updateUser, the path EVERY client uses.
+//   It also sidesteps the free-tier signUp blockers that leave G-3 at CND:
+//   admin.createUser is pre-confirmed (no mail, accepts any domain incl. .invalid),
+//   sign-in sends no mail, and updateUser sends no mail — so this returns a real
+//   GREEN/RED on the free tier. See docs/polish/auth-onboarding-client.md C-7 and
+//   the runbook's "Future automation option" note.
+// PLAN-GATE (discovered 2026-06-10, first G-3u run): HIBP itself is a Pro-plan
+//   feature — the Management API refuses to enable it on the free tier
+//   ("available on Pro Plans and up"). On a free-tier project G-3u therefore
+//   reports RED as the EXPECTED steady state: not drift, not an updateUser
+//   exemption — the protection cannot be switched on at all. The probe's
+//   original question (does HIBP fire on updateUser, or only signUp?) becomes
+//   answerable the day the project moves to Pro and the toggle is enabled;
+//   re-run this script that day. See the runbook's plan-gate section.
+async function checkG3Updateuser(svc, anon, env, runPrefix) {
+  const breached = env.VERIFY_G3_BREACHED_PASSWORD || DEFAULT_BREACHED_PASSWORD
+  if (breached.length < 12) {
+    return {
+      id: 'G-3u',
+      label: 'HIBP on updateUser (C-7)',
+      status: 'cnd',
+      detail:
+        'Configured breached test password is < 12 chars; it would fail the length policy and cannot isolate HIBP. Set VERIFY_G3_BREACHED_PASSWORD to a known-breached >=12-char string.',
+    }
+  }
+  const email = `${runPrefix}g3u@${VERIFY_EMAIL_DOMAIN}`
+  const initialPassword = randomPassword()
+  let createdId = null
+  try {
+    // 1. Admin-create a pre-confirmed user (no mail; bypasses HIBP itself, which
+    //    is fine — we are testing the LATER updateUser, not creation).
+    const { data: created, error: cErr } = await svc.auth.admin.createUser({
+      email,
+      password: initialPassword,
+      email_confirm: true,
+    })
+    if (cErr || !created?.user) {
+      return {
+        id: 'G-3u',
+        label: 'HIBP on updateUser (C-7)',
+        status: 'cnd',
+        detail: `Could not create probe user: ${cErr?.message ?? 'no user returned'}. Re-run.`,
+      }
+    }
+    createdId = created.user.id
+
+    // 2. Sign in on the ANON (front-door) client to hold a real user session.
+    //    updateUser must run as the user — the admin API would bypass HIBP just
+    //    like admin.createUser does, which would make the test meaningless.
+    const { data: signIn, error: sErr } = await anon.auth.signInWithPassword({
+      email,
+      password: initialPassword,
+    })
+    if (sErr || !signIn?.session) {
+      return {
+        id: 'G-3u',
+        label: 'HIBP on updateUser (C-7)',
+        status: 'cnd',
+        detail: `Could not sign in probe user to obtain a session: ${sErr?.message ?? 'no session returned'}. Re-run.`,
+      }
+    }
+
+    // 3. Attempt to set a KNOWN-BREACHED password via the front-door updateUser —
+    //    the exact call clients make in welcome/actions.ts and reset-password/actions.ts.
+    const { error: uErr } = await anon.auth.updateUser({ password: breached })
+    await anon.auth.signOut().catch(() => {})
+
+    if (uErr) {
+      const reasons = Array.isArray(uErr?.reasons) ? uErr.reasons : null
+      if (reasons && reasons.includes('pwned')) {
+        return {
+          id: 'G-3u',
+          label: 'HIBP on updateUser (C-7)',
+          status: 'green',
+          detail:
+            'updateUser REJECTED the known-breached password (reasons include "pwned"). HIBP IS enforced on the updateUser path — the client welcome + password-reset surfaces are covered. C-7 closes as verified, no code change.',
+        }
+      }
+      if (reasons && reasons.length > 0) {
+        return {
+          id: 'G-3u',
+          label: 'HIBP on updateUser (C-7)',
+          status: 'cnd',
+          detail: `updateUser rejected as weak but reasons=[${reasons.join(', ')}] without "pwned" — unexpected for a length-valid, character-class-free password. Check the test password and that no character-class policy was added.`,
+        }
+      }
+      if (uErr?.code === 'weak_password') {
+        return {
+          id: 'G-3u',
+          label: 'HIBP on updateUser (C-7)',
+          status: 'green',
+          detail:
+            'updateUser rejected with code=weak_password (no structured reasons). Length-valid + no character-class policy means the only possible weak reason is "pwned" — HIBP enforced on updateUser (inferred). C-7 closes as verified.',
+        }
+      }
+      return {
+        id: 'G-3u',
+        label: 'HIBP on updateUser (C-7)',
+        status: 'cnd',
+        detail: `updateUser errored for a non-weak-password reason: ${uErr.message} (code=${uErr.code ?? 'n/a'}). Possibly a rate limit, session, or network issue — re-run.`,
+      }
+    }
+
+    // No error -> updateUser ACCEPTED a breached password -> HIBP is NOT enforced
+    // on this path. THIS IS THE C-7 HOLE.
+    return {
+      id: 'G-3u',
+      label: 'HIBP on updateUser (C-7)',
+      status: 'red',
+      detail:
+        'updateUser ACCEPTED a known-breached password — HIBP did not fire on this path. FIRST check the plan: HIBP is plan-gated (Pro+) and on the free tier cannot be enabled at all (Management API refuses with "available on Pro Plans and up"; verified 2026-06-10), so on free tier this RED is the expected steady state until a Pro upgrade — no support ticket, see the runbook. ONLY if the project is on Pro with the dashboard HIBP toggle ON does this RED mean the C-7 platform hole (updateUser exempt from the signUp leaked-password policy): in that case file a Supabase support ticket and document the residual recovery-path risk in docs/polish/auth-onboarding-client.md C-7.',
+    }
+  } finally {
+    if (createdId) {
+      try {
+        await svc.auth.admin.deleteUser(createdId)
+      } catch {}
+    }
+    // Backstop: the top-level run-prefix sweep also catches this user.
+  }
+}
+
 // ---- G-7: email confirmations enabled --------------------------------------
 async function checkG7(svc, anon, runPrefix) {
   const email = `${runPrefix}g7@${VERIFY_EMAIL_DOMAIN}`
@@ -442,6 +573,7 @@ async function main() {
   try {
     results.push(await checkG1(svc, anon, verifyOrgId, runPrefix))
     results.push(await checkG3(svc, anon, env, runPrefix))
+    results.push(await checkG3Updateuser(svc, anon, env, runPrefix)) // C-7
     results.push(await checkG7(svc, anon, runPrefix))
   } finally {
     const stragglers = await findUsersByPrefix(svc, runPrefix)
