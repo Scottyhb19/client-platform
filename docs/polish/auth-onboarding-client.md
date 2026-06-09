@@ -533,3 +533,7 @@ Operator decisions (2026-06-09): in-page message (not a `/login` redirect) for t
 **Section open set, corrected at this closure.** With C-2 now closed (code), the open set for the Auth-and-Onboarding-client section is: C-7 (blocked-by Track A), C-8, C-9, C-10, C-11, C-12, C-13, C-14. This supersedes the open-set clause in the C-1 closure (2026-06-08) per the doc's supersede-by-append convention.
 
 ---
+
+**Sign-off — C-2 (2026-06-09).** Reviewed via the claude.ai project chat; reviewer model Claude Opus 4.8 (1M context). **Decision: Closed.** The closing commit was reviewed as presented — including the two operator decisions (in-page card rather than a `/login` redirect for the `client_id`-present case; aligning the post-submit server-action twin beyond the gap's named page-load line), the deliberate deviation from the gap's literal "redirect to `/login`" wording, and the two accepted-not-mitigated items — and accepted in full. Completeness against the C-2 gap definition and closure of premortem failure mode F-2 were confirmed. Nothing within C-2 is deferred. The "your EP" vs "practitioner" portal voice split was confirmed out of C-2 scope and remains a non-blocking flag for a future voice pass or the Client-portal polish section (order item 7), not promoted to a tracked gap at this close. C-2 formally closed; the Auth-and-Onboarding-client section remains open — open set: C-7 (blocked-by Track A), C-8, C-9, C-10, C-11, C-12, C-13, C-14.
+
+---
