@@ -1025,6 +1025,33 @@ body {
   border-color: var(--color-primary);
 }
 
+/* Destructive variant — same shape as .portal-btn-primary, alert-red fill.
+   Reserved for confirmed destructive actions (sign-out confirm). The red is
+   the --color-alert token (the clinical-flag red), reused here as the
+   established portal destructive colour; hover darkens via brightness so no
+   second red literal is introduced. */
+.portal-btn-danger {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: var(--color-alert);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter var(--motion-fast) var(--ease);
+}
+.portal-btn-danger:hover,
+.portal-btn-danger:focus-visible {
+  filter: brightness(0.93);
+}
+
 /* --- Eyebrow ---
    Identical shape to the staff .eyebrow. Replicated under the .portal-
    namespace so portal components don't need to import .eyebrow directly

@@ -1,4 +1,4 @@
-import { logout } from '../../login/actions'
+import { SignOutButton } from './_components/SignOutButton'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { PortalTop } from '../_components/PortalTop'
 
@@ -125,26 +125,7 @@ export default async function PortalYouPage() {
           launches like any other app.
         </div>
 
-        <form action={logout} style={{ marginTop: 18 }}>
-          <button
-            type="submit"
-            className="portal-btn-secondary"
-            // Override .portal-btn-secondary defaults: sign-out is a
-            // smaller, sans-font, lower-key destructive action — not the
-            // celebratory full-display-font CTA the primary/secondary
-            // shapes assume. Class still gives us the bordered chrome.
-            style={{
-              padding: 14,
-              fontFamily: 'var(--font-sans)',
-              fontWeight: 600,
-              fontSize: '.9rem',
-              borderRadius: 'var(--radius-chip)',
-              color: 'var(--color-text)',
-            }}
-          >
-            Sign out
-          </button>
-        </form>
+        <SignOutButton />
       </div>
     </>
   )
