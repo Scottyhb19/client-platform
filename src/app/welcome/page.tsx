@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import {
   AuthEyebrow,
@@ -32,7 +33,35 @@ export default async function WelcomePage({
   } = await supabase.auth.getUser()
 
   if (!user) {
-    redirect('/login?error=Invite+link+expired')
+    // No session. We do NOT claim the invite expired — only the invite gate
+    // at /i/[id] knows that (it checks expires_at). Here we can see exactly
+    // one thing: there's no session. Say only what we know. (C-2)
+    if (!clientId) {
+      // No invite context at all — they just need to sign in.
+      redirect('/login')
+    }
+    // Invite context present but the session is gone (cleared cookies, an old
+    // email tab, or a lapsed invite session). Keep them here with the recovery
+    // path rather than bouncing to a "sign in" they may have no password for.
+    return (
+      <AuthShell>
+        <AuthEyebrow>Welcome</AuthEyebrow>
+        <AuthHeading>You&rsquo;re signed out.</AuthHeading>
+        <AuthSubtitle>
+          We couldn&rsquo;t read your invite session. Ask your practitioner to
+          resend the invite link.
+        </AuthSubtitle>
+        <p className="mt-6 text-center text-[0.84rem] text-text-light">
+          Already set up?{' '}
+          <Link
+            href="/login"
+            className="font-semibold text-primary hover:underline"
+          >
+            Sign in
+          </Link>
+        </p>
+      </AuthShell>
+    )
   }
 
   // If already linked + onboarded as a client, send straight to the portal.

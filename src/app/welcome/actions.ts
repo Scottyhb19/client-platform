@@ -53,9 +53,12 @@ export async function setPasswordAndAcceptAction(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
+    // C-2: don't claim the invite expired (we can't know that here) and use
+    // "practitioner", not "EP", to match the client-facing voice. The session
+    // was present when the page rendered and is gone now — say just that.
     return {
       error:
-        'Your invite link expired. Ask your EP to resend it.',
+        "We couldn't confirm your session. Ask your practitioner to resend the invite link.",
       fieldErrors: {},
     }
   }
