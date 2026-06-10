@@ -822,3 +822,56 @@ During the C-13 sign-off review, the reviewer traced the mismatch copy's instruc
 **Section open set, corrected at this closure: EMPTY.** C-12 was the final open gap. All gaps in the corrected roster — C-1, C-2, C-4 through C-14, with C-3 closed as a documented closure — are now individually closed, C-1 through C-11 and C-13/C-14 with recorded reviewer sign-offs. What remains for the section is the ritual itself: the section-level Closing commit per the polish-pass protocol (gap-list summary, acceptance-test record, deferred items with re-triggers, premortem disposition), then the operator's claude.ai sign-off to formally close Auth and Onboarding (client).
 
 ---
+
+# Closing commit — Auth and Onboarding (client)
+
+**Date:** 2026-06-11. **Scope:** polish-pass section 2 of the locked order, opened 2026-05-28. Every gap in the corrected roster is individually closed above with per-item closing notes; this is the section-level synthesis required by the CLAUDE.md ritual. C-12 is the one item without an individual reviewer sign-off — its review is deliberately bundled into this section-level pass (its full closing note and four-layer verification record are directly above).
+
+## 1. What was changed, in plain language
+
+The client's entire first-contact journey — invite email, click-through gate, password creation, account linking, first portal screen, and every failure path between them — was taken from "working" to verified, recoverable, and honest:
+
+- **Recovery paths now exist where dead-ends were.** A failed session-refresh after acceptance self-heals or offers a sign-out escape instead of soft-locking the client (**C-1**, mirroring staff G-2, plus the R-5 operator runbook). A client signing in directly or finishing a password reset lands on `/portal`, not a staff dead-end (**C-4**). The account-mismatch error now renders the sign-out control its own copy instructs (**C-13 reviewer follow-up**).
+- **Copy stopped guessing and stopped wounding.** The welcome surface no longer asserts "invite expired" for states it cannot diagnose (**C-2**); the six database error strings no longer reach clients raw — each maps to recovery-oriented copy while the raw string goes to the server log (**C-13**, which also found a sixth raise point the gap list missed).
+- **The EP got the controls the system already promised.** A "Resend invite" button on the client profile, shown only when meaningful, audit-trailed via the existing trigger (**C-5**) — the operational compensation for the 8-hour invite TTL.
+- **Abuse limits moved from spec to enforcement.** `rate_limit_log` + SECURITY DEFINER limiters now gate invite sends (20/hr, fail-open) and invite acceptance (10 failures/hr, fail-closed), closing the `docs/auth.md §7.2` promise for two of its three named operations (**C-6**; the third is infra-ready, deferred-to-feature per P-I).
+- **Password policy became visible and real.** The invite email and the welcome form both state the 12-character rule before the client can trip on it (**C-10**, whose recon falsified the gap's "hint exists" premise); the GoTrue backstop was restored from 6 to 12 during **C-7**, whose probe also established that HIBP breach-checking is plan-gated off on the free tier — documented with a self-arming re-test rather than pretended at.
+- **The invite link's single-use story gained a real first layer.** The gate button now POSTs to a server action that atomically burns `consumed_at` and redirects server-side; the secret link left the page HTML entirely, closing the load-bearing half of C-14's deferred design weakness early (**C-11** — the gap's drafted burn-on-render mechanism was rejected as unsafe post-C-14). The anti-prefetch gate itself was verified against live Gmail (**C-14**: F-14 did not reproduce; un-breached, not exercised).
+- **Day one looks intentional.** A first-run client sees a quiet welcome card instead of a false "Rest day" (**C-9**); their auth-side profile carries their real name instead of "Pending Pending" from the moment of acceptance (**C-12**, atomic inside the accept RPC, the client twin of staff G-13). Portal sign-out was verified discoverable and gained an operator-requested confirm dialog (**C-8**).
+- **Production became real during this section, not after it.** Two same-day incidents found during C-14 verification were diagnosed to root cause and fixed (`c301832` poison-cookie 500; `c7750be` missing `NEXT_PUBLIC_SITE_URL` breaking owner/staff sign-in — `safeNext` decoupled from env, `/api/health` now reports config), the Supabase Site URL/redirect misconfiguration was corrected, and the first real client onboarding ever completed on production was performed and corroborated from the backend. **C-3** closed with no code: the audit's premise was wrong — archived clients lose data access at commit via RLS, not at token expiry. Retroactively, **R-4** was closed outright (automated cross-tenant pgTAP test, 8/8 green) after the manual tripwire's first full passing run.
+
+## 2. Acceptance tests run, and results
+
+The section has no single push-button suite; its acceptance record is the union of the standing harnesses and operator-run verifications, all green at close:
+
+- **pgTAP (live project, BEGIN/ROLLBACK discipline):** test 17 cross-tenant isolation 8/8; test 18 client pending-name round trip 5/5 (operator-run 2026-06-11); test 15 staff twin remains the precedent it mirrors.
+- **Script harnesses (all committed, re-runnable):** `verify-auth-config.mjs` formal run 2026-06-10 — G-1 GREEN (JWT hook injecting claims), G-3u RED-as-expected (HIBP plan-gate, documented), G-7 confirmed via Management API read, G-4 DOC; `proxy-poison-cookie-verify.mjs` 13/13 on dev, local production build, and live production; `staff-login-path-verify.mjs` 4/4 on live production; `c11-burn-verify.mjs` six-state matrix green; C-14 prefetch scripts (Gmail live test, detector pinned empirically).
+- **Operator-run browser verification per item:** C-2 both unauth states; C-5 resend end-to-end with real email; C-8 sign-out flow ("works perfectly"); C-9 welcome card on localhost then end-to-end on production; C-11 full human-tap loop, every step matching its expected line; C-12 production onboarding with backend corroboration (fresh client's profile synced; pre-migration clients still placeholder — the contrast proving the writer).
+- **The section's defining acceptance test — a real client onboarded on production end-to-end** (invite → gate tap → password → linked → portal), performed 2026-06-10 and re-proven 2026-06-11 through the C-12-updated path.
+- `tsc --noEmit` and full production `next build` green at every shipment; every schema change followed migration → `db push` → types regen → verify.
+
+## 3. Deliberately deferred, with re-activation triggers
+
+**Pro-plan gate (one lever, three items):** HIBP breach-checking on all password paths, the definitive HIBP-on-`updateUser` answer (G-3u probe is built and self-arming), and the G-4 refresh-token max-lifetime — **re-trigger: Supabase Pro upgrade; at the latest, the Open-gates hard rule before any paying clinical client.**
+
+**Pre-paying-client gate:** minting the invite `action_link` at POST time rather than send time (the residual of C-14 deferred item 1 after C-11 removed the embedded-link half); enterprise Safe Links/M365 re-run of `docs/runbooks/verify-invite-prefetch.md` — **re-trigger: before any paying clinical client onboards.**
+
+**Feature-triggered:** `sendCommunication` rate limit wiring (infra-ready; **re-trigger:** first broadcast/reply send path, per P-I); the `client_accept_invite` profile-sync guard (**re-trigger: client profile self-editing shipping — same change, non-negotiable, recorded in the migration header**); backfill of legacy "Pending" profiles (**re-trigger:** any surface reading a client's `user_profiles` name); `/portal/you` error-branch sign-out + shared `ConfirmOverlay` extraction (**re-triggers recorded in the C-8 closure**).
+
+**Tooling-triggered:** unit-test ports for `postAuthLanding` (five cases, C-4 note) and the C-13 error mapper (seven cases) — **re-trigger: a TypeScript test runner landing in the repo.** Runtime verification of C-1's branch-(b) recovery and C-6's infra-error branches — **re-trigger: a non-production Supabase target.**
+
+**Operational, non-blocking:** the `invite_tokens` purge job (flagged at C-11); the doc-hygiene sweep of sync flags P-D…P-I plus the later additions (C-3 mechanism corrections in the body, §12.1 HIBP plan-gate annotation, the "EP vs practitioner" portal voice split → Client-portal polish, stale comments flagged at C-5/C-2); teardown of the live test clients at operator convenience. **Open question 1 (client session duration: 30-day uniform vs shorter) was never formally resolved** — current state is 30-day uniform; the levers to change it are Pro-gated alongside G-4. Carried as an open decision, not a gap.
+
+## 4. Premortem disposition — mitigated vs accepted
+
+**Mitigated:** F-1 (C-1 bounded recovery), F-2 (C-2), F-4 (C-4), F-5 (C-5), F-6 (C-6; fail-closed accept gate), F-7 (C-9), F-8 (C-10, premise corrected — no hint existed), F-9 (C-11; single-use now three layers and burn-on-render explicitly rejected), F-11 (C-12, forward from migration), F-12 (C-13 + sign-out escape follow-up).
+
+**Resolved as false premise:** F-3 — the archived-client access window does not exist; data denial is immediate at archive commit via RLS (C-3 documented closure; the stale-tab cosmetic residual is accepted for all scopes). F-13 — the portal sign-out affordance already existed and met the bar (C-8; the confirm dialog was an operator enhancement, not a fix).
+
+**Accepted, with rationale:** F-10 — no breach-checking on any password path until the Pro upgrade; the in-force control is the 12-character minimum at both app and GoTrue layers; residual (a beta user choosing a long breached password) accepted at friends-and-family scope with the re-trigger above. F-14 — did not reproduce on live Gmail (control and gated tokens both survived delivery + open); the gate is un-breached but was never exercised as an active control, and the enterprise scanner class remains untested behind its pre-paying-client re-trigger. Item-level accepted residuals (C-1's FinishSetup hang sliver, C-6's reading-verified error branches, C-9's fail-closed query error, C-11's burned-but-never-exchanged beyond grace and unauthenticated-POST parity, C-12's legacy placeholders, the seventeen-touch-point password-rule coupling) are recorded in their closing notes and stand as written.
+
+---
+
+*Per the ritual: Claude Code's job ends here. The section closes when this Closing commit is reviewed in the operator's claude.ai project chat and the sign-off is recorded below under a "Sign-off" heading. On a Closed decision, CLAUDE.md's "Active section" line advances to polish-pass order item 3 — Client profile and clinical notes.*
+
+---
