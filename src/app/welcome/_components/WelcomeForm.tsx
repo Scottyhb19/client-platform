@@ -39,6 +39,8 @@ export function WelcomeForm({ clientId }: { clientId: string }) {
         type="password"
         autoComplete="new-password"
         required
+        minLength={12}
+        hint="At least 12 characters."
         error={state.fieldErrors.password}
       />
       <Field
@@ -68,6 +70,8 @@ function Field({
   type = 'text',
   autoComplete,
   required,
+  minLength,
+  hint,
   error,
 }: {
   name: string
@@ -75,6 +79,8 @@ function Field({
   type?: string
   autoComplete?: string
   required?: boolean
+  minLength?: number
+  hint?: string
   error?: string
 }) {
   return (
@@ -103,6 +109,7 @@ function Field({
         name={name}
         type={type}
         required={required}
+        minLength={minLength}
         autoComplete={autoComplete}
         style={{
           width: '100%',
@@ -119,7 +126,9 @@ function Field({
           color: 'var(--color-text)',
         }}
       />
-      {error && (
+      {/* Error supersedes hint — for the password field they state the
+          same rule, so showing both would double up. */}
+      {error ? (
         <div
           style={{
             fontSize: '.74rem',
@@ -129,7 +138,17 @@ function Field({
         >
           {error}
         </div>
-      )}
+      ) : hint ? (
+        <div
+          style={{
+            fontSize: '.74rem',
+            color: 'var(--color-muted)',
+            marginTop: 4,
+          }}
+        >
+          {hint}
+        </div>
+      ) : null}
     </div>
   )
 }

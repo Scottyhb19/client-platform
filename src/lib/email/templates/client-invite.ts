@@ -76,7 +76,8 @@ export function renderClientInviteEmail(
               <p style="font-size:15px; line-height:1.55; color:#78746F; margin:0 0 22px;">
                 Tap the button below on your phone to set up. The portal is
                 designed for mobile — we&rsquo;ll show you how to add it to your
-                home screen so it opens like an app.
+                home screen so it opens like an app. When you first sign in,
+                you&rsquo;ll set a password of at least 12 characters.
               </p>
 
               <!-- CTA -->
@@ -123,6 +124,8 @@ export function renderClientInviteEmail(
     acceptUrl,
     '',
     'The portal is built for your phone — once you sign in, we will show you how to add it to your home screen so it opens like an app.',
+    '',
+    'When you first sign in, you will set a password of at least 12 characters.',
     '',
     `If this email looks unexpected, just ignore it. Nothing happens until you click the link.`,
     '',
