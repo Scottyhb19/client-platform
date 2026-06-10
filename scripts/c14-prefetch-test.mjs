@@ -192,7 +192,28 @@ async function cmdSend(svc, env) {
 }
 
 async function cmdCheck(svc) {
+  const emailArg = process.argv[3]
   console.log(`=== CHECK (${new Date().toISOString()}) ===`)
+
+  // Single-email mode (smoke test / E2E onboarding corroboration): reports the
+  // full completion signal — verified + client linked + role row.
+  if (emailArg) {
+    const u = await findUserByEmail(svc, emailArg)
+    if (!u) { console.log(`${emailArg}\n   (no user)`); return }
+    console.log(emailArg)
+    console.log(`   email_confirmed_at:  ${u.email_confirmed_at ?? 'null'}  => ${u.email_confirmed_at ? 'verified' : 'not verified'}`)
+    console.log(`   last_sign_in_at:     ${u.last_sign_in_at ?? 'null'}`)
+    const { data: client } = await svc
+      .from('clients').select('id, user_id, onboarded_at').ilike('email', emailArg).is('deleted_at', null).maybeSingle()
+    if (!client) { console.log('   clients row:         none for this email'); return }
+    console.log(`   clients.user_id:     ${client.user_id ?? 'null'}  => ${client.user_id ? 'LINKED (onboarding completed)' : 'NOT linked'}`)
+    console.log(`   clients.onboarded_at:${client.onboarded_at ?? ' null'}`)
+    const { data: role } = await svc
+      .from('user_organization_roles').select('role').eq('user_id', u.id).maybeSingle()
+    console.log(`   role row:            ${role ? role.role : 'none'}`)
+    return
+  }
+
   for (const [label, email] of [
     ['B1 control (raw link) ', CONTROL_EMAIL],
     ['B2 gated  (real invite)', REAL_EMAIL],
@@ -214,29 +235,46 @@ async function cmdCheck(svc) {
 }
 
 async function cmdTeardown(svc) {
-  console.log(`=== TEARDOWN (${new Date().toISOString()}) ===`)
-  // clients (and invite_tokens via cascade, but delete explicitly first)
-  const { data: clients } = await svc.from('clients').select('id').ilike('email', REAL_EMAIL)
-  for (const c of clients ?? []) {
-    const { error: itErr } = await svc.from('invite_tokens').delete().eq('client_id', c.id)
-    console.log(`invite_tokens for client ${c.id}: ${itErr ? 'DELETE FAILED ' + itErr.message : 'deleted'}`)
-    const { error: cErr } = await svc.from('clients').delete().eq('id', c.id)
-    console.log(`client ${c.id}: ${cErr ? 'DELETE FAILED ' + cErr.message : 'deleted'}`)
+  // Optional single email (argv[3]) for the smoke-test client; default = the two
+  // C-14 aliases. Deleting the auth user cascades user_profiles +
+  // user_organization_roles (the 'client' role does not fire the last-owner trigger).
+  const emailArg = process.argv[3]
+  const clientEmails = emailArg ? [emailArg] : [REAL_EMAIL]
+  const userEmails = emailArg ? [emailArg] : [CONTROL_EMAIL, REAL_EMAIL]
+  console.log(`=== TEARDOWN (${new Date().toISOString()})${emailArg ? ' email=' + emailArg : ''} ===`)
+  for (const ce of clientEmails) {
+    const { data: clients } = await svc.from('clients').select('id').ilike('email', ce)
+    for (const c of clients ?? []) {
+      const { error: itErr } = await svc.from('invite_tokens').delete().eq('client_id', c.id)
+      console.log(`invite_tokens for client ${c.id}: ${itErr ? 'DELETE FAILED ' + itErr.message : 'deleted'}`)
+      const { error: cErr } = await svc.from('clients').delete().eq('id', c.id)
+      console.log(`client ${c.id}: ${cErr ? 'DELETE FAILED ' + cErr.message : 'deleted'}`)
+    }
   }
-  // auth users for both aliases
-  for (const email of [CONTROL_EMAIL, REAL_EMAIL]) {
+  for (const email of userEmails) {
     const u = await findUserByEmail(svc, email)
     if (!u) { console.log(`auth user ${email}: none`); continue }
+    // A COMPLETED onboarding leaves public-schema rows that FK the user — a
+    // user_organization_roles 'client' row and a user_profiles row — whose
+    // non-CASCADE FKs block admin.deleteUser. Delete them leaf->root first.
+    // (The 'client' role does not fire enforce_last_owner_invariant.)
+    const { error: rErr } = await svc.from('user_organization_roles').delete().eq('user_id', u.id)
+    if (rErr) console.log(`  user_organization_roles for ${u.id}: ${rErr.message}`)
+    const { error: pErr } = await svc.from('user_profiles').delete().eq('user_id', u.id)
+    if (pErr) console.log(`  user_profiles for ${u.id}: ${pErr.message}`)
     const { error } = await svc.auth.admin.deleteUser(u.id)
     console.log(`auth user ${email} (${u.id}): ${error ? 'DELETE FAILED ' + error.message : 'deleted'}`)
   }
   // verify clean sweep
-  const stragglerCtl = await findUserByEmail(svc, CONTROL_EMAIL)
-  const stragglerReal = await findUserByEmail(svc, REAL_EMAIL)
-  const { data: clientLeft } = await svc.from('clients').select('id').ilike('email', REAL_EMAIL)
-  console.log(`\nverify: control user ${stragglerCtl ? 'STILL EXISTS (!)' : 'gone'}; ` +
-    `real user ${stragglerReal ? 'STILL EXISTS (!)' : 'gone'}; ` +
-    `test client rows remaining: ${(clientLeft ?? []).length}`)
+  let usersGone = true
+  for (const email of userEmails) { if (await findUserByEmail(svc, email)) usersGone = false }
+  let clientsLeft = 0
+  for (const ce of clientEmails) {
+    const { data } = await svc.from('clients').select('id').ilike('email', ce)
+    clientsLeft += (data ?? []).length
+  }
+  console.log(`\nverify: probe/test users ${usersGone ? 'gone' : 'STILL EXIST (!)'}; ` +
+    `test client rows remaining: ${clientsLeft}`)
   console.log('note: any audit_log rows from the test client INSERT remain as an append-only trail ' +
     '(reference a now-deleted client id; harmless). Say so if you want them purged too.')
 }

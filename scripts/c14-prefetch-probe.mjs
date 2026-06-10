@@ -114,7 +114,19 @@ async function main() {
     // The probe: a bare GET with NO redirect follow — exactly what a link
     // prefetcher does when it touches a URL to "scan" it.
     const r1 = await fetch(actionLink, { redirect: 'manual' })
-    console.log(`\n[GET no-follow] status=${r1.status}  location=${r1.headers.get('location') ? 'present' : 'none'}`)
+    const loc1 = r1.headers.get('location')
+    let loc1Desc = '(none)'
+    if (loc1) {
+      try {
+        const lu = new URL(loc1)
+        loc1Desc = `${lu.protocol}//${lu.host}${lu.pathname}${lu.search ? '?…' : ''}${lu.hash ? '#…' : ''}`
+      } catch {
+        loc1Desc = '(unparseable)'
+      }
+    }
+    // Where Supabase /verify sends the browser — reveals the Site URL /
+    // Redirect-URLs allow-list resolution (prod callback vs localhost fallback).
+    console.log(`\n[GET no-follow] status=${r1.status}  redirect-> ${loc1Desc}`)
 
     // Checkpoint 2 — after the bare GET.
     const c2 = (await svc.auth.admin.getUserById(userId)).data?.user
