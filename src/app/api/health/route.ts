@@ -15,6 +15,7 @@
 
 import { NextResponse } from 'next/server'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { missingRequiredEnv } from '@/lib/env/required-env'
 import { captureException } from '@/lib/observability/sentry'
 import pkg from '../../../../package.json' with { type: 'json' }
 
@@ -22,6 +23,15 @@ export async function GET() {
   const version = pkg.version
   const timestamp = new Date().toISOString()
 
+  // Config check (2026-06-10 incident): reports the NAMES of required env
+  // vars that are unset — never values. Names are already public in the
+  // repo's secrets-inventory; exposing which are missing trades a sliver
+  // of recon surface for catching a misconfigured deploy on the first
+  // post-deploy probe instead of at a user's sign-in.
+  const missingEnv = missingRequiredEnv()
+  const configOk = missingEnv.length === 0
+
+  let dbOk = true
   try {
     const supabase = createSupabaseServiceRoleClient()
     const { error } = await supabase
@@ -29,22 +39,21 @@ export async function GET() {
       .select('id', { head: true, count: 'exact' })
       .limit(1)
     if (error) throw error
-
-    return NextResponse.json(
-      { status: 'ok', version, db: 'ok', timestamp },
-      { status: 200, headers: { 'Cache-Control': 'no-store' } },
-    )
   } catch (e) {
     captureException(e)
-    return NextResponse.json(
-      {
-        status: 'degraded',
-        version,
-        db: 'fail',
-        error: 'database health check failed',
-        timestamp,
-      },
-      { status: 503, headers: { 'Cache-Control': 'no-store' } },
-    )
+    dbOk = false
   }
+
+  const healthy = dbOk && configOk
+  return NextResponse.json(
+    {
+      status: healthy ? 'ok' : 'degraded',
+      version,
+      db: dbOk ? 'ok' : 'fail',
+      config: configOk ? 'ok' : 'missing required env',
+      ...(configOk ? {} : { missing_env: missingEnv }),
+      timestamp,
+    },
+    { status: healthy ? 200 : 503, headers: { 'Cache-Control': 'no-store' } },
+  )
 }
