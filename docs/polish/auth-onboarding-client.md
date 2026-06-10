@@ -875,3 +875,19 @@ The section has no single push-button suite; its acceptance record is the union 
 *Per the ritual: Claude Code's job ends here. The section closes when this Closing commit is reviewed in the operator's claude.ai project chat and the sign-off is recorded below under a "Sign-off" heading. On a Closed decision, CLAUDE.md's "Active section" line advances to polish-pass order item 3 — Client profile and clinical notes.*
 
 ---
+
+## Sign-off
+
+**Date:** 2026-06-11
+**Reviewer:** claude.ai project chat; reviewer model Claude Opus 4.8 (1M context)
+**Decision:** Closed.
+
+The reviewer green-lit the section Closing commit with three non-blocking, beta-gating actions, all verified by recon and executed at close:
+
+1. **Re-triggers moved to live gate files.** Recon confirmed the reviewer's claim was half-true: the Pro-plan lever (HIBP, G-4) was already in `go-live-checklist.md` §1 — gated *before first real data*, stronger than this doc stated — but the two pre-paying-client riders existed only here. Fixed: §8 gained the mint-at-POST and enterprise-Safe-Links rows, §7 now names the self-arming G-3u answer as part of the cutover re-run, §1 carries the OQ1 session-duration decision at its actionable moment, and CLAUDE.md Open gates gained a Technical gate index paragraph pointing at the checklist — every rider is now reachable from the master contract.
+2. **The post-deploy health check became a standing ritual.** New runbook `runbooks/deploy-the-app.md` (pre-push build gate → push → `/api/health` curl on every deploy → role-branch + poison-cookie harnesses after auth-surface changes), indexed in the runbooks README and closing its long-standing suggested-runbook #8. The checklist's §3 env-var row is annotated confirmed-in-production with the runbook as its continuous check.
+3. **Test data purged.** The operator archived every non-keeper; all 15 archived client rows were then hard-deleted with their dependents (6 appointments, 2 programs and their trees, 6 invite tokens via cascade) and both linked test auth users, in one FK-ordered transaction with a pre-run safety check proving no doomed auth user was shared with a kept row. Post-purge state, verified live: **4 clients remain — David Browning, Isaac Fong (seed), Scott Browning, Wendy Browning — 0 archived rows, 0 test auth users.**
+
+The named-not-actioned thread — **open question 1, client session duration** — is recorded at `go-live-checklist.md` §1 to be decided deliberately at Pro cutover, in the same dashboard visit as G-4.
+
+**Auth and Onboarding (client) is formally closed.** CLAUDE.md's Active section advances to polish-pass order item 3 — Client profile and clinical notes.

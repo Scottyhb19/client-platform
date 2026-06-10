@@ -25,8 +25,9 @@ Note the scope distinction this checklist runs on: the friends-and-family beta i
 The free tier is acceptable only while no real data exists. The following are Pro-gated and are reproduced here only as the go-live trigger; Track A owns their detail and current state:
 
 - Point-in-Time Recovery and daily backups become mandatory the moment a real client is onboarded (see `schema.md`, `slos.md`).
-- **G-3** — HIBP leaked-password protection. Pro-gated; confirmed locked on the free tier. Enable at Pro cutover.
+- **G-3** — HIBP leaked-password protection. Pro-gated; confirmed locked on the free tier (verified 2026-06-10, `auth-onboarding-client.md` C-7 — the toggle cannot be enabled at all below Pro). Enable at Pro cutover.
 - **G-4** — 30-day refresh-token lifetime. Pro-gated. Set and record at Pro cutover.
+- **Client session duration (open question 1, `auth-onboarding-client.md`)** — never formally resolved; current state is 30-day uniform across roles. Decide deliberately at Pro cutover, in the same dashboard visit as G-4 (master brief §4.2 contemplated shorter client sessions for shared devices).
 - First DR drill is run on the newly-upgraded Pro project as the final pre-launch step (named in `schema.md` and `slos.md`).
 
 **Gate:** Pro upgrade is done before first real data; G-3 and G-4 are set on the upgraded project and their state recorded in their owning documents at that time.
@@ -47,7 +48,7 @@ Tracked secrets tech-debt (pointers, not gates): the `CRON_SHARED_SECRET` pg_cro
 
 The Track C security pass created or assumes these production-config dependencies:
 
-- Production-origin env var must be set. The open-redirect fix made auth depend on `getPublicOrigin()`, which throws if `NEXT_PUBLIC_SITE_URL` is unset. Auth now fails closed if it is missing — login, confirmation, and recovery all break entirely. Confirm it is set in production before launch.
+- Production-origin env var must be set. The open-redirect fix made auth depend on `getPublicOrigin()`, which throws if `NEXT_PUBLIC_SITE_URL` is unset. Auth now fails closed if it is missing — login, confirmation, and recovery all break entirely. Confirm it is set in production before launch. **Confirmed in production 2026-06-10** after this exact failure fired live (second incident record, `auth-onboarding-client.md`): both vars set in Vercel, `/api/health` now reports this class continuously, and `runbooks/deploy-the-app.md` makes the health check a standing post-deploy step.
 - HttpOnly cookies and refresh-token rotation must be active. The login-CSRF fix's threat model assumes session tokens are HttpOnly and rotation is on. Confirm both in deployed config before first real client.
 - Post-reset session behaviour (bounce-to-login, and the open question of whether a password change should revoke sibling sessions) is real work, not a one-liner; trigger is before first real practitioner onboarding. Owned by Track C / the auth doc.
 
@@ -77,11 +78,13 @@ R-4 is closed. The automated pgTAP test `supabase/tests/database/17_cross_tenant
 
 `runbooks/verify-auth-config.md` and `scripts/verify-auth-config.mjs` verify the dashboard-config properties. G-1 (custom-access-token hook) is verified green and automated. G-7 (email confirmations) is verified. G-3 and G-4 remain Pro-gated (section 1).
 
-**Gate:** re-run the auth-config verification on the Pro-upgraded project as part of cutover, and confirm G-1 and G-7 still green after the upgrade.
+**Gate:** re-run the auth-config verification on the Pro-upgraded project as part of cutover, and confirm G-1 and G-7 still green after the upgrade. The same run delivers the definitive **G-3u** answer (does HIBP fire on `updateUser`, the path every client password-set and reset uses) — the probe is built and self-arming; with the Pro HIBP toggle on, G-3u GREEN closes the question, RED is the real platform hole and the support-ticket case (`auth-onboarding-client.md` C-7).
 
 ## 8. Deferred hardening surfaced at this gate (pointers)
 
 - **G-6** — structured auth-event audit log. Deferred-with-trigger: before any paying clinical client. Owned by `auth-onboarding-staff.md` Revision 4. Master brief §7.4 names audit logging as a requirement, so this is deferred, not cut.
+- **Invite `action_link` minted at POST time, not send time.** The C-11 burn-on-click pass removed the embedded link from the gate page HTML (the load-bearing half against body-parsing scanners); minting the link only on the human's POST is the residual. Deferred-with-trigger: before any paying clinical client. Owned by `auth-onboarding-client.md` (C-14 deferred item 1 / C-11 closure).
+- **Enterprise Safe Links prefetch re-run.** The 2026-06-10 anti-prefetch verification covered live Gmail only; the corporate scanner class (Microsoft Safe Links, Proofpoint) is unexercised. Re-run `runbooks/verify-invite-prefetch.md` with an M365/enterprise mailbox. Deferred-with-trigger: before any paying clinical client. Owned by `auth-onboarding-client.md` (C-14 deferred item 2).
 
 ## Closing note
 

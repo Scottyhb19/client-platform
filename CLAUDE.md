@@ -34,7 +34,7 @@ Two surfaces:
 These advantages disappear the day the first real user — including a friends-and-family beta tester — logs in and creates data. Anything load-bearing should be hardened *before* that day.
 
 ## Active section
-**Auth and Onboarding for clients. Active as of 2026-05-27.** This is the client-side first-contact layer of the polish pass — email invite, password creation, first login, day-one experience. Work follows the polish-pass protocol below. The previous active section, Auth and Onboarding (staff), is closed under the formal section sign-off ritual and is recorded as such in the polish-pass order; the Closing commit and Sign-off live at `docs/polish/auth-onboarding-staff.md`.
+**Client profile and clinical notes. Active as of 2026-06-11.** This is the clinical-record layer of the polish pass — note template, flag banners, medical history, history rendering. Work follows the polish-pass protocol below. The previous active section, Auth and Onboarding (client), is closed under the formal section sign-off ritual and is recorded as such in the polish-pass order; the Closing commit and Sign-off live at `docs/polish/auth-onboarding-client.md`.
 
 ## Polish-pass protocol (mandatory)
 Before modifying any section, follow this sequence:
@@ -98,6 +98,8 @@ These are flagged here so they do not get forgotten.
 - **(c)** The entity structure has been reviewed against the increased liability surface (sole trader → likely Pty Ltd; see "What this is" → Entity).
 
 Until all three hold, the existing 40–50 clinical clients stay on Cliniko and OdysseyHQ runs as a friends-and-family beta only. This rule is not waivable by convenience, deadline, or "just one client".
+
+**Technical gate index.** The hard rule above gates the paying-client threshold. The technical pre-launch and pre-paying-client gates — Supabase Pro-tier items (HIBP, refresh-token lifetime, PITR), auth-config verification cadence, and the deferred-with-trigger riders carried out of closed polish sections (invite link minted at POST, enterprise Safe Links re-run, structured auth audit log) — are indexed in `docs/go-live-checklist.md`, which gates the friends-and-family beta itself. A re-trigger recorded only in a closed section's polish doc does not fire; the checklist is where they live.
 
 **External IT-advisor review of `auth.md`, `rls-policies.md`, and `schema.md`.** The docs were self-reviewed with Claude Code's help. Independent human review by a security-competent reviewer (pentester, AppSec consultant, or healthtech-experienced peer) is:
 
@@ -199,8 +201,8 @@ If any of the above is found to have drifted from this stated position, surface 
 The polish pass works through the platform in foundation-upward order. Each layer's failure modes depend on the layer beneath, so the foundation is polished first. Move on only when the current section meets its bar and has been signed off per the ritual above.
 
 1. **Auth and Onboarding (staff)** — clinic-side setup. Account creation, organisation setup, settings, first-run experience for the EP. Closed 2026-05-27.
-2. **Auth and Onboarding (client)** — client-side first contact. Email invite, password creation, first login, day-one experience. Active.
-3. **Client profile and clinical notes** — note template, flag banners, medical history, history rendering.
+2. **Auth and Onboarding (client)** — client-side first contact. Email invite, password creation, first login, day-one experience. Closed 2026-06-11.
+3. **Client profile and clinical notes** — note template, flag banners, medical history, history rendering. Active.
 4. **Exercise library** — search, tagging, video preview, default prescription patterns.
 5. **Program engine and session builder** — the differentiator. Highest care. Drag-and-drop, supersetting, shared right panel, clinical notes adjacency.
 6. **Program calendar** — collapsible weeks, batch operations, side panel pinning.

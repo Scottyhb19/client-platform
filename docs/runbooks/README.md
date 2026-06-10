@@ -11,6 +11,7 @@ Operational procedures for OdysseyHQ. Each runbook is self-contained and follows
 - [`verify-cross-tenant-isolation.md`](verify-cross-tenant-isolation.md) — Manual by-hand confirmation that one org cannot read/write another org's rows. The interim compensation for suggested-runbook #1 (the automated pgTAP cross-tenant test) while it stays deferred.
 - [`recover-stuck-client-onboarding.md`](recover-stuck-client-onboarding.md) — Operator procedure for a client reporting they signed in to the portal and saw "Not authorized". Distinguishes the two C-1 R-5 sub-states (membership-never-created vs JWT-stale) and clears each. Compensating control for the C-1 R-5 sub-case where the in-flow FinishSetup recovery was bypassed or never ran.
 - [`verify-invite-prefetch.md`](verify-invite-prefetch.md) — Verify the `/i/[id]` anti-prefetch invite gate stops a real mail-client link-prefetcher from consuming the one-time invite token before the human taps (C-14 / F-14), via `scripts/c14-prefetch-test.mjs` + a real mailbox. Cadence: on any invite/gate-flow change, and before onboarding any paying clinical client (including an enterprise Safe Links mailbox).
+- [`deploy-the-app.md`](deploy-the-app.md) — Deploy the Next.js app (push to master = production deploy) and verify it: pre-push build gate, `/api/health` config check on every deploy, plus the staff-login-path and poison-cookie harnesses after auth-surface changes. Standing defence against the env/config failure class behind both 2026-06-10 incidents.
 
 ## Not yet written
 
@@ -27,7 +28,7 @@ This is a planning artefact, not a commitment. Items here are observed gaps, not
 5. Restore the database from Supabase PITR (confirm Pro tier + window first) (slos.md / incident-response.md, dashboard-only).
 6. Run the pgTAP suite against remote Supabase with no local Docker (memory-noted constraint).
 7. Apply a schema migration: migration file → `db push` → `gen types` → verify (standing process).
-8. Post-deploy production smoke checklist (diagnostic Section 4 — none exists).
+8. ~~Post-deploy production smoke checklist (diagnostic Section 4 — none exists).~~ **CLOSED 2026-06-11** — `deploy-the-app.md` above.
 9. Document email delivery health (Resend dashboard checks, bounce handling, sandbox vs verified domain delivery).
 
 ### Tracked follow-ups
