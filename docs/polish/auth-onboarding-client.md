@@ -764,3 +764,13 @@ Three verification tasks run read-only at the reviewer's request before C-9/C-10
 **Section open set, corrected at this closure.** With C-13 closed, the open set is: **C-11, C-12** (execution order: C-11 → C-12). This supersedes the open-set clause in the C-10 closure above per the doc's supersede-by-append convention.
 
 ---
+
+## C-13 reviewer follow-up (2026-06-10) — sign-out escape in the account-mismatch state
+
+During the C-13 sign-off review, the reviewer traced the mismatch copy's instruction ("Sign out, then tap the invite link again") into the rendered state and found **no sign-out affordance existed on `/welcome`** — `AuthShell` is purely presentational (its only interactive element is the brand-logo link), `WelcomeForm` was password fields only, and the route has no layout of its own. The copy pointed at a control the page did not provide; the most common real-world trigger (tapping an invite while signed into a different account on a shared device) dead-ended.
+
+**Fix shipped at the reviewer's direction (commit `7a4b772`), three files.** `WelcomeState` gains an optional `recovery?: 'sign-out'` discriminant; `mapAcceptInviteError` returns `{ copy, recovery? }` with only the email-mismatch branch setting `recovery` (one source of truth at mapping time — no duplicated substring check at the call site); `WelcomeForm` renders a sibling `<form action={logout}>` "Sign out" escape — `btn outline`, the defined secondary class at `globals.css:315-323`, mirroring FinishSetup's proven pattern — only when `state.recovery === 'sign-out'`. All six copy strings are byte-identical; the other four cases and the fallback deliberately get no button (their recovery runs through the practitioner, not a re-auth). The `[welcome-accept]` log line is untouched.
+
+**Verified.** `tsc --noEmit` exit 0; full production `next build` exit 0 (header and route table pasted to the reviewer); `btn outline` confirmed real with the staff-dashboard precedent before commit. The diff was reviewer-signed-off pre-commit. Process note for the record: the reviewer's canonical commit message arrived with the `Co-Authored-By` angle brackets stripped in paste; the mandated pre-commit trailer check caught it, the commit was held, and it landed only after the operator confirmed the bracketed correction — the committed trailer reads `Claude Opus 4.8 (1M context) <noreply@anthropic.com>` verbatim.
+
+---
