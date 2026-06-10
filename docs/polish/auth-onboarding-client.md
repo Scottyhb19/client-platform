@@ -685,4 +685,6 @@ The operator re-reported the digest error (`ERROR 1236160913`) after the poison-
 
 **Section impact.** No C-item changes; open set unchanged: C-9, C-10, C-11, C-12, C-13 (all P2 polish). This entry also rides with the operator-session's "C-14 Deferred item (3) resolved" note above, which was sitting uncommitted in the working tree when this entry was appended — committed together to keep the doc linear.
 
+**Operator actions completed + verified (2026-06-10, same day).** The operator set `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_APP_URL` in Vercel and redeployed. Production verified in the final configuration: `/api/health` 200 with `db: ok, config: ok`; the forgot-password action flipped 500 → 303 to `?info=sent` (reset links now mint with the production origin); `/auth/callback` junk-code probe 307; staff login-path harness 4/4; poison-cookie matrix 13/13. Both 2026-06-10 incidents are closed with no residual operator actions. The one remaining pre-beta confirmation is the end-to-end production onboarding smoke-test recorded under the C-14 item-3 resolution note above — all of its prerequisites are now in place.
+
 ---
