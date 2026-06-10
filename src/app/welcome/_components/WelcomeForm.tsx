@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState } from 'react'
+import { logout } from '../../login/actions'
 import { setPasswordAndAcceptAction } from '../actions'
 import { initialWelcomeState, type WelcomeState } from '../types'
 
@@ -11,6 +12,7 @@ export function WelcomeForm({ clientId }: { clientId: string }) {
   >(setPasswordAndAcceptAction, initialWelcomeState)
 
   return (
+    <>
     <form
       action={formAction}
       style={{ display: 'grid', gap: 14, marginTop: 22 }}
@@ -61,6 +63,23 @@ export function WelcomeForm({ clientId }: { clientId: string }) {
         {pending ? 'Setting up…' : 'Continue to portal'}
       </button>
     </form>
+
+      {/* Sign-out escape for errors whose recovery the form can't perform
+          (account mismatch tells the user to sign out). A SIBLING form, not
+          nested — nested forms are invalid HTML — mirroring FinishSetup's
+          proven <form action={logout}> pattern. */}
+      {state.recovery === 'sign-out' && (
+        <form action={logout} style={{ marginTop: 12 }}>
+          <button
+            type="submit"
+            className="btn outline"
+            style={{ width: '100%', justifyContent: 'center' }}
+          >
+            Sign out
+          </button>
+        </form>
+      )}
+    </>
   )
 }
 

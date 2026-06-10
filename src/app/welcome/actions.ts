@@ -98,8 +98,10 @@ export async function setPasswordAndAcceptAction(
     console.error(
       `[welcome-accept] client_accept_invite failed: client=${clientId} err=${acceptErr.message}`,
     )
+    const mapped = mapAcceptInviteError(acceptErr.message)
     return {
-      error: mapAcceptInviteError(acceptErr.message),
+      error: mapped.copy,
+      recovery: mapped.recovery,
       fieldErrors: {},
     }
   }
@@ -144,22 +146,40 @@ export async function setPasswordAndAcceptAction(
  * 'Caller has no email on auth.users' cannot occur for invite-created
  * users) and any future raise added to the RPC without a mapping here.
  */
-function mapAcceptInviteError(rawMessage: string): string {
+function mapAcceptInviteError(rawMessage: string): {
+  copy: string
+  recovery?: 'sign-out'
+} {
   const m = rawMessage.toLowerCase()
   if (m.includes('email mismatch')) {
-    return "It looks like you're signed in as a different account than the one your practitioner invited. Sign out, then tap the invite link again."
+    // The copy instructs a sign-out, so the state must carry the
+    // affordance — WelcomeForm renders a sign-out escape on 'sign-out'.
+    return {
+      copy: "It looks like you're signed in as a different account than the one your practitioner invited. Sign out, then tap the invite link again.",
+      recovery: 'sign-out',
+    }
   }
   if (m.includes('already been accepted')) {
-    return 'This invite was already used by another account. Ask your practitioner to send a fresh one.'
+    return {
+      copy: 'This invite was already used by another account. Ask your practitioner to send a fresh one.',
+    }
   }
   if (m.includes('revoked')) {
-    return 'This invitation is no longer active. Check with your practitioner.'
+    return {
+      copy: 'This invitation is no longer active. Check with your practitioner.',
+    }
   }
   if (m.includes('client record not found')) {
-    return "We couldn't find your invite. Ask your practitioner to send a fresh one."
+    return {
+      copy: "We couldn't find your invite. Ask your practitioner to send a fresh one.",
+    }
   }
   if (m.includes('not authenticated')) {
-    return "We couldn't confirm your session. Ask your practitioner to resend the invite link."
+    return {
+      copy: "We couldn't confirm your session. Ask your practitioner to resend the invite link.",
+    }
   }
-  return 'Something went wrong linking your account. Ask your practitioner to resend the invite link.'
+  return {
+    copy: 'Something went wrong linking your account. Ask your practitioner to resend the invite link.',
+  }
 }
