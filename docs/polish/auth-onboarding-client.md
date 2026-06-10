@@ -728,3 +728,15 @@ The operator re-reported the digest error (`ERROR 1236160913`) after the poison-
 **Section open set, corrected at this closure.** With C-10 closed, the open set is: **C-11, C-12, C-13** (remaining execution order per the 2026-05-29 reviewer nudge: C-13 → C-11 → C-12). This supersedes the open-set clause in the C-9 closure above per the doc's supersede-by-append convention.
 
 ---
+
+## Reviewer-verification addendum (2026-06-10) — C-9/C-10 sign-off tasks
+
+Three verification tasks run read-only at the reviewer's request before C-9/C-10 sign-off.
+
+**1. Password-rule duplication census (tracked staleness note).** The 12-character minimum is hardcoded at sixteen independent in-repo literals across eight files, with no shared constant: welcome action check + error copy (`src/app/welcome/actions.ts:37-38`); welcome form `minLength` + hint (`src/app/welcome/_components/WelcomeForm.tsx:42-43`); invite email HTML + plaintext (`src/lib/email/templates/client-invite.ts:80,128`); reset action check + error (`src/app/auth/reset-password/actions.ts:37-38`); reset page `minLength` ×2 + hint (`src/app/auth/reset-password/page.tsx:73,77,94`); signup action check + error (`src/app/signup/actions.ts:23-24`); signup form `minLength` + hint (`src/app/signup/_components/SignupForm.tsx:71,75`); and the local-dev mirror `supabase/config.toml:47`. The seventeenth touch point is out-of-repo: the live GoTrue `password_min_length` — the C-7 enforcement point, set via Management API, represented in no repo file. **Coupling, named: changing the password policy requires seventeen synchronized edits across these surfaces, or they silently contradict each other.** Refactoring to a shared constant is deliberately out of scope at current scale; this note is the tracker. Re-trigger: any change to the password policy — including the C-7 Pro-upgrade re-trigger, which revisits password policy anyway.
+
+**2. C-9 "two indexed count head requests" — verified, claim stands.** Both `firstRun` queries filter `client_id` + `deleted_at IS NULL`. Programs are covered by `programs_client_status_idx (client_id, status) WHERE deleted_at IS NULL` (migration `20260420101800_programs.sql`); sessions by `sessions_client_completed_idx (client_id, completed_at DESC) WHERE deleted_at IS NULL` (migration `20260420101900_session_logging.sql`). Each partial index's predicate exactly matches the query's filter with `client_id` leading. Deferral (c) of the C-9 closure is accurate as written; no edit.
+
+**3. C-10 resend-accuracy guard — verified enforced, claim stands.** The "only not-yet-onboarded clients can receive this email" claim is code-enforced, not intent-only: `resendInviteAction` re-checks server-side and refuses when `user_id` is set (`src/app/(staff)/clients/[id]/actions.ts:116-118`) and when no invite was ever sent (`:120-122`), independently of the UI visibility condition (`src/app/(staff)/clients/[id]/page.tsx:241`). The magiclink-fallback recipient (existing auth user, unlinked clients row) also always sets a password at `/welcome` (`src/app/welcome/actions.ts:67`), so the email line holds on that path too. No edit.
+
+---
