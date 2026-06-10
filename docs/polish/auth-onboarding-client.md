@@ -741,6 +741,10 @@ Three verification tasks run read-only at the reviewer's request before C-9/C-10
 
 ---
 
+**Sign-off — C-9 and C-10 (2026-06-10).** Reviewed via the claude.ai project chat; reviewer model Claude Opus 4.8 (1M context). **Decision: both Closed.** The reviewer accepted both closing commits as presented — including C-9's three operator-approved deviations from the gap's literal wording (the dropped notification promise, the swap-in-place placement, and the no-program-ever condition) and C-10's operator-approved scope addition (the welcome-form hint correcting F-8's falsified premise). Acceptance was conditioned on three verification tasks, run read-only and recorded in the Reviewer-verification addendum above: the password-rule duplication census (tracked as a staleness note — seventeen synchronized touch points; refactor deliberately out of scope), the C-9 indexed-count claim (verified against both partial indexes; doc stands as written), and the C-10 resend-accuracy guard (verified code-enforced server-side; doc stands as written). C-9 and C-10 formally closed; the section remains open per the open sets recorded at each closure.
+
+---
+
 ## C-13 closed (2026-06-10) — Humane mapping for `client_accept_invite` errors, closes F-12
 
 **What shipped (commit `04fa578`).** One file, action-side only — no migration, no schema, the RPC body untouched. A module-local pure mapper (`mapAcceptInviteError`, `src/app/welcome/actions.ts`) replaces the verbatim pass-through `` Couldn't link your account: ${acceptErr.message} `` with recovery-oriented copy in the established client-facing voice ("practitioner" per C-2; factual, no drama). The raw RPC message now lands in the server log via a `[welcome-accept]` line — which the gap required ("the RPC's own error strings stay as-is for server-side logs") and which previously did not happen anywhere: the raw string went to the user and to no log at all.
