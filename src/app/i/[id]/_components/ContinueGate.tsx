@@ -1,35 +1,43 @@
 'use client'
 
-import { useState } from 'react'
+import { useFormStatus } from 'react-dom'
 
 /**
  * The button that closes the click-through gate.
  *
- * Critical: navigation happens via window.location.assign on a real onClick,
- * NOT a server-rendered <a href> or a router push. Why: Gmail (and other
- * scanners) pre-fetch every URL they find in HTML to scan for malware. An
- * <a href={actionLink}> would be visible to a scanner that follows links
- * inside the gate page; window.location.assign in a click handler is not
- * crawlable. The action_link is still in the page bundle, but only the
- * tap actually navigates to it — and a tap is what we want anyway.
+ * C-11: the tap submits a form to continueInviteAction (bound to the
+ * token id by the page), which atomically burns invite_tokens.consumed_at
+ * and redirects to the Supabase action_link server-side. The action_link
+ * is NOT in this component's props, the page HTML, or the JS bundle —
+ * a body-parsing scanner that GETs the gate finds nothing to follow, and
+ * scanners do not execute form POSTs. This supersedes the original
+ * window.location.assign(actionLink) design, whose embedded link was the
+ * C-14 deferred design weakness.
+ *
+ * A plain form + submit button also works without JavaScript — the
+ * original onClick-only button did not.
  */
-export function ContinueGate({ actionLink }: { actionLink: string }) {
-  const [going, setGoing] = useState(false)
+export function ContinueGate({
+  continueAction,
+}: {
+  continueAction: () => Promise<void>
+}) {
+  return (
+    <form action={continueAction}>
+      <GateButton />
+    </form>
+  )
+}
 
-  function handleClick() {
-    if (going) return
-    setGoing(true)
-    window.location.assign(actionLink)
-  }
-
+function GateButton() {
+  const { pending } = useFormStatus()
   return (
     <button
-      type="button"
-      onClick={handleClick}
-      disabled={going}
+      type="submit"
+      disabled={pending}
       className="mt-1 w-full rounded-[7px] bg-primary text-white font-semibold text-[0.92rem] px-[22px] py-3 transition-colors hover:bg-primary-dark disabled:opacity-70"
     >
-      {going ? 'Opening your portal…' : 'Continue to your portal'}
+      {pending ? 'Opening your portal…' : 'Continue to your portal'}
     </button>
   )
 }

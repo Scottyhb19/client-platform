@@ -6,6 +6,7 @@ import {
   AuthSubtitle,
 } from '@/components/auth/AuthShell'
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { continueInviteAction } from './actions'
 import { ContinueGate } from './_components/ContinueGate'
 
 export const dynamic = 'force-dynamic'
@@ -17,8 +18,13 @@ export const dynamic = 'force-dynamic'
  * we look up the matching invite_tokens row and either render an error or
  * a "Continue to your portal" button. The button — not an auto-redirect —
  * is what defeats Gmail's link prefetch: a prefetcher hits THIS page,
- * sees no Location header, and stops. The Supabase verify URL only fires
- * when a real human taps the button.
+ * sees no Location header, and stops.
+ *
+ * C-11: the button POSTs to continueInviteAction, which atomically burns
+ * consumed_at and redirects to the Supabase verify URL server-side. The
+ * action_link is never selected here and never reaches the rendered HTML
+ * — rendering this page is side-effect-free by design (a scanner's GET
+ * burns nothing); only the POST consumes.
  *
  * Auth: this route is public (clients clicking invite emails aren't signed
  * in yet). The lookup uses the service-role client because invite_tokens
@@ -38,12 +44,12 @@ export default async function InviteGatePage({
 
   const admin = createSupabaseServiceRoleClient()
 
-  // Service-role select; RLS denies authenticated.
+  // Service-role select; RLS denies authenticated. action_link is
+  // deliberately NOT selected — the render path never touches the secret
+  // (C-11); only continueInviteAction reads it, at POST time.
   const { data: token, error } = await admin
     .from('invite_tokens')
-    .select(
-      'id, organization_id, client_id, action_link, expires_at, consumed_at',
-    )
+    .select('id, organization_id, client_id, expires_at, consumed_at')
     .eq('id', id)
     .maybeSingle()
 
@@ -82,7 +88,7 @@ export default async function InviteGatePage({
         Tap below to open your portal. We&rsquo;ll set you up with a password
         and add the app to your home screen on the next screen.
       </AuthSubtitle>
-      <ContinueGate actionLink={token.action_link} />
+      <ContinueGate continueAction={continueInviteAction.bind(null, token.id)} />
     </AuthShell>
   )
 }
