@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
 import { rescheduleAndStartSessionAction } from '../session/[dayId]/actions'
 import {
   sameCalendarDay,
@@ -60,6 +60,12 @@ interface DayScreenProps {
   // Empty string falls back to "today's cell" so a stray ?d= miss reads
   // as "no selection."
   selectedDayIso: string
+  // C-9: true only for a client with no client-visible program (any
+  // status) and no sessions ever — computed server-side in page.tsx.
+  // Swaps the empty-card slot from "Rest day" (false for a client with
+  // no plan) to the first-run welcome card. A programmed client on a
+  // rest day never sees this; their firstRun is always false.
+  firstRun: boolean
   // ISO YYYY-MM-DD per strip cell (one per dot). Phase K (Q-K7): every
   // cell navigates — programmed and rest days alike — to /portal?d=<iso>
   // so the card swaps in place rather than leaving the strip decorative.
@@ -82,6 +88,7 @@ export function DayScreen({
   backToTodayHref,
   selectedDayIso,
   cellHrefs,
+  firstRun,
 }: DayScreenProps) {
   // First-paint selected index — derived from the server-provided ISO so
   // the highlight is correct before any client-side hook runs. Falls back
@@ -195,9 +202,27 @@ export function DayScreen({
         })}
       </div>
 
-      {/* Card surface — discriminated render by session.state.kind. */}
+      {/* Card surface — discriminated render by session.state.kind.
+          C-9: the no-session slot splits on firstRun — a brand-new client
+          (no program ever, no sessions ever) gets the welcome card; every
+          other no-session render keeps the rest-day card. Solid border
+          (no is-rest-day dash): this is a state card, not a calendar gap. */}
       {session ? (
         <DayCard session={session} />
+      ) : firstRun ? (
+        <div className="portal-empty">
+          <ClipboardList
+            size={28}
+            strokeWidth={2}
+            color="var(--color-text-light)"
+            aria-hidden
+            style={{ marginBottom: 8 }}
+          />
+          <div className="portal-empty__title">Welcome to Odyssey.</div>
+          <div className="portal-empty__body">
+            {"Your practitioner is building your program. It'll appear right here when it's ready."}
+          </div>
+        </div>
       ) : (
         <div className="portal-empty is-rest-day">
           <div className="portal-empty__title">Rest day</div>

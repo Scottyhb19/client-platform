@@ -54,6 +54,36 @@ export default async function PortalTodayPage({
     .is('deleted_at', null)
     .maybeSingle()
 
+  // C-9: first-run detection. Only queried when there's no active
+  // program — a programmed client can never see the welcome card, so the
+  // happy path pays nothing. "First run" = no client-visible programs
+  // row of ANY status (client RLS exposes active + archived; a draft the
+  // EP is still building stays invisible, which keeps the card up and
+  // its copy literally true) AND no sessions row ever. Both conditions
+  // self-expire permanently: the first publish or first log flips one
+  // forever, with no stored dismissal state. On query error, fail closed
+  // to the rest-day card rather than risk welcoming a veteran client.
+  let firstRun = false
+  if (!program) {
+    const [programsRes, sessionsRes] = await Promise.all([
+      supabase
+        .from('programs')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', client.id)
+        .is('deleted_at', null),
+      supabase
+        .from('sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', client.id)
+        .is('deleted_at', null),
+    ])
+    firstRun =
+      !programsRes.error &&
+      !sessionsRes.error &&
+      (programsRes.count ?? 0) === 0 &&
+      (sessionsRes.count ?? 0) === 0
+  }
+
   const weekStart = weekParam ? mondayFromIso(weekParam) : mondayOfCurrentWeek()
   const weekStartIso = isoFromDate(weekStart)
   const prevWeekIso = isoFromDate(addDays(weekStart, -7))
@@ -204,6 +234,7 @@ export default async function PortalTodayPage({
       backToTodayHref="/portal"
       selectedDayIso={selectedDayIso}
       cellHrefs={cellHrefs}
+      firstRun={firstRun}
     />
   )
 }
