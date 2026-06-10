@@ -10,6 +10,7 @@ Operational procedures for OdysseyHQ. Each runbook is self-contained and follows
 - [`verify-auth-config.md`](verify-auth-config.md) — Verify the four dashboard-config security properties (custom-access-token hook, HIBP, refresh-token lifetime, email confirmations) via `scripts/verify-auth-config.mjs` + documented value. Cadence: quarterly + on every RLS/auth migration.
 - [`verify-cross-tenant-isolation.md`](verify-cross-tenant-isolation.md) — Manual by-hand confirmation that one org cannot read/write another org's rows. The interim compensation for suggested-runbook #1 (the automated pgTAP cross-tenant test) while it stays deferred.
 - [`recover-stuck-client-onboarding.md`](recover-stuck-client-onboarding.md) — Operator procedure for a client reporting they signed in to the portal and saw "Not authorized". Distinguishes the two C-1 R-5 sub-states (membership-never-created vs JWT-stale) and clears each. Compensating control for the C-1 R-5 sub-case where the in-flow FinishSetup recovery was bypassed or never ran.
+- [`verify-invite-prefetch.md`](verify-invite-prefetch.md) — Verify the `/i/[id]` anti-prefetch invite gate stops a real mail-client link-prefetcher from consuming the one-time invite token before the human taps (C-14 / F-14), via `scripts/c14-prefetch-test.mjs` + a real mailbox. Cadence: on any invite/gate-flow change, and before onboarding any paying clinical client (including an enterprise Safe Links mailbox).
 
 ## Not yet written
 
