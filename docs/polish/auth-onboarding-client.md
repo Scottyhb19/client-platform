@@ -710,3 +710,21 @@ The operator re-reported the digest error (`ERROR 1236160913`) after the poison-
 **Section open set, corrected at this closure.** With C-9 closed, the open set is: **C-10, C-11, C-12, C-13** (remaining execution order per the 2026-05-29 reviewer nudge: C-10 → C-13 → C-11 → C-12). This supersedes the open-set clause in the C-14 sign-off above per the doc's supersede-by-append convention.
 
 ---
+
+## C-10 closed (2026-06-10) — Password rule stated in invite email + welcome form, closes F-8
+
+**What shipped (commit `97a1676`).** Two surfaces, both copy/markup only — no schema, no actions, no new components:
+
+1. **Invite email (the gap as written).** One factual line added to both bodies of `src/lib/email/templates/client-invite.ts` — HTML: "When you first sign in, you&rsquo;ll set a password of at least 12 characters." appended to the existing muted set-up paragraph; plaintext: "When you first sign in, you will set a password of at least 12 characters." as its own line (each body keeps its established register — the HTML uses contractions, the plaintext does not). One template serves both the fresh-invite and magiclink-fallback send paths (shared via `sendInviteForClient` since C-5), both paths land at `/welcome` where `setPasswordAndAcceptAction` always sets a password, and the resend control only targets not-yet-onboarded clients — so the line is accurate for every possible recipient with no per-path conditional copy. The line claims exactly what is enforced (12-character minimum, per the C-7 closure: no HIBP on the free tier, no character classes) and nothing more.
+
+2. **Welcome form hint (scope addition, operator-approved 2026-06-10).** Recon falsified F-8's stated premise — "the hint exists in the password field" was untrue at HEAD: `WelcomeForm`'s password field carried no hint, no `minLength`, nothing; the rule was discoverable only by failing it server-side. The `Field` component gains optional `hint` + `minLength` props; the password field now shows "At least 12 characters." (muted, `.74rem`, hidden while the field's error is showing since both state the same rule) and `minLength={12}`, so a compliant browser catches a short password before a server round-trip. The email line alone would not have closed F-8 — the friction moment is at the form, and most recipients will have closed the email by then.
+
+**Verified.** `tsc --noEmit` clean; full production `next build` clean. The template is a pure function whose two bodies were edited in parallel and read back; the real-send path was proven end-to-end by C-5 and the C-14/smoke-test sends and is untouched by a copy-only change. The form hint renders only in the session-gated branch of `/welcome`, which Claude Code cannot reach in the preview (standing auth-block, per C-1/C-8 precedent) — the hint markup and the error-supersedes-hint conditional are reading-verified. **Re-trigger for the runtime eyeball:** the operator's next test onboarding (a fresh invite send also shows the email line live, on both the HTML and plaintext renderings).
+
+**Failure modes mitigated.** F-8 — the rule is now visible at preparation time (email) and at the moment of choice (form field), with a browser-native pre-submit check beneath both. The blind-pick-then-reject loop the premortem described requires ignoring three layers before reaching the server error.
+
+**Accepted, not mitigated.** (a) `minLength` is a convenience layer only — browsers enforce it only on user-typed values, and an autofilled sub-12 password bypasses it; the server action remains the gate, unchanged. (b) The hint copy ("At least 12 characters.") and the server error ("At least 12 characters, please.") differ by one word — deliberate; the error is the action's existing voice and was not touched. (c) No runtime browser verification of the authed form state this pass, per the standing auth-block — recorded above with its re-trigger.
+
+**Section open set, corrected at this closure.** With C-10 closed, the open set is: **C-11, C-12, C-13** (remaining execution order per the 2026-05-29 reviewer nudge: C-13 → C-11 → C-12). This supersedes the open-set clause in the C-9 closure above per the doc's supersede-by-append convention.
+
+---
