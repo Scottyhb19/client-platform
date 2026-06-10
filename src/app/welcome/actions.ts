@@ -94,8 +94,12 @@ export async function setPasswordAndAcceptAction(
     // recordFailure soft-fails internally; we ignore its outcome here
     // because the operation has already errored.
     await rl.recordFailure()
+    // C-13: the raw RPC message is server-log detail, not user copy.
+    console.error(
+      `[welcome-accept] client_accept_invite failed: client=${clientId} err=${acceptErr.message}`,
+    )
     return {
-      error: `Couldn't link your account: ${acceptErr.message}`,
+      error: mapAcceptInviteError(acceptErr.message),
       fieldErrors: {},
     }
   }
@@ -126,4 +130,36 @@ export async function setPasswordAndAcceptAction(
   //    Already-installed clients (display-mode: standalone) auto-bounce
   //    through to /portal so it never feels like an extra step on return.
   redirect('/welcome/install')
+}
+
+/**
+ * C-13: map client_accept_invite's raw RAISE EXCEPTION strings to humane,
+ * recovery-oriented copy. The raw string lands in the server log above —
+ * these mappings are for the person standing at the welcome screen.
+ *
+ * Matching is lowercase-substring, ordered, so a benign rewording of the
+ * RPC's message text degrades to the generic fallback rather than leaking
+ * raw internals. The fallback also absorbs the two pathological raises
+ * ('Not authenticated' is pre-empted by this action's own getUser() check;
+ * 'Caller has no email on auth.users' cannot occur for invite-created
+ * users) and any future raise added to the RPC without a mapping here.
+ */
+function mapAcceptInviteError(rawMessage: string): string {
+  const m = rawMessage.toLowerCase()
+  if (m.includes('email mismatch')) {
+    return "It looks like you're signed in as a different account than the one your practitioner invited. Sign out, then tap the invite link again."
+  }
+  if (m.includes('already been accepted')) {
+    return 'This invite was already used by another account. Ask your practitioner to send a fresh one.'
+  }
+  if (m.includes('revoked')) {
+    return 'This invitation is no longer active. Check with your practitioner.'
+  }
+  if (m.includes('client record not found')) {
+    return "We couldn't find your invite. Ask your practitioner to send a fresh one."
+  }
+  if (m.includes('not authenticated')) {
+    return "We couldn't confirm your session. Ask your practitioner to resend the invite link."
+  }
+  return 'Something went wrong linking your account. Ask your practitioner to resend the invite link.'
 }
