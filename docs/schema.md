@@ -114,9 +114,11 @@ The repo contains `client-platform/prisma/schema.prisma` (Prisma + Clerk). That 
 |---|---|
 | `clients` | Clinical record for a person in care. May or may not have a linked auth user. |
 | `client_medical_history` | Structured static medical history items (conditions, medications, past surgeries). |
-| `clinical_notes` | Staff-only SOAP-structured progress notes, injury flags, contraindications. Audit-logged. Never visible to clients. |
-| `assessment_templates` | Tenant-configurable assessment forms (initial intake, return-to-play, etc.). |
-| `assessments` | A completed assessment for a client, keyed to a template. Responses in `jsonb` per the template schema. |
+| `clinical_notes` | Staff-only clinical notes — template-driven (`content_json`) with the legacy SOAP columns retained for pre-template rows. Progress notes, initial assessments, injury flags, contraindications. Audit-logged. Never visible to clients. See §8.5. |
+| `note_templates` | Per-org note templates. Carries the `note_type` stamped onto notes written from it (CN-3). Hard-deleted by convention; notes denormalise their content so history survives. See §8.5.1. |
+| `note_template_fields` | Ordered typed fields belonging to a template. Cascade-deleted with parent. See §8.5.1. |
+| `assessment_templates` | **Dormant (2026-06-11).** Superseded by the note-template system as the canonical standardised-assessment mechanism (CN-3, `polish/client-profile-clinical-notes.md`). No UI, no rows. Removal decision deferred to a cleanup pass. |
+| `assessments` | **Dormant (2026-06-11).** Same decision as `assessment_templates`. |
 
 ### 3.3 Exercise library
 
@@ -904,7 +906,9 @@ CREATE INDEX clients_email_trgm_idx
 
 ### 8.5 `clinical_notes`
 
-v0.2 design: staff-only, SOAP-structured, optimistic-concurrency-protected. No `visible_to_client` column.
+Staff-only, optimistic-concurrency-protected. No `visible_to_client` column (v0.2 decision, reaffirmed at the section-3 polish pass). Content is **template-driven since `20260427100000`**: notes denormalise their answers into `content_json` (an array of `{label, value, type}`), so editing or deleting a template never breaks historical notes. The legacy SOAP columns remain for pre-template rows; the update action NULLs them when a note is re-saved through the template form.
+
+Updated 2026-06-11 (CN-8 sync): the DDL below reflects the base table (`20260420100800`) plus `20260427100000` (template era: `template_id`, `appointment_id`, `content_json`, widened content CHECK), `20260428130000` (`test_session_id`), and `20260611120200` (CN-1: widened flag-fields CHECK).
 
 ```sql
 CREATE TYPE note_type AS ENUM (
@@ -920,13 +924,23 @@ CREATE TABLE clinical_notes (
   note_type           note_type    NOT NULL DEFAULT 'progress_note',
   note_date           date         NOT NULL DEFAULT CURRENT_DATE,
   title               text,
-  -- SOAP structure — any field may be NULL; at least one must be non-null
+  -- Legacy SOAP structure — pre-template rows only; template-era saves NULL these
   subjective          text,
   objective           text,
   assessment          text,
   plan                text,
   body_rich           text,        -- free-form additions outside SOAP
-  -- Injury flag tracking
+  -- Template era (20260427100000)
+  template_id         uuid         REFERENCES note_templates(id) ON DELETE SET NULL,
+                                   -- breadcrumb only: content_json carries the labels
+  appointment_id      uuid         REFERENCES appointments(id)   ON DELETE SET NULL,
+                                   -- one live note per appointment (application-enforced
+                                   -- in createClinicalNoteAction; no DB unique index)
+  content_json        jsonb,       -- {"fields":[{"label":…,"value":…,"type":…}, …]}
+  -- Testing-module link (20260428130000; single FK, N:M deliberately rejected —
+  -- /docs/testing-module-schema.md §14 Q2)
+  test_session_id     uuid         REFERENCES test_sessions(id)  ON DELETE SET NULL,
+  -- Injury flag tracking (both flag types since 20260611120200)
   flag_body_region    text,
   flag_severity       smallint     CHECK (flag_severity IS NULL OR flag_severity BETWEEN 1 AND 5),
   flag_reviewed_at    timestamptz,
@@ -937,12 +951,24 @@ CREATE TABLE clinical_notes (
   created_at          timestamptz  NOT NULL DEFAULT now(),
   updated_at          timestamptz  NOT NULL DEFAULT now(),
   deleted_at          timestamptz,
+  -- Widened 20260427100000: legacy SOAP OR template content satisfies it
   CONSTRAINT clinical_notes_content_present CHECK (
     COALESCE(subjective, objective, assessment, plan, body_rich) IS NOT NULL
+    OR content_json IS NOT NULL
   ),
+  -- Widened 20260611120200 (CN-1): BOTH flag types require a body region and
+  -- may carry severity/review/resolve; non-flag types must carry none.
+  -- (The original shape allowed flag columns only on injury_flag — a
+  -- contraindication could never be resolved.)
   CONSTRAINT clinical_notes_injury_flag_fields CHECK (
-    (note_type = 'injury_flag') OR
-    (flag_body_region IS NULL AND flag_severity IS NULL AND flag_reviewed_at IS NULL AND flag_resolved_at IS NULL)
+    CASE
+      WHEN note_type IN ('injury_flag', 'contraindication')
+        THEN flag_body_region IS NOT NULL
+      ELSE flag_body_region IS NULL
+       AND flag_severity    IS NULL
+       AND flag_reviewed_at IS NULL
+       AND flag_resolved_at IS NULL
+    END
   )
 );
 
@@ -952,14 +978,24 @@ CREATE INDEX clinical_notes_client_time_idx
 CREATE INDEX clinical_notes_org_idx
   ON clinical_notes (organization_id) WHERE deleted_at IS NULL;
 
--- Needs-attention panel: active injury flags per org
+-- Needs-attention panel: active injury flags per org.
+-- NOTE (2026-06-11): the predicate covers note_type = 'injury_flag' only.
+-- The CN-4 dashboard query also includes contraindications, which this
+-- index therefore does not cover — harmless at current row counts, but
+-- widen the predicate to both flag types if the panel query ever shows up
+-- in slow-query logs.
 CREATE INDEX clinical_notes_active_flags_idx
   ON clinical_notes (organization_id, client_id)
   WHERE note_type = 'injury_flag'
     AND flag_resolved_at IS NULL
     AND deleted_at IS NULL;
 
--- Full-text search for the EP (v1 uses trigram; upgrade to tsvector if insufficient)
+-- Trigram search index — LEGACY COLUMNS ONLY (recorded truthfully, A-5 of
+-- the section-3 polish doc): it does not cover content_json, which is
+-- where all template-era note content lives, so for template-era notes it
+-- covers nothing. Note search today is application-side (in-memory over
+-- the profile's full note load). Fine at 40–50 clients; revisit (tsvector
+-- over content_json, or a generated text column) if search slows.
 CREATE INDEX clinical_notes_search_trgm_idx
   ON clinical_notes USING gin (
     (lower(COALESCE(subjective,'') || ' ' ||
@@ -969,6 +1005,57 @@ CREATE INDEX clinical_notes_search_trgm_idx
            COALESCE(body_rich,''))) gin_trgm_ops
   )
   WHERE deleted_at IS NULL;
+
+-- Plus (not reproduced in full): clinical_notes_appointment_idx and
+-- clinical_notes_test_session_idx partial indexes, and cross-org
+-- enforce_same_org_fk triggers on template_id, appointment_id and
+-- test_session_id (20260427100000 / 20260428130000).
+```
+
+Author lock (`20260427110000`): the UPDATE policy and the `soft_delete_clinical_note` RPC both restrict mutation to the authoring practitioner — see `rls-policies.md` §4.6 and A-1 of the section-3 polish doc.
+
+### 8.5.1 `note_templates` and `note_template_fields`
+
+Added `20260427100000`; `note_type` column added `20260611120100` (CN-3 — the note-template system is the canonical standardised-template mechanism per master brief §9.1; an "Initial assessment" template stamps `note_type = 'initial_assessment'` at write time). `default_value` on fields added `20260427110000`.
+
+Deletion convention: templates are **hard-deleted** (project convention to avoid the post-soft-delete RLS trip on a low-stakes config table); fields cascade with their parent. Historical notes are unaffected by design — `content_json` is self-contained and `clinical_notes.template_id` is SET NULL.
+
+```sql
+CREATE TYPE note_template_field_type AS ENUM ('short_text', 'long_text', 'number');
+
+CREATE TABLE note_templates (
+  id               uuid         PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id  uuid         NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+  name             text         NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 80),
+  -- CN-3 (20260611120100): stamped onto clinical_notes at write time.
+  -- Flag types excluded — flags are created via the dedicated flag
+  -- control (CN-1), never via templates.
+  note_type        note_type    NOT NULL DEFAULT 'progress_note',
+  sort_order       int          NOT NULL DEFAULT 0,
+  created_at       timestamptz  NOT NULL DEFAULT now(),
+  updated_at       timestamptz  NOT NULL DEFAULT now(),
+  deleted_at       timestamptz,
+  CONSTRAINT note_templates_type_not_flag
+    CHECK (note_type NOT IN ('injury_flag', 'contraindication'))
+);
+
+CREATE UNIQUE INDEX note_templates_org_name_unique
+  ON note_templates (organization_id, lower(name))
+  WHERE deleted_at IS NULL;
+
+CREATE TABLE note_template_fields (
+  id           uuid                       PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id  uuid                       NOT NULL REFERENCES note_templates(id) ON DELETE CASCADE,
+  label        text                       NOT NULL CHECK (length(trim(label)) BETWEEN 1 AND 80),
+  field_type   note_template_field_type   NOT NULL DEFAULT 'long_text',
+  default_value text,                     -- 20260427110000
+  sort_order   int                        NOT NULL DEFAULT 0,
+  created_at   timestamptz                NOT NULL DEFAULT now(),
+  updated_at   timestamptz                NOT NULL DEFAULT now()
+);
+
+CREATE INDEX note_template_fields_template_idx
+  ON note_template_fields (template_id, sort_order);
 ```
 
 ### 8.6 `audit_log`

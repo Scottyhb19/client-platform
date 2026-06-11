@@ -498,10 +498,10 @@ CREATE POLICY "deny delete clients"
 **Plain English:**
 - **SELECT** — staff in org only.
 - **INSERT** — staff in org only.
-- **UPDATE** — staff in org only, with optimistic-concurrency check via `version` column (application-layer).
-- **DELETE** — denied; soft-delete.
+- **UPDATE** — staff in org only **and author-locked** (`20260427110000`): only the practitioner who wrote the note can update it. Optimistic-concurrency check via `version` column (application-layer). Recorded as a record-integrity feature, A-1 of the section-3 polish doc — no owner override.
+- **DELETE** — denied; soft-delete routes through the `soft_delete_clinical_note` SECURITY DEFINER RPC (`20260429120000`), which re-checks the author lock.
 
-**SQL:** direct Pattern A template.
+**SQL:** direct Pattern A template, with the UPDATE policy's USING clause additionally requiring `author_user_id = auth.uid()`.
 
 **Tests:**
 - `rls_clinical_notes_select_staff_works`
@@ -517,7 +517,27 @@ The `rls_clinical_notes_select_client_denied` test is a load-bearing protection 
 
 ---
 
+### 4.6.1 `note_templates` and `note_template_fields`
+
+Added by `20260427100000` (policies live in that migration); documented here at the CN-8 sync (2026-06-11) — these tables previously had no section in this file.
+
+**Pattern:** `note_templates` is Pattern A with one deliberate deviation — **hard DELETE is allowed** for staff in own org. Templates are low-stakes per-org configuration, not clinical data; hard delete avoids the post-soft-delete RLS trip, and historical notes are immune by design (`content_json` is self-contained; `clinical_notes.template_id` is SET NULL). `note_template_fields` is Pattern C (via parent template), hard-deleted by cascade.
+
+**Plain English:**
+- **SELECT / INSERT / UPDATE / DELETE** on `note_templates` — staff in own org. No client access of any kind.
+- All four verbs on `note_template_fields` — staff only, gated through an EXISTS on the parent template's org.
+
+**CN-3 note (`20260611120100`):** `note_templates.note_type` stamps the type onto notes written from the template; the `note_templates_type_not_flag` CHECK excludes flag types (flags are created via the dedicated CN-1 flag control, never via templates). No policy change — the column rides the existing Pattern A surface.
+
+**SQL:** see migration `20260427100000` (Pattern A with DELETE policy for `note_templates`; four via-parent policies for `note_template_fields`).
+
+**Tests:** standard 6 per table, with the delete-allowed variants (`rls_note_templates_delete_staff_works`, `rls_note_template_fields_delete_staff_works`) replacing the usual delete-denied assertions, plus `rls_note_templates_select_client_denied`.
+
+---
+
 ### 4.7 `assessment_templates`
+
+**Dormant (2026-06-11).** Superseded by the note-template system as the canonical standardised-assessment mechanism (CN-3, `polish/client-profile-clinical-notes.md`). No UI, no rows. Policies below stay in force as documented; removal decision deferred to a cleanup pass.
 
 **Pattern:** Pattern A.
 
@@ -530,6 +550,8 @@ The `rls_clinical_notes_select_client_denied` test is a load-bearing protection 
 ---
 
 ### 4.8 `assessments`
+
+**Dormant (2026-06-11).** Same decision as `assessment_templates` (§4.7).
 
 **Pattern:** Pattern A (v1) — no client access to assessments in v1. Phase 2 may change this.
 
