@@ -1,7 +1,7 @@
 # Client profile and clinical notes — gap list
 
 **Polish-pass section:** 3 of the locked polish-pass order (clinical-record layer — note template, flag banners, medical history, history rendering).
-**Active step:** 6 of 7. Gap list approved by the claude.ai reviewer 2026-06-11; build in progress in dependency order, starting with P0.
+**Active step:** 7 of 7. All sixteen gaps closed (CN-7 as deferred-with-trigger); Closing commit recorded at the bottom of this doc. Awaiting the §6 cross-tenant pgTAP run and the claude.ai sign-off per the ritual.
 **Date opened:** 2026-06-11.
 **Trust-nothing posture:** every claim below was derived from the code at HEAD and the migrations, not from prior section docs. Three audit passes (profile UI, database layer, cross-surface/portal exposure) were run independently and cross-checked; the load-bearing claims (hardcoded `note_type`, disabled edit affordances, constraint widening, token drift, absent write paths) were then re-verified line-by-line first-hand.
 
@@ -402,6 +402,37 @@ New `src/lib/format-date.ts` exporting `formatShortDate` ("12 Jan 2026", en-AU, 
 Left for their own sections, recorded in the util header: TestCaptureModal/ReportsPanel/BatterySessionsView duplicates (testing module, closed section — not for re-polishing) and FilesTab (the Files tab is out of this section's scope per the tab-divergence note).
 
 Empty-state copy aligned: NotesTab's rail now opens "No notes for this client yet…" matching NotesPanel's opener, both using the "appear here" phrasing; the remaining tail copy stays surface-specific by design (the rail mentions quick reference; the builder panel mentions adding from the profile).
+
+---
+
+## Closing commit (step 7) — 2026-06-11
+
+**What changed, by gap number.** All sixteen gaps from the approved list are closed; fourteen commits carry the work (`e3a55cd` through `3c67dbf`).
+
+- **P0.** CN-2 tightened `client_medical_history` SELECT to staff-only (Pattern A) per the operator visibility rule. CN-3 made the note-template system the canonical standardised-assessment mechanism — templates carry a `note_type`, the hardcode is gone, an Initial assessment template is seeded per org, and the dormant `assessments` model is documented as such. CN-1 gave flags an inlet (ten-second composer), the design-system banner on the profile and the shared NotesPanel (so the session builder and calendar inherit it), and decoupled flag visibility from pinning; the flag-fields CHECK widened so contraindications can carry and resolve flag state. CN-4 (pulled forward at operator direction) added the lifecycle — mark reviewed, edit, resolve, archive — and implemented the brief §6.8.2 14-day rule in the dashboard needs-attention query, dropping the `is_pinned` coupling.
+- **P1.** CN-5: the client details edit flow — one dialog over Contact + Goals, OCC via `clients.version`, email excluded as the login identity, and renames on onboarded clients propagating to `user_profiles` via a narrow SECURITY DEFINER RPC (the planned bare UPDATE was impossible: that table's UPDATE policy is self-only). The read path gained the three columns the page never loaded (`referred_by`, emergency contacts). CN-6: medical-history CRUD — add/edit, Mark resolved as the primary remove verb, archive via a new soft-delete RPC pair closing the table's known 42501 trap; concurrency is deliberate last-write-wins (the table has no OCC column — recon finding, recorded). CN-11 (bundled): "+N more" overflow on the header condition tags. CN-7: deferred with trigger and **indexed in `docs/go-live-checklist.md` §8**, including the finding that the archive affordance is already live, so the trigger is one click away. CN-8: schema.md §8.5 rewritten to current DDL (four template-era/testing columns, both widened CHECKs, the trigram-index truth), new §8.5.1 for the template tables, dormant markings, and the rls-policies.md author-lock truth in §4.6 plus a new §4.6.1.
+- **P2.** CN-9: sessionStorage draft preservation for in-progress notes (five user-state values, debounced, deep-link prefill wins, cleared on save and explicit Cancel). CN-10: NotesPanel's five off-system colour constants and MonthCalendar's alert literal replaced with tokens at every usage site; three of the greys were visibly wrong. CN-12: `content_json` registered in `audit_wide_column_config`, restoring the 4KB audit-snapshot bound for the column all template-era note content lives in. CN-13: a reusable on-system `ConfirmDialog` plus persistent error lines replace all eight browser `alert()`/`confirm()` sites in the section's clinical flows. CN-14: the stubbed Invoices tab removed end to end. CN-15: the duplicated "12 Jan 2026" formatter consolidated to `src/lib/format-date.ts` across the five in-section components; `formatSessionDate` was found to be a distinct date+time shape misdescribed by the gap text and deliberately kept local. CN-16 (operator-directed addition, intake Q&A recorded in the gap entry): the Details tab re-laid as a form at rest — 2:1 grid, input-style read-only field boxes matching the edit dialog's shape.
+
+**Migrations:** six, all applied to the live project via `supabase db push` with clean applies and type-regen verification — `20260611120000` (CN-2 policy), `20260611120100` (CN-3 template types + seed), `20260611120200` (CN-1 CHECK widening), `20260611130000` (CN-5 name-sync RPC), `20260611130100` (CN-6 RPC pair), `20260611130200` (CN-12 config row). All additive or tightening; none reshape rows; pre-launch advantages applied (operator-confirmed no real data).
+
+**Acceptance tests run and results.**
+
+- `npm run type-check` — pass after every gap closure.
+- `npm run build` — pass at the P1 close, the P2 close, and the final tree.
+- Dev server on :3000 — boots and serves cleanly at the final tree; zero console/server errors on fresh load.
+- Live read-backs — every migration confirmed by clean `db push` apply + regenerated types showing the new RPCs/columns (CN-12's regen was zero-diff, as expected for a config row).
+- Operator browser verification — P0 confirmed working end to end 2026-06-11 (recorded at CN-1/CN-4). P1 + P2 confirmed by the operator in the same session ("everything looks good"), with the Details-tab UX the one exception raised — closed as CN-16. CN-16 and CN-12 themselves await a final browser glance; the dev server is left running.
+- `npm run lint` — fails on pre-existing debt unrelated to this section (recorded at CN-1; tracked separately).
+- **Outstanding gate item, not yet run:** the cross-tenant pgTAP suite. CN-2 changed an RLS SELECT policy, and `go-live-checklist.md` §6 requires `supabase/tests/database/17_cross_tenant_isolation.sql` on any RLS-touching migration. The run is operator-executed (no psql/Docker on the host): paste the file into the **Supabase SQL Editor** as one batch; **success signal: 8/8 pass**. The section should not be signed off Closed until this run is recorded here.
+
+**Deferred, with triggers.**
+
+- **CN-7** — archived-client record access. Deferred per the approval record; trigger (*before the first real client archive, or before any paying clinical client, whichever comes first*) indexed in `go-live-checklist.md` §8 per the technical gate index rule. The archive button is live today, so the trigger is behavioural, not hypothetical.
+- Within-gap deferrals, each recorded in its closure note: a proper email-change flow (CN-5); an `--color-alert-wash` token family for the sanctioned rgba literals (CN-10); widening `clinical_notes_active_flags_idx` to cover contraindications if the dashboard query ever slows (CN-8 — documented in schema.md §8.5); flag un-resolve UI (CN-4, awaits a real need); ~21 `alert()`/`confirm()` sites outside clinical flows (CN-13 — their sections inherit the ConfirmDialog precedent); four out-of-section date-formatter duplicates (CN-15 — named in the util header).
+
+**Premortem accounting.** Mitigated: F-1 (CN-1+CN-4), F-2 (CN-5), F-3 (CN-6), F-4 (CN-4), F-5 (CN-2), F-6 (CN-3), F-7 (CN-8), F-8 (CN-9), F-10 (CN-10), F-11 (CN-11), F-12 (CN-12), F-13 (CN-13), F-14 (CN-14 plus CN-5/CN-6 converting the dead affordances). Deferred: F-9 (CN-7, trigger indexed at the checklist that fires). Accepted as planned, unchanged: A-1 (author lock, no owner override), A-2 (portal exposure verified clean), A-3 (30-note adjacency window — now supplemented by CN-1's unbounded active-flags merge so flags can't age out), A-4 (blunt OCC copy), A-5 (trigram index dead weight — now recorded truthfully in schema.md per CN-8). Newly accepted during the build, with rationale in the closure notes: last-write-wins on `client_medical_history` edits (no OCC column; single-practitioner facts; additive fix is cheap if ever needed) and the `active_flags_idx` predicate gap (harmless at scale; widen-if-slow trigger documented).
+
+**Process note.** The P2 recon omitted CN-12 from its enumeration and the build initially proceeded on a wrong "no migrations in P2" claim; the closing-commit sweep against the gap list caught it and CN-12 closed before this commit. Recorded so the next section's recon enumerates the contract rather than reconstructing it.
 
 ### CN-13 — closed 2026-06-11
 
