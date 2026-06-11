@@ -368,6 +368,15 @@ The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening)
 
 NotesPanel is the shared component — this lands in the session builder right rail and the calendar side panel automatically; visual confirmation there is part of the operator walk-through.
 
+### CN-9 — closed 2026-06-11
+
+New `_lib/note-draft.ts`: sessionStorage draft persistence per the approved shape (no DB-backed drafts; the standing `practice_preferences` option stays unexercised). Keys follow the ReportsPanel `odyssey:` convention — `odyssey:note-draft:{clientId}:create` / `:edit:{noteId}`; load/save/clear are SSR-safe and fail silent. The draft carries exactly the five user-state values: `templateId`, per-field `values`, `appointmentId`, `testSessionId`, `testCaptureSummary` (a captured test session's DB rows exist from capture time, so a drafted link references durable data, and discarding a draft never deletes the session).
+
+NoteForm wiring:
+- **Restore** happens in the state initializers on mount. A deep-link appointment prefill (`?new=1&appointment=…`) is explicit intent and wins — the draft is ignored, not deleted. A drafted template that has since been deleted falls back to the default template (the draft's field values, keyed by the old field ids, simply don't render). `seededTemplateRef` initialises to the *resolved* template — seeding from the default would have wiped restored values on mount whenever the draft's template differed (caught during the build).
+- **Persist** is a 600ms-debounced effect that starts only once the user has typed (`dirtyRef`) or captured a test session — an untouched form writes no draft, so stale drafts can't shadow later template-default changes. Appointment-only selection deliberately doesn't trigger a persist (cheap to redo; recorded).
+- **Clear** on successful save (both `performSave` branches — covering the Save button and the create→edit auto-save handoff) and on explicit Cancel, which is the deliberate-discard verb. Accidental loss paths (tab switch unmounting NotesTab, navigation, reload, crash-with-session-restore) never pass through Cancel, so the draft survives them — which is the entire point (F-8). The recon found the loss surface was wider than the gap text implied: every profile-tab switch unmounts the form, not just crashes.
+
 ### CN-15 — closed 2026-06-11
 
 New `src/lib/format-date.ts` exporting `formatShortDate` ("12 Jan 2026", en-AU, design-system convention). The five in-section duplicates collapsed onto it: NotesTab `formatDate`, NotesPanel `formatNoteDate`, ClientFlags `formatFlagDate`, MedicalHistory `formatConditionDate`, ClientProfile `formatDate` (and `formatDob` now wraps the shared formatter, keeping only its age suffix).

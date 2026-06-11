@@ -29,6 +29,13 @@ import {
 import { AutoTextarea } from '@/components/AutoTextarea'
 import { formatShortDate } from '@/lib/format-date'
 import {
+  clearNoteDraft,
+  loadNoteDraft,
+  noteDraftKey,
+  saveNoteDraft,
+  type NoteDraft,
+} from '../_lib/note-draft'
+import {
   archiveClinicalNoteAction,
   createClinicalNoteAction,
   toggleClinicalNotePinAction,
@@ -403,6 +410,15 @@ const NoteForm = forwardRef<
   },
   ref,
 ) {
+  // ---- Draft restore (CN-9) ----------------------------------------------
+  // Loaded once on mount. A deep-link appointment prefill is explicit user
+  // intent and wins over a stale draft, so the draft is ignored (and left
+  // in storage) when initialAppointmentId is present.
+  const draftKey = noteDraftKey(clientId, mode, existingNote?.id ?? null)
+  const [restoredDraft] = useState<NoteDraft | null>(() =>
+    initialAppointmentId ? null : loadNoteDraft(draftKey),
+  )
+
   // ---- Template selection ------------------------------------------------
   const defaultTemplateId = useMemo(() => {
     if (mode === 'edit' && existingNote?.template_id) {
@@ -414,7 +430,17 @@ const NoteForm = forwardRef<
     return templates[0]?.id ?? null
   }, [mode, existingNote, lastTemplateId, templates])
 
-  const [templateId, setTemplateId] = useState<string | null>(defaultTemplateId)
+  // A drafted template survives only if it still exists; a template
+  // deleted since drafting falls back to the default (and the draft's
+  // values, keyed by the old template's field ids, simply won't render).
+  const draftTemplateValid =
+    restoredDraft?.templateId != null &&
+    templates.some((t) => t.id === restoredDraft.templateId)
+  const initialTemplateId = draftTemplateValid
+    ? restoredDraft.templateId
+    : defaultTemplateId
+
+  const [templateId, setTemplateId] = useState<string | null>(initialTemplateId)
 
   const activeTemplate = useMemo(
     () => templates.find((t) => t.id === templateId) ?? null,
@@ -454,13 +480,23 @@ const NoteForm = forwardRef<
     return usedAppointmentIds.has(next.id) ? null : next.id
   }, [mode, existingNote, initialAppointmentId, appointments, notes])
 
-  const [appointmentId, setAppointmentId] = useState<string | null>(
-    defaultAppointmentId,
-  )
+  const [appointmentId, setAppointmentId] = useState<string | null>(() => {
+    // CN-9: a draft's appointment selection (including a deliberate
+    // "None") wins over the computed default, if it still exists.
+    if (restoredDraft) {
+      if (restoredDraft.appointmentId === null) return null
+      if (appointments.some((a) => a.id === restoredDraft.appointmentId)) {
+        return restoredDraft.appointmentId
+      }
+    }
+    return defaultAppointmentId
+  })
 
   // ---- Field values ------------------------------------------------------
   const [values, setValues] = useState<Record<string, string>>(() =>
-    initialValuesFor(mode, defaultTemplateId, templates, existingNote),
+    restoredDraft && draftTemplateValid
+      ? restoredDraft.values
+      : initialValuesFor(mode, defaultTemplateId, templates, existingNote),
   )
 
   // Track whether the user has edited any field — used by the parent
@@ -477,8 +513,10 @@ const NoteForm = forwardRef<
 
   // Re-seed when the user picks a different template (create mode only —
   // edit mode shouldn't auto-overwrite the saved content if the user
-  // experimentally swaps template).
-  const seededTemplateRef = useRef<string | null>(defaultTemplateId)
+  // experimentally swaps template). Initialised to the RESOLVED initial
+  // template (draft-aware) — seeding from defaultTemplateId here would
+  // wipe restored draft values on mount when the draft's template differs.
+  const seededTemplateRef = useRef<string | null>(initialTemplateId)
   useEffect(() => {
     if (mode !== 'create') return
     if (!activeTemplate) {
@@ -499,11 +537,44 @@ const NoteForm = forwardRef<
   // Per brief §1.2 entry point #1, a clinical note can link to a test
   // session captured alongside the narrative. Exposed in create mode
   // only; edit mode preserves whatever link the note already has.
-  const [testSessionId, setTestSessionId] = useState<string | null>(null)
+  // CN-9: restored from the draft — the test session's DB rows were
+  // created at capture time, so the link references durable data.
+  const [testSessionId, setTestSessionId] = useState<string | null>(
+    restoredDraft?.testSessionId ?? null,
+  )
   const [testCaptureSummary, setTestCaptureSummary] = useState<string | null>(
-    null,
+    restoredDraft?.testCaptureSummary ?? null,
   )
   const [captureOpen, setCaptureOpen] = useState(false)
+
+  // ---- Draft persist (CN-9) ----------------------------------------------
+  // Debounced write of the five draft-worthy values. Persisting starts
+  // once the user has actually typed (dirtyRef) or captured a test
+  // session — an untouched form must not write a draft that would later
+  // shadow template-default changes. Cleared on successful save and on
+  // explicit Cancel (deliberate discard); a draft protects against
+  // accidental loss only.
+  useEffect(() => {
+    if (!dirtyRef.current && testSessionId === null) return
+    const timer = setTimeout(() => {
+      saveNoteDraft(draftKey, {
+        templateId,
+        values,
+        appointmentId,
+        testSessionId,
+        testCaptureSummary,
+        savedAt: new Date().toISOString(),
+      })
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [
+    draftKey,
+    templateId,
+    values,
+    appointmentId,
+    testSessionId,
+    testCaptureSummary,
+  ])
 
   // ---- Save / submit -----------------------------------------------------
   const [pending, startTransition] = useTransition()
@@ -540,6 +611,7 @@ const NoteForm = forwardRef<
         setError(res.error)
         return { ok: false, error: res.error }
       }
+      clearNoteDraft(draftKey) // CN-9: the note row is now the record
       return { ok: true }
     }
     if (!existingNote) {
@@ -558,6 +630,7 @@ const NoteForm = forwardRef<
       setError(res.error)
       return { ok: false, error: res.error }
     }
+    clearNoteDraft(draftKey) // CN-9
     return { ok: true }
   }
 
@@ -925,7 +998,12 @@ const NoteForm = forwardRef<
         <button
           type="button"
           className="btn outline"
-          onClick={onCancel}
+          onClick={() => {
+            // CN-9: Cancel is the deliberate-discard verb — the draft
+            // goes with it. Accidental loss paths never pass through here.
+            clearNoteDraft(draftKey)
+            onCancel()
+          }}
           disabled={pending}
         >
           Cancel
