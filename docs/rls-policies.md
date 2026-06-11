@@ -476,16 +476,18 @@ CREATE POLICY "deny delete clients"
 
 ### 4.5 `client_medical_history`
 
-**Pattern:** Pattern B with client SELECT on own.
+**Pattern:** Pattern A — **staff only** (tightened from Pattern B by migration `20260611120000_cn2_cmh_staff_only_select.sql`, gap CN-2 of `docs/polish/client-profile-clinical-notes.md`).
 
 **Plain English:**
-- **SELECT** — staff within org; client sees own history.
+- **SELECT** — staff within org only. Clients cannot read their own rows.
 - **INSERT/UPDATE** — staff only.
 - **DELETE** — denied; soft-delete.
 
-**SQL:** direct Pattern B template, where the client check is `client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL)`.
+**Why the tighten (2026-06-11):** the `notes` column carries practitioner commentary on the condition — clinical reasoning under the master brief §4 access contract. The original Pattern B policy declared the whole row client-readable; no portal surface ever queried the table, but the policy invited a future surface to treat visibility as intended. Operator rule recorded at the section 3 approval: *nothing on the staff side is ever client-viewable except the exercise program, published reports, and upcoming sessions* — staff-only is the standing default. If a client-facing "your conditions" surface is ever designed, relax deliberately and exclude the `notes` column (view or column split).
 
-**Tests:** mirror `clients` suite with `rls_cmh_*` prefix.
+**SQL:** direct Pattern A template (policy name kept as `"staff select cmh in own org"`).
+
+**Tests:** mirror `clients` suite with `rls_cmh_*` prefix, plus `rls_cmh_select_client_denied` — a client SELECT returns zero rows even for their own `client_id` (same shape as the clinical_notes critical test).
 
 ---
 
