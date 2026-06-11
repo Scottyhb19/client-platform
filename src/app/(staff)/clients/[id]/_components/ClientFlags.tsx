@@ -32,6 +32,7 @@ import {
   type ClinicalFlagType,
 } from '../notes-actions'
 import { ConfirmDialog } from './ConfirmDialog'
+import { formatShortDate } from '@/lib/format-date'
 
 export type ClientFlag = {
   id: string
@@ -115,7 +116,7 @@ export function FlagBanners({
                 color: 'var(--color-text-light)',
               }}
             >
-              {formatFlagDate(f.note_date)}
+              {formatShortDate(f.note_date)}
             </span>
           </div>
           <div
@@ -355,9 +356,9 @@ function FlagList({
                 <span
                   style={{ fontSize: '.7rem', color: 'var(--color-text-light)' }}
                 >
-                  {formatFlagDate(f.note_date)}
+                  {formatShortDate(f.note_date)}
                   {f.reviewed_at
-                    ? ` · reviewed ${formatFlagDate(f.reviewed_at)}`
+                    ? ` · reviewed ${formatShortDate(f.reviewed_at)}`
                     : ''}
                 </span>
               </div>
@@ -767,14 +768,3 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 }
 
-function formatFlagDate(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
-}

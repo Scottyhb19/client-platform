@@ -368,6 +368,16 @@ The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening)
 
 NotesPanel is the shared component — this lands in the session builder right rail and the calendar side panel automatically; visual confirmation there is part of the operator walk-through.
 
+### CN-15 — closed 2026-06-11
+
+New `src/lib/format-date.ts` exporting `formatShortDate` ("12 Jan 2026", en-AU, design-system convention). The five in-section duplicates collapsed onto it: NotesTab `formatDate`, NotesPanel `formatNoteDate`, ClientFlags `formatFlagDate`, MedicalHistory `formatConditionDate`, ClientProfile `formatDate` (and `formatDob` now wraps the shared formatter, keeping only its age suffix).
+
+**Correction to the gap text, found during the build:** `formatSessionDate` is *not* a duplicate — ground truth shows it renders date **+ start time** (no year) for linked-appointment rows, a deliberately distinct shape. The recon agent had misquoted it as year-bearing; verified first-hand before flattening it would have silently dropped session times from note rows. It stays local to NotesTab with a comment, alongside `formatAppointmentLabel` (also a distinct date+time shape). Consolidation collapses duplicates; it does not flatten distinct shapes.
+
+Left for their own sections, recorded in the util header: TestCaptureModal/ReportsPanel/BatterySessionsView duplicates (testing module, closed section — not for re-polishing) and FilesTab (the Files tab is out of this section's scope per the tab-divergence note).
+
+Empty-state copy aligned: NotesTab's rail now opens "No notes for this client yet…" matching NotesPanel's opener, both using the "appear here" phrasing; the remaining tail copy stays surface-specific by design (the rail mentions quick reference; the builder panel mentions adding from the profile).
+
 ### CN-13 — closed 2026-06-11
 
 New `ConfirmDialog` (`_components/ConfirmDialog.tsx`) — the on-system confirm for clinical flows, shaped on the ArchiveConfirm precedent (scrim, 440px card, display heading, factual body, persistent error block, Cancel + tonal confirm; `tone` picks alert-red for destructive verbs or primary for content-replacing ones). All eight browser-native sites in the section are gone:

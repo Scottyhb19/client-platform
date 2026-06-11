@@ -25,6 +25,7 @@ import {
   updateMedicalConditionAction,
 } from '../medical-actions'
 import { ConfirmDialog } from './ConfirmDialog'
+import { formatShortDate } from '@/lib/format-date'
 import type { ProfileCondition } from './ClientProfile'
 
 export function MedicalHistoryPanel({
@@ -203,7 +204,7 @@ function ConditionRow({
   const meta = [
     condition.severity ? `Severity ${condition.severity}` : null,
     condition.diagnosis_date
-      ? `diagnosed ${formatConditionDate(condition.diagnosis_date)}`
+      ? `diagnosed ${formatShortDate(condition.diagnosis_date)}`
       : null,
   ]
     .filter(Boolean)
@@ -560,14 +561,3 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 }
 
-function formatConditionDate(dateIso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(dateIso))
-  } catch {
-    return dateIso
-  }
-}

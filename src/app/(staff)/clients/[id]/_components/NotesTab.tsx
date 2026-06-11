@@ -27,6 +27,7 @@ import {
   X,
 } from 'lucide-react'
 import { AutoTextarea } from '@/components/AutoTextarea'
+import { formatShortDate } from '@/lib/format-date'
 import {
   archiveClinicalNoteAction,
   createClinicalNoteAction,
@@ -1681,7 +1682,7 @@ function PreviousNotesList({
             lineHeight: 1.55,
           }}
         >
-          No prior notes for this client. Notes you save will land here for
+          No notes for this client yet. Notes you save will appear here for
           quick reference.
         </div>
       ) : noMatches ? (
@@ -1805,7 +1806,7 @@ function NoteRow({
     : null
   const date = linked
     ? formatSessionDate(linked.start_at)
-    : formatDate(note.note_date)
+    : formatShortDate(note.note_date)
   const templateName = note.template_id
     ? (templates.find((t) => t.id === note.template_id)?.name ?? null)
     : null
@@ -2139,7 +2140,7 @@ function NoteReader({
     : null
   const date = linked
     ? formatSessionDate(linked.start_at)
-    : formatDate(note.note_date)
+    : formatShortDate(note.note_date)
   const templateName = note.template_id
     ? (templates.find((t) => t.id === note.template_id)?.name ?? null)
     : null
@@ -2378,7 +2379,7 @@ function ReportsPanel({ reports }: { reports: ProfileReport[] }) {
                 marginTop: 2,
               }}
             >
-              {formatDate(r.test_date)} · {r.report_type}
+              {formatShortDate(r.test_date)} · {r.report_type}
               {!r.is_published && ' · Draft'}
             </div>
           </button>
@@ -2450,18 +2451,9 @@ function SidebarHeader({ children }: { children: React.ReactNode }) {
  * Helpers
  * ========================================================================= */
 
-function formatDate(dateIso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(dateIso))
-  } catch {
-    return dateIso
-  }
-}
-
+// Date-only rendering is the shared formatShortDate (CN-15). This one is
+// deliberately local: a linked session renders date + start time (no
+// year) — a distinct shape, not a duplicate of the short date.
 function formatSessionDate(iso: string): string {
   try {
     const dt = new Date(iso)

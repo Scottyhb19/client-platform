@@ -25,6 +25,7 @@
 
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import { formatShortDate } from '@/lib/format-date'
 import type { Database } from '@/types/database'
 
 type NoteType = Database['public']['Enums']['note_type']
@@ -225,7 +226,7 @@ function FlagBannerRow({
           }}
         >
           {' '}
-          — {formatNoteDate(note.note_date)}
+          — {formatShortDate(note.note_date)}
         </span>
       </div>
     </button>
@@ -270,7 +271,7 @@ function NoteRow({
         }}
       >
         <span style={{ whiteSpace: 'nowrap' }}>
-          {formatNoteDate(note.note_date)}
+          {formatShortDate(note.note_date)}
         </span>
         {note.flag_body_region && (
           <span
@@ -362,7 +363,7 @@ function NoteReader({
             whiteSpace: 'nowrap',
           }}
         >
-          {formatNoteDate(note.note_date)}
+          {formatShortDate(note.note_date)}
         </div>
       </div>
 
@@ -476,14 +477,3 @@ function SidebarHeader({ children }: { children: React.ReactNode }) {
   )
 }
 
-function formatNoteDate(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
-}

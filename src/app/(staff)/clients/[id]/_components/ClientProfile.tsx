@@ -17,6 +17,7 @@ import {
   Plus,
 } from 'lucide-react'
 import type { Database } from '@/types/database'
+import { formatShortDate } from '@/lib/format-date'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
@@ -1143,7 +1144,8 @@ function ProgramTab({
           }}
         >
           {program.days_per_week} day split
-          {program.start_date && ` · started ${formatDate(program.start_date)}`}
+          {program.start_date &&
+            ` · started ${formatShortDate(program.start_date)}`}
           . Open the calendar for the full week grid plus the day-by-day Session
           Builder.
         </div>
@@ -1450,30 +1452,13 @@ function GhostBtn({
  * Helpers
  * ========================================================================= */
 
-function formatDate(dateIso: string): string {
-  try {
-    return new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(new Date(dateIso))
-  } catch {
-    return dateIso
-  }
-}
-
+// "12 Jan 1988 (38)" — shared short date plus current age.
 function formatDob(dateIso: string): string {
   try {
-    const dt = new Date(dateIso)
-    const formatted = new Intl.DateTimeFormat('en-AU', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    }).format(dt)
     const age = Math.floor(
-      (Date.now() - dt.getTime()) / (365.25 * 24 * 3600 * 1000),
+      (Date.now() - new Date(dateIso).getTime()) / (365.25 * 24 * 3600 * 1000),
     )
-    return `${formatted} (${age})`
+    return `${formatShortDate(dateIso)} (${age})`
   } catch {
     return dateIso
   }
