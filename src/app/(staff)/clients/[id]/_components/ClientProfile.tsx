@@ -21,7 +21,7 @@ import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
-import { FlagBanners, FlagComposer, type ClientFlag } from './ClientFlags'
+import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
 import { ResendInviteButton } from './ResendInviteButton'
@@ -288,11 +288,12 @@ export function ClientProfile({
   publications,
 }: ClientProfileProps) {
   const [tab, setTab] = useTab(initialTab)
-  const [flagComposerOpen, setFlagComposerOpen] = useState(false)
+  const [flagDialogOpen, setFlagDialogOpen] = useState(false)
 
   // CN-1: active flags (unresolved injury_flag / contraindication notes)
   // render as the design-system banner above the tab panels — visible on
-  // every tab of the record, independent of is_pinned.
+  // every tab of the record, independent of is_pinned. CN-4 manages the
+  // lifecycle (review / edit / resolve / archive) via FlagDialog.
   const activeFlags: ClientFlag[] = notes
     .filter(
       (n) =>
@@ -307,6 +308,8 @@ export function ClientProfile({
       severity: n.flag_severity,
       note: flagNoteText(n),
       note_date: n.note_date,
+      reviewed_at: n.flag_reviewed_at,
+      version: n.version,
     }))
 
   return (
@@ -320,18 +323,23 @@ export function ClientProfile({
         lastInviteSentAt={lastInviteSentAt}
         tab={tab}
         onTab={setTab}
-        onAddFlag={() => setFlagComposerOpen(true)}
+        hasActiveFlags={activeFlags.length > 0}
+        onFlags={() => setFlagDialogOpen(true)}
       />
 
-      {flagComposerOpen && (
-        <FlagComposer
+      {flagDialogOpen && (
+        <FlagDialog
           clientId={client.id}
-          onClose={() => setFlagComposerOpen(false)}
+          flags={activeFlags}
+          onClose={() => setFlagDialogOpen(false)}
         />
       )}
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 32px 60px' }}>
-        <FlagBanners flags={activeFlags} />
+        <FlagBanners
+          flags={activeFlags}
+          onManage={() => setFlagDialogOpen(true)}
+        />
         {tab === 'details' && (
           <DetailsTab client={client} conditions={conditions} />
         )}
@@ -402,7 +410,8 @@ function ClientHeader({
   lastInviteSentAt,
   tab,
   onTab,
-  onAddFlag,
+  hasActiveFlags,
+  onFlags,
 }: {
   client: ProfileClient
   conditions: ProfileCondition[]
@@ -412,7 +421,8 @@ function ClientHeader({
   lastInviteSentAt: string | null
   tab: Tab
   onTab: (t: Tab) => void
-  onAddFlag: () => void
+  hasActiveFlags: boolean
+  onFlags: () => void
 }) {
   const fullName = `${client.first_name} ${client.last_name}`
   const activeFlags = conditions.filter((c) => c.is_active).slice(0, 2)
@@ -535,8 +545,25 @@ function ClientHeader({
               >
                 <Mail size={16} aria-hidden />
               </IconGhost>
-              <IconGhost label="Add flag" onClick={onAddFlag}>
-                <Flag size={16} aria-hidden />
+              <IconGhost
+                label={hasActiveFlags ? 'Manage flags' : 'Add flag'}
+                onClick={onFlags}
+              >
+                {/* CN-4: the flag reads red while an injury flag or
+                    contraindication is active — the operator-directed
+                    signal that there is something to manage. */}
+                <Flag
+                  size={16}
+                  aria-hidden
+                  style={
+                    hasActiveFlags
+                      ? {
+                          color: 'var(--color-alert)',
+                          fill: 'rgba(214,64,69,0.15)',
+                        }
+                      : undefined
+                  }
+                />
               </IconGhost>
               <IconGhost
                 label="Archive client"

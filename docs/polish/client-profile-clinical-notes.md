@@ -303,3 +303,22 @@ Loader work: the duplicated note-summary mapping in `program/page.tsx` and `prog
 
 Verification: `npm run type-check` and `npm run build` pass; dev server boots with zero console/server errors; live DB read-backs confirm all three migrations. The browser walk-through (composer → profile banner → session-builder Active flags section) requires an authenticated staff session and is handed to the operator — dev server left running on :3000. (`npm run lint` fails on pre-existing debt unrelated to this section — stale Claude-worktree build output swept by bare eslint + a handful of older source findings; spun off as a separate task.)
 
+**Operator verification 2026-06-11: P0 confirmed working end to end in the browser.** The operator's review surfaced the missing remove path (the CN-1 closing note's "known interim state") and directed the CN-4 shape: the header Flag icon reads red while flags are active and opens a manage view with update/remove. Pulled CN-4 forward — closed below.
+
+### CN-4 — closed 2026-06-11 (pulled forward at operator direction)
+
+Lifecycle actions (`notes-actions.ts`), all author-locked via a shared precondition (`lookupFlagForWrite` — the RLS UPDATE policy is author-only, so a blocked write would surface as a silent zero-row no-op; the lookup turns that into a human error, same posture as the archive action):
+
+- `resolveClinicalFlagAction` — stamps `flag_resolved_at`. **Resolve is the correct verb for "the injury recovered", not delete:** the flag leaves the profile banner, the NotesPanel Active-flags section, and the dashboard, but stays in the client's note history with its resolved date (clinical-record integrity; §7.2 retention). Idempotent.
+- `markClinicalFlagReviewedAction` — stamps `flag_reviewed_at` = now (always overwrites); clears the flag from the dashboard needs-attention panel for 14 days.
+- `updateClinicalFlagAction` — edits body region / severity / note text with the same validation as create, OCC via `version`. Type and dates untouched (a flag's type is fixed at creation).
+- True deletion (flag created by mistake) routes through the existing `archiveClinicalNoteAction` (author-locked SECURITY DEFINER RPC), with copy in the confirm steering recovery cases to Resolve.
+
+UI (`ClientFlags.tsx`, operator-directed shape): the profile header Flag icon renders red with a light fill while active flags exist ("Manage flags"); clicking it — or any flag banner — opens `FlagDialog`. With active flags it opens as a manager list (each flag: Mark reviewed · Edit · Resolve · Archive, plus reviewed-date readout and Add flag); with none it opens straight into the create form. Edit reuses the create form prefilled, type fixed.
+
+Dashboard (`dashboard/page.tsx`): the needs-attention flag query drops the `is_pinned` requirement (an unpinned flag could never reach the panel) and implements the §6.8.2 rule — active flags where `flag_reviewed_at IS NULL OR flag_reviewed_at < now() − 14 days`, using the partial index's access path. Reason copy is now type-aware ("Active contraindication — …").
+
+Accepted/known: Resolve fires on one click with no confirm (speed over ceremony — the data is retained and an identical flag can be re-created in ten seconds; no unresolve UI for now, `restore`-style unresolve deferred until a real need). Archive keeps the browser `confirm()` matching NotesTab's current pattern — CN-13 (P2) replaces both with the on-system dialog. Reviewed/resolved state changes by a non-author practitioner are blocked by the author lock per A-1 — revisit only if the two-practitioner workflow surfaces a real case.
+
+Verification: `npm run type-check` + `npm run build` pass. Browser walk-through of the new lifecycle (red icon → manage → resolve/edit/archive → dashboard clearing) handed to the operator on :3000, same as the P0 pass. Not pushed to production pending that verification, per operator instruction.
+

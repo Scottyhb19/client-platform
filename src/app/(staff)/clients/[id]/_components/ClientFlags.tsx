@@ -1,27 +1,34 @@
 'use client'
 
 /**
- * CN-1 — injury flags and contraindications on the client profile.
+ * CN-1 + CN-4 — injury flags and contraindications on the client profile.
  *
  * FlagBanners renders the design-system clinical flag banner — the one
  * permitted use of the left-border accent pattern (3px solid alert red +
  * rgba(214,64,69,0.05) wash). It sits above the tab panels so an active
- * flag is visible on every tab of the clinical record, not just Notes.
+ * flag is visible on every tab of the clinical record. Clicking a banner
+ * opens the manager.
  *
- * FlagComposer is the dedicated creation control: type, body region,
- * optional severity, optional note. Flags are clinical_notes rows
- * (note_type = injury_flag | contraindication) created via
- * createClinicalFlagAction — deliberately not the template form, because
- * a flag is a ten-second structured marker, not a document.
+ * FlagDialog is the single flag control (operator-directed shape,
+ * 2026-06-11): the header Flag icon turns red while flags are active and
+ * opens the manager list; each flag offers Mark reviewed / Edit / Resolve
+ * / Archive. With no active flags the dialog opens straight into the
+ * create form.
  *
- * Review / resolve actions are CN-4 (next gap in dependency order);
- * until it lands a flag stays active once created.
+ * Resolve vs archive: resolving keeps the flag in the client's history
+ * with its resolved date (clinical-record integrity) and merely
+ * deactivates it everywhere; archive (soft-delete, author-locked RPC) is
+ * for flags created by mistake.
  */
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  archiveClinicalNoteAction,
   createClinicalFlagAction,
+  markClinicalFlagReviewedAction,
+  resolveClinicalFlagAction,
+  updateClinicalFlagAction,
   type ClinicalFlagType,
 } from '../notes-actions'
 
@@ -32,6 +39,8 @@ export type ClientFlag = {
   severity: number | null
   note: string
   note_date: string
+  reviewed_at: string | null
+  version: number
 }
 
 const FLAG_TYPE_LABEL: Record<ClinicalFlagType, string> = {
@@ -41,7 +50,13 @@ const FLAG_TYPE_LABEL: Record<ClinicalFlagType, string> = {
 
 /* ====================== Banners ====================== */
 
-export function FlagBanners({ flags }: { flags: ClientFlag[] }) {
+export function FlagBanners({
+  flags,
+  onManage,
+}: {
+  flags: ClientFlag[]
+  onManage: () => void
+}) {
   if (flags.length === 0) return null
 
   return (
@@ -54,9 +69,18 @@ export function FlagBanners({ flags }: { flags: ClientFlag[] }) {
       }}
     >
       {flags.map((f) => (
-        <div
+        <button
           key={f.id}
+          type="button"
+          onClick={onManage}
+          title="Manage flags"
           style={{
+            display: 'block',
+            width: '100%',
+            textAlign: 'left',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            border: 'none',
             borderLeft: '3px solid var(--color-alert)',
             background: 'rgba(214,64,69,0.05)',
             borderRadius: '0 10px 10px 0',
@@ -116,60 +140,38 @@ export function FlagBanners({ flags }: { flags: ClientFlag[] }) {
               {f.note}
             </div>
           )}
-        </div>
+        </button>
       ))}
     </div>
   )
 }
 
-/* ====================== Composer ====================== */
+/* ====================== Dialog (list / create / edit) ====================== */
 
-export function FlagComposer({
+type DialogView = { mode: 'list' } | { mode: 'create' } | { mode: 'edit'; flag: ClientFlag }
+
+export function FlagDialog({
   clientId,
+  flags,
   onClose,
 }: {
   clientId: string
+  flags: ClientFlag[]
   onClose: () => void
 }) {
-  const router = useRouter()
-  const [flagType, setFlagType] = useState<ClinicalFlagType>('injury_flag')
-  const [bodyRegion, setBodyRegion] = useState('')
-  const [severity, setSeverity] = useState<string>('')
-  const [note, setNote] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [isSaving, startSaving] = useTransition()
-
-  function handleSave() {
-    if (isSaving) return
-    if (!bodyRegion.trim()) {
-      setError('Body region is required.')
-      return
-    }
-    setError(null)
-    startSaving(async () => {
-      const res = await createClinicalFlagAction({
-        clientId,
-        flagType,
-        bodyRegion,
-        severity: severity === '' ? null : Number(severity),
-        note,
-      })
-      if (res.error) {
-        setError(res.error)
-        return
-      }
-      router.refresh()
-      onClose()
-    })
-  }
+  // No active flags → straight into the create form; otherwise manage.
+  const [view, setView] = useState<DialogView>(
+    flags.length === 0 ? { mode: 'create' } : { mode: 'list' },
+  )
+  const [isBusy, setIsBusy] = useState(false)
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="flag-composer-heading"
+      aria-labelledby="flag-dialog-heading"
       onClick={() => {
-        if (!isSaving) onClose()
+        if (!isBusy) onClose()
       }}
       style={{
         position: 'fixed',
@@ -185,7 +187,7 @@ export function FlagComposer({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          maxWidth: 440,
+          maxWidth: 460,
           background: 'var(--color-card)',
           border: '1px solid var(--color-border-subtle)',
           borderRadius: 14,
@@ -194,7 +196,7 @@ export function FlagComposer({
         }}
       >
         <h2
-          id="flag-composer-heading"
+          id="flag-dialog-heading"
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
@@ -203,10 +205,365 @@ export function FlagComposer({
             color: 'var(--color-charcoal)',
           }}
         >
-          Add flag
+          {view.mode === 'list'
+            ? 'Flags'
+            : view.mode === 'edit'
+              ? 'Edit flag'
+              : 'Add flag'}
         </h2>
 
-        {/* Type — segmented pair */}
+        {view.mode === 'list' && (
+          <FlagList
+            flags={flags}
+            onAdd={() => setView({ mode: 'create' })}
+            onEdit={(flag) => setView({ mode: 'edit', flag })}
+            onBusy={setIsBusy}
+            onClose={onClose}
+          />
+        )}
+        {view.mode !== 'list' && (
+          <FlagForm
+            clientId={clientId}
+            flag={view.mode === 'edit' ? view.flag : null}
+            onBusy={setIsBusy}
+            onDone={() => {
+              // Return to the list when there is one to return to;
+              // otherwise the create form was the whole dialog.
+              if (flags.length > 0) setView({ mode: 'list' })
+              else onClose()
+            }}
+            onCancel={() => {
+              if (flags.length > 0) setView({ mode: 'list' })
+              else onClose()
+            }}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+/* ====================== Manager list ====================== */
+
+function FlagList({
+  flags,
+  onAdd,
+  onEdit,
+  onBusy,
+  onClose,
+}: {
+  flags: ClientFlag[]
+  onAdd: () => void
+  onEdit: (flag: ClientFlag) => void
+  onBusy: (busy: boolean) => void
+  onClose: () => void
+}) {
+  const router = useRouter()
+  const [error, setError] = useState<string | null>(null)
+  const [pendingId, setPendingId] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
+  function run(
+    flagId: string,
+    action: () => Promise<{ error: string | null }>,
+  ) {
+    if (pendingId) return
+    setError(null)
+    setPendingId(flagId)
+    onBusy(true)
+    startTransition(async () => {
+      const res = await action()
+      setPendingId(null)
+      onBusy(false)
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  function handleArchive(flag: ClientFlag) {
+    if (
+      !confirm(
+        `Archive this ${FLAG_TYPE_LABEL[flag.flag_type].toLowerCase()} (${flag.body_region})? Archiving is for flags created by mistake — if the injury has recovered, use Resolve so the flag stays in the client's history.`,
+      )
+    ) {
+      return
+    }
+    run(flag.id, () => archiveClinicalNoteAction(flag.id))
+  }
+
+  if (flags.length === 0) {
+    return (
+      <div>
+        <p
+          style={{
+            fontSize: '.88rem',
+            color: 'var(--color-text-light)',
+            margin: '0 0 16px',
+          }}
+        >
+          No active flags.
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" className="btn outline" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className="btn primary" onClick={onAdd}>
+            Add flag
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {flags.map((f) => {
+          const busy = pendingId === f.id
+          return (
+            <div
+              key={f.id}
+              style={{
+                borderLeft: '3px solid var(--color-alert)',
+                background: 'rgba(214,64,69,0.05)',
+                borderRadius: '0 10px 10px 0',
+                padding: '10px 14px',
+                opacity: busy ? 0.6 : 1,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    fontWeight: 700,
+                    fontSize: '.62rem',
+                    letterSpacing: '.06em',
+                    textTransform: 'uppercase',
+                    color: 'var(--color-alert)',
+                  }}
+                >
+                  {FLAG_TYPE_LABEL[f.flag_type]}
+                  {f.severity ? ` — severity ${f.severity}` : ''}
+                </span>
+                <span
+                  style={{ fontSize: '.7rem', color: 'var(--color-text-light)' }}
+                >
+                  {formatFlagDate(f.note_date)}
+                  {f.reviewed_at
+                    ? ` · reviewed ${formatFlagDate(f.reviewed_at)}`
+                    : ''}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: '.88rem',
+                  fontWeight: 600,
+                  color: 'var(--color-text)',
+                  marginTop: 2,
+                }}
+              >
+                {f.body_region}
+              </div>
+              {f.note && (
+                <div
+                  style={{
+                    fontSize: '.8rem',
+                    color: 'var(--color-text-light)',
+                    lineHeight: 1.5,
+                    marginTop: 2,
+                    whiteSpace: 'pre-wrap',
+                  }}
+                >
+                  {f.note}
+                </div>
+              )}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 14,
+                  marginTop: 8,
+                }}
+              >
+                <FlagAction
+                  label="Mark reviewed"
+                  disabled={busy}
+                  onClick={() =>
+                    run(f.id, () => markClinicalFlagReviewedAction(f.id))
+                  }
+                />
+                <FlagAction
+                  label="Edit"
+                  disabled={busy}
+                  onClick={() => onEdit(f)}
+                />
+                <FlagAction
+                  label="Resolve"
+                  emphasis="primary"
+                  disabled={busy}
+                  onClick={() => run(f.id, () => resolveClinicalFlagAction(f.id))}
+                />
+                <FlagAction
+                  label="Archive"
+                  emphasis="alert"
+                  disabled={busy}
+                  onClick={() => handleArchive(f)}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            background: 'rgba(214,64,69,.08)',
+            border: '1px solid rgba(214,64,69,.25)',
+            borderRadius: 8,
+            color: 'var(--color-alert)',
+            fontSize: '.84rem',
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 10,
+          marginTop: 18,
+        }}
+      >
+        <button type="button" className="btn outline" onClick={onClose}>
+          Close
+        </button>
+        <button type="button" className="btn primary" onClick={onAdd}>
+          Add flag
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function FlagAction({
+  label,
+  onClick,
+  disabled,
+  emphasis,
+}: {
+  label: string
+  onClick: () => void
+  disabled: boolean
+  emphasis?: 'primary' | 'alert'
+}) {
+  const color =
+    emphasis === 'primary'
+      ? 'var(--color-primary)'
+      : emphasis === 'alert'
+        ? 'var(--color-alert)'
+        : 'var(--color-text-light)'
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        fontFamily: 'inherit',
+        fontWeight: 600,
+        fontSize: '.76rem',
+        color: disabled ? 'var(--color-muted)' : color,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+/* ====================== Create / edit form ====================== */
+
+function FlagForm({
+  clientId,
+  flag,
+  onBusy,
+  onDone,
+  onCancel,
+}: {
+  clientId: string
+  /** Null = create; a flag = edit (type is fixed once created). */
+  flag: ClientFlag | null
+  onBusy: (busy: boolean) => void
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const router = useRouter()
+  const [flagType, setFlagType] = useState<ClinicalFlagType>(
+    flag?.flag_type ?? 'injury_flag',
+  )
+  const [bodyRegion, setBodyRegion] = useState(flag?.body_region ?? '')
+  const [severity, setSeverity] = useState<string>(
+    flag?.severity ? String(flag.severity) : '',
+  )
+  const [note, setNote] = useState(flag?.note ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const [isSaving, startSaving] = useTransition()
+
+  function handleSave() {
+    if (isSaving) return
+    if (!bodyRegion.trim()) {
+      setError('Body region is required.')
+      return
+    }
+    setError(null)
+    onBusy(true)
+    startSaving(async () => {
+      const res = flag
+        ? await updateClinicalFlagAction({
+            noteId: flag.id,
+            bodyRegion,
+            severity: severity === '' ? null : Number(severity),
+            note,
+            version: flag.version,
+          })
+        : await createClinicalFlagAction({
+            clientId,
+            flagType,
+            bodyRegion,
+            severity: severity === '' ? null : Number(severity),
+            note,
+          })
+      onBusy(false)
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      router.refresh()
+      onDone()
+    })
+  }
+
+  return (
+    <div>
+      {/* Type — segmented pair; fixed once created */}
+      {!flag && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           {(Object.keys(FLAG_TYPE_LABEL) as ClinicalFlagType[]).map((t) => {
             const on = flagType === t
@@ -237,106 +594,121 @@ export function FlagComposer({
             )
           })}
         </div>
-
-        <FieldLabel htmlFor="flag-body-region">Body region</FieldLabel>
-        <input
-          id="flag-body-region"
-          type="text"
-          value={bodyRegion}
-          onChange={(e) => setBodyRegion(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              handleSave()
-            }
-          }}
-          placeholder="L knee, R shoulder, cardiovascular…"
-          disabled={isSaving}
-          autoFocus
-          style={inputStyle}
-        />
-
-        <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-          <div style={{ width: 130 }}>
-            <FieldLabel htmlFor="flag-severity">Severity</FieldLabel>
-            <select
-              id="flag-severity"
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value)}
-              disabled={isSaving}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="">None</option>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={String(n)}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12 }}>
-          <FieldLabel htmlFor="flag-note">Note</FieldLabel>
-          <textarea
-            id="flag-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Optional context — mechanism, restrictions, clearance…"
-            disabled={isSaving}
-            rows={3}
-            style={{
-              ...inputStyle,
-              height: 'auto',
-              padding: '8px 12px',
-              resize: 'vertical',
-              lineHeight: 1.5,
-            }}
-          />
-        </div>
-
-        {error && (
-          <div
-            role="alert"
-            style={{
-              marginTop: 12,
-              padding: '10px 12px',
-              background: 'rgba(214,64,69,.08)',
-              border: '1px solid rgba(214,64,69,.25)',
-              borderRadius: 8,
-              color: 'var(--color-alert)',
-              fontSize: '.84rem',
-            }}
-          >
-            {error}
-          </div>
-        )}
-
+      )}
+      {flag && (
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 10,
-            marginTop: 18,
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '.62rem',
+            letterSpacing: '.06em',
+            textTransform: 'uppercase',
+            color: 'var(--color-alert)',
+            marginBottom: 14,
           }}
         >
-          <button
-            type="button"
-            className="btn outline"
-            onClick={onClose}
-            disabled={isSaving}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn primary"
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? 'Saving…' : 'Save flag'}
-          </button>
+          {FLAG_TYPE_LABEL[flag.flag_type]}
         </div>
+      )}
+
+      <FieldLabel htmlFor="flag-body-region">Body region</FieldLabel>
+      <input
+        id="flag-body-region"
+        type="text"
+        value={bodyRegion}
+        onChange={(e) => setBodyRegion(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            handleSave()
+          }
+        }}
+        placeholder="L knee, R shoulder, cardiovascular…"
+        disabled={isSaving}
+        autoFocus
+        style={inputStyle}
+      />
+
+      <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
+        <div style={{ width: 130 }}>
+          <FieldLabel htmlFor="flag-severity">Severity</FieldLabel>
+          <select
+            id="flag-severity"
+            value={severity}
+            onChange={(e) => setSeverity(e.target.value)}
+            disabled={isSaving}
+            style={{ ...inputStyle, cursor: 'pointer' }}
+          >
+            <option value="">None</option>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <option key={n} value={String(n)}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <FieldLabel htmlFor="flag-note">Note</FieldLabel>
+        <textarea
+          id="flag-note"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Optional context — mechanism, restrictions, clearance…"
+          disabled={isSaving}
+          rows={3}
+          style={{
+            ...inputStyle,
+            height: 'auto',
+            padding: '8px 12px',
+            resize: 'vertical',
+            lineHeight: 1.5,
+          }}
+        />
+      </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            background: 'rgba(214,64,69,.08)',
+            border: '1px solid rgba(214,64,69,.25)',
+            borderRadius: 8,
+            color: 'var(--color-alert)',
+            fontSize: '.84rem',
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          gap: 10,
+          marginTop: 18,
+        }}
+      >
+        <button
+          type="button"
+          className="btn outline"
+          onClick={onCancel}
+          disabled={isSaving}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={handleSave}
+          disabled={isSaving}
+        >
+          {isSaving ? 'Saving…' : flag ? 'Save changes' : 'Save flag'}
+        </button>
       </div>
     </div>
   )

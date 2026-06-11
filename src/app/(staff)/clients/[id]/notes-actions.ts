@@ -492,3 +492,172 @@ export async function createClinicalFlagAction(
   revalidateClinicalNoteSurfaces(input.clientId)
   return { error: null, id: data.id }
 }
+
+/**
+ * Shared precondition for the flag lifecycle actions (CN-4): the row must
+ * be a live flag note in the caller's reach (RLS-gated SELECT), and the
+ * caller must be its author — the RLS UPDATE policy is author-locked, and
+ * a blocked UPDATE surfaces as zero rows, so we check up front to give a
+ * human error instead of a silent no-op.
+ */
+async function lookupFlagForWrite(
+  noteId: string,
+  userId: string,
+): Promise<
+  | {
+      error: null
+      note: {
+        id: string
+        client_id: string
+        note_type: NoteType
+        flag_resolved_at: string | null
+        version: number
+      }
+    }
+  | { error: string }
+> {
+  const supabase = await createSupabaseServerClient()
+  const { data: note } = await supabase
+    .from('clinical_notes')
+    .select('id, client_id, note_type, author_user_id, flag_resolved_at, version')
+    .eq('id', noteId)
+    .is('deleted_at', null)
+    .maybeSingle()
+
+  if (!note) return { error: 'Flag not found.' }
+  if (note.note_type !== 'injury_flag' && note.note_type !== 'contraindication') {
+    return { error: 'That note is not a flag.' }
+  }
+  if (note.author_user_id !== userId) {
+    return {
+      error:
+        'Only the practitioner who created this flag can change it.',
+    }
+  }
+  return { error: null, note }
+}
+
+/**
+ * Resolve a flag: the injury recovered or the contraindication no longer
+ * applies. The note is NOT deleted — it stays in the client's history
+ * with its resolved date (clinical-record integrity); it just stops being
+ * active, so it leaves the profile banner, the NotesPanel "Active flags"
+ * section, and the dashboard needs-attention panel. A flag created by
+ * mistake is archived instead (archiveClinicalNoteAction — flags are
+ * clinical_notes rows).
+ *
+ * Idempotent: resolving an already-resolved flag is a no-op success.
+ */
+export async function resolveClinicalFlagAction(
+  noteId: string,
+): Promise<{ error: string | null }> {
+  const { userId } = await requireRole(['owner', 'staff'])
+  const looked = await lookupFlagForWrite(noteId, userId)
+  if (looked.error !== null) return { error: looked.error }
+  if (looked.note.flag_resolved_at !== null) return { error: null }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('clinical_notes')
+    .update({ flag_resolved_at: new Date().toISOString() })
+    .eq('id', noteId)
+    .is('flag_resolved_at', null)
+
+  if (error) return { error: `Could not resolve flag: ${error.message}` }
+
+  revalidateClinicalNoteSurfaces(looked.note.client_id)
+  return { error: null }
+}
+
+/**
+ * Mark a flag reviewed (CN-4 / brief §6.8.2): stamps flag_reviewed_at =
+ * now, which clears it from the dashboard needs-attention panel for the
+ * next 14 days. Always overwrites — "reviewed" means reviewed just now.
+ */
+export async function markClinicalFlagReviewedAction(
+  noteId: string,
+): Promise<{ error: string | null }> {
+  const { userId } = await requireRole(['owner', 'staff'])
+  const looked = await lookupFlagForWrite(noteId, userId)
+  if (looked.error !== null) return { error: looked.error }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('clinical_notes')
+    .update({ flag_reviewed_at: new Date().toISOString() })
+    .eq('id', noteId)
+
+  if (error) return { error: `Could not mark reviewed: ${error.message}` }
+
+  revalidateClinicalNoteSurfaces(looked.note.client_id)
+  return { error: null }
+}
+
+export type UpdateClinicalFlagInput = {
+  noteId: string
+  bodyRegion: string
+  severity: number | null
+  note: string
+  /** Last-read version, threaded through for OCC. */
+  version: number
+}
+
+/**
+ * Edit a flag's body region / severity / note text. The flag's type and
+ * dates are untouched. Same validation as create; OCC via version.
+ */
+export async function updateClinicalFlagAction(
+  input: UpdateClinicalFlagInput,
+): Promise<{ error: string | null }> {
+  const { userId } = await requireRole(['owner', 'staff'])
+
+  const bodyRegion = input.bodyRegion.trim()
+  if (bodyRegion.length < 1 || bodyRegion.length > 120) {
+    return { error: 'Body region is required (1–120 characters).' }
+  }
+  let severity: number | null = null
+  if (input.severity !== null && input.severity !== undefined) {
+    if (
+      !Number.isInteger(input.severity) ||
+      input.severity < 1 ||
+      input.severity > 5
+    ) {
+      return { error: 'Severity must be a whole number from 1 to 5.' }
+    }
+    severity = input.severity
+  }
+  const noteText = input.note.trim()
+
+  const looked = await lookupFlagForWrite(input.noteId, userId)
+  if (looked.error !== null) return { error: looked.error }
+
+  const content: ContentJson = {
+    fields: noteText
+      ? [{ label: 'Note', type: 'long_text', value: noteText }]
+      : [],
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await supabase
+    .from('clinical_notes')
+    .update({
+      flag_body_region: bodyRegion,
+      flag_severity: severity,
+      content_json: content,
+    })
+    .eq('id', input.noteId)
+    .eq('version', input.version)
+    .select('id, client_id')
+    .maybeSingle()
+
+  if (error) return { error: `Could not update flag: ${error.message}` }
+  if (!data) {
+    return {
+      error:
+        'This flag changed while you were editing. Close the dialog and try again.',
+    }
+  }
+
+  revalidateClinicalNoteSurfaces(data.client_id)
+  return { error: null }
+}

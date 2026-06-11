@@ -126,16 +126,24 @@ export default async function DashboardPage() {
       )
       .eq('status', 'active')
       .is('deleted_at', null),
+    // CN-4 (brief §6.8.2): active flags not reviewed within 14 days.
+    // Previously required is_pinned (an unpinned flag could never reach
+    // the panel) and ignored review age entirely. "Mark reviewed" on the
+    // client profile clears a flag from here for the next 14 days;
+    // resolving clears it for good.
     supabase
       .from('clinical_notes')
       .select(
-        `id, note_type, title, flag_body_region, flag_resolved_at,
+        `id, note_type, title, flag_body_region, flag_reviewed_at,
+         flag_resolved_at,
          client:clients(id, first_name, last_name)`,
       )
-      .eq('is_pinned', true)
       .in('note_type', ['injury_flag', 'contraindication'])
       .is('deleted_at', null)
       .is('flag_resolved_at', null)
+      .or(
+        `flag_reviewed_at.is.null,flag_reviewed_at.lt.${fourteenDaysAgo.toISOString()}`,
+      )
       .limit(10),
   ])
 
@@ -484,6 +492,8 @@ function buildAttentionList({
 
   for (const n of flaggedNotes) {
     if (!n.client) continue
+    const kind =
+      n.note_type === 'contraindication' ? 'contraindication' : 'injury flag'
     items.push({
       clientId: n.client.id,
       avatar: initialsFor(n.client.first_name, n.client.last_name),
@@ -494,8 +504,8 @@ function buildAttentionList({
       reason:
         n.title ??
         (n.flag_body_region
-          ? `Active injury flag — ${n.flag_body_region}`
-          : 'Active injury flag'),
+          ? `Active ${kind} — ${n.flag_body_region}`
+          : `Active ${kind}`),
       action: { label: 'Review', href: `/clients/${n.client.id}` },
     })
   }
