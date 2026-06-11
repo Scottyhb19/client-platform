@@ -380,3 +380,15 @@ Plus two within-gap repairs found during browser verification, not new scope: er
 ---
 
 *Per the section sign-off ritual: Claude Code's work ends at the Closing commit above. The section is not closed until the operator pastes this into the claude.ai project chat and records the decision under a Sign-off heading below. On a "Closed" or "Closed with deferred items" decision, CLAUDE.md's "Active section" advances to polish-pass order item 5 — Program engine and session builder (the differentiator — highest care).*
+
+---
+
+## Sign-off
+
+**Date:** 2026-06-12
+**Reviewer:** claude.ai project chat; reviewer model Claude Opus 4.8 (1M context)
+**Decision:** Closed.
+
+All eleven gaps from the §9 re-audit list (G-1 through G-11) verified closed; the §12 acceptance gates are met, including the previously-unevidenced delete-confirm warning, which the operator has now run, viewed, and confirmed fires with the correct usage count on an in-use exercise. pgTAP test 20 green (17/17), live data verification clean, browser round-trips confirmed. No deferred items — two riders to later sections (§11) are recorded for sections 5 and 7, neither go-live-gating.
+
+Per the ritual, CLAUDE.md's "Active section" advances to polish-pass order item 5 — Program engine and session builder (the differentiator — highest care).
