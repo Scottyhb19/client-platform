@@ -37,15 +37,17 @@ console.log(`1. value-without-unit rows: ${orphanValues.length}`)
 for (const r of orphanValues)
   console.log(`   ${r.id}  "${r.name}"  value=${r.default_metric_value}  deleted=${r.deleted_at ?? 'no'}`)
 
-// 2. non-null default_rpe
-const { data: rpeRows, error: e2 } = await supabase
+// 2. default_rpe — dropped by 20260612090100. Post-migration this query
+// MUST fail with an unknown-column error; success means the drop regressed.
+const { error: e2 } = await supabase
   .from('exercises')
-  .select('id, name, default_rpe, deleted_at')
-  .not('default_rpe', 'is', null)
-if (e2) throw new Error(`default_rpe query: ${e2.message}`)
-console.log(`2. exercises with default_rpe set: ${rpeRows.length}`)
-for (const r of rpeRows)
-  console.log(`   ${r.id}  "${r.name}"  rpe=${r.default_rpe}  deleted=${r.deleted_at ?? 'no'}`)
+  .select('default_rpe')
+  .limit(1)
+console.log(
+  e2
+    ? `2. default_rpe column absent as expected (${e2.message.slice(0, 60)})`
+    : '2. WARNING: default_rpe column still exists — 20260612090100 did not apply',
+)
 
 // 3. tags per org
 const { data: orgs, error: e3 } = await supabase

@@ -1307,7 +1307,6 @@ export type Database = {
           default_metric_value: string | null
           default_reps: string | null
           default_rest_seconds: number | null
-          default_rpe: number | null
           default_sets: number | null
           deleted_at: string | null
           description: string | null
@@ -1327,7 +1326,6 @@ export type Database = {
           default_metric_value?: string | null
           default_reps?: string | null
           default_rest_seconds?: number | null
-          default_rpe?: number | null
           default_sets?: number | null
           deleted_at?: string | null
           description?: string | null
@@ -1347,7 +1345,6 @@ export type Database = {
           default_metric_value?: string | null
           default_reps?: string | null
           default_rest_seconds?: number | null
-          default_rpe?: number | null
           default_sets?: number | null
           deleted_at?: string | null
           description?: string | null
