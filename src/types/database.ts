@@ -1626,6 +1626,7 @@ export type Database = {
           deleted_at: string | null
           id: string
           name: string
+          note_type: Database["public"]["Enums"]["note_type"]
           organization_id: string
           sort_order: number
           updated_at: string
@@ -1635,6 +1636,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name: string
+          note_type?: Database["public"]["Enums"]["note_type"]
           organization_id: string
           sort_order?: number
           updated_at?: string
@@ -1644,6 +1646,7 @@ export type Database = {
           deleted_at?: string | null
           id?: string
           name?: string
+          note_type?: Database["public"]["Enums"]["note_type"]
           organization_id?: string
           sort_order?: number
           updated_at?: string

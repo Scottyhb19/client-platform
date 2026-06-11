@@ -97,7 +97,8 @@ export default async function ClientProfilePage({
       .from('clinical_notes')
       .select(
         `id, note_date, note_type, title, body_rich, subjective,
-         is_pinned, flag_body_region, template_id, appointment_id,
+         is_pinned, flag_body_region, flag_severity, flag_reviewed_at,
+         flag_resolved_at, template_id, appointment_id,
          content_json, version, created_at`,
       )
       .eq('client_id', id)
@@ -311,6 +312,9 @@ export default async function ClientProfilePage({
     subjective: n.subjective,
     is_pinned: n.is_pinned,
     flag_body_region: n.flag_body_region,
+    flag_severity: n.flag_severity,
+    flag_reviewed_at: n.flag_reviewed_at,
+    flag_resolved_at: n.flag_resolved_at,
     template_id: n.template_id,
     appointment_id: n.appointment_id,
     content_json: n.content_json as ProfileNote['content_json'],

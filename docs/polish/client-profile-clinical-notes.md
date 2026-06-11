@@ -275,3 +275,31 @@ Build order per the dependency section: CN-2 → CN-3 → CN-1, then P1, then P2
 
 ## Gap closures (step 6)
 
+### CN-2 — closed 2026-06-11
+
+Migration `20260611120000_cn2_cmh_staff_only_select.sql` drops the Pattern B SELECT policy on `client_medical_history` and recreates it staff-only (Pattern A). `docs/rls-policies.md` §4.5 rewritten with the rationale, the operator visibility rule, and the deliberate-relax guidance (exclude the `notes` column if a client-facing conditions surface is ever designed). INSERT/UPDATE/DELETE policies unchanged (already staff-only/deny). Applied via `supabase db push` — a wrong policy name would have failed the DROP, so the swap is confirmed by the clean apply. No application code change: no portal surface ever queried the table (per the section audit), so the tighten alters no observable behaviour.
+
+### CN-3 — closed 2026-06-11
+
+Migration `20260611120100_cn3_note_template_types.sql`: `note_templates.note_type` (NOT NULL, default `progress_note`, CHECK `note_templates_type_not_flag` excludes flag types) plus a one-time seed of an "Initial assessment" template (Presenting complaint / History / Objective findings / Assessment / Plan) for every org without one.
+
+Code: `createClinicalNoteAction` stamps `note_type` from the chosen template (the hardcode at the old `notes-actions.ts:156` is gone); `updateClinicalNoteAction` re-stamps from the template for non-flag notes and preserves the type + flag columns for flag notes (editing a flag's text through the template form can no longer demote it — the widened CHECK would otherwise reject the row). Settings → Note templates gained a type select (Progress note / Initial assessment) backed by `setNoteTemplateTypeAction`; the allowed list lives in `template-note-types.ts` — extracted after a build failure taught that a `'use server'` file may only export async functions (runtime consts and even `export type {}` re-exports break the Turbopack server-action transform). The zero-template seeder now seeds both SOAP+ and Initial assessment for brand-new orgs.
+
+Verified by live read-back: every org has an `initial_assessment`-typed template with the five fields — except the operator's org, which already had a template *named* "Initial Assessment", so the migration correctly skipped it (one-time seed, no resurrect-on-delete semantics). **Operator action: flip that template's new type select to "Initial assessment" in Settings — until then it still stamps `progress_note`.** The dormant `assessment_templates`/`assessments` tables are untouched; documenting them as dormant in `schema.md` is CN-8.
+
+### CN-1 — closed 2026-06-11
+
+Migration `20260611120200_cn1_flag_fields_on_contraindications.sql` widens `clinical_notes_injury_flag_fields`: both flag types now require `flag_body_region` and may carry severity/review/resolve columns. The old shape allowed flag columns only on `injury_flag` — a contraindication could never carry a body region **and could never be resolved** (`flag_resolved_at` forced NULL means the dashboard filter would show it forever). Found during the build; within the approved gap text, which specifies both types carry the structured fields. Safe pre-launch — no UI could ever create a contraindication row.
+
+Code, in three pieces per the gap:
+
+1. **Creation** — `createClinicalFlagAction` (`notes-actions.ts`): staff-only, body region required (1–120 chars), severity optional 1–5, optional note stored as a single `content_json` field. Entry point is a Flag icon in the profile header's action cluster → `FlagComposer` modal (`ClientFlags.tsx`): segmented type pair, three fields, save. Ten-second flow.
+2. **Banner rendering** — `FlagBanners` (`ClientFlags.tsx`) renders active flags as the design-system banner (3px alert border-left + 5% wash, the one permitted left-border use) above the tab panels on the client profile — visible on every tab. The shared `NotesPanel` gained an "Active flags" banner section at the top, so the session builder right rail and the program calendar side panel show it automatically.
+3. **Pin decoupling** — flag badges in `NotesPanel` rows and reader no longer require `is_pinned`; active flags are excluded from the pinned/recent lists (they live in the banner section); resolved flags fall back into the chronological list with their badge.
+
+Loader work: the duplicated note-summary mapping in `program/page.tsx` and `program/days/[dayId]/page.tsx` is now one module (`_lib/note-summaries.ts`). Two behaviours fixed in the consolidation: (a) a second, naturally-bounded active-flags query merges with the 30-note recency window, so an old unresolved flag cannot fall out of the panel — the exact F-1 failure recurring at the surface it matters most; (b) the empty-content filter now keeps flag notes, which may legitimately carry no note text and would previously have been dropped. The profile loader selects the three new flag columns and `ProfileNote` carries them.
+
+**Known interim state, accepted:** a flag created today cannot be marked reviewed or resolved — those actions are CN-4, next in dependency order. The dashboard needs-attention query still requires `is_pinned` and lacks the 14-day rule; that query change is also CN-4's.
+
+Verification: `npm run type-check` and `npm run build` pass; dev server boots with zero console/server errors; live DB read-backs confirm all three migrations. The browser walk-through (composer → profile banner → session-builder Active flags section) requires an authenticated staff session and is handed to the operator — dev server left running on :3000. (`npm run lint` fails on pre-existing debt unrelated to this section — stale Claude-worktree build output swept by bare eslint + a handful of older source findings; spun off as a separate task.)
+

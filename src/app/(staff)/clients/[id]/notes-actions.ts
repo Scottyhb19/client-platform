@@ -21,6 +21,13 @@ function revalidateClinicalNoteSurfaces(clientId: string): void {
 }
 
 type FieldType = Database['public']['Enums']['note_template_field_type']
+type NoteType = Database['public']['Enums']['note_type']
+
+/** The two note types the CN-1 flag control can create. */
+export type ClinicalFlagType = Extract<
+  NoteType,
+  'injury_flag' | 'contraindication'
+>
 
 export type NoteFieldValue = {
   label: string
@@ -126,6 +133,24 @@ export async function createClinicalNoteAction(
 
   const supabase = await createSupabaseServerClient()
 
+  // CN-3: the template decides the note_type. An "Initial assessment"
+  // template stamps initial_assessment; everything else defaults to
+  // progress_note. Flag types can't come through here — the
+  // note_templates_type_not_flag CHECK excludes them at the DB layer and
+  // flags are created via createClinicalFlagAction.
+  let noteType: NoteType = 'progress_note'
+  if (input.templateId) {
+    const { data: tpl } = await supabase
+      .from('note_templates')
+      .select('note_type')
+      .eq('id', input.templateId)
+      .maybeSingle()
+    if (!tpl) {
+      return { error: 'That template could not be found.', id: null }
+    }
+    noteType = tpl.note_type
+  }
+
   // One note per appointment. Defence-in-depth: the UI already disables
   // Save in this case, but a stale tab or a direct API call would slip
   // through without this check.
@@ -153,7 +178,7 @@ export async function createClinicalNoteAction(
       organization_id: organizationId,
       client_id: input.clientId,
       author_user_id: userId,
-      note_type: 'progress_note',
+      note_type: noteType,
       note_date: noteDate,
       template_id: input.templateId,
       appointment_id: input.appointmentId,
@@ -291,6 +316,35 @@ export async function updateClinicalNoteAction(
 
   const supabase = await createSupabaseServerClient()
 
+  // CN-3: flag notes keep their note_type (and their flag columns) no
+  // matter which template the edit form had selected — editing a flag's
+  // note text must never turn it back into a progress note, because the
+  // injury-flag CHECK would reject the row (flag fields present on a
+  // non-flag type) and the flag would vanish from every flag surface.
+  // Non-flag notes re-stamp from the chosen template, same as create.
+  const { data: current } = await supabase
+    .from('clinical_notes')
+    .select('id, note_type')
+    .eq('id', input.noteId)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (!current) return { error: 'Note not found.' }
+
+  const isFlagNote =
+    current.note_type === 'injury_flag' ||
+    current.note_type === 'contraindication'
+
+  let noteType: NoteType = 'progress_note'
+  if (!isFlagNote && input.templateId) {
+    const { data: tpl } = await supabase
+      .from('note_templates')
+      .select('note_type')
+      .eq('id', input.templateId)
+      .maybeSingle()
+    if (!tpl) return { error: 'That template could not be found.' }
+    noteType = tpl.note_type
+  }
+
   // One note per appointment — same as create. Excludes the note being
   // edited from the conflict check (re-saving with the same link is fine).
   if (input.appointmentId) {
@@ -314,7 +368,7 @@ export async function updateClinicalNoteAction(
   // bumps version on every UPDATE, so the next read will see the new one.
   // testSessionId is included only when the caller provided it explicitly
   // — `undefined` keeps the existing value, an explicit `null` clears it.
-  const baseUpdate = {
+  const baseUpdate: Database['public']['Tables']['clinical_notes']['Update'] = {
     template_id: input.templateId,
     appointment_id: input.appointmentId,
     note_date: noteDate,
@@ -326,7 +380,8 @@ export async function updateClinicalNoteAction(
     assessment: null,
     plan: null,
     body_rich: null,
-  } as const
+  }
+  if (!isFlagNote) baseUpdate.note_type = noteType
   const update =
     input.testSessionId === undefined
       ? baseUpdate
@@ -349,4 +404,91 @@ export async function updateClinicalNoteAction(
 
   revalidateClinicalNoteSurfaces(data.client_id)
   return { error: null }
+}
+
+/* ====================== Flags (CN-1) ====================== */
+
+export type CreateClinicalFlagInput = {
+  clientId: string
+  flagType: ClinicalFlagType
+  /** Free text — anatomy for injuries ("L knee"), system for systemic
+   *  contraindications ("Cardiovascular"). The banner headline. */
+  bodyRegion: string
+  /** 1–5 or null. */
+  severity: number | null
+  /** Optional short clinical context; stored as the note's single
+   *  content_json field so it renders everywhere notes render. */
+  note: string
+}
+
+/**
+ * Create an injury flag or contraindication. Flags are clinical_notes
+ * rows (note_type = injury_flag | contraindication) with the structured
+ * flag columns populated; they surface as the design-system flag banner
+ * on the client profile and in the shared NotesPanel (session builder +
+ * program calendar), and feed the dashboard needs-attention panel.
+ *
+ * Deliberately not template-driven: a flag is a ten-second structured
+ * marker, not a long-form document. The note_templates_type_not_flag
+ * CHECK enforces the same split from the other side.
+ */
+export async function createClinicalFlagAction(
+  input: CreateClinicalFlagInput,
+): Promise<{ error: string | null; id: string | null }> {
+  const { userId, organizationId } = await requireRole(['owner', 'staff'])
+
+  if (
+    input.flagType !== 'injury_flag' &&
+    input.flagType !== 'contraindication'
+  ) {
+    return { error: 'Unknown flag type.', id: null }
+  }
+  const bodyRegion = input.bodyRegion.trim()
+  if (bodyRegion.length < 1 || bodyRegion.length > 120) {
+    return { error: 'Body region is required (1–120 characters).', id: null }
+  }
+  let severity: number | null = null
+  if (input.severity !== null && input.severity !== undefined) {
+    if (
+      !Number.isInteger(input.severity) ||
+      input.severity < 1 ||
+      input.severity > 5
+    ) {
+      return { error: 'Severity must be a whole number from 1 to 5.', id: null }
+    }
+    severity = input.severity
+  }
+  const noteText = input.note.trim()
+
+  const supabase = await createSupabaseServerClient()
+
+  // content_json must be non-null (clinical_notes_content_present); an
+  // empty fields array is the honest shape for a flag with no extra note.
+  const content: ContentJson = {
+    fields: noteText
+      ? [{ label: 'Note', type: 'long_text', value: noteText }]
+      : [],
+  }
+
+  const { data, error } = await supabase
+    .from('clinical_notes')
+    .insert({
+      organization_id: organizationId,
+      client_id: input.clientId,
+      author_user_id: userId,
+      note_type: input.flagType,
+      note_date: new Date().toISOString().slice(0, 10),
+      flag_body_region: bodyRegion,
+      flag_severity: severity,
+      content_json: content,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    return { error: `Could not save flag: ${error.message}`, id: null }
+  }
+
+  revalidateClinicalNoteSurfaces(input.clientId)
+  return { error: null, id: data.id }
 }

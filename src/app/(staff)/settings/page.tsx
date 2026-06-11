@@ -78,7 +78,7 @@ export default async function SettingsPage() {
       .order('sort_order'),
     supabase
       .from('note_templates')
-      .select('id, name, sort_order')
+      .select('id, name, note_type, sort_order')
       .eq('organization_id', organizationId)
       .is('deleted_at', null)
       .order('sort_order'),
@@ -128,6 +128,7 @@ export default async function SettingsPage() {
     (t) => ({
       id: t.id,
       name: t.name,
+      note_type: t.note_type,
       sort_order: t.sort_order,
       fields: (noteTemplateFieldRows ?? [])
         .filter((f) => f.template_id === t.id)

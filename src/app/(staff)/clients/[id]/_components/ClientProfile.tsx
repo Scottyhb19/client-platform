@@ -11,6 +11,7 @@ import {
   ChevronUp,
   CreditCard,
   Edit3,
+  Flag,
   Mail,
   MessageCircle,
   MoreHorizontal,
@@ -20,6 +21,7 @@ import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
+import { FlagBanners, FlagComposer, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
 import { ResendInviteButton } from './ResendInviteButton'
@@ -78,6 +80,9 @@ export type ProfileNote = {
   subjective: string | null
   is_pinned: boolean
   flag_body_region: string | null
+  flag_severity: number | null
+  flag_reviewed_at: string | null
+  flag_resolved_at: string | null
   template_id: string | null
   appointment_id: string | null
   content_json: ProfileNoteContentJson | null
@@ -283,6 +288,26 @@ export function ClientProfile({
   publications,
 }: ClientProfileProps) {
   const [tab, setTab] = useTab(initialTab)
+  const [flagComposerOpen, setFlagComposerOpen] = useState(false)
+
+  // CN-1: active flags (unresolved injury_flag / contraindication notes)
+  // render as the design-system banner above the tab panels — visible on
+  // every tab of the record, independent of is_pinned.
+  const activeFlags: ClientFlag[] = notes
+    .filter(
+      (n) =>
+        (n.note_type === 'injury_flag' || n.note_type === 'contraindication') &&
+        n.flag_resolved_at === null &&
+        n.flag_body_region !== null,
+    )
+    .map((n) => ({
+      id: n.id,
+      flag_type: n.note_type as ClientFlag['flag_type'],
+      body_region: n.flag_body_region as string,
+      severity: n.flag_severity,
+      note: flagNoteText(n),
+      note_date: n.note_date,
+    }))
 
   return (
     <div style={{ background: 'var(--color-surface)', minHeight: '100%' }}>
@@ -295,9 +320,18 @@ export function ClientProfile({
         lastInviteSentAt={lastInviteSentAt}
         tab={tab}
         onTab={setTab}
+        onAddFlag={() => setFlagComposerOpen(true)}
       />
 
+      {flagComposerOpen && (
+        <FlagComposer
+          clientId={client.id}
+          onClose={() => setFlagComposerOpen(false)}
+        />
+      )}
+
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 32px 60px' }}>
+        <FlagBanners flags={activeFlags} />
         {tab === 'details' && (
           <DetailsTab client={client} conditions={conditions} />
         )}
@@ -343,6 +377,18 @@ export function ClientProfile({
   )
 }
 
+/**
+ * The flag composer stores its optional note as a single content_json
+ * field; legacy/SQL-seeded flag rows may hold text in body_rich or
+ * subjective instead. First non-empty value wins.
+ */
+function flagNoteText(n: ProfileNote): string {
+  const fromFields = (n.content_json?.fields ?? [])
+    .map((f) => f.value.trim())
+    .find((v) => v.length > 0)
+  return fromFields ?? n.body_rich?.trim() ?? n.subjective?.trim() ?? ''
+}
+
 /* =========================================================================
  * HEADER  — sticky white bar with breadcrumb, identity, tags, and tab strip
  * ========================================================================= */
@@ -356,6 +402,7 @@ function ClientHeader({
   lastInviteSentAt,
   tab,
   onTab,
+  onAddFlag,
 }: {
   client: ProfileClient
   conditions: ProfileCondition[]
@@ -365,6 +412,7 @@ function ClientHeader({
   lastInviteSentAt: string | null
   tab: Tab
   onTab: (t: Tab) => void
+  onAddFlag: () => void
 }) {
   const fullName = `${client.first_name} ${client.last_name}`
   const activeFlags = conditions.filter((c) => c.is_active).slice(0, 2)
@@ -486,6 +534,9 @@ function ClientHeader({
                 href={`mailto:${client.email}`}
               >
                 <Mail size={16} aria-hidden />
+              </IconGhost>
+              <IconGhost label="Add flag" onClick={onAddFlag}>
+                <Flag size={16} aria-hidden />
               </IconGhost>
               <IconGhost
                 label="Archive client"

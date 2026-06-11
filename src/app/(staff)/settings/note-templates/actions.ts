@@ -5,6 +5,12 @@ import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
+import {
+  TEMPLATE_NOTE_TYPES,
+  type NoteType,
+  type TemplateNoteType,
+} from './template-note-types'
+
 export type NoteTemplateFieldType =
   Database['public']['Enums']['note_template_field_type']
 
@@ -19,6 +25,7 @@ export type NoteTemplateFieldRow = {
 export type NoteTemplateRow = {
   id: string
   name: string
+  note_type: NoteType
   sort_order: number
   fields: NoteTemplateFieldRow[]
 }
@@ -100,6 +107,32 @@ export async function renameNoteTemplateAction(
     }
     return { error: `Could not rename template: ${error.message}` }
   }
+  revalidatePath('/settings')
+  return { error: null }
+}
+
+/**
+ * CN-3: set the note_type a template stamps onto notes written from it.
+ * Existing notes keep the type they were written with — this only affects
+ * future saves (same posture as template field edits: content_json and
+ * note_type are stamped at write time).
+ */
+export async function setNoteTemplateTypeAction(
+  id: string,
+  noteType: TemplateNoteType,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  if (!(TEMPLATE_NOTE_TYPES as readonly string[]).includes(noteType)) {
+    return { error: 'That note type cannot be set on a template.' }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('note_templates')
+    .update({ note_type: noteType })
+    .eq('id', id)
+
+  if (error) return { error: `Could not update note type: ${error.message}` }
   revalidatePath('/settings')
   return { error: null }
 }
@@ -278,10 +311,26 @@ const DEFAULT_TEMPLATE_FIELDS: Array<{
   { label: 'Homework & next session', field_type: 'long_text' },
 ]
 
+// CN-3: seeded alongside SOAP+ so a brand-new org can write a typed
+// initial assessment on day one. Existing orgs got the same template via
+// migration 20260611120100 (one-time — deleting it does not resurrect it).
+const INITIAL_ASSESSMENT_TEMPLATE_NAME = 'Initial assessment'
+const INITIAL_ASSESSMENT_TEMPLATE_FIELDS: Array<{
+  label: string
+  field_type: NoteTemplateFieldType
+}> = [
+  { label: 'Presenting complaint', field_type: 'long_text' },
+  { label: 'History', field_type: 'long_text' },
+  { label: 'Objective findings', field_type: 'long_text' },
+  { label: 'Assessment', field_type: 'long_text' },
+  { label: 'Plan', field_type: 'long_text' },
+]
+
 /**
- * Seed the default SOAP+ template if the org has zero templates. Called
- * from the settings page loader on every visit; idempotent because of the
- * `note_templates_org_name_unique` index — a second call inserts no row.
+ * Seed the default templates (SOAP+ progress note + Initial assessment)
+ * if the org has zero templates. Called from the settings page loader on
+ * every visit; idempotent because of the `note_templates_org_name_unique`
+ * index — a second call inserts no row.
  *
  * No `revalidatePath` here — Next.js 16 forbids that during render. The
  * caller queries `note_templates` immediately after, so the seeded rows
@@ -300,24 +349,47 @@ export async function seedDefaultNoteTemplatesIfEmpty(): Promise<void> {
 
   if (existing && existing.length > 0) return
 
-  const { data: created, error: createErr } = await supabase
-    .from('note_templates')
-    .insert({
-      organization_id: organizationId,
+  const seeds: Array<{
+    name: string
+    note_type: TemplateNoteType
+    sort_order: number
+    fields: Array<{ label: string; field_type: NoteTemplateFieldType }>
+  }> = [
+    {
       name: DEFAULT_TEMPLATE_NAME,
+      note_type: 'progress_note',
       sort_order: 10,
-    })
-    .select('id')
-    .single()
+      fields: DEFAULT_TEMPLATE_FIELDS,
+    },
+    {
+      name: INITIAL_ASSESSMENT_TEMPLATE_NAME,
+      note_type: 'initial_assessment',
+      sort_order: 20,
+      fields: INITIAL_ASSESSMENT_TEMPLATE_FIELDS,
+    },
+  ]
 
-  if (createErr || !created) return
+  for (const seed of seeds) {
+    const { data: created, error: createErr } = await supabase
+      .from('note_templates')
+      .insert({
+        organization_id: organizationId,
+        name: seed.name,
+        note_type: seed.note_type,
+        sort_order: seed.sort_order,
+      })
+      .select('id')
+      .single()
 
-  await supabase.from('note_template_fields').insert(
-    DEFAULT_TEMPLATE_FIELDS.map((f, i) => ({
-      template_id: created.id,
-      label: f.label,
-      field_type: f.field_type,
-      sort_order: (i + 1) * 10,
-    })),
-  )
+    if (createErr || !created) continue
+
+    await supabase.from('note_template_fields').insert(
+      seed.fields.map((f, i) => ({
+        template_id: created.id,
+        label: f.label,
+        field_type: f.field_type,
+        sort_order: (i + 1) * 10,
+      })),
+    )
+  }
 }

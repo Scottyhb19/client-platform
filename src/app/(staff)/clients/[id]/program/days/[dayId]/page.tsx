@@ -18,10 +18,13 @@ import {
   type ProgramExercise,
   type SectionTitleOption,
 } from './_components/SessionBuilder'
+import { type ClinicalNoteSummary } from '../../../_components/NotesPanel'
 import {
-  type ClinicalNoteSummary,
-  type ClinicalNoteField,
-} from '../../../_components/NotesPanel'
+  NOTE_SUMMARY_COLUMNS,
+  mergeNoteRows,
+  toClinicalNoteSummaries,
+  type NoteSummaryRow,
+} from '../../../_lib/note-summaries'
 import { type SessionReport } from '../../../_components/ReportsPanel'
 import { AssignButton } from './_components/AssignButton'
 import { DayLabelEditor } from './_components/DayLabelEditor'
@@ -94,6 +97,7 @@ export default async function SessionBuilderPage({
     { data: programExercisesRaw, error: peErr },
     { data: libraryRaw },
     { data: notesRaw, error: notesErr },
+    { data: flagsRaw, error: flagsErr },
     { data: noteTemplatesRaw },
     publicationsResult,
     catalog,
@@ -138,15 +142,23 @@ export default async function SessionBuilderPage({
     // the parallel note_templates load below.
     supabase
       .from('clinical_notes')
-      .select(
-        `id, note_date, is_pinned, flag_body_region, template_id,
-         body_rich, subjective, content_json`,
-      )
+      .select(NOTE_SUMMARY_COLUMNS)
       .eq('client_id', id)
       .is('deleted_at', null)
       .order('is_pinned', { ascending: false })
       .order('note_date', { ascending: false })
       .limit(30),
+    // CN-1: active flags, unbounded by the 30-note window — an old but
+    // unresolved flag must still surface while programming. Merged with
+    // the recent window in toClinicalNoteSummaries (dedup by id).
+    supabase
+      .from('clinical_notes')
+      .select(NOTE_SUMMARY_COLUMNS)
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .in('note_type', ['injury_flag', 'contraindication'])
+      .is('flag_resolved_at', null)
+      .order('note_date', { ascending: false }),
     supabase
       .from('note_templates')
       .select('id, name')
@@ -212,6 +224,7 @@ export default async function SessionBuilderPage({
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
   if (notesErr) throw new Error(`Load clinical notes: ${notesErr.message}`)
+  if (flagsErr) throw new Error(`Load active flags: ${flagsErr.message}`)
   if (publicationsResult.error)
     throw new Error(`Load publications: ${publicationsResult.error.message}`)
 
@@ -339,46 +352,21 @@ export default async function SessionBuilderPage({
     display_label: u.display_label,
   }))
 
-  // Phase J.2 (2026-05-08): notes denormalise to ClinicalNoteSummary.
-  // Modern notes carry their content in content_json.fields[] (per
-  // migration 20260427100000); pre-template notes still carry text in
-  // body_rich / subjective and flow through the legacy_body fallback.
-  // A note that ends up with no fields AND no legacy text is dropped —
-  // that would render as an empty card.
-  type ContentJsonShape = {
-    fields?: Array<{ label?: unknown; value?: unknown }>
-  }
+  // Phase J.2 (2026-05-08): notes denormalise to ClinicalNoteSummary —
+  // mapping shared with the program-calendar loader via
+  // _lib/note-summaries (CN-1). Active flags merge in unbounded by the
+  // 30-note window.
   const templateNameById = new Map<string, string>()
   for (const t of noteTemplatesRaw ?? []) {
     templateNameById.set(t.id, t.name)
   }
-  const clinicalNotes: ClinicalNoteSummary[] = (notesRaw ?? [])
-    .map((n) => {
-      const cj = n.content_json as ContentJsonShape | null
-      const fields: ClinicalNoteField[] = (cj?.fields ?? [])
-        .map((f) => ({
-          label: typeof f.label === 'string' ? f.label : '',
-          value: typeof f.value === 'string' ? f.value : '',
-        }))
-        .filter((f) => f.label.length > 0)
-      const legacyBody = (n.body_rich ?? n.subjective ?? '').trim()
-      return {
-        id: n.id,
-        note_date: n.note_date,
-        is_pinned: n.is_pinned,
-        flag_body_region: n.flag_body_region,
-        template_name: n.template_id
-          ? templateNameById.get(n.template_id) ?? null
-          : null,
-        fields,
-        legacy_body: legacyBody,
-      }
-    })
-    .filter(
-      (n) =>
-        n.fields.some((f) => f.value.trim().length > 0) ||
-        n.legacy_body.length > 0,
-    )
+  const clinicalNotes: ClinicalNoteSummary[] = toClinicalNoteSummaries(
+    mergeNoteRows(
+      (notesRaw ?? []) as NoteSummaryRow[],
+      (flagsRaw ?? []) as NoteSummaryRow[],
+    ),
+    templateNameById,
+  )
 
   // Phase J.2: build test_id → test_name lookup once, then map
   // publications. Falls back to test_id if the catalog entry was

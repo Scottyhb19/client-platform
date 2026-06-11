@@ -19,9 +19,22 @@ import {
   deleteNoteTemplateFieldAction,
   moveNoteTemplateFieldAction,
   renameNoteTemplateAction,
+  setNoteTemplateTypeAction,
   updateNoteTemplateFieldAction,
   type NoteTemplateRow,
 } from '../actions'
+import { type TemplateNoteType } from '../template-note-types'
+
+// CN-3: the note type a template stamps onto notes written from it.
+// Sentence-case labels per the design system; flag types are not offered
+// (flags have their own control on the client profile).
+const TEMPLATE_TYPE_OPTIONS: Array<{
+  value: TemplateNoteType
+  label: string
+}> = [
+  { value: 'progress_note', label: 'Progress note' },
+  { value: 'initial_assessment', label: 'Initial assessment' },
+]
 
 /**
  * Settings → Note templates.
@@ -193,13 +206,29 @@ function TemplateCard({
   onDelete: () => void
 }) {
   const [name, setName] = useState(template.name)
+  const [noteType, setNoteType] = useState(template.note_type)
   const [renameError, setRenameError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
   // Sync local state if the prop is refreshed by the server.
   useEffect(() => {
     setName(template.name)
-  }, [template.name])
+    setNoteType(template.note_type)
+  }, [template.name, template.note_type])
+
+  function commitNoteType(next: TemplateNoteType) {
+    const previous = noteType
+    setNoteType(next)
+    startTransition(async () => {
+      const res = await setNoteTemplateTypeAction(template.id, next)
+      if (res.error) {
+        setNoteType(previous)
+        setRenameError(res.error)
+      } else {
+        setRenameError(null)
+      }
+    })
+  }
 
   function commitRename() {
     if (name.trim() === template.name) return
@@ -275,6 +304,30 @@ function TemplateCard({
             borderRadius: 4,
           }}
         />
+        <select
+          value={noteType}
+          onChange={(e) => commitNoteType(e.target.value as TemplateNoteType)}
+          aria-label="Note type written from this template"
+          title="Notes saved from this template are recorded as this type"
+          style={{
+            height: 28,
+            padding: '0 8px',
+            border: '1px solid var(--color-border-subtle)',
+            borderRadius: 6,
+            background: 'var(--color-card)',
+            fontSize: '.76rem',
+            fontFamily: 'inherit',
+            color: 'var(--color-text-light)',
+            cursor: 'pointer',
+            outline: 'none',
+          }}
+        >
+          {TEMPLATE_TYPE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
         <span
           style={{
             fontSize: '.74rem',

@@ -25,12 +25,15 @@
 
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import type { Database } from '@/types/database'
 
 const INK = '#1E1A18'
 const MUTED = '#78746F'
 const FAINT = '#9C9690'
 const BORDER = '#E2DDD7'
 const ALERT = '#D64045'
+
+type NoteType = Database['public']['Enums']['note_type']
 
 export type ClinicalNoteField = {
   label: string
@@ -40,11 +43,28 @@ export type ClinicalNoteField = {
 export type ClinicalNoteSummary = {
   id: string
   note_date: string
+  note_type: NoteType
   is_pinned: boolean
   flag_body_region: string | null
+  flag_severity: number | null
+  flag_resolved_at: string | null
   template_name: string | null
   fields: ClinicalNoteField[]
   legacy_body: string
+}
+
+/**
+ * CN-1: an active flag is an unresolved injury_flag / contraindication
+ * note. Active flags render in their own banner section at the top of the
+ * panel — independent of is_pinned — so they are visible at the moment of
+ * programming. Resolved flags drop back into the chronological list.
+ */
+function isActiveFlag(n: ClinicalNoteSummary): boolean {
+  return (
+    (n.note_type === 'injury_flag' || n.note_type === 'contraindication') &&
+    n.flag_resolved_at === null &&
+    n.flag_body_region !== null
+  )
 }
 
 export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
@@ -79,8 +99,10 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
     )
   }
 
-  const pinned = notes.filter((n) => n.is_pinned)
-  const recent = notes.filter((n) => !n.is_pinned)
+  const activeFlags = notes.filter(isActiveFlag)
+  const rest = notes.filter((n) => !isActiveFlag(n))
+  const pinned = rest.filter((n) => n.is_pinned)
+  const recent = rest.filter((n) => !n.is_pinned)
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -93,6 +115,28 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
       >
         Clinical notes
       </div>
+
+      {activeFlags.length > 0 && (
+        <div style={{ borderTop: `1px solid ${BORDER}` }}>
+          <SidebarHeader>Active flags</SidebarHeader>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+              padding: '2px 10px 10px',
+            }}
+          >
+            {activeFlags.map((n) => (
+              <FlagBannerRow
+                key={n.id}
+                note={n}
+                onOpen={() => setOpenNoteId(n.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {pinned.length > 0 && (
         <div style={{ borderTop: `1px solid ${BORDER}` }}>
@@ -109,7 +153,9 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
 
       {recent.length > 0 && (
         <div style={{ borderTop: `1px solid ${BORDER}` }}>
-          {pinned.length > 0 && <SidebarHeader>Recent</SidebarHeader>}
+          {(pinned.length > 0 || activeFlags.length > 0) && (
+            <SidebarHeader>Recent</SidebarHeader>
+          )}
           {recent.map((n) => (
             <NoteRow
               key={n.id}
@@ -120,6 +166,75 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Compact design-system flag banner — the restricted left-border accent
+ * pattern (3px solid alert + 5% alert wash). Clicking opens the note in
+ * the reader, same as any other row.
+ */
+function FlagBannerRow({
+  note,
+  onOpen,
+}: {
+  note: ClinicalNoteSummary
+  onOpen: () => void
+}) {
+  const typeLabel =
+    note.note_type === 'contraindication' ? 'Contraindication' : 'Injury flag'
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      style={{
+        display: 'block',
+        width: '100%',
+        textAlign: 'left',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        border: 'none',
+        borderLeft: '3px solid var(--color-alert)',
+        background: 'rgba(214,64,69,0.05)',
+        borderRadius: '0 8px 8px 0',
+        padding: '8px 10px',
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--font-display, inherit)',
+          fontWeight: 700,
+          fontSize: '.58rem',
+          letterSpacing: '.06em',
+          textTransform: 'uppercase',
+          color: 'var(--color-alert)',
+        }}
+      >
+        {typeLabel}
+        {note.flag_severity ? ` — severity ${note.flag_severity}` : ''}
+      </div>
+      <div
+        style={{
+          fontSize: '.8rem',
+          fontWeight: 600,
+          color: 'var(--color-text)',
+          marginTop: 1,
+        }}
+      >
+        {note.flag_body_region}
+        <span
+          style={{
+            fontWeight: 400,
+            fontSize: '.72rem',
+            color: 'var(--color-text-light)',
+          }}
+        >
+          {' '}
+          — {formatNoteDate(note.note_date)}
+        </span>
+      </div>
+    </button>
   )
 }
 
@@ -163,7 +278,7 @@ function NoteRow({
         <span style={{ whiteSpace: 'nowrap' }}>
           {formatNoteDate(note.note_date)}
         </span>
-        {note.is_pinned && note.flag_body_region && (
+        {note.flag_body_region && (
           <span
             style={{
               fontSize: '.6rem',
@@ -258,7 +373,7 @@ function NoteReader({
       </div>
 
       <div style={{ padding: 14, maxHeight: 480, overflowY: 'auto' }}>
-        {(note.template_name || (note.is_pinned && note.flag_body_region)) && (
+        {(note.template_name || note.flag_body_region) && (
           <div
             style={{
               display: 'flex',
@@ -267,7 +382,7 @@ function NoteReader({
               marginBottom: 10,
             }}
           >
-            {note.is_pinned && note.flag_body_region && (
+            {note.flag_body_region && (
               <span
                 style={{
                   fontSize: '.6rem',
