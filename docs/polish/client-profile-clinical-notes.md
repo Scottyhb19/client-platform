@@ -348,3 +348,7 @@ CN-11: the header's two condition tags gain a "+N more" tag-button on overflow t
 
 Verification: `npm run type-check` passes at this checkpoint; build + walk-through at the end of the batch.
 
+### CN-7 — closed as deferred-with-trigger 2026-06-11 (per the approval record)
+
+The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening) with the approved trigger — *before the first real client archive, or before any paying clinical client, whichever comes first* — per the technical gate index rule (a re-trigger recorded only in this doc does not fire). The checklist entry also records the recon finding that sharpens the trigger: **the archive affordance is already live** (client profile header → `archiveClientAction` → `soft_delete_client` RPC), so the gap doc's "no archive has ever happened" framing understated proximity — the trigger is one staff click away, not hypothetical. No code change; deferral is a scheduling decision, not a severity downgrade (brief §7.2 remains the requirement).
+
