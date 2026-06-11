@@ -50,6 +50,9 @@ BEGIN;
 SELECT plan(17);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
+-- The test switches to the authenticated role before buffering assertions;
+-- grant it access to the postgres-owned temp table (mirrors test 19 line 61).
+GRANT INSERT, SELECT ON _tap TO authenticated;
 
 
 -- ----------------------------------------------------------------------------
