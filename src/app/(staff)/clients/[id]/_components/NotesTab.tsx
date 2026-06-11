@@ -40,6 +40,7 @@ import type {
   ProfileNoteTemplate,
   ProfileReport,
 } from './ClientProfile'
+import { ConfirmDialog } from './ConfirmDialog'
 import { TestCaptureModal } from './TestCaptureModal'
 import type {
   BatteryRow,
@@ -140,18 +141,14 @@ export function NotesTab({
 
   // Edit handoff. If the left side is mid-create with content, save it
   // first so the practitioner doesn't lose work, then switch to edit.
+  // On failure we stay put: performSave has already rendered the error
+  // as the form's persistent in-form error line (CN-13 — no alert()).
   async function handleStartEdit(noteId: string) {
     if (leftMode.kind === 'create') {
       const handle = formRef.current
       if (handle && handle.isDirty()) {
         const res = await handle.saveIfDirty()
-        if (!res.ok) {
-          alert(
-            res.error ??
-              "Couldn't save the note you were writing — fix the issue or cancel before editing another note.",
-          )
-          return
-        }
+        if (!res.ok) return
       }
     }
     setLeftMode({ kind: 'edit', noteId })
@@ -192,6 +189,21 @@ export function NotesTab({
     setCopyMode(false)
   }
 
+  // CN-13: the typed-content guard is an on-system confirm, not a
+  // browser confirm(). Declining exits copy mode, same as before.
+  const [copyConfirmNoteId, setCopyConfirmNoteId] = useState<string | null>(
+    null,
+  )
+
+  function applyCopyFromNote(noteId: string) {
+    const handle = formRef.current
+    if (handle) {
+      const note = notes.find((n) => n.id === noteId)
+      handle.applyCopy(note?.content_json?.fields ?? [])
+    }
+    setCopyMode(false)
+  }
+
   function handleCopyFromNote(noteId: string) {
     const handle = formRef.current
     if (!handle) {
@@ -199,18 +211,10 @@ export function NotesTab({
       return
     }
     if (handle.isUserDirty()) {
-      const ok = confirm(
-        "You've started writing this note. Replace what you've typed with the copied note's contents?",
-      )
-      if (!ok) {
-        setCopyMode(false)
-        return
-      }
+      setCopyConfirmNoteId(noteId)
+      return
     }
-    const note = notes.find((n) => n.id === noteId)
-    const fields = note?.content_json?.fields ?? []
-    handle.applyCopy(fields)
-    setCopyMode(false)
+    applyCopyFromNote(noteId)
   }
 
   // Escape key cancels select mode (matches the modal-dismiss intuition).
@@ -316,6 +320,24 @@ export function NotesTab({
         onCopyFromNote={handleCopyFromNote}
         onCancelCopy={handleCancelCopyMode}
       />
+
+      {copyConfirmNoteId && (
+        <ConfirmDialog
+          title="Replace what you've typed?"
+          body="You've started writing this note. Copying replaces what you've typed with the copied note's contents."
+          confirmLabel="Replace contents"
+          tone="primary"
+          onCancel={() => {
+            setCopyConfirmNoteId(null)
+            setCopyMode(false)
+          }}
+          onConfirm={() => {
+            const noteId = copyConfirmNoteId
+            setCopyConfirmNoteId(null)
+            applyCopyFromNote(noteId)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -595,13 +617,14 @@ const NoteForm = forwardRef<
     return matching[0] ?? null
   }, [mode, activeTemplate, notes])
 
+  // CN-13: on-system confirm before clobbering typed content.
+  const [copyConfirmOpen, setCopyConfirmOpen] = useState(false)
+
   function handleCopyMostRecent() {
     if (!mostRecentSameTemplate) return
     if (dirtyRef.current) {
-      const ok = confirm(
-        "You've started writing this note. Replace what you've typed with the copied note's contents?",
-      )
-      if (!ok) return
+      setCopyConfirmOpen(true)
+      return
     }
     applyCopiedFields(mostRecentSameTemplate.content_json?.fields ?? [])
   }
@@ -932,6 +955,22 @@ const NoteForm = forwardRef<
           onCaptured={(sessionId, summary) => {
             setTestSessionId(sessionId)
             setTestCaptureSummary(summary)
+          }}
+        />
+      )}
+
+      {copyConfirmOpen && (
+        <ConfirmDialog
+          title="Replace what you've typed?"
+          body="You've started writing this note. Copying replaces what you've typed with the copied note's contents."
+          confirmLabel="Replace contents"
+          tone="primary"
+          onCancel={() => setCopyConfirmOpen(false)}
+          onConfirm={() => {
+            setCopyConfirmOpen(false)
+            applyCopiedFields(
+              mostRecentSameTemplate?.content_json?.fields ?? [],
+            )
           }}
         />
       )}
@@ -1508,6 +1547,9 @@ function PreviousNotesList({
 }) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
+  // CN-13: pin/unpin failures from any row render here as a persistent
+  // line instead of an alert(). Cleared when the next attempt starts.
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // Reset to page 0 whenever the search query changes — otherwise a query
   // that yields fewer pages than `page` would land on a blank slice.
@@ -1613,6 +1655,23 @@ function PreviousNotesList({
         </div>
       )}
 
+      {actionError && (
+        <div
+          role="alert"
+          style={{
+            margin: '10px 12px 0',
+            padding: '8px 10px',
+            background: 'rgba(214,64,69,.08)',
+            border: '1px solid rgba(214,64,69,.25)',
+            borderRadius: 8,
+            color: 'var(--color-alert)',
+            fontSize: '.78rem',
+          }}
+        >
+          {actionError}
+        </div>
+      )}
+
       {noNotesAtAll ? (
         <div
           style={{
@@ -1656,6 +1715,7 @@ function PreviousNotesList({
                   copyMode={copyMode}
                   copyEligible={copyMode && n.template_id === copyTemplateId}
                   onCopy={() => onCopyFromNote(n.id)}
+                  onActionError={setActionError}
                 />
               ))}
             </div>
@@ -1683,6 +1743,7 @@ function PreviousNotesList({
                   copyMode={copyMode}
                   copyEligible={copyMode && n.template_id === copyTemplateId}
                   onCopy={() => onCopyFromNote(n.id)}
+                  onActionError={setActionError}
                 />
               ))
             )}
@@ -1727,6 +1788,7 @@ function NoteRow({
   copyMode,
   copyEligible,
   onCopy,
+  onActionError,
 }: {
   note: ProfileNote
   appointments: ProfileAppointment[]
@@ -1736,6 +1798,7 @@ function NoteRow({
   copyMode: boolean
   copyEligible: boolean
   onCopy: () => void
+  onActionError: (msg: string | null) => void
 }) {
   const linked = note.appointment_id
     ? appointments.find((a) => a.id === note.appointment_id)
@@ -1841,7 +1904,7 @@ function NoteRow({
       ) : (
         <div style={{ display: 'flex', alignItems: 'flex-start' }}>
           <ArchiveButton note={note} />
-          <PinToggle note={note} clientId={clientId} />
+          <PinToggle note={note} clientId={clientId} onError={onActionError} />
         </div>
       )}
     </div>
@@ -1850,54 +1913,81 @@ function NoteRow({
 
 function ArchiveButton({ note }: { note: ProfileNote }) {
   const [pending, startTransition] = useTransition()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
   const router = useRouter()
 
-  function handleArchive(e: React.MouseEvent) {
-    e.stopPropagation()
-    if (
-      !confirm(
-        "Archive this note? It'll be hidden from the timeline but stays in the database for compliance.",
-      )
-    ) {
-      return
-    }
+  // CN-13: on-system confirm; a failed archive keeps the dialog open with
+  // the error rendered persistently instead of a transient alert().
+  function handleConfirm() {
+    if (pending) return
+    setArchiveError(null)
     startTransition(async () => {
       const res = await archiveClinicalNoteAction(note.id)
       if (res.error) {
-        alert(res.error)
+        setArchiveError(res.error)
         return
       }
+      setConfirmOpen(false)
       router.refresh()
     })
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleArchive}
-      disabled={pending}
-      aria-label="Archive note"
-      title="Archive"
-      style={{
-        background: 'transparent',
-        border: 'none',
-        padding: '12px 6px',
-        cursor: pending ? 'wait' : 'pointer',
-        color: 'var(--color-text-light)',
-        opacity: pending ? 0.5 : 1,
-      }}
-    >
-      <Archive size={13} aria-hidden />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setArchiveError(null)
+          setConfirmOpen(true)
+        }}
+        disabled={pending}
+        aria-label="Archive note"
+        title="Archive"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          padding: '12px 6px',
+          cursor: pending ? 'wait' : 'pointer',
+          color: 'var(--color-text-light)',
+          opacity: pending ? 0.5 : 1,
+        }}
+      >
+        <Archive size={13} aria-hidden />
+      </button>
+      {confirmOpen && (
+        <ConfirmDialog
+          title="Archive this note?"
+          body="It'll be hidden from the timeline but stays in the database for compliance."
+          confirmLabel="Archive note"
+          tone="alert"
+          busy={pending}
+          error={archiveError}
+          onCancel={() => {
+            if (!pending) {
+              setConfirmOpen(false)
+              setArchiveError(null)
+            }
+          }}
+          onConfirm={handleConfirm}
+        />
+      )}
+    </>
   )
 }
 
 function PinToggle({
   note,
   clientId,
+  onError,
 }: {
   note: ProfileNote
   clientId: string
+  /** CN-13: pin failures surface as a persistent line in the list, not an
+   *  alert(). Called with null when a new attempt starts (clears stale
+   *  errors), with the message on failure. */
+  onError: (msg: string | null) => void
 }) {
   const [pending, startTransition] = useTransition()
   const [pinned, setPinned] = useState(note.is_pinned)
@@ -1912,11 +2002,12 @@ function PinToggle({
     e.stopPropagation()
     const next = !pinned
     setPinned(next) // optimistic
+    onError(null)
     startTransition(async () => {
       const res = await toggleClinicalNotePinAction(note.id, next)
       if (res.error) {
         setPinned(!next) // revert
-        alert(res.error)
+        onError(res.error)
         return
       }
       router.refresh()

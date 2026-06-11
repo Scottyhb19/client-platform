@@ -11,9 +11,8 @@
  *
  * Verbs (see medical-actions.ts): "Mark resolved" is the primary remove —
  * the row stays in the record. Archive is for entries created by mistake
- * and routes through the soft-delete RPC; the confirm copy steers genuine
- * resolutions to Mark resolved. The browser confirm() matches the current
- * NotesTab/flag pattern — CN-13 (P2) replaces all of them together.
+ * and routes through the soft-delete RPC; the on-system confirm (CN-13)
+ * steers genuine resolutions to Mark resolved.
  */
 
 import { useState, useTransition } from 'react'
@@ -25,6 +24,7 @@ import {
   setMedicalConditionActiveAction,
   updateMedicalConditionAction,
 } from '../medical-actions'
+import { ConfirmDialog } from './ConfirmDialog'
 import type { ProfileCondition } from './ClientProfile'
 
 export function MedicalHistoryPanel({
@@ -40,6 +40,11 @@ export function MedicalHistoryPanel({
   >(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
+  // CN-13: on-system archive confirm; action errors land in the panel's
+  // persistent error block via run().
+  const [confirmArchive, setConfirmArchive] = useState<ProfileCondition | null>(
+    null,
+  )
   const [, startTransition] = useTransition()
 
   const active = conditions.filter((c) => c.is_active)
@@ -64,14 +69,7 @@ export function MedicalHistoryPanel({
   }
 
   function handleArchive(c: ProfileCondition) {
-    if (
-      !confirm(
-        `Archive "${c.condition}"? Archiving is for conditions entered by mistake — if the condition has resolved, use Mark resolved so it stays in the client's history.`,
-      )
-    ) {
-      return
-    }
-    run(c.id, () => archiveMedicalConditionAction(c.id))
+    setConfirmArchive(c)
   }
 
   return (
@@ -166,6 +164,21 @@ export function MedicalHistoryPanel({
           clientId={clientId}
           condition={dialog.mode === 'edit' ? dialog.condition : null}
           onClose={() => setDialog(null)}
+        />
+      )}
+
+      {confirmArchive && (
+        <ConfirmDialog
+          title="Archive this condition?"
+          body={`${confirmArchive.condition} — archiving is for conditions entered by mistake. If the condition has resolved, use Mark resolved so it stays in the client's history.`}
+          confirmLabel="Archive condition"
+          tone="alert"
+          onCancel={() => setConfirmArchive(null)}
+          onConfirm={() => {
+            const c = confirmArchive
+            setConfirmArchive(null)
+            run(c.id, () => archiveMedicalConditionAction(c.id))
+          }}
         />
       )}
     </div>

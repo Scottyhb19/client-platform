@@ -31,6 +31,7 @@ import {
   updateClinicalFlagAction,
   type ClinicalFlagType,
 } from '../notes-actions'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export type ClientFlag = {
   id: string
@@ -261,6 +262,9 @@ function FlagList({
   const router = useRouter()
   const [error, setError] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
+  // CN-13: on-system archive confirm; errors from the action land in the
+  // list's persistent error block via run(), same as every other verb.
+  const [confirmArchive, setConfirmArchive] = useState<ClientFlag | null>(null)
   const [, startTransition] = useTransition()
 
   function run(
@@ -284,14 +288,7 @@ function FlagList({
   }
 
   function handleArchive(flag: ClientFlag) {
-    if (
-      !confirm(
-        `Archive this ${FLAG_TYPE_LABEL[flag.flag_type].toLowerCase()} (${flag.body_region})? Archiving is for flags created by mistake — if the injury has recovered, use Resolve so the flag stays in the client's history.`,
-      )
-    ) {
-      return
-    }
-    run(flag.id, () => archiveClinicalNoteAction(flag.id))
+    setConfirmArchive(flag)
   }
 
   if (flags.length === 0) {
@@ -456,6 +453,21 @@ function FlagList({
           Add flag
         </button>
       </div>
+
+      {confirmArchive && (
+        <ConfirmDialog
+          title={`Archive this ${FLAG_TYPE_LABEL[confirmArchive.flag_type].toLowerCase()}?`}
+          body={`${confirmArchive.body_region} — archiving is for flags created by mistake. If the injury has recovered, use Resolve so the flag stays in the client's history.`}
+          confirmLabel="Archive flag"
+          tone="alert"
+          onCancel={() => setConfirmArchive(null)}
+          onConfirm={() => {
+            const flag = confirmArchive
+            setConfirmArchive(null)
+            run(flag.id, () => archiveClinicalNoteAction(flag.id))
+          }}
+        />
+      )}
     </div>
   )
 }

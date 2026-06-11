@@ -368,6 +368,18 @@ The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening)
 
 NotesPanel is the shared component — this lands in the session builder right rail and the calendar side panel automatically; visual confirmation there is part of the operator walk-through.
 
+### CN-13 — closed 2026-06-11
+
+New `ConfirmDialog` (`_components/ConfirmDialog.tsx`) — the on-system confirm for clinical flows, shaped on the ArchiveConfirm precedent (scrim, 440px card, display heading, factual body, persistent error block, Cancel + tonal confirm; `tone` picks alert-red for destructive verbs or primary for content-replacing ones). All eight browser-native sites in the section are gone:
+
+- **Note archive** (NotesTab `ArchiveButton`): `confirm()` + `alert(res.error)` → dialog with busy state; a failed archive keeps the dialog open with the error rendered, instead of a vanishing alert.
+- **Flag archive** (ClientFlags) and **condition archive** (MedicalHistory): `confirm()` → dialog; action errors land in each surface's existing persistent error block via `run()`, unchanged. The recovery-steering copy ("use Resolve / Mark resolved…") is preserved verbatim in the dialog body.
+- **Copy-previous-note guards** (both the side-rail copy icon and the most-recent shortcut): `confirm()` → primary-tone dialog ("Replace what you've typed?"). Declining the rail variant still exits copy mode, as before.
+- **Auto-save failure on create→edit handoff**: the `alert()` was redundant — `performSave` already renders the failure as the form's persistent in-form error line, and navigation stays blocked. The alert is simply removed.
+- **Pin/unpin failure**: `alert()` → a persistent error line hosted by the previous-notes list (FlagList pattern), fed by an `onError` callback from `PinToggle`; cleared when the next attempt starts. The optimistic revert is unchanged.
+
+Out-of-scope, recorded: the wider staff app carries ~21 more `alert()`/`confirm()` sites (session builder, settings, schedule, library). CN-13's approved text scopes to clinical flows; those surfaces' own polish-pass sections inherit the `ConfirmDialog` precedent.
+
 ### CN-14 — closed 2026-06-11
 
 The Invoices tab is gone: `Tab` union member, `TABS` entry, both `VALID_TABS` arrays (component + page), the conditional render, the `InvoicesTab` function (including the Funding placeholder panel, referenced by nothing else), and the now-unused `CreditCard` import. The P2 recon confirmed zero deep links to `?tab=invoices` anywhere in `src/`; an existing deep link would now safely fall back to the details tab via `pickTab`. Two consequential cleanups in the same cut: the `EmptyBlock` helper existed solely for the Invoices placeholder and was removed as dead code, and ProgramTab's grid comment no longer describes its layout by reference to a tab that doesn't exist. Reintroduce the tab when billing is real (Phase 4 at the earliest, per "What NOT to build").
