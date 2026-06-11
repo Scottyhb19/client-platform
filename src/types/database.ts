@@ -3580,6 +3580,10 @@ export type Database = {
         Args: { p_new_exercise_id: string; p_pe_id: string }
         Returns: string
       }
+      sync_client_profile_name: {
+        Args: { p_client_id: string }
+        Returns: undefined
+      }
       test_metric_visibility: {
         Args: {
           p_metric_id: string

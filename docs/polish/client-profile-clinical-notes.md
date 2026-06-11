@@ -322,3 +322,15 @@ Accepted/known: Resolve fires on one click with no confirm (speed over ceremony 
 
 Verification: `npm run type-check` + `npm run build` pass. Browser walk-through of the new lifecycle (red icon → manage → resolve/edit/archive → dashboard clearing) handed to the operator on :3000, same as the P0 pass. Not pushed to production pending that verification, per operator instruction.
 
+### CN-5 — closed 2026-06-11
+
+Migration `20260611130000_cn5_sync_client_profile_name.sql`. The pre-build recon found the gap text's "one extra UPDATE in the action" cannot work as written: the `user_profiles` UPDATE policy is **self-only** (`update own profile`, `user_id = auth.uid()`), so a staff-session UPDATE against a client's profile row is silently filtered to zero rows — the same trap class as the soft-delete family. The name sync therefore routes through a narrow SECURITY DEFINER RPC (`sync_client_profile_name`), which re-reads the canonical clients row *inside* the function — a caller cannot use it to write arbitrary names, only to re-assert what the clinical record already says — and no-ops for pre-onboarding clients. C-12's standing constraint (guard this overwrite if Phase-2 self-editing ever ships) is restated in the migration header.
+
+Code: `updateClientDetailsAction` (`actions.ts`) — staff-only, RLS-scoped UPDATE, OCC via `clients.version` (pre-check plus version-scoped UPDATE so a second-tab save refuses rather than clobbers; factual conflict copy per the A-4 posture). Names validated 1–100 and DOB validated 1900–today, mirroring the DB CHECKs; optional fields trim to NULL consistent with `/clients/new`. A name change on an onboarded client calls the sync RPC; a sync failure reports honestly ("Details saved, but the portal profile name could not be updated… Save again to retry") rather than pretending the save failed. Email is excluded from the form per the approved semantics — rendered read-only with no edit control and no hint copy.
+
+Read path (recon finding, same change): the profile loader and `ProfileClient` did not carry `referred_by`, `emergency_contact_name`, `emergency_contact_phone` — all named in the approved gap text — nor `category_id`/`version`. All five now load; the Contact panel renders Referred by and a single combined Emergency line; `client_categories` loads for the edit form's category select.
+
+UI: `EditClientDetailsDialog` (`EditClientDetails.tsx`) — one dialog covers everything the Contact and Goals panels render, opened from now-live Edit buttons on both panels. The permanently-disabled Contact Edit button (F-14's first dead affordance) is gone by becoming real.
+
+Verification: `npm run type-check` passes at this checkpoint; full `npm run build` + browser walk-through run at the end of the P1 batch.
+

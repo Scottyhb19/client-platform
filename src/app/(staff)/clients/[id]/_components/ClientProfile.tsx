@@ -21,6 +21,7 @@ import type { Database } from '@/types/database'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
+import { EditClientDetailsDialog } from './EditClientDetails'
 import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
@@ -47,9 +48,21 @@ export type ProfileClient = {
   gender: string | null
   address: string | null
   referral_source: string | null
+  referred_by: string | null
+  emergency_contact_name: string | null
+  emergency_contact_phone: string | null
   goals: string | null
   created_at: string
+  category_id: string | null
   category_name: string | null
+  /** OCC token for the CN-5 details edit flow. */
+  version: number
+}
+
+/** Category option for the CN-5 details edit form. */
+export type ProfileCategory = {
+  id: string
+  name: string
 }
 
 export type ProfileCondition = {
@@ -199,6 +212,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
 
 interface ClientProfileProps {
   client: ProfileClient
+  categories: ProfileCategory[]
   conditions: ProfileCondition[]
   notes: ProfileNote[]
   program: ProfileProgramSummary | null
@@ -265,6 +279,7 @@ function useTab(initial: Tab): [Tab, (next: Tab) => void] {
 
 export function ClientProfile({
   client,
+  categories,
   conditions,
   notes,
   program,
@@ -341,7 +356,11 @@ export function ClientProfile({
           onManage={() => setFlagDialogOpen(true)}
         />
         {tab === 'details' && (
-          <DetailsTab client={client} conditions={conditions} />
+          <DetailsTab
+            client={client}
+            categories={categories}
+            conditions={conditions}
+          />
         )}
         {tab === 'notes' && (
           <NotesTab
@@ -862,11 +881,24 @@ function IconGhost({
 
 function DetailsTab({
   client,
+  categories,
   conditions,
 }: {
   client: ProfileClient
+  categories: ProfileCategory[]
   conditions: ProfileCondition[]
 }) {
+  // CN-5 — one dialog covers everything the Contact and Goals panels
+  // render; both panels' Edit buttons open it.
+  const [editOpen, setEditOpen] = useState(false)
+
+  // Emergency contact reads as one line — name and phone are two columns
+  // in the DB but one fact at a glance.
+  const emergency =
+    [client.emergency_contact_name, client.emergency_contact_phone]
+      .filter(Boolean)
+      .join(' · ') || null
+
   const contactRows: Array<[string, string | null]> = [
     ['Email', client.email],
     ['Phone', client.phone],
@@ -874,13 +906,24 @@ function DetailsTab({
     ['Gender', client.gender],
     ['Address', client.address],
     ['Referrer', client.referral_source],
+    ['Referred by', client.referred_by],
+    ['Emergency', emergency],
   ]
 
   const inactive = conditions.filter((c) => !c.is_active)
 
   return (
     <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <Panel title="Contact" action={<GhostBtn icon={<Edit3 size={14} />} disabled />}>
+      <Panel
+        title="Contact"
+        action={
+          <GhostBtn
+            icon={<Edit3 size={14} />}
+            label="Edit details"
+            onClick={() => setEditOpen(true)}
+          />
+        }
+      >
         <div style={{ padding: '14px 18px' }}>
           {contactRows.map(([k, v]) => (
             <DetailRow key={k} label={k} value={v ?? '—'} muted={!v} />
@@ -888,7 +931,16 @@ function DetailsTab({
         </div>
       </Panel>
 
-      <Panel title="Goals">
+      <Panel
+        title="Goals"
+        action={
+          <GhostBtn
+            icon={<Edit3 size={14} />}
+            label="Edit goals"
+            onClick={() => setEditOpen(true)}
+          />
+        }
+      >
         <div
           style={{
             padding: '14px 18px',
@@ -902,6 +954,14 @@ function DetailsTab({
           {client.goals?.trim() || 'None recorded.'}
         </div>
       </Panel>
+
+      {editOpen && (
+        <EditClientDetailsDialog
+          client={client}
+          categories={categories}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
 
       {inactive.length > 0 && (
         <Panel title="Resolved / historical">
@@ -1449,10 +1509,12 @@ function GhostBtn({
   icon,
   disabled,
   label,
+  onClick,
 }: {
   icon: React.ReactNode
   disabled?: boolean
   label?: string
+  onClick?: () => void
 }) {
   return (
     <button
@@ -1460,6 +1522,7 @@ function GhostBtn({
       className="btn ghost"
       disabled={disabled}
       aria-label={label ?? 'Action'}
+      onClick={onClick}
       style={{ padding: 6 }}
     >
       {icon}

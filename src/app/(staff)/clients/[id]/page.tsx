@@ -69,6 +69,7 @@ export default async function ClientProfilePage({
     { data: reportRows },
     { data: fileRows, error: filesErr },
     { data: completionsRaw, error: completionsErr },
+    { data: categoryRows },
     testCatalog,
     testBatteries,
     lastUsedBattery,
@@ -79,8 +80,9 @@ export default async function ClientProfilePage({
       .from('clients')
       .select(
         `id, first_name, last_name, email, phone, dob, gender, address,
-         referral_source, goals, created_at, user_id,
-         invited_at, onboarded_at, archived_at,
+         referral_source, referred_by, emergency_contact_name,
+         emergency_contact_phone, goals, created_at, user_id, version,
+         invited_at, onboarded_at, archived_at, category_id,
          category:client_categories(name)`,
       )
       .eq('id', id)
@@ -197,6 +199,13 @@ export default async function ClientProfilePage({
       .is('deleted_at', null)
       .order('completed_at', { ascending: false })
       .limit(10),
+    // CN-5 — category options for the details edit form. Org-scoped via
+    // RLS; same shape as the /clients/new picker.
+    supabase
+      .from('client_categories')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
     // Testing-module data for the Reports tab + capture modal.
     loadCatalog(supabase, organizationId),
     loadActiveBatteries(supabase, organizationId),
@@ -252,9 +261,14 @@ export default async function ClientProfilePage({
     gender: client.gender,
     address: client.address,
     referral_source: client.referral_source,
+    referred_by: client.referred_by,
+    emergency_contact_name: client.emergency_contact_name,
+    emergency_contact_phone: client.emergency_contact_phone,
     goals: client.goals,
     created_at: client.created_at,
+    category_id: client.category_id,
     category_name: client.category?.name ?? null,
+    version: client.version,
   }
 
   // Build program summary for the Program tab: current week (by calendar)
@@ -450,6 +464,7 @@ export default async function ClientProfilePage({
   return (
     <ClientProfile
       client={profileClient}
+      categories={categoryRows ?? []}
       conditions={(conditions ?? []) as ProfileCondition[]}
       notes={profileNotes}
       program={programSummary}
