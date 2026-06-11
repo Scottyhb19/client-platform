@@ -3516,6 +3516,10 @@ export type Database = {
         Returns: Json
       }
       restore_client: { Args: { p_id: string }; Returns: undefined }
+      restore_client_medical_history: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       restore_client_publication: { Args: { p_id: string }; Returns: undefined }
       restore_clinical_note: { Args: { p_id: string }; Returns: undefined }
       restore_practice_custom_test: {
@@ -3537,6 +3541,10 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_client: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_client_medical_history: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       soft_delete_client_publication: {
         Args: { p_id: string }
         Returns: undefined

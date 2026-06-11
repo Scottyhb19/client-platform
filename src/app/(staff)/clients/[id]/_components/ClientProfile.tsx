@@ -22,6 +22,7 @@ import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
 import { EditClientDetailsDialog } from './EditClientDetails'
+import { MedicalHistoryPanel } from './MedicalHistory'
 import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
@@ -444,7 +445,12 @@ function ClientHeader({
   onFlags: () => void
 }) {
   const fullName = `${client.first_name} ${client.last_name}`
-  const activeFlags = conditions.filter((c) => c.is_active).slice(0, 2)
+  // CN-11 — the header shows two active conditions; any overflow gets a
+  // "+N more" affordance instead of silent truncation. Clicking it lands
+  // on the Details tab, where the full list lives (CN-6 panel).
+  const activeConditions = conditions.filter((c) => c.is_active)
+  const headerConditions = activeConditions.slice(0, 2)
+  const moreConditions = activeConditions.length - headerConditions.length
   const router = useRouter()
   const [isOpening, startOpenThread] = useTransition()
   const [openError, setOpenError] = useState<string | null>(null)
@@ -606,12 +612,27 @@ function ClientHeader({
               {client.category_name && (
                 <span className="tag muted">{client.category_name}</span>
               )}
-              {activeFlags.map((c) => (
+              {headerConditions.map((c) => (
                 <span key={c.id} className="tag flag">
                   {c.condition}
                   {c.severity ? ` — severity ${c.severity}` : ''}
                 </span>
               ))}
+              {moreConditions > 0 && (
+                <button
+                  type="button"
+                  className="tag flag"
+                  title="View all conditions"
+                  onClick={() => onTab('details')}
+                  style={{
+                    border: 'none',
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  +{moreConditions} more
+                </button>
+              )}
               <span className={`tag ${statusKind}`}>{statusLabel}</span>
             </div>
             {canResendInvite && (
@@ -910,8 +931,6 @@ function DetailsTab({
     ['Emergency', emergency],
   ]
 
-  const inactive = conditions.filter((c) => !c.is_active)
-
   return (
     <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 18 }}>
       <Panel
@@ -930,6 +949,10 @@ function DetailsTab({
           ))}
         </div>
       </Panel>
+
+      {/* CN-6 — add / edit / resolve / archive conditions. Subsumes the
+          old read-only "Resolved / historical" panel. */}
+      <MedicalHistoryPanel clientId={client.id} conditions={conditions} />
 
       <Panel
         title="Goals"
@@ -961,40 +984,6 @@ function DetailsTab({
           categories={categories}
           onClose={() => setEditOpen(false)}
         />
-      )}
-
-      {inactive.length > 0 && (
-        <Panel title="Resolved / historical">
-          <div style={{ padding: '14px 18px' }}>
-            <ul
-              style={{
-                margin: 0,
-                paddingLeft: 18,
-                fontSize: '.86rem',
-                color: 'var(--color-text)',
-                lineHeight: 1.7,
-              }}
-            >
-              {inactive.map((c) => (
-                <li key={c.id}>
-                  {c.condition}
-                  {c.severity ? ` · severity ${c.severity}` : ''}
-                  {c.diagnosis_date && (
-                    <span
-                      style={{
-                        color: 'var(--color-muted)',
-                        fontSize: '.78rem',
-                        marginLeft: 6,
-                      }}
-                    >
-                      ({formatDate(c.diagnosis_date)})
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Panel>
       )}
     </div>
   )

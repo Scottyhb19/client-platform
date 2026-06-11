@@ -334,3 +334,17 @@ UI: `EditClientDetailsDialog` (`EditClientDetails.tsx`) — one dialog covers ev
 
 Verification: `npm run type-check` passes at this checkpoint; full `npm run build` + browser walk-through run at the end of the P1 batch.
 
+### CN-6 — closed 2026-06-11 (CN-11 bundled per the approved dependency order)
+
+Migration `20260611130100_cn6_cmh_soft_delete_rpcs.sql` — the `soft_delete_client_medical_history` / `restore_client_medical_history` pair, approved at sign-off (open question 7: build now). Family pattern exactly (SECURITY DEFINER, auth check first, org+role replicating the UPDATE policy, REVOKE/GRANT); no author lock — medical history is practice-maintained, not authored; no unique-active index, so restore has no conflict path.
+
+Actions (`medical-actions.ts`): `createMedicalConditionAction`, `updateMedicalConditionAction`, `setMedicalConditionActiveAction`, `archiveMedicalConditionAction`. All staff-only, RLS-scoped, validation mirroring the DB CHECKs (condition 1–500, severity 1–5, diagnosis date per `cmh_diagnosis_date_sane`). A shared RLS-gated lookup humanises not-found/cross-org/archived before any write, same posture as the flag actions. **Mark resolved (`is_active = false`) is the primary remove verb** per the gap text — plain UPDATE, no trap exposure; Archive routes through the RPC with confirm copy steering genuine resolutions to Mark resolved.
+
+**Concurrency decision (recon finding, recorded):** `client_medical_history` carries no OCC `version` column — the gap doc didn't surface this. Closed as **last-write-wins, deliberately**: condition rows are short structured facts maintained by one practitioner, not co-edited documents. If two-practitioner editing ever makes this real, the fix is an additive version column + bump trigger — cheap while pre-launch advantages hold. Recorded in the `medical-actions.ts` header.
+
+UI (`MedicalHistory.tsx`): a Medical history panel on the Details tab — active conditions first (previously they rendered *nowhere* except the truncated header tags — recon finding), Resolved / historical group beneath (subsuming the old read-only panel), per-row Edit · Mark resolved/Reactivate · Archive, add/edit dialog matching the FlagForm pattern. The second F-14 dead affordance class (no way to maintain the table) is gone.
+
+CN-11: the header's two condition tags gain a "+N more" tag-button on overflow that lands on the Details tab where the full list now lives. Silent truncation (F-11) closed.
+
+Verification: `npm run type-check` passes at this checkpoint; build + walk-through at the end of the batch.
+
