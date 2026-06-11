@@ -1,7 +1,7 @@
 # Client profile and clinical notes — gap list
 
 **Polish-pass section:** 3 of the locked polish-pass order (clinical-record layer — note template, flag banners, medical history, history rendering).
-**Active step:** 7 of 7. All sixteen gaps closed (CN-7 as deferred-with-trigger); Closing commit recorded at the bottom of this doc. Awaiting the §6 cross-tenant pgTAP run and the claude.ai sign-off per the ritual.
+**Active step:** Complete (7 of 7). Section signed off **Closed with deferred items** 2026-06-11 — see the Sign-off at the very bottom. Fifteen of sixteen gaps closed; CN-7 deferred with its trigger indexed in `go-live-checklist.md`.
 **Date opened:** 2026-06-11.
 **Trust-nothing posture:** every claim below was derived from the code at HEAD and the migrations, not from prior section docs. Three audit passes (profile UI, database layer, cross-surface/portal exposure) were run independently and cross-checked; the load-bearing claims (hardcoded `note_type`, disabled edit affordances, constraint widening, token drift, absent write paths) were then re-verified line-by-line first-hand.
 
@@ -423,7 +423,8 @@ Empty-state copy aligned: NotesTab's rail now opens "No notes for this client ye
 - Live read-backs — every migration confirmed by clean `db push` apply + regenerated types showing the new RPCs/columns (CN-12's regen was zero-diff, as expected for a config row).
 - Operator browser verification — P0 confirmed working end to end 2026-06-11 (recorded at CN-1/CN-4). P1 + P2 confirmed by the operator in the same session ("everything looks good"), with the Details-tab UX the one exception raised — closed as CN-16. CN-16 and CN-12 themselves await a final browser glance; the dev server is left running.
 - `npm run lint` — fails on pre-existing debt unrelated to this section (recorded at CN-1; tracked separately).
-- **Outstanding gate item, not yet run:** the cross-tenant pgTAP suite. CN-2 changed an RLS SELECT policy, and `go-live-checklist.md` §6 requires `supabase/tests/database/17_cross_tenant_isolation.sql` on any RLS-touching migration. The run is operator-executed (no psql/Docker on the host): paste the file into the **Supabase SQL Editor** as one batch; **success signal: 8/8 pass**. The section should not be signed off Closed until this run is recorded here.
+- **CN-2 acceptance gate — MET (2026-06-11).** The within-org client-deny property CN-2 introduced is verified by `supabase/tests/database/19_cmh_client_select_denied.sql`, run in the Supabase SQL Editor with three `ok` results: a client-role session sees zero `client_medical_history` rows (load-bearing), staff in the same org sees the row, and the client session is confirmed live by reading its own clients row. The grid's `ok`-number ordering (`ok 1`, then `ok 3` on the staff line, then `ok 2` on the client line) is the documented pgTAP execution-counter artifact noted in the file header, not a failure.
+- **Suite 17 scope (clarified at sign-off).** `supabase/tests/database/17_cross_tenant_isolation.sql` is the `go-live-checklist.md` §6 **cross-tenant org-isolation** check (org A cannot read org B) — **not** CN-2 verification. CN-2's change is within-org role gating, which 17 does not exercise (that is test 19's job). 17's §6 re-run cadence on RLS-touching migrations is tracked in the checklist, separate from this section's close.
 
 **Deferred, with triggers.**
 
@@ -449,4 +450,32 @@ Out-of-scope, recorded: the wider staff app carries ~21 more `alert()`/`confirm(
 ### CN-14 — closed 2026-06-11
 
 The Invoices tab is gone: `Tab` union member, `TABS` entry, both `VALID_TABS` arrays (component + page), the conditional render, the `InvoicesTab` function (including the Funding placeholder panel, referenced by nothing else), and the now-unused `CreditCard` import. The P2 recon confirmed zero deep links to `?tab=invoices` anywhere in `src/`; an existing deep link would now safely fall back to the details tab via `pickTab`. Two consequential cleanups in the same cut: the `EmptyBlock` helper existed solely for the Invoices placeholder and was removed as dead code, and ProgramTab's grid comment no longer describes its layout by reference to a tab that doesn't exist. Reintroduce the tab when billing is real (Phase 4 at the earliest, per "What NOT to build").
+
+---
+
+*Per the section sign-off ritual: Claude Code's work ended at the Closing commit above; the section closes when the operator's claude.ai project chat reviews it and records the decision here. On this Closed-with-deferred-items decision, CLAUDE.md's "Active section" advances to polish-pass order item 4 — Exercise library.*
+
+---
+
+## Sign-off
+
+**Date:** 2026-06-11
+**Reviewer:** claude.ai project chat; reviewer model Claude Opus 4.8 (1M context)
+**Decision:** Closed with deferred items.
+
+Fifteen of sixteen gaps closed; CN-7 deferred with its trigger indexed in `go-live-checklist.md`. The **CN-2 acceptance gate is met**: `supabase/tests/database/19_cmh_client_select_denied.sql` was run in the Supabase SQL Editor and returned three `ok` results — a client-role session sees zero `client_medical_history` rows (load-bearing), staff in the same org sees the row, and the client session is confirmed live by reading its own clients row. The grid's `ok`-number ordering (`ok 1`, then `ok 3` on the staff line, then `ok 2` on the client line) is the documented pgTAP execution-counter artifact noted in the file header, not a failure. **Suite 17 is recorded as the §6 cross-tenant org-isolation check only, not as CN-2 verification.** The four post-review record items are confirmed complete and operator-verified.
+
+**Deferred items, with rationale and re-trigger:**
+
+1. **CN-7 — archived-client record access.** Master brief §7.2 requires archived records to stay queryable; archiving a client today makes the record UI-unreachable for the retention window. Deferred at friends-and-family scope (no archive performed), but the archive affordance is already live, so the trigger is behavioural. **Re-trigger: before the first real client archive, or before any paying clinical client, whichever comes first.** Indexed in `go-live-checklist.md` §8.
+
+2. **Anon-EXECUTE grant sweep across the SECURITY DEFINER RPC family.** Source revokes from `PUBLIC` and grants only `authenticated`, but runtime anon-EXECUTE is unverified for the whole family (REVOKE-FROM-PUBLIC does not strip a role-specific anon grant); each function's in-body auth guard is the load-bearing protection meanwhile. **Re-trigger: once a live SQL query path exists — read `information_schema.role_routine_grants` and confirm anon absent.** Tracked in `go-live-checklist.md` §4.
+
+3. **`client_medical_history` last-write-wins (now-active).** No OCC column and no author lock on the UPDATE policy; the beta runs two staff, so the clobber window is live now, not hypothetical (the earlier "single-practitioner" rationale was corrected). Fix is additive: a `version` column + the existing `bump_version_and_touch()` trigger plus a version check in `updateMedicalConditionAction`. **Re-trigger: before any sustained two-practitioner editing of medical history.** Indexed in `go-live-checklist.md` §8; bounded harm (one re-enterable short fact).
+
+4. **`clinical_notes` client-deny coverage gap.** The prescribed `rls_clinical_notes_select_client_denied` test does not exist; the policy is believed correct from source (Pattern A, staff-only) but is **unverified by automated test**. **Re-trigger: generalise `19_cmh_client_select_denied.sql` to assert client-deny across all staff-only clinical tables.** Logged as a `rls-policies.md` §4.6 finding; §4.6 must not be represented as test-verified until then.
+
+5. **`clients.user_id` column-restriction indirection.** The staff UPDATE policy has no column-level restriction, so a compromised staff session could repoint `user_id` and use `sync_client_profile_name` to overwrite another user's display name. Pre-existing property; bounded harm. **Re-trigger: if a column-level policy or a `user_id`-mutation guard trigger is ever warranted.** Logged in `rls-policies.md` §4.4, not represented as closed.
+
+**Client profile and clinical notes is formally closed (with deferred items).** CLAUDE.md's Active section advances to polish-pass order item 4 — Exercise library.
 

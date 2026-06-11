@@ -34,7 +34,7 @@ Two surfaces:
 These advantages disappear the day the first real user — including a friends-and-family beta tester — logs in and creates data. Anything load-bearing should be hardened *before* that day.
 
 ## Active section
-**Client profile and clinical notes. Active as of 2026-06-11.** This is the clinical-record layer of the polish pass — note template, flag banners, medical history, history rendering. Work follows the polish-pass protocol below. The previous active section, Auth and Onboarding (client), is closed under the formal section sign-off ritual and is recorded as such in the polish-pass order; the Closing commit and Sign-off live at `docs/polish/auth-onboarding-client.md`.
+**Exercise library. Active as of 2026-06-11.** Search, tagging, video preview, default prescription patterns. Work follows the polish-pass protocol below. The previous active section, Client profile and clinical notes, is closed (with deferred items) under the formal section sign-off ritual and is recorded as such in the polish-pass order; the Closing commit and Sign-off live at `docs/polish/client-profile-clinical-notes.md`. Its deferred riders (CN-7 archived-record access; the SECURITY DEFINER anon-EXECUTE grant sweep; the `client_medical_history` last-write-wins mitigation; the `clinical_notes` client-deny test gap; the `clients.user_id` column-restriction indirection) are tracked in `docs/go-live-checklist.md` and `docs/rls-policies.md` per the technical gate index rule.
 
 ## Polish-pass protocol (mandatory)
 Before modifying any section, follow this sequence:
@@ -202,8 +202,8 @@ The polish pass works through the platform in foundation-upward order. Each laye
 
 1. **Auth and Onboarding (staff)** — clinic-side setup. Account creation, organisation setup, settings, first-run experience for the EP. Closed 2026-05-27.
 2. **Auth and Onboarding (client)** — client-side first contact. Email invite, password creation, first login, day-one experience. Closed 2026-06-11.
-3. **Client profile and clinical notes** — note template, flag banners, medical history, history rendering. Active.
-4. **Exercise library** — search, tagging, video preview, default prescription patterns.
+3. **Client profile and clinical notes** — note template, flag banners, medical history, history rendering. Closed with deferred items 2026-06-11.
+4. **Exercise library** — search, tagging, video preview, default prescription patterns. Active.
 5. **Program engine and session builder** — the differentiator. Highest care. Drag-and-drop, supersetting, shared right panel, clinical notes adjacency.
 6. **Program calendar** — collapsible weeks, batch operations, side panel pinning.
 7. **Client portal PWA** — week strip, in-session logging UX, completion flow.
