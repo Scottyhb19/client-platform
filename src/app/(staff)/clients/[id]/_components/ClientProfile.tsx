@@ -898,26 +898,18 @@ function DetailsTab({
   // render; both panels' Edit buttons open it.
   const [editOpen, setEditOpen] = useState(false)
 
-  // Emergency contact reads as one line — name and phone are two columns
-  // in the DB but one fact at a glance.
-  const emergency =
-    [client.emergency_contact_name, client.emergency_contact_phone]
-      .filter(Boolean)
-      .join(' · ') || null
-
-  const contactRows: Array<[string, string | null]> = [
-    ['Email', client.email],
-    ['Phone', client.phone],
-    ['DOB', client.dob ? formatDob(client.dob) : null],
-    ['Gender', client.gender],
-    ['Address', client.address],
-    ['Referrer', client.referral_source],
-    ['Referred by', client.referred_by],
-    ['Emergency', emergency],
-  ]
-
   return (
-    <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 18 }}>
+    // CN-16 — the tab reads as a form at rest: a 2:1 grid (mirroring the
+    // Programs tab) with each value in an input-style read-only box, so
+    // the read view and the edit dialog feel like the same surface.
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '2fr 1fr',
+        gap: 22,
+        alignItems: 'start',
+      }}
+    >
       <Panel
         title="Contact"
         action={
@@ -928,40 +920,64 @@ function DetailsTab({
           />
         }
       >
-        <div style={{ padding: '14px 18px' }}>
-          {contactRows.map(([k, v]) => (
-            <DetailRow key={k} label={k} value={v ?? '—'} muted={!v} />
-          ))}
-        </div>
-      </Panel>
-
-      {/* CN-6 — add / edit / resolve / archive conditions. Subsumes the
-          old read-only "Resolved / historical" panel. */}
-      <MedicalHistoryPanel clientId={client.id} conditions={conditions} />
-
-      <Panel
-        title="Goals"
-        action={
-          <GhostBtn
-            icon={<Edit3 size={14} />}
-            label="Edit goals"
-            onClick={() => setEditOpen(true)}
-          />
-        }
-      >
         <div
           style={{
-            padding: '14px 18px',
-            fontSize: '.86rem',
-            color: client.goals?.trim()
-              ? 'var(--color-text)'
-              : 'var(--color-muted)',
-            lineHeight: 1.6,
+            padding: '16px 18px',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 12,
           }}
         >
-          {client.goals?.trim() || 'None recorded.'}
+          <FieldBox label="Email" value={client.email} />
+          <FieldBox label="Phone" value={client.phone} />
+          <FieldBox
+            label="Date of birth"
+            value={client.dob ? formatDob(client.dob) : null}
+          />
+          <FieldBox label="Gender" value={client.gender} />
+          <FieldBox label="Address" value={client.address} span2 />
+          <FieldBox label="Referrer" value={client.referral_source} />
+          <FieldBox label="Referred by" value={client.referred_by} />
+          <FieldBox
+            label="Emergency contact"
+            value={client.emergency_contact_name}
+          />
+          <FieldBox
+            label="Emergency phone"
+            value={client.emergency_contact_phone}
+          />
         </div>
       </Panel>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {/* CN-6 — add / edit / resolve / archive conditions. Subsumes the
+            old read-only "Resolved / historical" panel. */}
+        <MedicalHistoryPanel clientId={client.id} conditions={conditions} />
+
+        <Panel
+          title="Goals"
+          action={
+            <GhostBtn
+              icon={<Edit3 size={14} />}
+              label="Edit goals"
+              onClick={() => setEditOpen(true)}
+            />
+          }
+        >
+          <div
+            style={{
+              padding: '14px 18px',
+              fontSize: '.86rem',
+              color: client.goals?.trim()
+                ? 'var(--color-text)'
+                : 'var(--color-muted)',
+              lineHeight: 1.6,
+            }}
+          >
+            {client.goals?.trim() || 'None recorded.'}
+          </div>
+        </Panel>
+      </div>
 
       {editOpen && (
         <EditClientDetailsDialog
@@ -974,40 +990,50 @@ function DetailsTab({
   )
 }
 
-function DetailRow({
+/**
+ * CN-16 — input-style read-only box: small eyebrow label over a bordered
+ * box (input radius, surface wash so it reads at-rest rather than
+ * editable). Empty values render an em dash, muted.
+ */
+function FieldBox({
   label,
   value,
-  muted,
+  span2,
 }: {
   label: string
-  value: string
-  muted?: boolean
+  value: string | null
+  span2?: boolean
 }) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '82px 1fr',
-        gap: 12,
-        padding: '5px 0',
-        fontSize: '.82rem',
-      }}
-    >
-      <span
+    <div style={span2 ? { gridColumn: 'span 2' } : undefined}>
+      <div
         style={{
-          color: 'var(--color-muted)',
-          fontSize: '.7rem',
-          letterSpacing: '.04em',
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '.62rem',
+          letterSpacing: '.08em',
           textTransform: 'uppercase',
-          fontWeight: 500,
-          paddingTop: 3,
+          color: 'var(--color-text-light)',
+          marginBottom: 4,
         }}
       >
         {label}
-      </span>
-      <span style={{ color: muted ? 'var(--color-muted)' : 'var(--color-text)' }}>
-        {value}
-      </span>
+      </div>
+      <div
+        style={{
+          minHeight: 36,
+          padding: '8px 12px',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 7,
+          background: 'var(--color-surface)',
+          fontSize: '.86rem',
+          lineHeight: 1.4,
+          color: value ? 'var(--color-text)' : 'var(--color-muted)',
+          overflowWrap: 'break-word',
+        }}
+      >
+        {value ?? '—'}
+      </div>
     </div>
   )
 }

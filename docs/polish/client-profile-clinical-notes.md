@@ -230,6 +230,12 @@ The Invoices tab (`ClientProfile.tsx:186-193, 340`) renders an empty placeholder
 
 **Recommendation** (design philosophy; trivially reversible).
 
+**CN-16 — Details tab reads as a form at rest.** *Added at operator direction 2026-06-11, after the P1/P2 build — post-premortem; closes no ranked failure mode (UX refinement).*
+
+The Details tab renders as a narrow 560px single column — plain label/value text rows stacked vertically, most of the 1200px container unused, vertical scrolling where horizontal space should carry the load. Operator-specified shape (clarified by Q&A at intake): **read view only** (the CN-5 edit dialog stays as-is); each value sits in an **input-style read-only box** with a small label above, so read and edit feel like the same surface; layout is a **two-column 2:1 grid** mirroring the Programs tab — Contact (field boxes flowing in two columns) left, Medical history + Goals stacked right.
+
+**Recommendation** (operator-directed; design-system data-density principle).
+
 **CN-15 — Consolidate date formatting and empty-state copy.** 
 
 Three separate note-date formatters exist (`formatSessionDate`/`formatDate` in NotesTab, inline `Intl.DateTimeFormat` in NoteReader, `formatNoteDate` in NotesPanel) — consolidate to one util honouring the design-system date convention (`12 Jan 2026`, explicit time-ago). Align empty-state copy across NotesTab/NotesPanel with voice rules. Smallest item; bundle with whatever touches those files last.
@@ -367,6 +373,16 @@ The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening)
 **Deliberately left as literals, recorded:** the alert alpha washes — `rgba(214,64,69,0.05)` banner wash and `rgba(214,64,69,.08)` badge wash (NotesPanel, ClientFlags, MedicalHistory) and MonthCalendar's `0.4`/`0.06` delete-button variants. The design system specifies the banner wash as that exact rgba, `globals.css` itself hardcodes the `.08` wash in `.tag.flag`, and CSS `var()` cannot carry an alpha-varied token without `color-mix()` cleverness the restraint rules don't want. If a wash token family (`--color-alert-wash`) is ever added to `globals.css`, sweep these in the same change. Non-alert literals found and left untouched as out of scope: MonthCalendar's `#f5f0ea` month-grid parchment (not a token value — changing it would alter the design, not align it) and the copy-target green tint.
 
 NotesPanel is the shared component — this lands in the session builder right rail and the calendar side panel automatically; visual confirmation there is part of the operator walk-through.
+
+### CN-16 — closed 2026-06-11 (operator-directed addition)
+
+The Details tab is now a form at rest. The 560px single column is gone: a 2:1 grid (mirroring the Programs tab) puts the Contact panel left with every value in an input-style read-only `FieldBox` — small eyebrow label over a bordered input-radius box with a surface wash, so the read view and the CN-5 edit dialog read as the same surface — flowing two boxes per row (Address spans both; emergency contact and phone are now separate labelled boxes, replacing the combined line). Medical history and Goals stack in the right column. The orphaned `DetailRow` helper (its last consumer was this layout) is removed. Empty values render a muted em dash. Vertical height of the tab roughly halves at desktop width; the operator-specified shape (read view only, input-style boxes, 2:1 grid) was confirmed by Q&A at intake and is recorded in the gap entry.
+
+### CN-12 — closed 2026-06-11
+
+Migration `20260611130200_cn12_audit_wide_content_json.sql`: one row — `('clinical_notes', 'content_json')` — in `audit_wide_column_config`, so `audit_trim_row()` replaces >4KB `content_json` snapshots with the truncated preview + SHA-256 + byte size, same as the legacy SOAP columns it replaced. No trigger change needed: `audit_trim_row` extracts the column as text (`->>`), which serialises jsonb cleanly. The compliance trade already accepted for the SOAP columns applies equally and is restated here: truncated bodies are not reconstructable from `audit_log` alone — the note row itself is the record.
+
+**Process note, recorded honestly:** the P2 recon omitted CN-12 and the build proceeded on a "no migrations in P2" claim that was therefore wrong. Caught during the closing-commit sweep against the gap list — which is the sweep working as intended — but it should have been caught at recon. The gap list is the contract; recon must enumerate it, not reconstruct it from memory.
 
 ### CN-9 — closed 2026-06-11
 
