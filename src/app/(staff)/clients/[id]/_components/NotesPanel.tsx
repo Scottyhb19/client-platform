@@ -27,12 +27,6 @@ import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import type { Database } from '@/types/database'
 
-const INK = '#1E1A18'
-const MUTED = '#78746F'
-const FAINT = '#9C9690'
-const BORDER = '#E2DDD7'
-const ALERT = '#D64045'
-
 type NoteType = Database['public']['Enums']['note_type']
 
 export type ClinicalNoteField = {
@@ -76,7 +70,7 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
         <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
           Clinical notes
         </div>
-        <div style={{ fontSize: '.82rem', color: MUTED, lineHeight: 1.5 }}>
+        <div style={{ fontSize: '.82rem', color: 'var(--color-muted)', lineHeight: 1.5 }}>
           No notes for this client yet. Add one from the profile and it
           will appear here while you build the session.
         </div>
@@ -117,7 +111,7 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
       </div>
 
       {activeFlags.length > 0 && (
-        <div style={{ borderTop: `1px solid ${BORDER}` }}>
+        <div style={{ borderTop: '1px solid var(--color-border-hairline)' }}>
           <SidebarHeader>Active flags</SidebarHeader>
           <div
             style={{
@@ -139,7 +133,7 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
       )}
 
       {pinned.length > 0 && (
-        <div style={{ borderTop: `1px solid ${BORDER}` }}>
+        <div style={{ borderTop: '1px solid var(--color-border-hairline)' }}>
           <SidebarHeader>Pinned</SidebarHeader>
           {pinned.map((n) => (
             <NoteRow
@@ -152,7 +146,7 @@ export function NotesPanel({ notes }: { notes: ClinicalNoteSummary[] }) {
       )}
 
       {recent.length > 0 && (
-        <div style={{ borderTop: `1px solid ${BORDER}` }}>
+        <div style={{ borderTop: '1px solid var(--color-border-hairline)' }}>
           {(pinned.length > 0 || activeFlags.length > 0) && (
             <SidebarHeader>Recent</SidebarHeader>
           )}
@@ -254,7 +248,7 @@ function NoteRow({
         width: '100%',
         background: 'transparent',
         border: 'none',
-        borderBottom: `1px solid ${BORDER}`,
+        borderBottom: '1px solid var(--color-border-hairline)',
         padding: '10px 14px',
         textAlign: 'left',
         cursor: 'pointer',
@@ -272,7 +266,7 @@ function NoteRow({
           rowGap: 4,
           fontSize: '.8rem',
           fontWeight: 600,
-          color: INK,
+          color: 'var(--color-text)',
         }}
       >
         <span style={{ whiteSpace: 'nowrap' }}>
@@ -285,7 +279,7 @@ function NoteRow({
               fontWeight: 700,
               textTransform: 'uppercase',
               letterSpacing: '.04em',
-              color: ALERT,
+              color: 'var(--color-alert)',
               background: 'rgba(214,64,69,.08)',
               padding: '1px 6px',
               borderRadius: 4,
@@ -300,8 +294,8 @@ function NoteRow({
             style={{
               fontSize: '.66rem',
               fontWeight: 600,
-              color: MUTED,
-              background: '#EDE8E2',
+              color: 'var(--color-muted)',
+              background: 'var(--color-surface-2)',
               padding: '1px 6px',
               borderRadius: 4,
               whiteSpace: 'nowrap',
@@ -334,7 +328,7 @@ function NoteReader({
           alignItems: 'center',
           gap: 6,
           padding: '8px 10px',
-          borderBottom: `1px solid ${BORDER}`,
+          borderBottom: '1px solid var(--color-border-hairline)',
           background: 'var(--color-surface, #fff)',
         }}
       >
@@ -347,7 +341,7 @@ function NoteReader({
             border: 'none',
             padding: 4,
             cursor: 'pointer',
-            color: FAINT,
+            color: 'var(--color-text-faint)',
             display: 'grid',
             placeItems: 'center',
             borderRadius: 4,
@@ -361,7 +355,7 @@ function NoteReader({
             fontFamily: 'var(--font-display, inherit)',
             fontWeight: 700,
             fontSize: '.8rem',
-            color: INK,
+            color: 'var(--color-text)',
             minWidth: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -389,7 +383,7 @@ function NoteReader({
                   fontWeight: 700,
                   textTransform: 'uppercase',
                   letterSpacing: '.04em',
-                  color: ALERT,
+                  color: 'var(--color-alert)',
                   background: 'rgba(214,64,69,.08)',
                   padding: '2px 6px',
                   borderRadius: 4,
@@ -403,8 +397,8 @@ function NoteReader({
                 style={{
                   fontSize: '.66rem',
                   fontWeight: 600,
-                  color: MUTED,
-                  background: '#EDE8E2',
+                  color: 'var(--color-muted)',
+                  background: 'var(--color-surface-2)',
                   padding: '2px 6px',
                   borderRadius: 4,
                 }}
@@ -426,7 +420,7 @@ function NoteReader({
                     fontSize: '.62rem',
                     letterSpacing: '.08em',
                     textTransform: 'uppercase',
-                    color: FAINT,
+                    color: 'var(--color-text-faint)',
                     marginBottom: 2,
                   }}
                 >
@@ -435,7 +429,7 @@ function NoteReader({
                 <div
                   style={{
                     fontSize: '.84rem',
-                    color: INK,
+                    color: 'var(--color-text)',
                     whiteSpace: 'pre-wrap',
                     lineHeight: 1.55,
                   }}
@@ -449,7 +443,7 @@ function NoteReader({
           <div
             style={{
               fontSize: '.84rem',
-              color: INK,
+              color: 'var(--color-text)',
               whiteSpace: 'pre-wrap',
               lineHeight: 1.6,
             }}
@@ -457,7 +451,7 @@ function NoteReader({
             {legacy}
           </div>
         ) : !hasContent ? (
-          <div style={{ fontSize: '.82rem', color: MUTED }}>(empty note)</div>
+          <div style={{ fontSize: '.82rem', color: 'var(--color-muted)' }}>(empty note)</div>
         ) : null}
       </div>
     </div>
@@ -473,7 +467,7 @@ function SidebarHeader({ children }: { children: React.ReactNode }) {
         fontSize: '.62rem',
         letterSpacing: '.08em',
         textTransform: 'uppercase',
-        color: FAINT,
+        color: 'var(--color-text-faint)',
         padding: '8px 14px 4px',
       }}
     >

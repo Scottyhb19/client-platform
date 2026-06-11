@@ -1490,7 +1490,7 @@ const iconDeleteStyle: React.CSSProperties = {
   ...iconBtnBase,
   border: '1px solid rgba(214, 64, 69, 0.4)',
   background: 'rgba(214, 64, 69, 0.06)',
-  color: '#D64045',
+  color: 'var(--color-alert)',
 }
 
 

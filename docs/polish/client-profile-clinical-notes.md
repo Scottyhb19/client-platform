@@ -360,6 +360,14 @@ The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening)
 
 **Artifact noted during the sync, documented rather than changed:** `clinical_notes_active_flags_idx` covers `note_type = 'injury_flag'` only, while the CN-4 dashboard query filters both flag types — the partial index does not cover contraindication rows. Harmless at current scale; recorded in §8.5 with a widen-if-slow trigger rather than a migration (an index change is outside CN-8's documentation scope and wasn't in the approved gap text).
 
+### CN-10 — closed 2026-06-11
+
+`NotesPanel.tsx`: the five hardcoded constants (INK/MUTED/FAINT/BORDER/ALERT) are gone — every usage site now references the token directly (`var(--color-text)`, `var(--color-muted)`, `var(--color-text-faint)`, `var(--color-border-hairline)`, `var(--color-alert)`), so the three visibly-wrong greys are corrected and future drift back to hex is impossible. Recon scope addition, same pass: two `#EDE8E2` template-badge backgrounds replaced with `var(--color-surface-2)` (exact token-value match). `MonthCalendar.tsx`: the `#D64045` literal on the day-popover delete icon is now `var(--color-alert)`.
+
+**Deliberately left as literals, recorded:** the alert alpha washes — `rgba(214,64,69,0.05)` banner wash and `rgba(214,64,69,.08)` badge wash (NotesPanel, ClientFlags, MedicalHistory) and MonthCalendar's `0.4`/`0.06` delete-button variants. The design system specifies the banner wash as that exact rgba, `globals.css` itself hardcodes the `.08` wash in `.tag.flag`, and CSS `var()` cannot carry an alpha-varied token without `color-mix()` cleverness the restraint rules don't want. If a wash token family (`--color-alert-wash`) is ever added to `globals.css`, sweep these in the same change. Non-alert literals found and left untouched as out of scope: MonthCalendar's `#f5f0ea` month-grid parchment (not a token value — changing it would alter the design, not align it) and the copy-target green tint.
+
+NotesPanel is the shared component — this lands in the session builder right rail and the calendar side panel automatically; visual confirmation there is part of the operator walk-through.
+
 ### CN-14 — closed 2026-06-11
 
 The Invoices tab is gone: `Tab` union member, `TABS` entry, both `VALID_TABS` arrays (component + page), the conditional render, the `InvoicesTab` function (including the Funding placeholder panel, referenced by nothing else), and the now-unused `CreditCard` import. The P2 recon confirmed zero deep links to `?tab=invoices` anywhere in `src/`; an existing deep link would now safely fall back to the details tab via `pickTab`. Two consequential cleanups in the same cut: the `EmptyBlock` helper existed solely for the Invoices placeholder and was removed as dead code, and ProgramTab's grid comment no longer describes its layout by reference to a tab that doesn't exist. Reintroduce the tab when billing is real (Phase 4 at the earliest, per "What NOT to build").
