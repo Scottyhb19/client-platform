@@ -39,7 +39,27 @@ export function ExerciseForm({
   >(action, initialExerciseFormState)
 
   const v = initialValues
-  const selectedTagIds = new Set(v?.tag_ids ?? [])
+  // Display values: prefer the echo from an errored submit (React 19 resets
+  // uncontrolled fields after a server action — the echo restores what the
+  // EP typed) over the persisted initial values.
+  const echo = state.values
+  const d = {
+    name: echo?.name ?? v?.name ?? '',
+    movement_pattern_id: echo
+      ? echo.movement_pattern_id
+      : (v?.movement_pattern_id ?? ''),
+    video_url: echo?.video_url ?? v?.video_url ?? '',
+    description: echo?.description ?? v?.description ?? '',
+    instructions: echo?.instructions ?? v?.instructions ?? '',
+    default_sets: echo?.default_sets ?? v?.default_sets?.toString() ?? '',
+    default_reps: echo?.default_reps ?? v?.default_reps ?? '',
+    default_metric: echo ? echo.default_metric : (v?.default_metric ?? ''),
+    default_metric_value:
+      echo?.default_metric_value ?? v?.default_metric_value ?? '',
+    default_rest_seconds:
+      echo?.default_rest_seconds ?? v?.default_rest_seconds?.toString() ?? '',
+  }
+  const selectedTagIds = new Set(echo ? echo.tag_ids : (v?.tag_ids ?? []))
   const submitLabel =
     mode === 'create'
       ? pending
@@ -78,7 +98,7 @@ export function ExerciseForm({
             label="Name"
             required
             placeholder="Barbell Back Squat"
-            defaultValue={v?.name ?? ''}
+            defaultValue={d.name}
             error={state.fieldErrors.name}
           />
           <div
@@ -88,7 +108,7 @@ export function ExerciseForm({
               <FieldLabel>Movement pattern</FieldLabel>
               <select
                 name="movement_pattern_id"
-                defaultValue={v?.movement_pattern_id ?? ''}
+                defaultValue={d.movement_pattern_id}
                 style={inputStyle}
               >
                 <option value="">—</option>
@@ -97,20 +117,33 @@ export function ExerciseForm({
                     {p.name}
                   </option>
                 ))}
+                {/* The exercise's saved pattern can be absent from the
+                    active list (soft-deleted in Settings). Without this
+                    synthetic option the browser falls back to "—" and the
+                    next save silently clears the pattern — keeping the
+                    saved id selectable preserves it until the EP changes
+                    it deliberately. */}
+                {d.movement_pattern_id &&
+                  !patterns.some((p) => p.id === d.movement_pattern_id) && (
+                    <option value={d.movement_pattern_id}>
+                      Current pattern (removed from settings)
+                    </option>
+                  )}
               </select>
             </div>
             <Field
               name="video_url"
               label="YouTube URL"
               placeholder="https://youtube.com/…"
-              defaultValue={v?.video_url ?? ''}
+              defaultValue={d.video_url}
+              error={state.fieldErrors.video_url}
             />
           </div>
           <TextareaField
             name="description"
             label="Short description"
             placeholder="One-line description that appears on the card."
-            defaultValue={v?.description ?? ''}
+            defaultValue={d.description}
             rows={2}
           />
         </div>
@@ -134,20 +167,26 @@ export function ExerciseForm({
             label="Sets"
             type="number"
             placeholder="4"
-            defaultValue={v?.default_sets?.toString() ?? ''}
+            defaultValue={d.default_sets}
           />
           <Field
             name="default_reps"
             label="Reps"
             placeholder="8 e/s"
-            defaultValue={v?.default_reps ?? ''}
+            defaultValue={d.default_reps}
           />
           <div>
             <FieldLabel>Unit</FieldLabel>
             <select
               name="default_metric"
-              defaultValue={v?.default_metric ?? ''}
-              style={inputStyle}
+              defaultValue={d.default_metric}
+              aria-invalid={state.fieldErrors.default_metric ? true : undefined}
+              style={{
+                ...inputStyle,
+                borderColor: state.fieldErrors.default_metric
+                  ? 'var(--color-alert)'
+                  : 'var(--color-border-subtle)',
+              }}
             >
               <option value="">—</option>
               {metricUnits.map((u) => (
@@ -156,26 +195,30 @@ export function ExerciseForm({
                 </option>
               ))}
             </select>
+            {state.fieldErrors.default_metric && (
+              <div
+                style={{
+                  fontSize: '.74rem',
+                  color: 'var(--color-alert)',
+                  marginTop: 4,
+                }}
+              >
+                {state.fieldErrors.default_metric}
+              </div>
+            )}
           </div>
           <Field
             name="default_metric_value"
             label="Load"
             placeholder="e.g. 60"
-            defaultValue={v?.default_metric_value ?? ''}
-          />
-          <Field
-            name="default_rpe"
-            label="RPE"
-            type="number"
-            placeholder="7"
-            defaultValue={v?.default_rpe?.toString() ?? ''}
+            defaultValue={d.default_metric_value}
           />
           <Field
             name="default_rest_seconds"
             label="Rest (sec)"
             type="number"
             placeholder="90"
-            defaultValue={v?.default_rest_seconds?.toString() ?? ''}
+            defaultValue={d.default_rest_seconds}
           />
         </div>
       </section>
@@ -190,7 +233,7 @@ export function ExerciseForm({
             name="instructions"
             label="Cues / instructions"
             placeholder="Hip-width stance. Brace before descent. Chest up, knees tracking over toes."
-            defaultValue={v?.instructions ?? ''}
+            defaultValue={d.instructions}
             rows={4}
           />
         </div>
@@ -220,7 +263,7 @@ export function ExerciseForm({
                   padding: '6px 12px',
                   borderRadius: 8,
                   border: '1px solid var(--color-border-subtle)',
-                  background: '#fff',
+                  background: 'var(--color-card)',
                   cursor: 'pointer',
                   fontSize: '.82rem',
                   fontWeight: 500,

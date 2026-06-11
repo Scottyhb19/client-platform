@@ -11,6 +11,10 @@
   --color-primary: #1e1a18;
   --color-primary-dark: #120e0c;
   --color-accent: #2db24c;
+  /* Accent at 10% — the standard selected/affirmed surface tint. The same
+     rgba literal recurs in component rules below; new component code must
+     reference this token, never the literal. */
+  --color-accent-soft: rgba(45, 178, 76, 0.1);
   --color-charcoal: #231f20;
   --color-slate: #35363a;
 

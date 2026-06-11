@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { ExerciseFormState } from './types'
+import type { ExerciseFormEcho, ExerciseFormState } from './types'
 
 /**
  * Create an exercise in the caller's organization, plus optional tag
@@ -22,6 +22,12 @@ export async function createExerciseAction(
 
   const supabase = await createSupabaseServerClient()
 
+  const metricError = await validateMetricCode(
+    supabase,
+    parsed.values.default_metric,
+  )
+  if (metricError) return { ...metricError, values: echoFields(formData) }
+
   const { data: exercise, error } = await supabase
     .from('exercises')
     .insert({
@@ -33,7 +39,6 @@ export async function createExerciseAction(
       default_reps: parsed.values.default_reps,
       default_metric: parsed.values.default_metric,
       default_metric_value: parsed.values.default_metric_value,
-      default_rpe: parsed.values.default_rpe,
       default_rest_seconds: parsed.values.default_rest_seconds,
       video_url: parsed.values.video_url,
       description: parsed.values.description,
@@ -46,6 +51,7 @@ export async function createExerciseAction(
     return {
       error: `Failed to create exercise: ${error.message}`,
       fieldErrors: {},
+      values: echoFields(formData),
     }
   }
 
@@ -62,6 +68,7 @@ export async function createExerciseAction(
       return {
         error: `Exercise created but tag assignment failed: ${tagErr.message}`,
         fieldErrors: {},
+        values: echoFields(formData),
       }
     }
   }
@@ -87,7 +94,15 @@ export async function updateExerciseAction(
 
   const supabase = await createSupabaseServerClient()
 
-  const { error } = await supabase
+  const metricError = await validateMetricCode(
+    supabase,
+    parsed.values.default_metric,
+  )
+  if (metricError) return { ...metricError, values: echoFields(formData) }
+
+  // .select('id') so a zero-row match (exercise deleted in another tab, or
+  // filtered by RLS) surfaces as an error instead of a silent fake success.
+  const { data: updated, error } = await supabase
     .from('exercises')
     .update({
       name: parsed.values.name,
@@ -96,18 +111,28 @@ export async function updateExerciseAction(
       default_reps: parsed.values.default_reps,
       default_metric: parsed.values.default_metric,
       default_metric_value: parsed.values.default_metric_value,
-      default_rpe: parsed.values.default_rpe,
       default_rest_seconds: parsed.values.default_rest_seconds,
       video_url: parsed.values.video_url,
       description: parsed.values.description,
       instructions: parsed.values.instructions,
     })
     .eq('id', exerciseId)
+    .select('id')
 
   if (error) {
     return {
       error: `Failed to save changes: ${error.message}`,
       fieldErrors: {},
+      values: echoFields(formData),
+    }
+  }
+
+  if (!updated || updated.length === 0) {
+    return {
+      error:
+        'This exercise no longer exists — it may have been deleted in another tab.',
+      fieldErrors: {},
+      values: echoFields(formData),
     }
   }
 
@@ -137,6 +162,7 @@ export async function updateExerciseAction(
     return {
       error: `Saved exercise but tag reconciliation failed: ${(fetchErr ?? activeErr)!.message}`,
       fieldErrors: {},
+      values: echoFields(formData),
     }
   }
 
@@ -164,6 +190,7 @@ export async function updateExerciseAction(
       return {
         error: `Saved exercise but tag removal failed: ${rmErr.message}`,
         fieldErrors: {},
+        values: echoFields(formData),
       }
     }
   }
@@ -176,6 +203,7 @@ export async function updateExerciseAction(
       return {
         error: `Saved exercise but tag addition failed: ${addErr.message}`,
         fieldErrors: {},
+        values: echoFields(formData),
       }
     }
   }
@@ -216,7 +244,36 @@ function parseFormFields(
   | { error: null; values: ParsedExerciseFields } {
   const name = (formData.get('name') ?? '').toString().trim()
   if (!name) {
-    return { error: { error: null, fieldErrors: { name: 'Required.' } } }
+    return {
+      error: {
+        error: null,
+        fieldErrors: { name: 'Required.' },
+        values: echoFields(formData),
+      },
+    }
+  }
+
+  const videoUrl = normaliseVideoUrl(nullable(formData.get('video_url')))
+  if (videoUrl.error) {
+    return {
+      error: {
+        error: null,
+        fieldErrors: { video_url: videoUrl.error },
+        values: echoFields(formData),
+      },
+    }
+  }
+
+  const default_metric = nullable(formData.get('default_metric'))
+  const default_metric_value = nullable(formData.get('default_metric_value'))
+  if (default_metric_value && !default_metric) {
+    return {
+      error: {
+        error: null,
+        fieldErrors: { default_metric: 'Pick a unit for the load value.' },
+        values: echoFields(formData),
+      },
+    }
   }
 
   return {
@@ -224,14 +281,13 @@ function parseFormFields(
     values: {
       name,
       movement_pattern_id: nullable(formData.get('movement_pattern_id')),
-      video_url: nullable(formData.get('video_url')),
+      video_url: videoUrl.value ?? null,
       description: nullable(formData.get('description')),
       instructions: nullable(formData.get('instructions')),
       default_sets: toIntOrNull(formData.get('default_sets')),
       default_reps: nullable(formData.get('default_reps')),
-      default_metric: nullable(formData.get('default_metric')),
-      default_metric_value: nullable(formData.get('default_metric_value')),
-      default_rpe: toIntOrNull(formData.get('default_rpe')),
+      default_metric,
+      default_metric_value,
       default_rest_seconds: toIntOrNull(formData.get('default_rest_seconds')),
       tag_ids: formData.getAll('tag_ids').map((v) => v.toString()),
     },
@@ -248,9 +304,80 @@ type ParsedExerciseFields = {
   default_reps: string | null
   default_metric: string | null
   default_metric_value: string | null
-  default_rpe: number | null
   default_rest_seconds: number | null
   tag_ids: string[]
+}
+
+/**
+ * Echo the raw submitted form fields back to the client. React 19 resets
+ * uncontrolled inputs when a server action returns; error states carry
+ * this so the form can restore what the EP typed.
+ */
+function echoFields(formData: FormData): ExerciseFormEcho {
+  const raw = (k: string) => (formData.get(k) ?? '').toString()
+  return {
+    name: raw('name'),
+    movement_pattern_id: raw('movement_pattern_id'),
+    video_url: raw('video_url'),
+    description: raw('description'),
+    instructions: raw('instructions'),
+    default_sets: raw('default_sets'),
+    default_reps: raw('default_reps'),
+    default_metric: raw('default_metric'),
+    default_metric_value: raw('default_metric_value'),
+    default_rest_seconds: raw('default_rest_seconds'),
+    tag_ids: formData.getAll('tag_ids').map((v) => v.toString()),
+  }
+}
+
+/**
+ * Normalise + validate the video URL ahead of the DB CHECK (^https?://) so
+ * the EP gets an inline field error, not a raw constraint violation.
+ * Scheme-less host-shaped pastes ("youtube.com/watch?v=…") are common when
+ * the URL is typed or copied from the address bar — auto-prefix https://.
+ */
+function normaliseVideoUrl(
+  raw: string | null,
+): { value: string | null; error?: never } | { value?: never; error: string } {
+  if (raw === null) return { value: null }
+  const withScheme = /^https?:\/\//i.test(raw)
+    ? raw
+    : /^[a-z0-9-]+(\.[a-z0-9-]+)+([/?#]\S*)?$/i.test(raw)
+      ? `https://${raw}`
+      : null
+  if (!withScheme) {
+    return { error: 'Paste a full URL — https://…' }
+  }
+  return { value: withScheme }
+}
+
+/**
+ * The unit code is free text at the DB layer (stored as text for rename
+ * stability) — assert it matches an active exercise_metric_units code so a
+ * stale form or hand-crafted request can't write an unknown unit.
+ */
+async function validateMetricCode(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  code: string | null,
+): Promise<ExerciseFormState | null> {
+  if (code === null) return null
+  const { data, error } = await supabase
+    .from('exercise_metric_units')
+    .select('code')
+    .eq('code', code)
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .maybeSingle()
+  if (error) {
+    return { error: `Couldn't verify the unit: ${error.message}`, fieldErrors: {} }
+  }
+  if (!data) {
+    return {
+      error: null,
+      fieldErrors: { default_metric: 'Unknown unit — pick one from the list.' },
+    }
+  }
+  return null
 }
 
 function nullable(value: FormDataEntryValue | null): string | null {

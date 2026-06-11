@@ -1,6 +1,25 @@
 export type ExerciseFormState = {
   error: string | null
-  fieldErrors: Partial<Record<'name', string>>
+  fieldErrors: Partial<Record<'name' | 'video_url' | 'default_metric', string>>
+  /** Raw submitted values, echoed back on error returns. React 19 resets
+   *  uncontrolled form fields after a server action completes; without
+   *  this echo a validation error wipes everything the EP typed. The form
+   *  prefers these over the persisted initial values when present. */
+  values?: ExerciseFormEcho
+}
+
+export type ExerciseFormEcho = {
+  name: string
+  movement_pattern_id: string
+  video_url: string
+  description: string
+  instructions: string
+  default_sets: string
+  default_reps: string
+  default_metric: string
+  default_metric_value: string
+  default_rest_seconds: string
+  tag_ids: string[]
 }
 
 export const initialExerciseFormState: ExerciseFormState = {
@@ -21,7 +40,6 @@ export type LibraryExercise = {
   default_reps: string | null
   default_metric: string | null
   default_metric_value: string | null
-  default_rpe: number | null
   usage_count: number
   video_url: string | null
   tag_ids: string[]
@@ -37,7 +55,6 @@ export type ExerciseFormValues = {
   default_reps: string | null
   default_metric: string | null
   default_metric_value: string | null
-  default_rpe: number | null
   default_rest_seconds: number | null
   instructions: string | null
   tag_ids: string[]

@@ -21,7 +21,7 @@ export default async function LibraryPage() {
       .from('exercises')
       .select(
         `id, name, default_sets, default_reps, default_metric,
-         default_metric_value, default_rpe, usage_count, video_url,
+         default_metric_value, usage_count, video_url,
          movement_pattern_id,
          movement_pattern:movement_patterns(name),
          exercise_tag_assignments(tag:exercise_tags(id, name, deleted_at))`,
@@ -62,7 +62,6 @@ export default async function LibraryPage() {
       default_reps: e.default_reps,
       default_metric: e.default_metric,
       default_metric_value: e.default_metric_value,
-      default_rpe: e.default_rpe,
       usage_count: e.usage_count ?? 0,
       video_url: e.video_url,
       tag_ids: tagObjs.map((t) => t.id),

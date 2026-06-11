@@ -38,7 +38,7 @@ export function SearchInput({
           padding: '0 12px 0 36px',
           border: '1px solid var(--color-border-subtle)',
           borderRadius: 'var(--radius-input)',
-          background: '#fff',
+          background: 'var(--color-card)',
           fontFamily: 'var(--font-sans)',
           fontSize: '.86rem',
           outline: 'none',

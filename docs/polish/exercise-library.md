@@ -185,3 +185,163 @@ These belong to other passes and are flagged here so they don't get backdoored i
 - **Circuits / Sessions / Programs sub-tabs becoming live.** They each ship with their underlying system (session builder, program engine).
 - **Exercise version history / rollback.** Audit log captures it; no UI in v1.
 - **Hard delete / undelete UI.** Soft-delete only in v1.
+
+---
+---
+
+# Re-audit pass — 2026-06-12
+
+**Context.** The gap document above (2026-05-05) was executed in commit `95bcfd4` plus migrations [`20260505100000_soft_delete_library_rpcs.sql`](../../supabase/migrations/20260505100000_soft_delete_library_rpcs.sql) and [`20260505100100_audit_register_library.sql`](../../supabase/migrations/20260505100100_audit_register_library.sql) — **before** the current seven-step polish-pass protocol (premortem step, sign-off ritual) was in force. The doc was never closed: no premortem, no closing commit, no sign-off. CLAUDE.md activated this section formally on 2026-06-11. This pass therefore re-audits the section under the current protocol: verify what landed, identify drift since (session-builder phases C–G touched the default-prescription pipeline), run the premortem, and produce a fresh gap list.
+
+**Audit date:** 2026-06-12
+**Status:** Gap list awaiting approval — no code changed in this pass.
+
+---
+
+## 6. Verification of the 2026-05-05 gap list
+
+| Old gap | Status | Evidence |
+|---|---|---|
+| P0-1 soft-delete RPCs | ✅ Done | `soft_delete_exercise` / `_movement_pattern` / `_exercise_tag` in [`20260505100000`](../../supabase/migrations/20260505100000_soft_delete_library_rpcs.sql); SECURITY DEFINER, in-body org + role check, `NOT FOUND` raise. |
+| P0-2 audit registration | ✅ Done | [`20260505100100`](../../supabase/migrations/20260505100100_audit_register_library.sql); four triggers + five CASE branches. Survived both resolver regressions — present in the latest canonical resolver ([`20260513160000`](../../supabase/migrations/20260513160000_audit_resolver_coverage_guard.sql)) and now protected by `assert_audit_resolver_coverage()` + pgTAP test 14. |
+| P0-3 lying affordances | ✅ Done | Card is a real `<Link>` to `/library/[id]` ([ExerciseCard.tsx:209](../../src/app/(staff)/library/_components/ExerciseCard.tsx)); `CardMenu` is a real menu. |
+| P1-1 edit page | ✅ Done | [`[id]/page.tsx`](../../src/app/(staff)/library/[id]/page.tsx) — shared `ExerciseForm` in edit mode, `notFound()` on missing row. |
+| P1-2 delete flow | ⚠️ Done with a dead limb | [CardMenu.tsx:24-39](../../src/app/(staff)/library/_components/CardMenu.tsx) — confirm + usage-count warning + RPC. **But the usage warning can never fire** — see G-1. |
+| P1-3 metric dropdown | ⚠️ Done, gate unmet | Unit select loads from `exercise_metric_units` in both forms; actions write `default_metric`. **Old acceptance gate 2 ("value present, unit absent cannot save") was never implemented** — see G-6. |
+| P1-4 patterns in Settings | ✅ Done | `LookupManager kind="patterns"` at [settings/page.tsx:175](../../src/app/(staff)/settings/page.tsx); add + soft-delete actions in [settings/actions.ts:182-240](../../src/app/(staff)/settings/actions.ts). |
+| P1-5 drop Import CSV | ✅ Done | No trace in `LibraryView.tsx`. |
+| P1-6 placeholder copy | ✅ Done | Placeholders describe the surface, not the build order. |
+| P1-7 composable pieces | ✅ Done | `SearchInput` / `PatternChips` / `TagChips` / `ExerciseCard` (with `onPick` picker contract) / `ExerciseGrid` all independently importable. |
+| P2-1 tokens | ⚠️ Partial | Radius + some text tokens adopted (`--radius-card`, `--radius-input`, `--radius-chip`, `--text-2xs`, `--text-base`). **Hardcoded colours remain** — see G-8. Spacing/font-size literals remain (project-wide pattern, accepted below). |
+| P2-2 card hover | ✅ Done | `.card-link` transition + hover at [globals.css:345-352](../../src/app/globals.css). |
+| P2-3 YouTube thumbnail | ✅ Done | [`youtube.ts`](../../src/app/(staff)/library/_components/youtube.ts) ID extraction, `mqdefault.jpg`, solid-block fallback. |
+| P2-4 voice | ✅ Done | Empty-state copy matches the approved rewrite. |
+| P2-5 MoreVertical | ✅ Done | |
+| P2-6 `×` not `x` | ✅ Done | |
+| P2-7 eyebrow | ✅ Done | "Exercise library · New" / "· Edit". |
+
+**Old acceptance gates:** 1, 3, 4, 6, 8, 9 pass. Gate 2 **fails** (G-6). Gate 5 is **untestable as written** — the warning copy exists but `usage_count` is permanently 0 (G-1). Gate 7 partial (G-8).
+
+**Infrastructure verified this pass:** RLS on all five tables (staff-only Pattern A on `exercises` with DELETE denied; Pattern C on `exercise_tag_assignments`); bootstrap seeds match brief §6.6 patterns (Push…Isometric) and §6.5.3 metric-unit order exactly; `exercise_tags` are **not** seeded (G-10). Historical note for the record: the 2026-05-05 audit-registration migration itself caused resolver-regression incident #1 (six branches dropped, repaired 2026-05-10/13); the structural guard now makes that class of regression impossible to ship silently.
+
+---
+
+## 7. Drift since 2026-05-05
+
+1. **Per-set prescription model landed** ([`20260507100000_program_exercise_sets.sql`](../../supabase/migrations/20260507100000_program_exercise_sets.sql)). Defaults now fan out per set. Q6 sign-off (2026-05-07): no dedicated RPE column on set rows — prescription RPE rides `optional_metric='rpe'` / `optional_value`. Consequence: a prescribed set carries load **or** RPE in its optional column, not both. This constrains G-3.
+2. **Two default-application paths now exist**: the TS append path ([days/[dayId]/actions.ts:65-120](../../src/app/(staff)/clients/[id]/program/days/[dayId]/actions.ts)) and the SQL insert-at-position RPC ([`insert_program_exercise_at`](../../supabase/migrations/20260507100300_insert_program_exercise_at.sql)). They currently apply the same six fields (sets, reps, metric, value, rest, instructions) — and both identically skip `default_rpe` and `usage_count`. Consistent today; a consistency liability tomorrow. Rider for section 5.
+3. **The session builder did not import the composable library pieces** — it has its own exercise fetch. Expected: the §6.5.2 Library tab is section-5 scope, and the `onPick` contract sits ready. Not a gap here.
+4. **`client_get_program_day_exercises_v2` ships `exercise_video_url` to the portal, and the portal renders nothing for it.** Brief §6.4 specifies an expandable video thumbnail per exercise in the client session flow. Section-7 rider, recorded in §11.
+
+---
+
+## 8. Premortem — ranked failure modes
+
+Weighting per protocol: infrastructure/security at production grade; operational/UX at friends-and-family scope.
+
+| # | Failure mode | Likelihood | Impact | Closed by |
+|---|---|---|---|---|
+| FM-1 | **`usage_count` is permanently zero.** Schema comment promises application-side increment; no code or trigger anywhere writes it. The card's "used N×" never renders, the brief's "surfaces most-used exercises" (§5.1) is dead, and the delete-confirm's "Used in N program days" safety warning **never fires** — the EP deletes an in-use exercise on the bare "Delete?" prompt. Harm bounded (soft delete + RESTRICT FK keep existing prescriptions resolvable) but the safety copy built for exactly this case is unreachable. | Certain | Medium | G-1 |
+| FM-2 | **Editing an exercise whose movement pattern was soft-deleted silently clears the pattern.** The `movement_patterns` SELECT policy filters `deleted_at IS NULL`, so the edit form's dropdown can't contain the current value; the browser falls back to "—" and the next save writes NULL. Deleting patterns in Settings is a supported flow, so this fires on a normal path. Same policy also means the library card shows "Unclassified" for such exercises, and the RPC migration's comment ("continue to resolve the pattern name") is wrong at the app layer. | Medium-high over beta lifetime | Medium — silent data loss | G-2 |
+| FM-3 | **`default_rpe` dead-ends.** Stored, edited, rendered on the card — but neither default-application path inherits it. Brief §5.1: the default prescription includes an RPE target and the program "inherits all defaults." EP sets RPE 8 in the library, prescribes the exercise, and the intended intensity silently never reaches the client. Constrained by Q6 (load and RPE can't both ride the optional column). | Certain when the field is used | Low-medium — broken brief promise, missing clinical intent | G-3 |
+| FM-4 | **Scheme-less YouTube paste fails ugly.** `youtube.com/watch?v=…` without `https://` violates the DB CHECK; the EP sees a raw constraint-violation string. Hand-typed and some copied URLs commonly arrive scheme-less. | High | Low | G-5 |
+| FM-5 | **Library RPC/RLS regression ships unnoticed.** No pgTAP coverage for the three library soft-delete RPCs (tests 05/06 cover the earlier RPC families; test 17's automated matrix doesn't include library tables). The in-body org/role checks are correct *today*; the risk is a future migration regressing them silently. Production-grade weighting per protocol. | Low | High | G-4 |
+| FM-6 | **Metric value saved without a unit.** Old gate 2, never implemented. A `default_metric_value` with NULL `default_metric` flows into set rows as an unlabelled "60" in the builder and the portal. | Medium | Low-medium | G-6 |
+| FM-7 | **Play affordance lies on cards.** The Play glyph renders on every card — including "No video" cards — and nothing anywhere in the library plays or opens a video. CLAUDE.md names "video preview" in this section's scope; brief §6.6 requires at minimum an honest indicator. | Certain | Low — trust erosion | G-9 |
+| FM-8 | **Silent no-op success on update.** If the exercise was deleted (or RLS filters it), the UPDATE matches zero rows, returns no error, and the action redirects as if saved. | Low | Low | G-7 |
+| FM-9 | **Design-token drift.** Hardcoded `#C7BEB4`, `#F5F0EA`, `#fff`, `rgba(45,178,76,.1)` in library components violate the "tokens only" rule and will diverge on any future palette change. | Certain (present now) | Cosmetic | G-8 |
+
+**Accepted without mitigation (rationale):**
+- **Client-side `includes()` search; trigram index unused.** Correct at the brief's ~200-exercise scale; the index is pre-paid for the session-builder panel and future server-side search. Re-trigger: library exceeds ~1,000 rows or list-payload latency is felt.
+- **Native `confirm()` in CardMenu.** Established staff-surface pattern (settings editors, session builder, schedule all use it); the styled `ConfirmDialog` exists only where iOS URL-display corrupted locked copy (portal) and on the client profile. Unifying is a cross-section polish decision, not a library gap.
+- **Form's 4-column prescription grid doesn't collapse at 375px.** Staff surface is desktop-first per CLAUDE.md; 768px renders acceptably. Re-trigger: any real EP use of the staff platform on a phone.
+
+---
+
+## 9. Fresh gap list
+
+### P0 — promoted per protocol (certain/high-likelihood failure modes)
+
+| # | Gap | Detail |
+|---|---|---|
+| **G-1** | **Make `usage_count` real.** (FM-1) | Brief §5.1 requires it; the delete-safety warning depends on it. **Options:** (a) *recommended* — BEFORE/AFTER INSERT trigger on `program_exercises` incrementing `exercises.usage_count` ("times prescribed" is monotonic; no decrement on soft-delete — prescribed is prescribed). One migration; covers both application paths and all copy/duplicate RPCs for free; the existing `exercises_usage_idx` finally earns its keep. (b) computed `COUNT` at library load — always honest, no migration, but a per-load aggregate and the index stays dead. Backfill existing rows either way. |
+| **G-2** | **Stop silent pattern loss on edit.** (FM-2) | Minimal fix: in the edit form, when `movement_pattern_id` is not in the active pattern list, render a synthetic selected option (value = current id, label "Current pattern (removed from settings)") so an untouched save preserves it and choosing "—" becomes a deliberate act. Card label "Pattern removed" instead of "Unclassified" is optional honesty on top. Alternative (bigger): drop the `deleted_at IS NULL` filter from the staff SELECT policy so names still resolve — a policy change; cheap pre-launch but wider blast radius. Recommend the synthetic-option fix; policy stays. |
+
+### P1 — functional
+
+| # | Gap | Detail |
+|---|---|---|
+| **G-3** | **`default_rpe` inheritance under the Q6 model.** (FM-3) | Q6 says prescription RPE rides `optional_metric='rpe'`/`optional_value` — one optional column per set. **Options:** (a) status quo made explicit — load always wins, form hint says RPE target is informational; (b) *recommended* — inherit RPE into the optional column **only when no load default exists** (`default_metric`/`default_metric_value` absent), form hint states the precedence; (c) extend the per-set model with a dedicated RPE column — re-opens Q6, section-5 territory, rejected here. Apply the chosen rule to **both** default-application paths (TS append + SQL RPC) in the same commit-set. |
+| **G-4** | **pgTAP coverage for the library RPC trio.** (FM-5) | New test file mirroring 05/06: happy path, cross-org deny, role deny (client JWT), double-delete raise, for `soft_delete_exercise` / `_movement_pattern` / `_exercise_tag`. Use the `create_test_session()`-style JWT-spoof fixtures per project memory (no SECURITY DEFINER bypass helpers). |
+| **G-5** | **Friendly `video_url` validation.** (FM-4) | Server-side in `parseFormFields`: auto-prefix `https://` when scheme-less and host-shaped, then validate `^https?://`; inline field error ("Paste a full URL — https://…") instead of the raw constraint message. DB CHECK stays as backstop. No YouTube-host restriction — non-YouTube `https` URLs legitimately fall back to the no-thumbnail block. |
+| **G-6** | **Close old gate 2: value requires unit.** (FM-6) | Server-side validation: `default_metric_value` present + `default_metric` absent → inline field error on the Unit select. Optional belt-and-braces DB CHECK (cheap pre-launch). Also validate the submitted `default_metric` code against `exercise_metric_units` server-side. |
+| **G-9** | **Honest video preview.** (FM-7) | **Options:** (a) *recommended* — thumbnail zone becomes a real target: click opens `video_url` in a new tab (`stopPropagation`; card body still routes to edit); Play glyph renders **only** when a video exists; "No video" block keeps the caption, loses the glyph. (b) inline embed lightbox — rejected: heavier surface, and the restraint posture plus "no video hosting, YouTube links only" make a tab-out the honest shape (mirrors brief §6.4's portal behaviour: expand, then open YouTube). |
+
+### P2 — polish
+
+| # | Gap | Detail |
+|---|---|---|
+| **G-7** | **Update/delete honesty.** (FM-8) | `updateExerciseAction`: append `.select('id')` and error when zero rows ("This exercise no longer exists — it may have been deleted in another tab."). |
+| **G-8** | **Colour literals → tokens.** (FM-9) | `#C7BEB4` (dot separators), `#F5F0EA` (tag chip bg), `#fff` (inputs/chips), `rgba(45,178,76,.1)` (selected chip tint) across the library components. Map to existing `globals.css` tokens or add the missing ones there — never inline. |
+| **G-10** | **Seed the brief's five default tags at bootstrap?** | Brief §6.6 names DGR, PRI, Plyometrics, Rehab, Prehab. Bootstrap seeds patterns, section titles, units, and categories — but not tags, so a new org's tag chips and form section are simply hidden. Decision Q-D below; recommend seeding (matches the `client_categories` precedent; tags stay fully editable in Settings). Operator's existing org gets a one-off backfill only if desired. |
+| **G-11** | **Create-CTA placement disagreement — surfaced per the source-of-truth rule.** | Brief §6.6: "'+ Create New Exercise' at the **bottom of the library list**." Current: "New exercise" top-right in the page header. Reading: bottom-of-list describes the inline session-builder panel (where the header doesn't exist); the standalone screen header CTA is the stronger pattern and matches every other staff screen. Recommend: keep the header CTA here; the bottom-of-list create belongs to the §6.5.2 panel in section 5. Flagged rather than silently resolved. |
+
+---
+
+## 10. Decision questions for sign-off
+
+Answered by the operator 2026-06-12. The gap list was approved with these decisions; protocol step 6 (implementation) began the same day.
+
+| Q | Question | Recommendation | Decision |
+|---|---|---|---|
+| A | G-1 mechanism: DB trigger vs computed COUNT? | **Trigger** — monotonic counter, covers all insert paths including SQL RPCs, one migration + backfill. | **Trigger** (as recommended). |
+| B | G-3 RPE inheritance: (a) load-always-wins / (b) RPE-when-no-load / (c) dedicated column? | **(b)** — honours "inherits all defaults" as far as the Q6 model allows without re-opening it. | **(d) — operator's own option: remove the RPE default from the library exercise entirely** (drop `exercises.default_rpe`). Recorded as a deliberate deviation from brief §5.1. Rationale: under the Q6 model a dedicated default can never inherit alongside a load default — a stored value that never flows is a lie in the schema; an RPE target stays fully expressible via the Unit dropdown (`rpe` is a seeded metric unit) and *that* path inherits. Bonus closure: `client_get_week_overview`'s read-time `COALESCE(pe.rpe, e.default_rpe)` let a library edit retroactively change what clients saw on published prescriptions (the §5.2 retroactivity hazard) — removing the column removes the leak. |
+| C | G-9 video preview: tab-out vs inline embed? | **Tab-out** (option a). | **Tab-out** (as recommended). |
+| D | G-10: seed the five brief tags for new orgs? | **Yes**, with Settings remaining the owner of the list. | **Yes** (as recommended). Backfill restricted to orgs with zero active tags — preflight showed the operator org's curated set differs from the brief's five and must not be touched. |
+| E | G-11: keep header create-CTA on the standalone screen? | **Yes**; bottom-of-list lands with the section-5 inline panel. | **Keep header CTA** (as recommended). |
+
+---
+
+## 11. Riders to other sections (recorded, not actioned here)
+
+- **Section 5 — session builder:** §6.5.2 Library tab composes `SearchInput` + `PatternChips` + `TagChips` + `ExerciseGrid` with `onPick`; bottom-of-list "+ Create New Exercise" lives there (G-11); the two default-application paths (TS append + `insert_program_exercise_at`) should converge on the RPC when that pass touches add-exercise — and must both carry whatever G-3 decides.
+- **Section 7 — client portal:** brief §6.4 expandable per-exercise video thumbnail. The data already arrives (`exercise_video_url` in `client_get_program_day_exercises_v2`); the portal renders nothing for it today.
+
+Neither rider is go-live-checklist material — no security or launch-gating exposure; both attach to sections still ahead in the locked polish order and will surface in those sections' audits.
+
+---
+
+## 12. Proposed sequencing (on approval)
+
+1. **Migrations** — G-1 trigger + backfill; G-6 optional DB CHECK. `supabase db push`, regen types.
+2. **Server actions** — G-5 + G-6 validation in `parseFormFields`; G-7 update honesty; G-3 inheritance rule in `addExerciseToDayAction` **and** `insert_program_exercise_at` (same commit-set).
+3. **UI** — G-2 synthetic pattern option; G-9 thumbnail target + conditional Play glyph; G-8 token sweep; G-10 bootstrap seed (if approved).
+4. **Tests** — G-4 pgTAP file; re-run full suite.
+5. **Acceptance** — gates: usage counts render and the delete warning fires on an in-use exercise; editing a deleted-pattern exercise preserves the pattern; RPE inheritance per Q-B in both paths; value-without-unit blocked with inline error; scheme-less URL auto-fixed or friendly-rejected; thumbnail click opens the video, card click opens edit; zero colour literals in library components; pgTAP green.
+
+**Status: gap list approved 2026-06-12 (decisions recorded in §10); implementation log below.**
+
+---
+
+## 13. Implementation log (2026-06-12)
+
+Gap-by-gap closure notes, dependency order per §12.
+
+- **G-1 (P0, FM-1) — closed.** `bump_exercise_usage_count()` trigger on `program_exercises` + `template_exercises` inserts, plus backfill (168 prescriptions across 18 exercises at migration time) — [`20260612090000`](../../supabase/migrations/20260612090000_exercise_usage_count_trigger.sql). Monotonic "times prescribed": soft-delete does not decrement. Accepted trade-off: each prescription insert writes one `exercises` audit row (`usage_count`, `updated_at`) and moves `updated_at` — low volume, and the audit trail arguably gains signal. Trigger names avoid the `audit_` prefix so the resolver coverage guard ignores them. Stale column comment corrected.
+- **G-2 (P0, FM-2) — closed.** Edit form renders a synthetic "Current pattern (removed from settings)" option when the saved `movement_pattern_id` is absent from the active list, so an untouched save preserves it ([ExerciseForm.tsx](../../src/app/(staff)/library/_components/ExerciseForm.tsx)). Card label distinguishes "Pattern removed" (had one, since deleted) from "Unclassified" (never had one). The policy-change alternative was rejected as planned.
+- **G-3 (P1, FM-3) — closed per Q-B decision (d).** `exercises.default_rpe` dropped; `client_get_week_overview` updated in the same migration (read-time fallback removed) — [`20260612090100`](../../supabase/migrations/20260612090100_drop_exercises_default_rpe.sql). RPE field removed from form, card, types, and both page selects. Pre-drop check: the only non-null value sat on a soft-deleted seed exercise — nothing live discarded.
+- **G-4 (P1, FM-5) — closed.** [`20_library_soft_delete_rpcs_and_usage.sql`](../../supabase/tests/database/20_library_soft_delete_rpcs_and_usage.sql): 17 assertions — cross-org deny / client deny / happy path / invisibility / double-delete for the RPC trio, referenced-pattern-survival, and the usage-count trigger on both insert paths plus monotonicity. Buffered `_tap` style (15–19 convention); run as a single SQL-Editor batch.
+- **G-5 (P1, FM-4) — closed.** `normaliseVideoUrl()` in [actions.ts](../../src/app/(staff)/library/actions.ts): scheme-less host-shaped pastes get `https://` prefixed; anything else returns the inline field error "Paste a full URL — https://…". DB CHECK remains the backstop.
+- **G-6 (P1, FM-6) — closed.** Value-without-unit blocked server-side with an inline error on the Unit select; unknown/inactive unit codes rejected via `validateMetricCode()`; DB CHECK `exercises_metric_value_requires_unit` added after a two-row backfill (`BW` → `bodyweight` unit, `80kg` → `kg` + value `80`) — [`20260612090200`](../../supabase/migrations/20260612090200_exercises_metric_value_requires_unit.sql). Card now renders load through `formatDefaultLoad()` ([format.ts](../../src/app/(staff)/library/_components/format.ts)) in house voice: "60kg", "BW", "RPE 8", "80%".
+- **G-7 (P2, FM-8) — closed.** `updateExerciseAction` appends `.select('id')` and errors on a zero-row match instead of redirecting as if saved.
+- **G-8 (P2, FM-9) — closed.** Colour literals replaced across the library components: `#fff` → `--color-card`, `#F5F0EA` → `--color-surface`, `#C7BEB4` → `--color-text-faint`, selected-chip tint → new `--color-accent-soft` token added to `globals.css` (the rgba literal already recurred four times in component rules there; new code references the token).
+- **G-9 (P1, FM-7) — closed per Q-C.** Card restructured into sibling targets (an `<a>` cannot nest in an `<a>`): media zone opens the video in a new tab (`rel="noopener noreferrer"`), body links to the edit page, CardMenu floats above both. Play glyph renders only when a video exists; "No video" block keeps its caption. Picker mode (`onPick`) unchanged — one button, no tab-out.
+- **G-10 (P2) — closed per Q-D.** `seed_organization_defaults()` reproduced from its latest canonical body (20260423100000 — not the original; resolver-incident lesson applied) plus the brief §6.6 five-tag block; backfill seeds only orgs with zero active tags — [`20260612090300`](../../supabase/migrations/20260612090300_seed_default_exercise_tags.sql).
+- **G-11 (P2) — closed per Q-E.** No code change; header CTA stays. Bottom-of-list create recorded as a section-5 item in §11.
+
+**Two additions discovered during browser verification, surfaced here as within-gap elaborations (not new scope):**
+
+- **Form-state preservation on error returns.** Verification exposed that React 19 resets uncontrolled form fields when a server action returns — so the new inline validation errors (G-5/G-6) would wipe everything the EP had typed. Pre-existing behaviour (the old name-required error did it too), but multiplying error paths made it untenable. All error returns now echo the raw submitted values (`ExerciseFormEcho`) and the form prefers the echo over persisted initial values. Verified: name/load/URL survive a value-without-unit rejection.
+- **Card dot-separator honesty.** The `·` between sets×reps and load rendered even when sets×reps was absent ("Unclassified · 60kg" with nothing before the dot). Now renders only between two present segments.
+
+**Browser verification record (2026-06-12, localhost:3000 against live DB pre-push, throwaway staff user per the staff-login-path-verify precedent, hard-deleted after):** 28 cards render with sibling media-anchor + body-link structure (zero nested anchors); thumbnails + Play on video cards; tab-out hrefs correct; pattern and tag chips live; create flow end-to-end (scheme-less YouTube paste auto-prefixed to https, card appears with "60kg" formatter output); value-without-unit rejected with inline Unit error and typed values preserved; CardMenu delete → soft-delete RPC → card gone; edit page loads values with no RPE field; zero console errors. Screenshot capture timed out (preview-tool quirk; page healthy) — structural snapshots stand as the evidence.

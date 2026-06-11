@@ -24,7 +24,7 @@ export function TagChips({ tags, selectedId, onChange }: TagChipsProps) {
               padding: '4px 10px',
               borderRadius: 'var(--radius-chip)',
               border: '1px solid var(--color-border-subtle)',
-              background: on ? 'rgba(45,178,76,.1)' : '#fff',
+              background: on ? 'var(--color-accent-soft)' : 'var(--color-card)',
               color: on ? 'var(--color-primary)' : 'var(--color-text-light)',
               fontSize: '.74rem',
               fontWeight: 500,
