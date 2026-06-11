@@ -22,10 +22,14 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  *
  * Concurrency: the table carries no OCC version column (unlike clients and
  * clinical_notes — recon finding, 2026-06-11). Edits are last-write-wins,
- * accepted deliberately at friends-and-family scale: condition rows are
- * short structured facts maintained by one practitioner, not co-edited
- * documents. If that assumption breaks, the fix is an additive version
- * column + bump trigger, cheap while pre-launch advantages hold.
+ * accepted for the build because condition rows are short structured facts
+ * that are rarely co-edited. NOTE (corrected 2026-06-11): the beta already
+ * runs two staff (operator + EP collaborator) and the UPDATE policy admits
+ * both with no author lock, so the clobber window is live now — not "single
+ * practitioner" as an earlier draft of this comment claimed. The fix when
+ * warranted is an additive version column + the existing
+ * bump_version_and_touch() trigger plus a version check here; indexed as a
+ * now-active item in docs/go-live-checklist.md §8.
  *
  * All writes are staff-only via requireRole + the table's RLS policies
  * (Pattern A staff-only SELECT since CN-2; INSERT/UPDATE staff-only since

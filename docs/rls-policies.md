@@ -472,6 +472,8 @@ CREATE POLICY "deny delete clients"
 - `rls_clients_delete_denied`
 - `rls_clients_soft_delete_via_update_works`
 
+**Known finding — `user_id` is staff-writable, no column-level restriction (logged 2026-06-11, section-3 security recon).** The `staff update clients in own org` policy gates by org + role but not by column, so an authenticated owner/staff session can rewrite `clients.user_id`. The FK (`REFERENCES user_profiles(user_id)`) constrains the target to an *existing* profile row but not to a same-org or client-role user. CN-5's `sync_client_profile_name` RPC (`20260611130000`) re-reads names from the clients row and stamps them onto `user_profiles` where `user_id = clients.user_id`, so a malicious or compromised staff session could repoint `user_id` and then invoke that RPC to overwrite another user's profile **display name**. This is a pre-existing property — the unrestricted column predates CN-5; CN-5 merely adds a name-stamping consumer of it. Bounded harm: display-name overwrite, requires an already-compromised owner/staff session. Mitigation if ever warranted: a column-level UPDATE policy, or a `BEFORE UPDATE` trigger forbidding `user_id` mutation outside `client_accept_invite`. Not remediated; logged here and **not** represented as closed.
+
 ---
 
 ### 4.5 `client_medical_history`
@@ -487,7 +489,7 @@ CREATE POLICY "deny delete clients"
 
 **SQL:** direct Pattern A template (policy name kept as `"staff select cmh in own org"`).
 
-**Tests:** mirror `clients` suite with `rls_cmh_*` prefix, plus `rls_cmh_select_client_denied` — a client SELECT returns zero rows even for their own `client_id` (same shape as the clinical_notes critical test).
+**Tests:** mirror `clients` suite with `rls_cmh_*` prefix, plus `rls_cmh_select_client_denied` — a client SELECT returns zero rows even for their own `client_id` (same shape as the clinical_notes critical test). **Now satisfied (2026-06-11):** the client-deny assertion exists as `supabase/tests/database/19_cmh_client_select_denied.sql` (buffered pgTAP, run via the SQL Editor) and passed — a client-role session sees zero of its own `client_medical_history` rows, with staff-sees-row and client-sees-own-clients-row controls. This is the only one of the prescribed clinical client-deny tests that currently exists (see §4.6).
 
 ---
 
@@ -514,6 +516,8 @@ CREATE POLICY "deny delete clients"
 - `rls_clinical_notes_delete_denied`
 
 The `rls_clinical_notes_select_client_denied` test is a load-bearing protection — a bug here is a Privacy Act breach. pgTAP must assert this explicitly, not infer from absence.
+
+**Finding — the critical test does not exist (logged 2026-06-11, section-3 security recon).** Despite the "must assert this explicitly" instruction above, no `rls_clinical_notes_select_client_denied` test exists anywhere in `supabase/tests/` (verified by grep). CN-2's sibling property on `client_medical_history` is now covered by `supabase/tests/database/19_cmh_client_select_denied.sql`, but the **clinical_notes** client-deny property remains **UNVERIFIED by automated test** — the policy is believed correct from source (Pattern A, staff-only `USING`) but has no executable proof, and a bug here is exactly the Privacy Act breach the line above warns of. Recommended close: generalise `19_*` to assert client-deny across all staff-only clinical tables (`clinical_notes`, `client_medical_history`, and the dormant `assessments`/`assessment_templates`) in one file. Until then this is a known gap, not a clean pass — do not represent §4.6 as test-verified.
 
 ---
 
