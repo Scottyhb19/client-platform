@@ -360,3 +360,7 @@ The rider is now indexed in `docs/go-live-checklist.md` §8 (Deferred hardening)
 
 **Artifact noted during the sync, documented rather than changed:** `clinical_notes_active_flags_idx` covers `note_type = 'injury_flag'` only, while the CN-4 dashboard query filters both flag types — the partial index does not cover contraindication rows. Harmless at current scale; recorded in §8.5 with a widen-if-slow trigger rather than a migration (an index change is outside CN-8's documentation scope and wasn't in the approved gap text).
 
+### CN-14 — closed 2026-06-11
+
+The Invoices tab is gone: `Tab` union member, `TABS` entry, both `VALID_TABS` arrays (component + page), the conditional render, the `InvoicesTab` function (including the Funding placeholder panel, referenced by nothing else), and the now-unused `CreditCard` import. The P2 recon confirmed zero deep links to `?tab=invoices` anywhere in `src/`; an existing deep link would now safely fall back to the details tab via `pickTab`. Two consequential cleanups in the same cut: the `EmptyBlock` helper existed solely for the Invoices placeholder and was removed as dead code, and ProgramTab's grid comment no longer describes its layout by reference to a tab that doesn't exist. Reintroduce the tab when billing is real (Phase 4 at the earliest, per "What NOT to build").
+

@@ -9,7 +9,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CreditCard,
   Edit3,
   Flag,
   Mail,
@@ -194,13 +193,7 @@ export type ProfileCompletion = {
   exercises: ProfileCompletionExercise[]
 }
 
-export type Tab =
-  | 'details'
-  | 'notes'
-  | 'program'
-  | 'reports'
-  | 'files'
-  | 'invoices'
+export type Tab = 'details' | 'notes' | 'program' | 'reports' | 'files'
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'details', label: 'Client details' },
@@ -208,7 +201,6 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'program', label: 'Programs' },
   { key: 'reports', label: 'Reports' },
   { key: 'files', label: 'Files' },
-  { key: 'invoices', label: 'Invoices' },
 ]
 
 interface ClientProfileProps {
@@ -240,14 +232,7 @@ interface ClientProfileProps {
   publications: PublicationRow[]
 }
 
-const VALID_TABS: Tab[] = [
-  'details',
-  'notes',
-  'program',
-  'reports',
-  'files',
-  'invoices',
-]
+const VALID_TABS: Tab[] = ['details', 'notes', 'program', 'reports', 'files']
 
 /**
  * URL-driven tab state. Reading the `tab` search param keeps the active
@@ -399,7 +384,6 @@ export function ClientProfile({
         {tab === 'files' && (
           <FilesTabComponent clientId={client.id} files={files} />
         )}
-        {tab === 'invoices' && <InvoicesTab />}
       </div>
     </div>
   )
@@ -1117,9 +1101,10 @@ function ProgramTab({
     <div
       style={{
         display: 'grid',
-        // Mirrors the Invoices tab's 2:1 split. Empty right column when
-        // there are zero completions still renders a panel with an empty
-        // state — keeps the layout stable as the client logs sessions.
+        // 2:1 split — program detail left, completions right. Empty right
+        // column when there are zero completions still renders a panel
+        // with an empty state — keeps the layout stable as the client
+        // logs sessions.
         gridTemplateColumns: '2fr 1fr',
         gap: 22,
         alignItems: 'start',
@@ -1413,64 +1398,6 @@ function formatCompletionDuration(minutes: number | null): string {
  * ========================================================================= */
 
 /* =========================================================================
- * TAB 6 — INVOICES
- * ========================================================================= */
-
-function InvoicesTab() {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '2fr 1fr',
-        gap: 22,
-        alignItems: 'start',
-      }}
-    >
-      <Panel
-        title="Invoices"
-        action={
-          <button type="button" className="btn outline" disabled style={{ fontSize: '.78rem' }}>
-            <Plus size={13} aria-hidden />
-            New invoice
-          </button>
-        }
-      >
-        <EmptyBlock
-          line1="No invoices yet"
-          line2="Issued and paid invoices will appear here once billing is wired up."
-          accent={
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 10,
-                background: 'var(--color-surface)',
-                display: 'grid',
-                placeItems: 'center',
-                color: 'var(--color-muted)',
-                margin: '0 auto 14px',
-              }}
-            >
-              <CreditCard size={20} aria-hidden />
-            </div>
-          }
-        />
-      </Panel>
-
-      <Panel title="Funding">
-        <div style={{ padding: '14px 18px' }}>
-          <DetailRow label="Scheme" value="—" muted />
-          <DetailRow label="Member #" value="—" muted />
-          <DetailRow label="Sessions YTD" value="0" muted />
-          <DetailRow label="Paid YTD" value="—" muted />
-          <DetailRow label="Outstanding" value="—" muted />
-        </div>
-      </Panel>
-    </div>
-  )
-}
-
-/* =========================================================================
  * Shared building blocks
  * ========================================================================= */
 
@@ -1516,49 +1443,6 @@ function GhostBtn({
     >
       {icon}
     </button>
-  )
-}
-
-function EmptyBlock({
-  line1,
-  line2,
-  accent,
-}: {
-  line1: string
-  line2: string
-  accent?: React.ReactNode
-}) {
-  return (
-    <div
-      style={{
-        padding: '32px 24px',
-        textAlign: 'center',
-        color: 'var(--color-text-light)',
-      }}
-    >
-      {accent}
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '1rem',
-          color: 'var(--color-charcoal)',
-          marginBottom: 4,
-        }}
-      >
-        {line1}
-      </div>
-      <p
-        style={{
-          fontSize: '.84rem',
-          lineHeight: 1.6,
-          margin: '0 auto',
-          maxWidth: 440,
-        }}
-      >
-        {line2}
-      </p>
-    </div>
   )
 }
 
