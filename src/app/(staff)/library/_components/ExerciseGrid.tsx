@@ -11,12 +11,18 @@ interface ExerciseGridProps {
    *  can pass exercises.length to suppress the empty-library CTA. */
   totalAvailable: number
   onPick?: (exerciseId: string) => void
+  /** Compact single-column layout for the session-builder's 320px right
+   *  panel (G-7 follow-up 2026-06-12). The default multi-column grid uses
+   *  minmax(320px) tracks, which overflow a sidebar narrower than 320px;
+   *  dense switches to one full-width column and compact cards. */
+  dense?: boolean
 }
 
 export function ExerciseGrid({
   exercises,
   totalAvailable,
   onPick,
+  dense = false,
 }: ExerciseGridProps) {
   if (totalAvailable === 0) return <EmptyState />
 
@@ -40,12 +46,14 @@ export function ExerciseGrid({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: 14,
+        gridTemplateColumns: dense
+          ? '1fr'
+          : 'repeat(auto-fill, minmax(320px, 1fr))',
+        gap: dense ? 8 : 14,
       }}
     >
       {exercises.map((e) => (
-        <ExerciseCard key={e.id} exercise={e} onPick={onPick} />
+        <ExerciseCard key={e.id} exercise={e} onPick={onPick} dense={dense} />
       ))}
     </div>
   )

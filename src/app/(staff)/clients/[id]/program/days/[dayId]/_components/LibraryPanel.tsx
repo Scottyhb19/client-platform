@@ -287,6 +287,7 @@ export function LibraryPanel({
           exercises={filtered}
           totalAvailable={options.length}
           onPick={handlePick}
+          dense
         />
 
         {/* Bottom-of-list create CTA — brief §6.6 / exercise-library G-11

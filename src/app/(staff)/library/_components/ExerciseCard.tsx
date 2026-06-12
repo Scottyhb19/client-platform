@@ -15,9 +15,14 @@ interface ExerciseCardProps {
    *  library: media zone opens the demo video in a new tab, body links to
    *  /library/[id], CardMenu (Edit + Delete) anchored top-right. */
   onPick?: (exerciseId: string) => void
+  /** Compact list-row sizing for the session-builder's 320px right panel
+   *  (G-7 follow-up 2026-06-12): smaller media + fonts, tighter rhythm,
+   *  and usage count suppressed (it's library-page signal, not picker
+   *  signal). Default false keeps the standalone library card unchanged. */
+  dense?: boolean
 }
 
-export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
+export function ExerciseCard({ exercise: e, onPick, dense = false }: ExerciseCardProps) {
   const isPicker = typeof onPick === 'function'
   const hasVideo = !!e.video_url
   const thumbnailUrl = getYoutubeThumbnailUrl(e.video_url)
@@ -31,7 +36,7 @@ export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
         placeItems: 'center',
         position: 'relative',
         height: '100%',
-        minHeight: 100,
+        minHeight: dense ? 64 : 100,
         overflow: 'hidden',
       }}
     >
@@ -89,16 +94,17 @@ export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
   const body = (
     <div
       style={{
-        padding: '14px 18px',
-        paddingRight: isPicker ? 18 : 44,
+        padding: dense ? '10px 12px' : '14px 18px',
+        paddingRight: isPicker ? (dense ? 12 : 18) : 44,
         textAlign: 'left',
+        minWidth: 0,
       }}
     >
       <div
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
-          fontSize: '1.05rem',
+          fontSize: dense ? '.92rem' : '1.05rem',
           color: 'var(--color-charcoal)',
           lineHeight: 1.2,
         }}
@@ -114,7 +120,8 @@ export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
       >
         {e.movement_pattern_name ??
           (e.movement_pattern_id ? 'Pattern removed' : 'Unclassified')}
-        {e.usage_count > 0 && ` · used ${e.usage_count}×`}
+        {/* Usage count is library-page signal; the picker hides it. */}
+        {!dense && e.usage_count > 0 && ` · used ${e.usage_count}×`}
       </div>
 
       {(e.default_sets || e.default_reps || loadLabel) && (
@@ -123,10 +130,10 @@ export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
             display: 'flex',
             gap: 10,
             alignItems: 'center',
-            marginTop: 10,
+            marginTop: dense ? 6 : 10,
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
-            fontSize: '.8rem',
+            fontSize: dense ? '.76rem' : '.8rem',
             color: 'var(--color-primary)',
             flexWrap: 'wrap',
           }}
@@ -153,7 +160,7 @@ export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
             display: 'flex',
             gap: 4,
             flexWrap: 'wrap',
-            marginTop: 8,
+            marginTop: dense ? 6 : 8,
           }}
         >
           {e.tag_names.map((t) => (
@@ -178,8 +185,8 @@ export function ExerciseCard({ exercise: e, onPick }: ExerciseCardProps) {
 
   const gridStyle: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: '100px 1fr',
-    borderRadius: 'var(--radius-card)',
+    gridTemplateColumns: dense ? '64px 1fr' : '100px 1fr',
+    borderRadius: dense ? 'var(--radius-card-dense)' : 'var(--radius-card)',
     overflow: 'hidden',
   }
 
