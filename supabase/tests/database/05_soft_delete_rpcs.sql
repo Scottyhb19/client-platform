@@ -13,11 +13,13 @@ SET search_path TO public, extensions, pg_temp;
 --
 -- Per the spec on the brief that landed the migration: each new RPC
 -- gets at least three tests — same-org staff can; cross-org staff
--- cannot; client cannot. Plus four extras:
+-- cannot; client cannot. Plus the extras:
 --   - clinical_notes author-lock (non-author staff in same org cannot
 --     soft-delete) — owner has no override, mirroring the policy.
---   - client_publications restore-conflict (different live publication
---     for same session blocks restore).
+--   - client_publications restore-conflict, per-test since
+--     20260612140000: a live publication for the same (session, test)
+--     pair blocks restore; a live publication for a DIFFERENT test in
+--     the same session does not (companion success case).
 --   - practice_custom_tests restore-conflict (same test_id taken).
 --   - test_batteries restore-conflict (same name taken).
 --
@@ -28,12 +30,12 @@ SET search_path TO public, extensions, pg_temp;
 --   - SECURITY DEFINER RPC bypasses RLS for the UPDATE; assertions
 --     query through the staff RLS to verify visibility.
 --
--- Test count: 41
+-- Test count: 43
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(41);
+SELECT plan(43);
 
 
 -- ----------------------------------------------------------------------------
@@ -420,11 +422,14 @@ SELECT public.soft_delete_client_publication((SELECT pub_id FROM _ids));
 
 -- Same test_id as the original on purpose: since 20260501120000 the
 -- unique-active index is (test_session_id, test_id), so only a same-test
--- duplicate genuinely conflicts — keeps this assertion meaningful even
--- if the RPC's session-level conflict check is tightened to per-test.
+-- duplicate genuinely conflicts. The RPC's conflict check matched the
+-- index in 20260612140000 (per-test, no longer session-wide), so this
+-- same-test duplicate is exactly what still blocks restore. Fixed id so
+-- the companion case below can unpublish it.
 INSERT INTO client_publications (
-  organization_id, test_session_id, test_id, published_by
+  id, organization_id, test_session_id, test_id, published_by
 ) VALUES (
+  '00000000-0000-0000-0000-0000000000f0'::uuid,
   (SELECT org_a FROM _ids),
   (SELECT sess_id FROM _ids),
   'fp_cmj_bilateral',
@@ -439,6 +444,44 @@ SELECT throws_ok(
   '23505',
   'cannot restore: a different live publication already exists for that session — unpublish it first or leave the new one in place',
   'restore_client_publication refuses when a live duplicate exists for the same session'
+);
+
+-- Companion case (per-test model, 20260612140000): restore SUCCEEDS when
+-- the only live publication for the session targets a DIFFERENT test.
+--   1. Unpublish the same-test duplicate so no live fp_cmj_bilateral
+--      publication remains for the session.
+--   2. INSERT a live publication for the same session, different test_id.
+--   3. Restore the original → allowed: the unique-active index keys on
+--      (test_session_id, test_id), so the pair doesn't collide.
+SELECT public.soft_delete_client_publication(
+  '00000000-0000-0000-0000-0000000000f0'::uuid
+);
+
+-- test_id has no FK (catalog validation is app-layer); any distinct text
+-- exercises the per-test check.
+INSERT INTO client_publications (
+  organization_id, test_session_id, test_id, published_by
+) VALUES (
+  (SELECT org_a FROM _ids),
+  (SELECT sess_id FROM _ids),
+  'koos',
+  (SELECT staff_a FROM _ids)
+);
+
+SELECT lives_ok(
+  format(
+    $q$SELECT public.restore_client_publication(%L::uuid)$q$,
+    (SELECT pub_id FROM _ids)
+  ),
+  'restore_client_publication succeeds when the only live publication for the session is for a different test'
+);
+
+SELECT is(
+  (SELECT count(*)::int FROM client_publications
+    WHERE test_session_id = (SELECT sess_id FROM _ids)
+      AND deleted_at IS NULL),
+  2,
+  'session hosts two live publications (one per test) after the restore'
 );
 
 
