@@ -30,6 +30,56 @@ export async function createProgramAction(
 
   const clientId = (formData.get('client_id') ?? '').toString()
   const name = (formData.get('name') ?? '').toString().trim()
+
+  // G-2 (2026-06-12): a chosen template short-circuits the scaffold flow —
+  // create_program_from_template (migration 20260612120000) instantiates
+  // the template's full structure (weeks, days on the weekday-rhythm
+  // convention, exercises, per-set rows) atomically. Name defaults to the
+  // template's name server-side when blank.
+  const templateId = (formData.get('template_id') ?? '').toString().trim()
+  if (templateId) {
+    if (!clientId) return { error: 'Missing client id.', fieldErrors: {} }
+    const templateStart = (formData.get('start_date') ?? '').toString().trim()
+    if (!templateStart) {
+      return { error: null, fieldErrors: { start_date: 'Required.' } }
+    }
+
+    const supabaseForTemplate = await createSupabaseServerClient()
+    const { data, error } = await supabaseForTemplate.rpc(
+      'create_program_from_template',
+      {
+        p_template_id: templateId,
+        p_client_id: clientId,
+        p_start_date: templateStart,
+        ...(name ? { p_name: name } : {}),
+      },
+    )
+
+    if (error) {
+      return {
+        error: `Failed to create program from template: ${error.message}`,
+        fieldErrors: {},
+      }
+    }
+
+    const obj = (data ?? {}) as { status?: string }
+    if (obj.status === 'overlap') {
+      return {
+        error:
+          'This client already has an active training block covering these dates. Pick a later start date, or archive the existing block first.',
+        fieldErrors: { start_date: 'Overlaps an existing active block.' },
+      }
+    }
+    if (obj.status !== 'created') {
+      return {
+        error: `Unexpected response from create_program_from_template: ${obj.status ?? 'unknown'}`,
+        fieldErrors: {},
+      }
+    }
+
+    revalidatePath(`/clients/${clientId}/program`)
+    redirect(`/clients/${clientId}/program`)
+  }
   const durationRaw = (formData.get('duration_weeks') ?? '').toString().trim()
   const daysRaw = (formData.get('days_per_week') ?? '').toString().trim()
   const startDate = (formData.get('start_date') ?? '').toString().trim() || null

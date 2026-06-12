@@ -28,6 +28,12 @@ export type ArchiveProgramActionResult =
   | { error: string }
   | { status: 'archived' }
 
+export type SaveProgramAsTemplateActionResult =
+  | { error: string }
+  | { status: 'created'; templateId: string; name: string }
+  | { status: 'duplicate_name'; name: string }
+  | { status: 'invalid_source' }
+
 
 /**
  * Clone a program (with all its weeks, days, exercises) onto an
@@ -121,6 +127,49 @@ export async function archiveProgramAction(
   revalidatePath(`/clients/${clientId}/program`)
   revalidatePath(`/clients/${clientId}`)
   return { status: 'archived' }
+}
+
+
+/**
+ * Snapshot a program into the org's template library (G-2, brief §5.2).
+ * Wraps the save_program_as_template RPC (migration 20260612120000):
+ * weeks, days, exercises, AND per-set rows clone into the template
+ * tables under the weekday-rhythm convention, so instantiating for
+ * another client reproduces the program exactly.
+ *
+ * No revalidate: templates render only on /clients/[id]/program/new,
+ * which is force-dynamic.
+ */
+export async function saveProgramAsTemplateAction(
+  programId: string,
+  name?: string,
+): Promise<SaveProgramAsTemplateActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const args = {
+    p_program_id: programId,
+    ...(name !== undefined && name.trim() !== '' ? { p_name: name } : {}),
+  }
+  const { data, error } = await supabase.rpc('save_program_as_template', args)
+
+  if (error) return { error: error.message }
+  if (!data || typeof data !== 'object') {
+    return { error: 'Unexpected response from save_program_as_template' }
+  }
+
+  const obj = data as { status: string; template_id?: string; name?: string }
+
+  switch (obj.status) {
+    case 'created':
+      return { status: 'created', templateId: obj.template_id!, name: obj.name! }
+    case 'duplicate_name':
+      return { status: 'duplicate_name', name: obj.name! }
+    case 'invalid_source':
+      return { status: 'invalid_source' }
+    default:
+      return { error: `Unknown status: ${obj.status}` }
+  }
 }
 
 

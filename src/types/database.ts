@@ -2720,6 +2720,50 @@ export type Database = {
           },
         ]
       }
+      template_exercise_sets: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          optional_metric: string | null
+          optional_value: string | null
+          reps: string | null
+          set_number: number
+          template_exercise_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          reps?: string | null
+          set_number: number
+          template_exercise_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          reps?: string | null
+          set_number?: number
+          template_exercise_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_exercise_sets_template_exercise_id_fkey"
+            columns: ["template_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "template_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       template_exercises: {
         Row: {
           created_at: string
@@ -3470,6 +3514,15 @@ export type Database = {
         Args: { p_client_id: string; p_target_date: string }
         Returns: Json
       }
+      create_program_from_template: {
+        Args: {
+          p_client_id: string
+          p_name?: string
+          p_start_date: string
+          p_template_id: string
+        }
+        Returns: Json
+      }
       create_test_session: {
         Args: {
           p_applied_battery_id: string
@@ -3532,6 +3585,10 @@ export type Database = {
       restore_test_battery: { Args: { p_id: string }; Returns: undefined }
       restore_test_result: { Args: { p_id: string }; Returns: undefined }
       restore_test_session: { Args: { p_id: string }; Returns: undefined }
+      save_program_as_template: {
+        Args: { p_name?: string; p_program_id: string }
+        Returns: Json
+      }
       seed_organization_defaults: {
         Args: { p_org_id: string }
         Returns: undefined

@@ -6,9 +6,11 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import {
   AlertCircle,
   Archive,
+  Check,
   ChevronLeft,
   ChevronRight,
   Copy,
+  LayoutTemplate,
   Plus,
   Repeat,
   X,
@@ -20,6 +22,7 @@ import {
   archiveProgramAction,
   copyProgramAction,
   repeatProgramAction,
+  saveProgramAsTemplateAction,
 } from '../program-actions'
 
 // ============================================================================
@@ -65,6 +68,8 @@ type Mode =
   | { kind: 'copy-pick' }
   | { kind: 'confirm-repeat' }
   | { kind: 'confirm-archive' }
+  | { kind: 'save-template' }
+  | { kind: 'notice'; title: string; description: string }
   | { kind: 'error'; title: string; description: string }
 
 export function ProgramToolbar({
@@ -192,6 +197,48 @@ export function ProgramToolbar({
     }
   }
 
+  async function runSaveTemplate(name: string) {
+    if (!currentBlock) return
+    setBusy(true)
+    try {
+      const result = await saveProgramAsTemplateAction(currentBlock.id, name)
+      if ('error' in result) {
+        setMode({
+          kind: 'error',
+          title: 'Save as template failed',
+          description: result.error,
+        })
+        return
+      }
+      switch (result.status) {
+        case 'created':
+          setMode({
+            kind: 'notice',
+            title: 'Template saved',
+            description: `"${result.name}" is in your template library. Pick it under "Start from template" when creating a training block for any client.`,
+          })
+          break
+        case 'duplicate_name':
+          setMode({
+            kind: 'error',
+            title: 'A template already has that name',
+            description: `"${result.name}" is taken. Save again with a different name.`,
+          })
+          break
+        case 'invalid_source':
+          setMode({
+            kind: 'error',
+            title: 'Block has no start date',
+            description:
+              'Templates are saved from the block structure, which needs a start date. Set one before saving.',
+          })
+          break
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   // Compute the back-to-back start date for the repeat-confirm dialog.
   const repeatStartIso = useMemo(() => {
     if (!currentBlock) return null
@@ -232,6 +279,16 @@ export function ProgramToolbar({
               <Archive size={14} aria-hidden />
               Archive block
             </button>
+            <button
+              type="button"
+              className="btn outline"
+              onClick={() => setMode({ kind: 'save-template' })}
+              disabled={busy}
+              title="Save this block to the template library — reusable for any client"
+            >
+              <LayoutTemplate size={14} aria-hidden />
+              Save as template
+            </button>
           </>
         )}
         <Link
@@ -269,6 +326,23 @@ export function ProgramToolbar({
           onCancel={() => setMode({ kind: 'idle' })}
           onConfirm={runArchive}
           busy={busy}
+        />
+      )}
+
+      {mode.kind === 'save-template' && currentBlock && (
+        <SaveTemplateDialog
+          currentBlock={currentBlock}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={runSaveTemplate}
+          busy={busy}
+        />
+      )}
+
+      {mode.kind === 'notice' && (
+        <NoticeDialog
+          title={mode.title}
+          description={mode.description}
+          onClose={() => setMode({ kind: 'idle' })}
         />
       )}
 
@@ -676,6 +750,140 @@ function ArchiveBlockDialog({
         confirmDisabled={busy}
         cancelDisabled={busy}
       />
+    </DialogShell>
+  )
+}
+
+
+// ============================================================================
+// SaveTemplateDialog — name the template (defaults to the block name)
+// before snapshotting it into the org's template library (G-2).
+// ============================================================================
+
+interface SaveTemplateDialogProps {
+  currentBlock: CurrentBlock
+  onCancel: () => void
+  onConfirm: (name: string) => void
+  busy: boolean
+}
+
+function SaveTemplateDialog({
+  currentBlock,
+  onCancel,
+  onConfirm,
+  busy,
+}: SaveTemplateDialogProps) {
+  const [name, setName] = useState(currentBlock.name)
+  const trimmed = name.trim()
+  return (
+    <DialogShell onCancel={onCancel} disabled={busy} width={420}>
+      <DialogHeader
+        title="Save as template"
+        subtitle="Snapshots this block's weeks, days, exercises and per-set prescriptions. Reusable for any client; later edits to this block don't change the template."
+        onClose={onCancel}
+      />
+
+      <div style={{ marginBottom: 4 }}>
+        <div
+          style={{
+            fontSize: '.64rem',
+            fontWeight: 700,
+            color: 'var(--color-muted)',
+            textTransform: 'uppercase',
+            letterSpacing: '.06em',
+            marginBottom: 5,
+          }}
+        >
+          Template name
+        </div>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="ACL Rehab Phase 2"
+          aria-label="Template name"
+          autoFocus
+          style={{
+            width: '100%',
+            height: 36,
+            padding: '0 12px',
+            border: '1px solid var(--color-border-subtle)',
+            borderRadius: 7,
+            background: 'var(--color-surface)',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '.86rem',
+            outline: 'none',
+            color: 'var(--color-text)',
+            boxSizing: 'border-box',
+          }}
+        />
+      </div>
+
+      <DialogActions
+        onCancel={onCancel}
+        onConfirm={() => onConfirm(trimmed)}
+        confirmLabel={busy ? 'Saving…' : 'Save template'}
+        confirmDisabled={busy || trimmed.length === 0}
+        cancelDisabled={busy}
+      />
+    </DialogShell>
+  )
+}
+
+
+// ============================================================================
+// NoticeDialog — single OK button, success/neutral tone. Accent check
+// is a sanctioned success-state use of the green.
+// ============================================================================
+
+interface NoticeDialogProps {
+  title: string
+  description: string
+  onClose: () => void
+}
+
+function NoticeDialog({ title, description, onClose }: NoticeDialogProps) {
+  return (
+    <DialogShell onCancel={onClose} disabled={false} width={420}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
+        <Check
+          size={18}
+          aria-hidden
+          style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 2 }}
+        />
+        <div>
+          <div
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '1.05rem',
+              color: 'var(--color-charcoal)',
+              marginBottom: 6,
+            }}
+          >
+            {title}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: '.88rem',
+              color: 'var(--color-text)',
+              lineHeight: 1.5,
+            }}
+          >
+            {description}
+          </p>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          onClick={onClose}
+          className="btn primary"
+          style={{ padding: '6px 14px', fontSize: '.82rem' }}
+        >
+          OK
+        </button>
+      </div>
     </DialogShell>
   )
 }

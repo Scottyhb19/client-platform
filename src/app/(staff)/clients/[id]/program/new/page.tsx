@@ -14,14 +14,35 @@ export default async function NewProgramPage({
   const { id } = await params
 
   const supabase = await createSupabaseServerClient()
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, first_name, last_name')
-    .eq('id', id)
-    .is('deleted_at', null)
-    .maybeSingle()
+  const [{ data: client }, { data: templatesRaw }] = await Promise.all([
+    supabase
+      .from('clients')
+      .select('id, first_name, last_name')
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    // G-2 (2026-06-12): template picker source. Duration derives from the
+    // deepest live week — same rule create_program_from_template uses.
+    supabase
+      .from('program_templates')
+      .select('id, name, description, template_weeks(week_number, deleted_at)')
+      .is('deleted_at', null)
+      .order('name'),
+  ])
 
   if (!client) notFound()
+
+  const templates = (templatesRaw ?? []).map((t) => ({
+    id: t.id,
+    name: t.name,
+    description: t.description,
+    durationWeeks: Math.max(
+      1,
+      ...(t.template_weeks ?? [])
+        .filter((w) => w.deleted_at === null)
+        .map((w) => w.week_number),
+    ),
+  }))
 
   const today = new Date().toISOString().slice(0, 10)
   const fullName = `${client.first_name} ${client.last_name}`
@@ -86,6 +107,7 @@ export default async function NewProgramPage({
         clientId={id}
         clientName={fullName}
         todayIso={today}
+        templates={templates}
       />
     </div>
   )

@@ -5,10 +5,19 @@ import { useActionState, useMemo, useState } from 'react'
 import { createProgramAction } from '../actions'
 import { initialNewProgramState, type NewProgramState } from '../types'
 
+export interface TemplateOption {
+  id: string
+  name: string
+  description: string | null
+  durationWeeks: number
+}
+
 interface NewProgramFormProps {
   clientId: string
   clientName: string
   todayIso: string
+  /** Org's live template library (G-2). Empty array hides the picker. */
+  templates: TemplateOption[]
 }
 
 const DAY_OF_WEEK_OPTIONS: { value: number; label: string }[] = [
@@ -36,11 +45,19 @@ export function NewProgramForm({
   clientId,
   clientName,
   todayIso,
+  templates,
 }: NewProgramFormProps) {
   const [state, formAction, pending] = useActionState<
     NewProgramState,
     FormData
   >(createProgramAction, initialNewProgramState)
+
+  // G-2: '' = blank block (the original flow); otherwise a template id.
+  // A chosen template defines the structure, so the duration / days-per-
+  // week / session-schedule sections drop out and the server action
+  // routes through create_program_from_template instead.
+  const [templateId, setTemplateId] = useState('')
+  const selectedTemplate = templates.find((t) => t.id === templateId) ?? null
 
   // Controlled state for the reactive Session schedule pickers — when the
   // EP changes "days per week", the pick row count resizes and pre-fills
@@ -93,14 +110,16 @@ export function NewProgramForm({
   return (
     <form action={formAction} style={{ display: 'grid', gap: 18 }}>
       <input type="hidden" name="client_id" value={clientId} />
-      {sessionDows.map((dow, i) => (
-        <input
-          key={`hidden-${i}`}
-          type="hidden"
-          name={`session_dow_${i}`}
-          value={dow}
-        />
-      ))}
+      <input type="hidden" name="template_id" value={templateId} />
+      {!selectedTemplate &&
+        sessionDows.map((dow, i) => (
+          <input
+            key={`hidden-${i}`}
+            type="hidden"
+            name={`session_dow_${i}`}
+            value={dow}
+          />
+        ))}
 
       {state.error && (
         <div
@@ -118,10 +137,50 @@ export function NewProgramForm({
         </div>
       )}
 
+      {templates.length > 0 && (
+        <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <SectionHeader
+            title="Start from"
+            desc="A blank block, or a template from your library — the template's weeks, days, exercises and prescriptions copy in, then diverge freely."
+          />
+          <div style={{ padding: '20px 22px', display: 'grid', gap: 10 }}>
+            <select
+              value={templateId}
+              onChange={(e) => setTemplateId(e.target.value)}
+              aria-label="Start from template"
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              <option value="">Blank block</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} — {t.durationWeeks}{' '}
+                  {t.durationWeeks === 1 ? 'week' : 'weeks'}
+                </option>
+              ))}
+            </select>
+            {selectedTemplate?.description && (
+              <div
+                style={{
+                  fontSize: '.8rem',
+                  color: 'var(--color-text-light)',
+                  lineHeight: 1.5,
+                }}
+              >
+                {selectedTemplate.description}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <SectionHeader
           title="Basics"
-          desc={`Name the training block and pick how long it runs for ${clientName}.`}
+          desc={
+            selectedTemplate
+              ? `Pick the start date for ${clientName}. Name defaults to the template's.`
+              : `Name the training block and pick how long it runs for ${clientName}.`
+          }
         />
         <div
           style={{
@@ -133,46 +192,68 @@ export function NewProgramForm({
           <Field
             name="name"
             label="Name"
-            required
-            placeholder="Block 2 · Strength"
+            required={!selectedTemplate}
+            placeholder={selectedTemplate?.name ?? 'Block 2 · Strength'}
             error={state.fieldErrors.name}
           />
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
-              gap: 14,
-            }}
-          >
-            <Field
-              name="duration_weeks"
-              label="Duration (weeks)"
-              type="number"
-              required
-              defaultValue="4"
-              placeholder="4"
-              error={state.fieldErrors.duration_weeks}
-            />
-            <NumberField
-              name="days_per_week"
-              label="Days per week"
-              required
-              min={1}
-              max={7}
-              value={daysPerWeek}
-              onChange={handleDaysPerWeekChange}
-              error={state.fieldErrors.days_per_week}
-            />
-            <Field
-              name="start_date"
-              label="Start date"
-              type="date"
-              defaultValue={todayIso}
-            />
-          </div>
+          {selectedTemplate ? (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: 14,
+              }}
+            >
+              <Field
+                name="start_date"
+                label="Start date"
+                type="date"
+                required
+                defaultValue={todayIso}
+                error={state.fieldErrors.start_date}
+              />
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr',
+                gap: 14,
+              }}
+            >
+              <Field
+                name="duration_weeks"
+                label="Duration (weeks)"
+                type="number"
+                required
+                defaultValue="4"
+                placeholder="4"
+                error={state.fieldErrors.duration_weeks}
+              />
+              <NumberField
+                name="days_per_week"
+                label="Days per week"
+                required
+                min={1}
+                max={7}
+                value={daysPerWeek}
+                onChange={handleDaysPerWeekChange}
+                error={state.fieldErrors.days_per_week}
+              />
+              <Field
+                name="start_date"
+                label="Start date"
+                type="date"
+                defaultValue={todayIso}
+                error={state.fieldErrors.start_date}
+              />
+            </div>
+          )}
         </div>
       </section>
 
+      {!selectedTemplate && (
+      <>
       <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <SectionHeader
           title="Session schedule"
@@ -259,6 +340,8 @@ export function NewProgramForm({
           />
         </div>
       </section>
+      </>
+      )}
 
       <div
         style={{
@@ -274,9 +357,13 @@ export function NewProgramForm({
         <button
           type="submit"
           className="btn primary"
-          disabled={pending || hasDuplicates}
+          disabled={pending || (!selectedTemplate && hasDuplicates)}
         >
-          {pending ? 'Creating…' : 'Start training block'}
+          {pending
+            ? 'Creating…'
+            : selectedTemplate
+              ? 'Create from template'
+              : 'Start training block'}
         </button>
       </div>
     </form>
