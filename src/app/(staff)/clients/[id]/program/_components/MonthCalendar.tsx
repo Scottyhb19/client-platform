@@ -253,10 +253,16 @@ export function MonthCalendar({
       try {
         const result = await copyDayAction(clientId, sourceDayId, targetDate, force)
         if ('error' in result) {
-          // Surface as a no-program toast for now — same one-liner shape.
-          setMode({ kind: 'no-program-toast', targetDate })
-          // eslint-disable-next-line no-console
           console.error('copy_program_day error:', result.error)
+          // P1-2 — a generic failure used to masquerade as the
+          // no-program toast (wrong explanation for a network/auth
+          // error). Factual dialog instead.
+          setMode({
+            kind: 'error-toast',
+            title: 'Copy failed',
+            message:
+              'The session could not be copied. Check your connection and try again.',
+          })
           return
         }
         switch (result.status) {
@@ -289,9 +295,14 @@ export function MonthCalendar({
       try {
         const result = await repeatDayWeeklyAction(clientId, sourceDayId, endDate, force)
         if ('error' in result) {
-          // eslint-disable-next-line no-console
           console.error('repeat_program_day_weekly error:', result.error)
-          setMode({ kind: 'idle' })
+          // P1-2 — was a silent return to idle; the EP saw nothing.
+          setMode({
+            kind: 'error-toast',
+            title: 'Repeat failed',
+            message:
+              'The session could not be repeated. Check your connection and try again.',
+          })
           return
         }
         switch (result.status) {
@@ -446,9 +457,14 @@ export function MonthCalendar({
       try {
         const result = await removeProgramDayAction(clientId, sourceDayId)
         if ('error' in result) {
-          // eslint-disable-next-line no-console
           console.error('soft_delete_program_day error:', result.error)
-          setMode({ kind: 'idle' })
+          // P1-2 — was a silent return to idle.
+          setMode({
+            kind: 'error-toast',
+            title: 'Delete failed',
+            message:
+              'The session could not be deleted. Check your connection and try again.',
+          })
           return
         }
         setOpenCell(null)
@@ -471,9 +487,15 @@ export function MonthCalendar({
       try {
         const result = await createProgramDayAction(clientId, targetDate)
         if ('error' in result) {
-          // eslint-disable-next-line no-console
           console.error('create_program_day error:', result.error)
+          // P1-2 — was a silent popover close.
           setOpenCell(null)
+          setMode({
+            kind: 'error-toast',
+            title: 'Add session failed',
+            message:
+              'The session could not be created. Check your connection and try again.',
+          })
           return
         }
         switch (result.status) {
