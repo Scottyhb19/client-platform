@@ -139,8 +139,12 @@ INSERT INTO _tap (n, line) VALUES (3, (
   SELECT is(
     (SELECT day_label FROM program_days
       WHERE id = (SELECT (result->>'new_day_id')::uuid FROM _create_a)),
-    'A',
-    'A3: default day_label is ''A'''
+    'Day 1',
+    -- Stale-assertion repair (program-engine polish pass 2026-06-12):
+    -- migration 20260504130000 §6 relabelled the RPC default 'A' →
+    -- 'Day 1' the day after this test landed; the assertion was never
+    -- updated and has been red since.
+    'A3: default day_label is ''Day 1'''
   )
 ));
 
