@@ -108,8 +108,8 @@ export function SectionTitlesEditor({
       // Append locally — router.refresh() alone can't update the list
       // because useState(initialTitles) doesn't re-initialise when the
       // refreshed server payload changes the prop. (The same latent gap
-      // exists in the SessionTypesEditor this mirrors — flagged as a
-      // rider in the polish doc rather than reopening that section.)
+      // existed in the SessionTypesEditor this mirrors — since fixed
+      // there via the section-5 rider task.)
       setTitles((prev) => [
         ...prev,
         {

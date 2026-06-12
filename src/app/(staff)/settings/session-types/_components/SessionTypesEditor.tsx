@@ -95,7 +95,20 @@ export function SessionTypesEditor({
         setAddError(res.error ?? 'Unknown error.')
         return
       }
-      // Re-pull the list to get correct sort_order + ID.
+      // Append locally — router.refresh() alone can't update the list
+      // because useState(initialTypes) doesn't re-initialise when the
+      // refreshed server payload changes the prop. Name trimmed and
+      // colour lowercased to match the server's normalisation, so this
+      // row equals what was stored.
+      setTypes((prev) => [
+        ...prev,
+        {
+          id: res.id!,
+          name: newDraft.name.trim(),
+          color: newDraft.color.trim().toLowerCase(),
+          sort_order: (prev[prev.length - 1]?.sort_order ?? 0) + 10,
+        },
+      ])
       router.refresh()
       setNewDraft({ name: '', color: DEFAULT_NEW_COLOR })
     })
