@@ -28,9 +28,11 @@ import {
 } from '../../../../_components/MonthYearPicker'
 import {
   copyDayAction,
+  copyWeekAction,
   createProgramDayAction,
   removeProgramDayAction,
   repeatDayWeeklyAction,
+  repeatWeekAction,
   type ConflictEntry,
 } from '../day-actions'
 
@@ -134,6 +136,29 @@ type CalendarMode =
       sourceLabel: string
       sourceDate: string
     }
+  // P1-1 — week-level batch operations. Pick modes mirror the day-level
+  // shapes: week-copy-pick turns every week row into a destination
+  // target; week-repeat-pick opens the end-date picker in week mode.
+  | { kind: 'week-copy-pick'; sourceWeekStart: string }
+  | { kind: 'week-repeat-pick'; sourceWeekStart: string }
+  | {
+      kind: 'confirm-week-copy'
+      sourceWeekStart: string
+      targetWeekStart: string
+      conflicts: ConflictEntry[]
+      noProgramDates: string[]
+    }
+  | {
+      kind: 'confirm-week-repeat'
+      sourceWeekStart: string
+      endDate: string
+      conflicts: ConflictEntry[]
+      noProgramDates: string[]
+    }
+  // Honest generic-failure surface (P1-2 mechanism, introduced with the
+  // week ops): network/RLS failures get a factual one-button dialog
+  // instead of a silent console.error or a mislabeled no-program toast.
+  | { kind: 'error-toast'; title: string; message: string }
 
 export function MonthCalendar({
   clientId,
@@ -296,6 +321,125 @@ export function MonthCalendar({
     [clientId, router],
   )
 
+  // P1-1 — week-level runners. Same shape as the day runners, but with
+  // honest failure surfacing from birth (error-toast mode): a network or
+  // auth failure tells the EP what happened instead of doing nothing.
+  const runCopyWeek = useCallback(
+    async (sourceWeekStart: string, targetWeekStart: string, force: boolean) => {
+      setBusy(true)
+      try {
+        const result = await copyWeekAction(
+          clientId,
+          sourceWeekStart,
+          targetWeekStart,
+          force,
+        )
+        if ('error' in result) {
+          console.error('copy_program_week error:', result.error)
+          setMode({
+            kind: 'error-toast',
+            title: 'Copy failed',
+            message:
+              'The week could not be copied. Check your connection and try again.',
+          })
+          return
+        }
+        switch (result.status) {
+          case 'created':
+            setMode({ kind: 'idle' })
+            startTransition(() => router.refresh())
+            break
+          case 'conflict':
+            setMode({
+              kind: 'confirm-week-copy',
+              sourceWeekStart,
+              targetWeekStart,
+              conflicts: result.conflicts,
+              noProgramDates: result.noProgramDates,
+            })
+            break
+          case 'empty_week':
+            // Shouldn't happen — the week buttons disable at 0 sessions.
+            setMode({
+              kind: 'error-toast',
+              title: 'Nothing to copy',
+              message: 'That week has no sessions.',
+            })
+            break
+          case 'invalid_week':
+            setMode({
+              kind: 'error-toast',
+              title: 'Copy failed',
+              message: 'Pick a destination week other than the source week.',
+            })
+            break
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [clientId, router],
+  )
+
+  const runRepeatWeek = useCallback(
+    async (sourceWeekStart: string, endDate: string, force: boolean) => {
+      setBusy(true)
+      try {
+        const result = await repeatWeekAction(
+          clientId,
+          sourceWeekStart,
+          endDate,
+          force,
+        )
+        if ('error' in result) {
+          console.error('repeat_program_week error:', result.error)
+          setMode({
+            kind: 'error-toast',
+            title: 'Repeat failed',
+            message:
+              'The week could not be repeated. Check your connection and try again.',
+          })
+          return
+        }
+        switch (result.status) {
+          case 'created':
+            setMode({ kind: 'idle' })
+            startTransition(() => router.refresh())
+            break
+          case 'conflict':
+            setMode({
+              kind: 'confirm-week-repeat',
+              sourceWeekStart,
+              endDate,
+              conflicts: result.conflicts,
+              noProgramDates: result.noProgramDates,
+            })
+            break
+          case 'empty_week':
+            setMode({
+              kind: 'error-toast',
+              title: 'Nothing to repeat',
+              message: 'That week has no sessions.',
+            })
+            break
+          case 'invalid_week':
+          case 'invalid_end_date':
+            // UI-side validation should prevent both; fall back to a
+            // factual message rather than silence.
+            setMode({
+              kind: 'error-toast',
+              title: 'Repeat failed',
+              message: 'Pick an end date after the source week.',
+            })
+            break
+        }
+      } finally {
+        setBusy(false)
+      }
+    },
+    [clientId, router],
+  )
+
   const runDelete = useCallback(
     async (sourceDayId: string) => {
       setBusy(true)
@@ -375,6 +519,15 @@ export function MonthCalendar({
         runCopy(mode.sourceDayId, cellIso, false)
         return
       }
+      // P1-1 — clicking ANY cell while week-copy-picking selects that
+      // cell's whole Mon–Sun week as the destination.
+      if (mode.kind === 'week-copy-pick') {
+        const targetWeekStart = mondayOf(cellIso)
+        if (targetWeekStart === mode.sourceWeekStart) return
+        if (targetWeekStart < mondayOf(todayIso)) return
+        runCopyWeek(mode.sourceWeekStart, targetWeekStart, false)
+        return
+      }
       // Default: toggle the matching popover. Day cells open the day
       // summary; empty cells open the create-session popover.
       if (day) {
@@ -391,7 +544,7 @@ export function MonthCalendar({
         )
       }
     },
-    [mode, runCopy, todayIso],
+    [mode, runCopy, runCopyWeek, todayIso],
   )
 
   return (
@@ -399,11 +552,20 @@ export function MonthCalendar({
       {/* ─── Copy-pick banner: shown while the EP is choosing a
           destination day for a copy. ─── */}
       {mode.kind === 'copy-pick' && (
-        <CopyPickBanner
-          sourceLabel={mode.sourceLabel}
-          sourceDate={mode.sourceDate}
-          onCancel={() => setMode({ kind: 'idle' })}
-        />
+        <CopyPickBanner onCancel={() => setMode({ kind: 'idle' })}>
+          Copying <strong>Day {mode.sourceLabel}</strong> from{' '}
+          <strong>{formatLongDate(mode.sourceDate)}</strong> — click any
+          future day on the calendar to paste, or press Esc to cancel.
+        </CopyPickBanner>
+      )}
+
+      {/* P1-1 — week-copy-pick banner. */}
+      {mode.kind === 'week-copy-pick' && (
+        <CopyPickBanner onCancel={() => setMode({ kind: 'idle' })}>
+          Copying the week of{' '}
+          <strong>{formatLongDate(mode.sourceWeekStart)}</strong> — click any
+          future week to paste into, or press Esc to cancel.
+        </CopyPickBanner>
       )}
 
       {/* ─── Top header: month label centered with prev/next; Today
@@ -563,6 +725,14 @@ export function MonthCalendar({
           setMode({ kind: 'confirm-delete', sourceDayId: dayId, sourceLabel: label, sourceDate: date })
         }}
         onCreateDay={(targetDate) => runCreate(targetDate)}
+        onCopyWeek={(weekStart) => {
+          setOpenCell(null)
+          setMode({ kind: 'week-copy-pick', sourceWeekStart: weekStart })
+        }}
+        onRepeatWeek={(weekStart) => {
+          setOpenCell(null)
+          setMode({ kind: 'week-repeat-pick', sourceWeekStart: weekStart })
+        }}
       />
 
       {/* ─── Repeat mini-calendar picker (anchored, full-screen) ─── */}
@@ -572,6 +742,22 @@ export function MonthCalendar({
           sourceLabel={mode.sourceLabel}
           onCancel={() => setMode({ kind: 'idle' })}
           onConfirm={(endDate) => runRepeat(mode.sourceDayId, endDate, false)}
+          busy={busy}
+        />
+      )}
+
+      {/* ─── P1-1 — week-repeat end-date picker (same component, week
+          copy). sourceDate is the week's Monday, so the weekly stepping
+          maths is identical. ─── */}
+      {mode.kind === 'week-repeat-pick' && (
+        <RepeatEndDatePicker
+          sourceDate={mode.sourceWeekStart}
+          sourceLabel=""
+          weekMode
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={(endDate) =>
+            runRepeatWeek(mode.sourceWeekStart, endDate, false)
+          }
           busy={busy}
         />
       )}
@@ -631,6 +817,50 @@ export function MonthCalendar({
           busy={busy}
         />
       )}
+
+      {/* ─── P1-1 — week-operation confirm dialogs ─── */}
+      {mode.kind === 'confirm-week-copy' && (
+        <ConflictDialog
+          title="Some dates already have sessions"
+          description={`${mode.conflicts.length} of the destination dates already ${mode.conflicts.length === 1 ? 'has a programmed session' : 'have programmed sessions'}. Overwrite ${mode.conflicts.length === 1 ? 'it' : 'all of them'} with the copied week?`}
+          conflicts={mode.conflicts}
+          noProgramDates={mode.noProgramDates}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() =>
+            runCopyWeek(mode.sourceWeekStart, mode.targetWeekStart, true)
+          }
+          busy={busy}
+        />
+      )}
+
+      {mode.kind === 'confirm-week-repeat' && (
+        <ConflictDialog
+          title="Some dates already have sessions"
+          description={`${mode.conflicts.length} of the target dates already ${mode.conflicts.length === 1 ? 'has a programmed session' : 'have programmed sessions'}. Overwrite ${mode.conflicts.length === 1 ? 'it' : 'all of them'}?`}
+          conflicts={mode.conflicts}
+          noProgramDates={mode.noProgramDates}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() =>
+            runRepeatWeek(mode.sourceWeekStart, mode.endDate, true)
+          }
+          busy={busy}
+        />
+      )}
+
+      {/* ─── Honest generic-failure dialog (P1-2 mechanism) ─── */}
+      {mode.kind === 'error-toast' && (
+        <ConflictDialog
+          title={mode.title}
+          description={mode.message}
+          conflicts={[]}
+          noProgramDates={[]}
+          onCancel={() => setMode({ kind: 'idle' })}
+          onConfirm={() => setMode({ kind: 'idle' })}
+          confirmLabel="OK"
+          hideCancel
+          busy={false}
+        />
+      )}
     </div>
   )
 }
@@ -664,6 +894,8 @@ interface MonthGridProps {
   onRepeatDay: (dayId: string, label: string, date: string) => void
   onDeleteDay: (dayId: string, label: string, date: string) => void
   onCreateDay: (targetDate: string) => void
+  onCopyWeek: (weekStartIso: string) => void
+  onRepeatWeek: (weekStartIso: string) => void
   compactPopover: boolean
 }
 
@@ -685,6 +917,8 @@ function MonthGrid({
   onRepeatDay,
   onDeleteDay,
   onCreateDay,
+  onCopyWeek,
+  onRepeatWeek,
   compactPopover,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthCells(year, month), [year, month])
@@ -760,6 +994,21 @@ function MonthGrid({
           ).length
           const firstInMonth = inMonthCells[0]
           const lastInMonth = inMonthCells[inMonthCells.length - 1]
+          // P1-1 — week-level operations key off the row's Monday. The
+          // session count for enable/disable spans the FULL Mon–Sun range
+          // (a boundary week can hold adjacent-month days the in-month
+          // count above doesn't see — the operation copies those too).
+          const weekStartIso = week.cells[0]!.iso
+          const weekSessionCount = week.cells.filter((c) =>
+            daysByDate.get(c.iso),
+          ).length
+          const mondayOfToday = mondayOf(todayIso)
+          const inWeekPick = mode.kind === 'week-copy-pick'
+          const weekIsPickSource =
+            inWeekPick && weekStartIso === mode.sourceWeekStart
+          const weekIsPickPast = inWeekPick && weekStartIso < mondayOfToday
+          const weekIsPickTarget =
+            inWeekPick && !weekIsPickSource && !weekIsPickPast
 
           return (
             <div
@@ -810,10 +1059,19 @@ function MonthGrid({
 
               {collapsed ? (
                 <div
+                  onClick={
+                    weekIsPickTarget
+                      ? () => onCellClick(weekStartIso, null)
+                      : undefined
+                  }
                   style={{
                     gridColumn: '2 / -1',
-                    background: 'var(--color-card)',
-                    border: '1px solid var(--color-border-subtle)',
+                    background: weekIsPickTarget
+                      ? 'rgba(45, 178, 76, 0.04)'
+                      : 'var(--color-card)',
+                    border: weekIsPickTarget
+                      ? '1px dashed var(--color-primary)'
+                      : '1px solid var(--color-border-subtle)',
                     borderRadius: 7,
                     padding: '6px 12px',
                     fontSize: '.74rem',
@@ -821,6 +1079,9 @@ function MonthGrid({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
+                    cursor: weekIsPickTarget ? 'copy' : undefined,
+                    opacity:
+                      weekIsPickSource || weekIsPickPast ? 0.4 : 1,
                   }}
                 >
                   <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--color-charcoal)' }}>
@@ -832,6 +1093,70 @@ function MonthGrid({
                     {programmedThisWeek}{' '}
                     {programmedThisWeek === 1 ? 'session' : 'sessions'}
                   </span>
+                  {/* P1-1 — week-level Copy / Repeat (Q1 amendment: the
+                      affordance lives on the collapsed week row, next to
+                      the session count). Disabled with a factual title
+                      when the full Mon–Sun range has no sessions. Hidden
+                      during any pick mode so they can't hijack an
+                      in-progress copy. */}
+                  {mode.kind === 'idle' && (
+                    <span
+                      style={{
+                        marginLeft: 'auto',
+                        display: 'flex',
+                        gap: 6,
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onCopyWeek(weekStartIso)
+                        }}
+                        disabled={weekSessionCount === 0 || busy}
+                        aria-label="Copy week"
+                        title={
+                          weekSessionCount === 0
+                            ? 'No sessions in this week to copy'
+                            : 'Copy week — pick a destination week'
+                        }
+                        style={{
+                          ...iconLinkStyle,
+                          opacity: weekSessionCount === 0 ? 0.4 : 1,
+                          cursor:
+                            weekSessionCount === 0
+                              ? 'not-allowed'
+                              : 'pointer',
+                        }}
+                      >
+                        <Copy size={13} aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onRepeatWeek(weekStartIso)
+                        }}
+                        disabled={weekSessionCount === 0 || busy}
+                        aria-label="Repeat week"
+                        title={
+                          weekSessionCount === 0
+                            ? 'No sessions in this week to repeat'
+                            : 'Repeat week — weekly until an end date'
+                        }
+                        style={{
+                          ...iconLinkStyle,
+                          opacity: weekSessionCount === 0 ? 0.4 : 1,
+                          cursor:
+                            weekSessionCount === 0
+                              ? 'not-allowed'
+                              : 'pointer',
+                        }}
+                      >
+                        <Repeat size={13} aria-hidden />
+                      </button>
+                    </span>
+                  )}
                 </div>
               ) : (
                 week.cells.map((c, i) => {
@@ -842,13 +1167,17 @@ function MonthGrid({
                     openCell?.kind === 'empty' && c.iso === openCell.iso
                   // In copy-pick mode, the source cell and past dates
                   // dim out and become unclickable; everything else
-                  // shows a copy-cursor on hover.
+                  // shows a copy-cursor on hover. Week-copy-pick reuses
+                  // the same visual states at whole-row granularity.
                   const inCopyPick = mode.kind === 'copy-pick'
                   const isCopySource =
-                    inCopyPick && c.iso === mode.sourceDate
-                  const isPastInCopy = inCopyPick && c.iso < todayIso
+                    (inCopyPick && c.iso === mode.sourceDate) ||
+                    weekIsPickSource
+                  const isPastInCopy =
+                    (inCopyPick && c.iso < todayIso) || weekIsPickPast
                   const isCopyTarget =
-                    inCopyPick && !isCopySource && !isPastInCopy
+                    (inCopyPick && !isCopySource && !isPastInCopy) ||
+                    weekIsPickTarget
                   // Resolve the active program covering this date (for the
                   // empty-cell popover). For programmed days, use the
                   // explicit program_id; for empty cells, walk the
@@ -1501,12 +1830,13 @@ const iconDeleteStyle: React.CSSProperties = {
 // ============================================================================
 
 interface CopyPickBannerProps {
-  sourceLabel: string
-  sourceDate: string
   onCancel: () => void
+  // The banner message — day and week copy modes phrase it differently,
+  // so the caller owns the copy.
+  children: React.ReactNode
 }
 
-function CopyPickBanner({ sourceLabel, sourceDate, onCancel }: CopyPickBannerProps) {
+function CopyPickBanner({ onCancel, children }: CopyPickBannerProps) {
   return (
     <div
       role="status"
@@ -1524,11 +1854,7 @@ function CopyPickBanner({ sourceLabel, sourceDate, onCancel }: CopyPickBannerPro
         color: 'var(--color-charcoal)',
       }}
     >
-      <span>
-        Copying <strong>Day {sourceLabel}</strong> from{' '}
-        <strong>{formatLongDate(sourceDate)}</strong> — click any future day
-        on the calendar to paste, or press Esc to cancel.
-      </span>
+      <span>{children}</span>
       <button
         type="button"
         onClick={onCancel}
@@ -1555,6 +1881,9 @@ interface RepeatEndDatePickerProps {
   onCancel: () => void
   onConfirm: (endDate: string) => void
   busy: boolean
+  // P1-1 — week mode: sourceDate is a week's Monday and the whole week
+  // repeats. Same weekly date maths; only the copy changes.
+  weekMode?: boolean
 }
 
 function RepeatEndDatePicker({
@@ -1563,6 +1892,7 @@ function RepeatEndDatePicker({
   onCancel,
   onConfirm,
   busy,
+  weekMode = false,
 }: RepeatEndDatePickerProps) {
   const sourceParsed = parseIso(sourceDate)
   const sourceDow = (sourceParsed.getDay() + 6) % 7  // Mon-first 0..6
@@ -1643,11 +1973,21 @@ function RepeatEndDatePicker({
                 color: 'var(--color-charcoal)',
               }}
             >
-              Repeat Day {sourceLabel}
+              {weekMode ? 'Repeat week' : `Repeat Day ${sourceLabel}`}
             </div>
             <div style={{ fontSize: '.78rem', color: 'var(--color-muted)', marginTop: 2 }}>
-              Pick an end date. Repeats on every {weekdayName} between{' '}
-              {formatLongDate(isoFromDate(addDaysTo(sourceParsed, 7)))} and the picked date.
+              {weekMode ? (
+                <>
+                  Pick an end date. The whole week of{' '}
+                  {formatLongDate(sourceDate)} repeats weekly through the
+                  picked date.
+                </>
+              ) : (
+                <>
+                  Pick an end date. Repeats on every {weekdayName} between{' '}
+                  {formatLongDate(isoFromDate(addDaysTo(sourceParsed, 7)))} and the picked date.
+                </>
+              )}
             </div>
           </div>
           <button
@@ -1792,7 +2132,21 @@ function RepeatEndDatePicker({
         >
           {pickedEnd ? (
             targetDates.length === 0 ? (
-              <span>No same-weekday occurrences between source and {formatLongDate(pickedEnd)}.</span>
+              <span>
+                {weekMode
+                  ? `No whole weeks between source and ${formatLongDate(pickedEnd)}.`
+                  : `No same-weekday occurrences between source and ${formatLongDate(pickedEnd)}.`}
+              </span>
+            ) : weekMode ? (
+              <span>
+                <strong style={{ color: 'var(--color-charcoal)' }}>
+                  {targetDates.length}
+                </strong>{' '}
+                week{targetDates.length === 1 ? '' : 's'} — starting{' '}
+                {formatLongDate(targetDates[0]!)}
+                {targetDates.length > 1 &&
+                  ` to ${formatLongDate(targetDates[targetDates.length - 1]!)}`}
+              </span>
             ) : (
               <span>
                 <strong style={{ color: 'var(--color-charcoal)' }}>
@@ -2071,6 +2425,14 @@ function isoFromDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+// Monday of the Mon-first week containing the given date (P1-1 — week
+// operations key off week-start Mondays, matching the grid's rows).
+function mondayOf(iso: string): string {
+  const d = parseIso(iso)
+  const offset = (d.getDay() + 6) % 7 // Mon=0 .. Sun=6
+  return isoFromDate(addDaysTo(d, -offset))
 }
 
 function addDaysTo(d: Date, days: number): Date {

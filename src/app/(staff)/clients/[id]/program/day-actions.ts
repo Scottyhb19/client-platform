@@ -55,6 +55,29 @@ export type DuplicateDayActionResult =
   | { status: 'conflict' }
   | { status: 'no_program'; targetDate: string }
 
+export type CopyWeekActionResult =
+  | { error: string }
+  | { status: 'created'; newDayIds: string[]; noProgramDates: string[] }
+  | {
+      status: 'conflict'
+      conflicts: ConflictEntry[]
+      noProgramDates: string[]
+    }
+  | { status: 'empty_week' }
+  | { status: 'invalid_week' }
+
+export type RepeatWeekActionResult =
+  | { error: string }
+  | { status: 'created'; newDayIds: string[]; noProgramDates: string[] }
+  | {
+      status: 'conflict'
+      conflicts: ConflictEntry[]
+      noProgramDates: string[]
+    }
+  | { status: 'empty_week' }
+  | { status: 'invalid_week' }
+  | { status: 'invalid_end_date' }
+
 
 /**
  * Copy one program_day to a target date. The destination program is
@@ -163,6 +186,131 @@ export async function repeatDayWeeklyAction(
         })),
         noProgramDates: obj.no_program_dates ?? [],
       }
+    case 'invalid_end_date':
+      return { status: 'invalid_end_date' }
+    default:
+      return { error: `Unknown status: ${obj.status}` }
+  }
+}
+
+
+/**
+ * P1-1 (program-calendar polish pass) — copy a whole Mon–Sun week of
+ * sessions onto another week. The RPC orchestrates copy_program_day per
+ * source day (same weekday offsets), accumulating conflicts across the
+ * WHOLE week into one response so the UI shows a single confirm dialog.
+ *
+ * Pass `force = true` after the user confirms overwriting conflicts.
+ */
+export async function copyWeekAction(
+  clientId: string,
+  sourceWeekStart: string,
+  targetWeekStart: string,
+  force: boolean = false,
+): Promise<CopyWeekActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase.rpc('copy_program_week', {
+    p_client_id: clientId,
+    p_source_week_start: sourceWeekStart,
+    p_target_week_start: targetWeekStart,
+    p_force: force,
+  })
+
+  if (error) return { error: error.message }
+  if (!data || typeof data !== 'object') {
+    return { error: 'Unexpected response from copy_program_week' }
+  }
+
+  const obj = data as {
+    status: string
+    new_day_ids?: string[]
+    no_program_dates?: string[]
+    conflicts?: Array<{ date: string; existing_day_id: string }>
+  }
+
+  switch (obj.status) {
+    case 'created':
+      revalidatePath(`/clients/${clientId}/program`)
+      return {
+        status: 'created',
+        newDayIds: obj.new_day_ids ?? [],
+        noProgramDates: obj.no_program_dates ?? [],
+      }
+    case 'conflict':
+      return {
+        status: 'conflict',
+        conflicts: (obj.conflicts ?? []).map((c) => ({
+          date: c.date,
+          existingDayId: c.existing_day_id,
+        })),
+        noProgramDates: obj.no_program_dates ?? [],
+      }
+    case 'empty_week':
+      return { status: 'empty_week' }
+    case 'invalid_week':
+      return { status: 'invalid_week' }
+    default:
+      return { error: `Unknown status: ${obj.status}` }
+  }
+}
+
+
+/**
+ * P1-1 — repeat a whole Mon–Sun week onto every subsequent week through
+ * the picked end date (day-granular cutoff; auto-extends the covering
+ * block best-effort, matching the day-level repeat).
+ */
+export async function repeatWeekAction(
+  clientId: string,
+  sourceWeekStart: string,
+  endDate: string,
+  force: boolean = false,
+): Promise<RepeatWeekActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase.rpc('repeat_program_week', {
+    p_client_id: clientId,
+    p_source_week_start: sourceWeekStart,
+    p_end_date: endDate,
+    p_force: force,
+  })
+
+  if (error) return { error: error.message }
+  if (!data || typeof data !== 'object') {
+    return { error: 'Unexpected response from repeat_program_week' }
+  }
+
+  const obj = data as {
+    status: string
+    new_day_ids?: string[]
+    no_program_dates?: string[]
+    conflicts?: Array<{ date: string; existing_day_id: string }>
+  }
+
+  switch (obj.status) {
+    case 'created':
+      revalidatePath(`/clients/${clientId}/program`)
+      return {
+        status: 'created',
+        newDayIds: obj.new_day_ids ?? [],
+        noProgramDates: obj.no_program_dates ?? [],
+      }
+    case 'conflict':
+      return {
+        status: 'conflict',
+        conflicts: (obj.conflicts ?? []).map((c) => ({
+          date: c.date,
+          existingDayId: c.existing_day_id,
+        })),
+        noProgramDates: obj.no_program_dates ?? [],
+      }
+    case 'empty_week':
+      return { status: 'empty_week' }
+    case 'invalid_week':
+      return { status: 'invalid_week' }
     case 'invalid_end_date':
       return { status: 'invalid_end_date' }
     default:
