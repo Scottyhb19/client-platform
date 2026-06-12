@@ -7,20 +7,30 @@ SET search_path TO public, extensions, pg_temp;
 -- 10_program_days_copy_repeat
 -- ============================================================================
 -- Why: Coverage for migration 20260503120000_program_days_copy_repeat.sql
--- (Phase C — day-level copy + repeat RPCs).
+-- (Phase C — day-level copy + repeat RPCs), extended 2026-06-12 for
+-- migration 20260612100000_clone_rpcs_per_set_fanout (G-1 of the
+-- program-engine polish pass): per-set fan-out assertions on both RPCs,
+-- and exercise-count/group-cohesion assertions on the repeat path that
+-- would have caught the volatile-uuid remap Cartesian bug (the original
+-- repeat remap fanned superset days out into duplicate exercises; this
+-- file previously only counted created *days* on that path).
 --
 -- Asserts the load-bearing properties:
 --
 --   §A copy_program_day clean path: clone → new day exists on target
 --      date with same day_label, exercises copied with superset group
---      ids remapped (no collision with source).
+--      ids remapped (no collision with source), per-set rows fanned out
+--      and paired to the right clone (A6/A7).
 --   §B copy_program_day no-program path: target date outside any active
 --      program → status='no_program', no insert.
 --   §C copy_program_day conflict + force: existing day on target date,
 --      p_force=false returns conflict; p_force=true soft-deletes it
 --      and inserts the new one.
 --   §D repeat_program_day_weekly clean path: source on Mon, end_date
---      3 weeks ahead → 3 new Mondays created. day_ids returned.
+--      3 weeks ahead → 2 new Mondays created; each carries exactly the
+--      source's 2 exercises (D2 — Cartesian guard), one fresh cohesive
+--      superset group per day (D3), full per-set fan-out (D4) paired to
+--      the right source rows (D5).
 --   §E repeat_program_day_weekly invalid_end_date: end_date before
 --      source date → status='invalid_end_date', no inserts.
 --   §F repeat_program_day_weekly auto-extends source program's
@@ -32,12 +42,12 @@ SET search_path TO public, extensions, pg_temp;
 -- Output pattern: each assertion's TAP line captured into temp _tap so
 -- the supabase db query CLI returns all lines in the final SELECT.
 --
--- Test count: 14
+-- Test count: 20
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(20);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -48,7 +58,11 @@ GRANT INSERT, SELECT ON _tap TO authenticated;
 --
 -- One organization, one client, ONE active program (Apr 27 – May 25,
 -- 4 weeks). Source day on Apr 27 (Mon, Day A) with two exercises in a
--- superset.
+-- superset, each carrying two program_exercise_sets rows with
+-- distinguishable content so pairing assertions can detect cross-wiring:
+--
+--   pe sort 0: set 1 (reps 6, kg 60), set 2 (reps 6, kg 70)
+--   pe sort 1: set 1 (reps 10),       set 2 (reps 12)
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -61,6 +75,8 @@ DECLARE
   week_a      uuid := '00000000-0000-0000-0000-000000000c07'::uuid;
   source_day  uuid := '00000000-0000-0000-0000-000000000c08'::uuid;
   ss_group    uuid := '00000000-0000-0000-0000-000000000c09'::uuid;
+  pe_first    uuid := '00000000-0000-0000-0000-000000000c0c'::uuid;
+  pe_second   uuid := '00000000-0000-0000-0000-000000000c0d'::uuid;
 BEGIN
   INSERT INTO organizations (id, name, slug)
   VALUES (org_a, 'Test Org A — Copy/Repeat 10', 'test-org-a-copy-repeat-10');
@@ -99,10 +115,19 @@ BEGIN
   );
 
   INSERT INTO program_exercises (
-    program_day_id, exercise_id, sort_order, superset_group_id, sets, reps
+    id, program_day_id, exercise_id, sort_order, superset_group_id, sets, reps
   ) VALUES
-    (source_day, exercise_id, 0, ss_group, 4, '6'),
-    (source_day, exercise_id, 1, ss_group, 4, '6');
+    (pe_first,  source_day, exercise_id, 0, ss_group, 4, '6'),
+    (pe_second, source_day, exercise_id, 1, ss_group, 4, '6');
+
+  -- Per-set rows (G-1 fixture): distinguishable content per exercise.
+  INSERT INTO program_exercise_sets (
+    program_exercise_id, set_number, reps, optional_metric, optional_value
+  ) VALUES
+    (pe_first,  1, '6',  'kg', '60'),
+    (pe_first,  2, '6',  'kg', '70'),
+    (pe_second, 1, '10', NULL, NULL),
+    (pe_second, 2, '12', NULL, NULL);
 
   EXECUTE 'RESET ROLE';
 
@@ -186,6 +211,42 @@ INSERT INTO _tap (n, line) VALUES (5, (
   )
 ));
 
+-- G-1: per-set fan-out on the copy path.
+INSERT INTO _tap (n, line) VALUES (6, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_exercise_sets ps
+      JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+     WHERE pe.program_day_id = ((SELECT result ->> 'new_day_id' FROM _copy_result))::uuid
+       AND pe.deleted_at IS NULL
+       AND ps.deleted_at IS NULL),
+    4,
+    'A6: cloned day has all 4 per-set rows fanned out (G-1)'
+  )
+));
+
+-- Pairing guard: each clone got ITS OWN source's sets, not the sibling's.
+INSERT INTO _tap (n, line) VALUES (7, (
+  SELECT ok(
+    EXISTS (
+      SELECT 1 FROM program_exercise_sets ps
+        JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+       WHERE pe.program_day_id = ((SELECT result ->> 'new_day_id' FROM _copy_result))::uuid
+         AND pe.sort_order = 0 AND ps.set_number = 2
+         AND ps.optional_metric = 'kg' AND ps.optional_value = '70'
+         AND pe.deleted_at IS NULL AND ps.deleted_at IS NULL
+    )
+    AND EXISTS (
+      SELECT 1 FROM program_exercise_sets ps
+        JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+       WHERE pe.program_day_id = ((SELECT result ->> 'new_day_id' FROM _copy_result))::uuid
+         AND pe.sort_order = 1 AND ps.set_number = 2
+         AND ps.reps = '12' AND ps.optional_metric IS NULL
+         AND pe.deleted_at IS NULL AND ps.deleted_at IS NULL
+    ),
+    'A7: fan-out pairs each clone to its own source sets (no cross-wiring)'
+  )
+));
+
 
 -- ----------------------------------------------------------------------------
 -- §B. copy_program_day no-program path — target date outside the
@@ -200,7 +261,7 @@ INSERT INTO _no_prog_result
     '2026-05-26'::date
   );
 
-INSERT INTO _tap (n, line) VALUES (6, (
+INSERT INTO _tap (n, line) VALUES (8, (
   SELECT is(
     (SELECT result ->> 'status' FROM _no_prog_result),
     'no_program',
@@ -244,7 +305,7 @@ INSERT INTO _conflict_result
     false
   );
 
-INSERT INTO _tap (n, line) VALUES (7, (
+INSERT INTO _tap (n, line) VALUES (9, (
   SELECT is(
     (SELECT result ->> 'status' FROM _conflict_result),
     'conflict',
@@ -252,7 +313,7 @@ INSERT INTO _tap (n, line) VALUES (7, (
   )
 ));
 
-INSERT INTO _tap (n, line) VALUES (8, (
+INSERT INTO _tap (n, line) VALUES (10, (
   SELECT is(
     (SELECT (result -> 'conflicts' -> 0 ->> 'date')::date FROM _conflict_result),
     '2026-05-01'::date,
@@ -270,7 +331,7 @@ INSERT INTO _force_result
     true
   );
 
-INSERT INTO _tap (n, line) VALUES (9, (
+INSERT INTO _tap (n, line) VALUES (11, (
   SELECT is(
     (SELECT result ->> 'status' FROM _force_result),
     'created',
@@ -283,6 +344,12 @@ INSERT INTO _tap (n, line) VALUES (9, (
 -- §D. repeat_program_day_weekly clean path — repeat from Apr 27 to
 -- May 11 (target dates: May 4, May 11). Both should fall inside the
 -- program (which ends May 25).
+--
+-- D2–D5 (2026-06-12): the original file only counted created days here,
+-- which let the remap Cartesian bug ship — a superset source day fanned
+-- out into duplicate exercises with mismatched group ids on every
+-- repeat. These assertions pin exercise count, group cohesion, set
+-- fan-out, and pairing.
 -- ----------------------------------------------------------------------------
 CREATE TEMP TABLE _repeat_result (result jsonb) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _repeat_result TO authenticated;
@@ -293,11 +360,72 @@ INSERT INTO _repeat_result
     '2026-05-11'::date
   );
 
-INSERT INTO _tap (n, line) VALUES (10, (
+CREATE TEMP VIEW _repeat_days AS
+  SELECT (jsonb_array_elements_text(result -> 'new_day_ids'))::uuid AS day_id
+    FROM _repeat_result;
+GRANT SELECT ON _repeat_days TO authenticated;
+
+INSERT INTO _tap (n, line) VALUES (12, (
   SELECT is(
     (SELECT jsonb_array_length(result -> 'new_day_ids') FROM _repeat_result),
     2,
     'D1: repeat over 2 same-weekdays creates 2 new days'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_exercises pe
+      WHERE pe.program_day_id IN (SELECT day_id FROM _repeat_days)
+        AND pe.deleted_at IS NULL),
+    4,
+    'D2: each repeated day carries exactly the source''s 2 exercises (no Cartesian fan-out)'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (14, (
+  SELECT ok(
+    (SELECT count(DISTINCT pe.superset_group_id)::int FROM program_exercises pe
+      WHERE pe.program_day_id IN (SELECT day_id FROM _repeat_days)
+        AND pe.deleted_at IS NULL) = 2
+    AND NOT EXISTS (
+      SELECT 1 FROM program_exercises pe
+       WHERE pe.program_day_id IN (SELECT day_id FROM _repeat_days)
+         AND pe.deleted_at IS NULL
+         AND pe.superset_group_id = (SELECT ss_group FROM _ids))
+    AND NOT EXISTS (
+      SELECT 1 FROM (
+        SELECT program_day_id, count(DISTINCT superset_group_id) AS g
+          FROM program_exercises
+         WHERE program_day_id IN (SELECT day_id FROM _repeat_days)
+           AND deleted_at IS NULL
+         GROUP BY program_day_id
+      ) per_day WHERE per_day.g <> 1),
+    'D3: one fresh cohesive superset group per repeated day (not the source group, not split)'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (15, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_exercise_sets ps
+      JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+     WHERE pe.program_day_id IN (SELECT day_id FROM _repeat_days)
+       AND pe.deleted_at IS NULL
+       AND ps.deleted_at IS NULL),
+    8,
+    'D4: per-set rows fanned out on every repeated day (2 days x 2 exercises x 2 sets) (G-1)'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (16, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_exercise_sets ps
+      JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+     WHERE pe.program_day_id IN (SELECT day_id FROM _repeat_days)
+       AND pe.sort_order = 1 AND ps.set_number = 2 AND ps.reps = '12'
+       AND pe.deleted_at IS NULL AND ps.deleted_at IS NULL),
+    2,
+    'D5: fan-out pairs each repeated clone to its own source sets (one per day, no cross-wiring)'
   )
 ));
 
@@ -315,7 +443,7 @@ INSERT INTO _invalid_result
     '2026-04-20'::date
   );
 
-INSERT INTO _tap (n, line) VALUES (11, (
+INSERT INTO _tap (n, line) VALUES (17, (
   SELECT is(
     (SELECT result ->> 'status' FROM _invalid_result),
     'invalid_end_date',
@@ -343,7 +471,7 @@ INSERT INTO _extend_result
     true   -- force, since §C left a row on May 1 that would conflict on the May 4 attempt
   );
 
-INSERT INTO _tap (n, line) VALUES (12, (
+INSERT INTO _tap (n, line) VALUES (18, (
   SELECT is(
     (SELECT jsonb_array_length(result -> 'new_day_ids') FROM _extend_result),
     8,
@@ -351,7 +479,7 @@ INSERT INTO _tap (n, line) VALUES (12, (
   )
 ));
 
-INSERT INTO _tap (n, line) VALUES (13, (
+INSERT INTO _tap (n, line) VALUES (19, (
   SELECT cmp_ok(
     (SELECT duration_weeks FROM programs WHERE id = (SELECT program_a FROM _ids)),
     '>=',
@@ -400,7 +528,7 @@ INSERT INTO _multi_result
     true
   );
 
-INSERT INTO _tap (n, line) VALUES (14, (
+INSERT INTO _tap (n, line) VALUES (20, (
   SELECT is(
     (SELECT result ->> 'status' FROM _multi_result),
     'created',

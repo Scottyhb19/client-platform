@@ -43,7 +43,20 @@ When an item lands as a phase plan, link the relevant section in `docs/polish/<s
 
 ---
 
-## Calendar copy/repeat: per-set fan-out fix
+## Calendar copy/repeat: per-set fan-out fix — CLOSED 2026-06-12 (superseded by G-1)
+
+**Resolved:** Migration `20260612100000_clone_rpcs_per_set_fanout` (G-1 of the
+program-engine/session-builder polish pass, `docs/polish/program-engine-session-builder.md`).
+The audit found this entry under-scoped: not two but **four** clone paths skipped the
+fan-out — `copy_program_day`, `repeat_program_day_weekly`, *and* `_clone_program`
+(serving `copy_program` / `repeat_program`, migration `20260503130000`, which also
+predates per-set storage). All four fixed in the one migration. The fix also closed a
+latent Cartesian bug in `repeat_program_day_weekly`'s superset remap (one-pass
+`SELECT DISTINCT … gen_random_uuid()` never deduplicates — repeating a superset day
+inserted duplicate exercises with mismatched group ids). pgTAP tests 10/11 extended
+with set fan-out, pairing, exercise-count, and group-cohesion assertions. No backfill,
+per the recommendation below (pre-launch, no real client data). Entry retained for
+the historical fix outline.
 
 **Surfaced:** 2026-05-08 during session-builder Phase I sign-off (Q5).
 

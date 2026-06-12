@@ -173,7 +173,18 @@ Architecture before features, features before polish, per protocol step 6.
 
 ---
 
-## 8. Riders to other sections (recorded, not actioned here)
+## 8. Implementation log (2026-06-12)
+
+**G-1 — closed.** Migration `20260612100000_clone_rpcs_per_set_fanout` replaces `copy_program_day`, `repeat_program_day_weekly`, and `_clone_program` with per-set fan-out (the `cloned AS (INSERT … RETURNING)` + sort_order pairing pattern proven in `duplicate_program_day`). Two findings beyond the gap as written:
+
+1. **The `repeat_program_day_weekly` superset remap was Cartesian-broken** — its one-pass `SELECT DISTINCT superset_group_id, gen_random_uuid()` never deduplicated (volatile uuid), so repeating a day holding an N-member superset inserted N copies of every grouped exercise with mismatched fresh group ids, on every target date. The §2 `copy_program_day` comment in the same migration documents this exact trap; §3 fell into it. Fixed with the dedupe-then-uuid subquery. Test 10 previously asserted only the created-day count on this path, which is why it stayed green.
+2. **First push failed on a stale base**: the §3 rewrite was initially drafted from `_clone_program`'s original definition (20260503130000), which still references the `program_type` enum dropped in 20260504130000. Rebased onto the 20260504130000 replacement. Lesson recorded in the migration header: diff against the latest replacement of a function, not the file that created it.
+
+Verification: `supabase db push` clean; pgTAP test 10 extended 14 → 20 assertions (fan-out count, pairing guard, exercise-count Cartesian guard, group cohesion per repeated day), test 11 extended 9 → 12 (fan-out on block copy and repeat, pairing guard) — **all 32 green** against the live project via `supabase db query --linked -f` (BEGIN/ROLLBACK batch). Types regenerated, no drift (signatures unchanged). `docs/deferred-prompts.md` entry marked CLOSED/superseded with the four-path correction. No backfill, per the deferred-prompts recommendation (pre-launch, no real data).
+
+---
+
+## 9. Riders to other sections (recorded, not actioned here)
 
 - **Section 6 (Program calendar):** the calendar toolbar's copy/repeat affordances should re-verify against the G-1-fixed RPCs; the view-mode/pin-state persistence question (localStorage vs `practice_preferences`) is surfaced at that section's premortem per the standing note.
 - **Section 7 (Client portal):** keep `client_get_program_day_exercises_v2`'s empty-`prescription_sets` defensiveness even after G-1 (defence in depth), and decide what the logging flow renders if it ever occurs.

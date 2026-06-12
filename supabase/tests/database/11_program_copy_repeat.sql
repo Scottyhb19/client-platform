@@ -4,32 +4,36 @@ SET search_path TO public, extensions, pg_temp;
 -- 11_program_copy_repeat
 -- ============================================================================
 -- Why: Coverage for migration 20260503130000_program_copy_repeat.sql
--- (Phase D — block-level copy + repeat RPCs).
+-- (Phase D — block-level copy + repeat RPCs), extended 2026-06-12 for
+-- migration 20260612100000_clone_rpcs_per_set_fanout (G-1 of the
+-- program-engine polish pass): _clone_program now fans out
+-- program_exercise_sets; A5/A6/D3 assert the fan-out and its pairing.
 --
 -- Asserts the load-bearing properties:
 --
 --   §A copy_program clean path: clones the program + every week +
 --      every day (with shifted scheduled_date) + every exercise (with
---      remapped superset_group_ids).
+--      remapped superset_group_ids) + every per-set row, paired to the
+--      right clone (A5/A6).
 --   §B copy_program defaults the new name to "<src.name> (copy)" when
 --      caller passes NULL / blank.
 --   §C copy_program overlap path: target start_date overlaps an
 --      existing active program → status='overlap', no rows inserted.
 --   §D repeat_program clean path: new_start = source.start +
 --      duration_weeks*7, new name = "<src.name> (next)", structure
---      cloned identically.
+--      cloned identically including per-set rows (D3).
 --   §E repeat_program overlap path: another active program already
 --      sits where the back-to-back clone would land → status='overlap'.
 --
 -- Output pattern: TAP lines captured into temp _tap so the supabase
 -- db query CLI returns all lines in the final SELECT.
 --
--- Test count: 9
+-- Test count: 12
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(9);
+SELECT plan(12);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -40,8 +44,12 @@ GRANT INSERT, SELECT ON _tap TO authenticated;
 --
 -- One organization + one client + one active program (Apr 27 – May 25,
 -- 4 weeks). Program contains 1 week, 1 day on Mon Apr 27, 2 exercises
--- in a superset group. Same shape as test 10 so we can lean on the
--- same clone semantics.
+-- in a superset group, each with two per-set rows of distinguishable
+-- content (same shape as test 10 so we can lean on the same clone
+-- semantics):
+--
+--   pe sort 0: set 1 (reps 6, kg 60), set 2 (reps 6, kg 70)
+--   pe sort 1: set 1 (reps 10),       set 2 (reps 12)
 -- ----------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -54,6 +62,8 @@ DECLARE
   week_a      uuid := '00000000-0000-0000-0000-000000000e07'::uuid;
   source_day  uuid := '00000000-0000-0000-0000-000000000e08'::uuid;
   ss_group    uuid := '00000000-0000-0000-0000-000000000e09'::uuid;
+  pe_first    uuid := '00000000-0000-0000-0000-000000000e0c'::uuid;
+  pe_second   uuid := '00000000-0000-0000-0000-000000000e0d'::uuid;
 BEGIN
   INSERT INTO organizations (id, name, slug)
   VALUES (org_a, 'Test Org A — Block Copy 11', 'test-org-a-block-copy-11');
@@ -89,10 +99,19 @@ BEGIN
   );
 
   INSERT INTO program_exercises (
-    program_day_id, exercise_id, sort_order, superset_group_id, sets, reps
+    id, program_day_id, exercise_id, sort_order, superset_group_id, sets, reps
   ) VALUES
-    (source_day, exercise_id, 0, ss_group, 4, '6'),
-    (source_day, exercise_id, 1, ss_group, 4, '6');
+    (pe_first,  source_day, exercise_id, 0, ss_group, 4, '6'),
+    (pe_second, source_day, exercise_id, 1, ss_group, 4, '6');
+
+  -- Per-set rows (G-1 fixture).
+  INSERT INTO program_exercise_sets (
+    program_exercise_id, set_number, reps, optional_metric, optional_value
+  ) VALUES
+    (pe_first,  1, '6',  'kg', '60'),
+    (pe_first,  2, '6',  'kg', '70'),
+    (pe_second, 1, '10', NULL, NULL),
+    (pe_second, 2, '12', NULL, NULL);
 
   EXECUTE 'RESET ROLE';
 
@@ -112,7 +131,8 @@ END $$;
 -- ----------------------------------------------------------------------------
 -- §A. copy_program clean path — clone the source onto Aug 3 with an
 -- explicit new name. Asserts: status, new_program_id, name, structure
--- (1 week, 1 day on shifted date, 2 exercises sharing a fresh group).
+-- (1 week, 1 day on shifted date, 2 exercises sharing a fresh group,
+-- 4 per-set rows correctly paired).
 -- ----------------------------------------------------------------------------
 SELECT public._test_set_jwt(
   (SELECT staff_a FROM _ids), (SELECT org_a FROM _ids), 'staff'
@@ -168,6 +188,45 @@ INSERT INTO _tap (n, line) VALUES (4, (
   )
 ));
 
+-- G-1: per-set fan-out on the block-copy path.
+INSERT INTO _tap (n, line) VALUES (5, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_exercise_sets ps
+      JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+      JOIN program_days pd ON pd.id = pe.program_day_id
+     WHERE pd.program_id = ((SELECT result ->> 'new_program_id' FROM _copy_result))::uuid
+       AND pe.deleted_at IS NULL
+       AND pd.deleted_at IS NULL
+       AND ps.deleted_at IS NULL),
+    4,
+    'A5: cloned program has all 4 per-set rows fanned out (G-1)'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (6, (
+  SELECT ok(
+    EXISTS (
+      SELECT 1 FROM program_exercise_sets ps
+        JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+        JOIN program_days pd ON pd.id = pe.program_day_id
+       WHERE pd.program_id = ((SELECT result ->> 'new_program_id' FROM _copy_result))::uuid
+         AND pe.sort_order = 0 AND ps.set_number = 2
+         AND ps.optional_metric = 'kg' AND ps.optional_value = '70'
+         AND pe.deleted_at IS NULL AND ps.deleted_at IS NULL
+    )
+    AND EXISTS (
+      SELECT 1 FROM program_exercise_sets ps
+        JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+        JOIN program_days pd ON pd.id = pe.program_day_id
+       WHERE pd.program_id = ((SELECT result ->> 'new_program_id' FROM _copy_result))::uuid
+         AND pe.sort_order = 1 AND ps.set_number = 2
+         AND ps.reps = '12' AND ps.optional_metric IS NULL
+         AND pe.deleted_at IS NULL AND ps.deleted_at IS NULL
+    ),
+    'A6: fan-out pairs each clone to its own source sets (no cross-wiring)'
+  )
+));
+
 
 -- ----------------------------------------------------------------------------
 -- §B. copy_program defaults the name to "<src> (copy)" when caller
@@ -183,7 +242,7 @@ INSERT INTO _default_name_result
     NULL
   );
 
-INSERT INTO _tap (n, line) VALUES (5, (
+INSERT INTO _tap (n, line) VALUES (7, (
   SELECT is(
     (SELECT name FROM programs
       WHERE id = ((SELECT result ->> 'new_program_id' FROM _default_name_result))::uuid),
@@ -208,7 +267,7 @@ INSERT INTO _overlap_result
     'BC11 Would Overlap'
   );
 
-INSERT INTO _tap (n, line) VALUES (6, (
+INSERT INTO _tap (n, line) VALUES (8, (
   SELECT is(
     (SELECT result ->> 'status' FROM _overlap_result),
     'overlap',
@@ -230,7 +289,7 @@ GRANT INSERT, SELECT ON _repeat_result TO authenticated;
 INSERT INTO _repeat_result
   SELECT public.repeat_program((SELECT program_a FROM _ids));
 
-INSERT INTO _tap (n, line) VALUES (7, (
+INSERT INTO _tap (n, line) VALUES (9, (
   SELECT is(
     (SELECT result ->> 'status' FROM _repeat_result),
     'created',
@@ -238,12 +297,26 @@ INSERT INTO _tap (n, line) VALUES (7, (
   )
 ));
 
-INSERT INTO _tap (n, line) VALUES (8, (
+INSERT INTO _tap (n, line) VALUES (10, (
   SELECT is(
     (SELECT (start_date, name)::text FROM programs
       WHERE id = ((SELECT result ->> 'new_program_id' FROM _repeat_result))::uuid),
     '(2026-05-25,"BC11 Block (next)")',
     'D2: new program starts the day after source ends, name is "<src> (next)"'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (11, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_exercise_sets ps
+      JOIN program_exercises pe ON pe.id = ps.program_exercise_id
+      JOIN program_days pd ON pd.id = pe.program_day_id
+     WHERE pd.program_id = ((SELECT result ->> 'new_program_id' FROM _repeat_result))::uuid
+       AND pe.deleted_at IS NULL
+       AND pd.deleted_at IS NULL
+       AND ps.deleted_at IS NULL),
+    4,
+    'D3: repeated program has all 4 per-set rows fanned out (G-1)'
   )
 ));
 
@@ -259,7 +332,7 @@ GRANT INSERT, SELECT ON _repeat2_result TO authenticated;
 INSERT INTO _repeat2_result
   SELECT public.repeat_program((SELECT program_a FROM _ids));
 
-INSERT INTO _tap (n, line) VALUES (9, (
+INSERT INTO _tap (n, line) VALUES (12, (
   SELECT is(
     (SELECT result ->> 'status' FROM _repeat2_result),
     'overlap',
