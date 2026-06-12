@@ -45,6 +45,10 @@
 
   /* Radii */
   --radius-card: 14px;
+  /* Dense panels and session-builder exercise cards — design system's
+     sanctioned 8–10px band (G-9, program-engine polish pass 2026-06-12;
+     replaces a hardcoded 12px that sat outside the system). */
+  --radius-card-dense: 10px;
   --radius-input: 7px;
   --radius-button: 7px;
   --radius-chip: 10px;

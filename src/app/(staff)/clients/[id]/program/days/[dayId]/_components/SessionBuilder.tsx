@@ -14,6 +14,7 @@ import {
   Search,
   Trash2,
   Unlink,
+  X,
 } from 'lucide-react'
 import {
   DndContext,
@@ -454,7 +455,7 @@ export function SessionBuilder({
                 fontSize: '.78rem',
                 fontWeight: 600,
                 cursor: 'pointer',
-                background: tab === k ? '#fff' : 'transparent',
+                background: tab === k ? 'var(--color-card)' : 'transparent',
                 color: tab === k ? INK : MUTED,
                 boxShadow: tab === k ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
                 textTransform: 'capitalize',
@@ -493,7 +494,7 @@ function EmptyState({ onBrowse }: { onBrowse: () => void }) {
   return (
     <div
       style={{
-        background: '#fff',
+        background: 'var(--color-card)',
         border: `1px dashed ${BORDER}`,
         borderRadius: 'var(--radius-card)',
         padding: '40px 24px',
@@ -864,8 +865,8 @@ function SortableCardShell({
       <div
         ref={setNodeRef}
         style={{
-          background: '#fff',
-          borderRadius: 12,
+          background: 'var(--color-card)',
+          borderRadius: 'var(--radius-card-dense)',
           border: `1px solid ${BORDER}`,
           display: 'flex',
           transform: CSS.Transform.toString(transform),
@@ -928,11 +929,14 @@ function DraggedCardGhost({ pe }: { pe: ProgramExercise }) {
   return (
     <div
       style={{
-        background: '#fff',
+        background: 'var(--color-card)',
         border: `1px solid ${BORDER}`,
-        borderRadius: 12,
+        borderRadius: 'var(--radius-card-dense)',
         padding: '10px 14px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+        // The system's single sanctioned card shadow — the previous
+        // 0 8px 24px elevation sat outside "one subtle shadow on cards
+        // and nothing else" (G-9).
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
         cursor: 'grabbing',
         // Match the card width loosely; @dnd-kit will size the overlay to
         // the active node's box anyway, so this is a fallback only.
@@ -1587,6 +1591,10 @@ function SetCell({
     startTransition(async () => {
       const res = await updateProgramExerciseSetAction(setId, patch)
       if (res.error) {
+        // G-8: never leave a local value the database doesn't hold —
+        // revert to the last-known server value and flag the cell. The
+        // border clears on the next keystroke.
+        setValue(initialValue)
         setStatus('error')
       } else {
         setStatus('idle')
@@ -1601,7 +1609,15 @@ function SetCell({
         type="text"
         value={value}
         placeholder={placeholder}
-        onChange={(e) => setValue(e.target.value)}
+        title={
+          status === 'error'
+            ? 'Save failed — value reverted. Edit to try again.'
+            : undefined
+        }
+        onChange={(e) => {
+          setValue(e.target.value)
+          if (status === 'error') setStatus('idle')
+        }}
         onBlur={handleBlur}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -1951,6 +1967,9 @@ function SmallField({
     startTransition(async () => {
       const res = await updateProgramExerciseAction(programExerciseId, patch)
       if (res.error) {
+        // G-8: revert to the last-known server value; never leave a
+        // local value the database doesn't hold.
+        setValue(initialValue)
         setStatus('error')
       } else {
         setStatus('idle')
@@ -1980,7 +1999,15 @@ function SmallField({
           inputMode={kind === 'number' ? 'numeric' : undefined}
           value={value}
           placeholder="—"
-          onChange={(e) => setValue(e.target.value)}
+          title={
+            status === 'error'
+              ? 'Save failed — value reverted. Edit to try again.'
+              : undefined
+          }
+          onChange={(e) => {
+            setValue(e.target.value)
+            if (status === 'error') setStatus('idle')
+          }}
           onBlur={handleBlur}
           onKeyDown={(e) => {
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
@@ -2266,7 +2293,7 @@ function BarButton({
       style={{
         width: 22,
         height: 22,
-        background: active ? 'var(--color-slate)' : '#fff',
+        background: active ? 'var(--color-slate)' : 'var(--color-card)',
         color: active ? '#fff' : disabled ? FAINT : MUTED,
         border: `1px solid ${active ? 'var(--color-slate)' : BORDER}`,
         borderRadius: 6,
@@ -2311,6 +2338,9 @@ function EditableTextarea({
     startTransition(async () => {
       const res = await updateProgramExerciseAction(programExerciseId, patch)
       if (res.error) {
+        // G-8: revert to the last-known server value; never leave a
+        // local value the database doesn't hold.
+        setValue(initialValue)
         setStatus('error')
       } else {
         setStatus('idle')
@@ -2324,7 +2354,15 @@ function EditableTextarea({
       <textarea
         value={value}
         placeholder={placeholder}
-        onChange={(e) => setValue(e.target.value)}
+        title={
+          status === 'error'
+            ? 'Save failed — text reverted. Edit to try again.'
+            : undefined
+        }
+        onChange={(e) => {
+          setValue(e.target.value)
+          if (status === 'error') setStatus('idle')
+        }}
         onBlur={handleBlur}
         rows={3}
         style={{
@@ -2537,39 +2575,73 @@ function SectionTitleField({
   }
 
   return (
-    <select
-      value={value}
-      onChange={handleSelectChange}
-      aria-label="Section"
+    <div
       style={{
-        width: '100%',
-        background: 'transparent',
-        border: 'none',
-        borderBottom: `1px dashed ${BORDER}`,
-        padding: '4px 0',
-        fontFamily: 'var(--font-display)',
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: '.08em',
-        textTransform: 'uppercase',
-        color: value ? MUTED : FAINT,
-        outline: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
         marginBottom: 12,
-        appearance: 'none',
-        cursor: 'pointer',
       }}
     >
-      <option value="">— Section —</option>
-      {!valueInOptions && value !== '' && (
-        <option value={value}>{value}</option>
+      <select
+        value={value}
+        onChange={handleSelectChange}
+        aria-label="Section"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          background: 'transparent',
+          border: 'none',
+          borderBottom: `1px dashed ${BORDER}`,
+          padding: '4px 0',
+          fontFamily: 'var(--font-display)',
+          fontSize: 10,
+          fontWeight: 700,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: value ? MUTED : FAINT,
+          outline: 'none',
+          appearance: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        <option value="">— Section —</option>
+        {!valueInOptions && value !== '' && (
+          <option value={value}>{value}</option>
+        )}
+        {options.map((o) => (
+          <option key={o.id} value={o.name}>
+            {o.name}
+          </option>
+        ))}
+        <option value="__add__">+ Add new section…</option>
+      </select>
+      {/* §6.5.1 (G-10): "click ✘ (always red) to clear" — renders only
+          while a title is set; the dropdown's "(— Section —)" option
+          remains as the keyboard path to the same clear. */}
+      {value !== '' && (
+        <button
+          type="button"
+          aria-label="Clear section title"
+          title="Clear section title"
+          onClick={() => applyValue('')}
+          style={{
+            width: 16,
+            height: 16,
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--color-alert)',
+            cursor: 'pointer',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 0,
+            flexShrink: 0,
+          }}
+        >
+          <X size={11} aria-hidden />
+        </button>
       )}
-      {options.map((o) => (
-        <option key={o.id} value={o.name}>
-          {o.name}
-        </option>
-      ))}
-      <option value="__add__">+ Add new section…</option>
-    </select>
+    </div>
   )
 }
 
