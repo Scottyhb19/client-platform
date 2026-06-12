@@ -3501,6 +3501,15 @@ export type Database = {
         }
         Returns: Json
       }
+      copy_program_week: {
+        Args: {
+          p_client_id: string
+          p_force?: boolean
+          p_source_week_start: string
+          p_target_week_start: string
+        }
+        Returns: Json
+      }
       create_organization_with_owner: {
         Args: {
           p_first_name: string
@@ -3568,6 +3577,15 @@ export type Database = {
       repeat_program: { Args: { p_source_program_id: string }; Returns: Json }
       repeat_program_day_weekly: {
         Args: { p_end_date: string; p_force?: boolean; p_source_day_id: string }
+        Returns: Json
+      }
+      repeat_program_week: {
+        Args: {
+          p_client_id: string
+          p_end_date: string
+          p_force?: boolean
+          p_source_week_start: string
+        }
         Returns: Json
       }
       restore_client: { Args: { p_id: string }; Returns: undefined }
