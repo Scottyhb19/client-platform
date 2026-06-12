@@ -78,7 +78,7 @@ The product is specified across a small set of authoritative documents. Read the
 1. `Client_Platform_Brief_v2.1.docx` — the master product spec. Covers all UX decisions, data model, hosting architecture, and compliance requirements for the platform as a whole.
 2. `CLAUDE_CODE_BUILD_PROMPT_testing_module.md` — the target-state brief for the testing & reports module. This is the spec the existing module is being polished *toward* — not a greenfield build spec.
 3. `data/physical_markers_schema_v1.1.json` — the test schema with rendering hints (direction of good, default chart, comparison mode, client visibility, client view chart) per metric. Read at runtime, not hard-coded. The seeded `physical_markers_schema_seed` table is the runtime artifact; the JSON is the editing source of truth (see `docs/testing-module-schema.md` §14 Q5).
-4. `Odyssey_Design_System.pdf` — the visual and brand system. Authoritative for colour, type, spacing, motion, components, voice, copy, and casing. Tokens already in `src/app/globals.css` and `src/lib/constants.ts`. Reference layouts in the four root `.html` prototypes.
+4. `Odyssey_Design_System.pdf` — the visual and brand system. Authoritative for colour, type, spacing, motion, components, voice, copy, and casing. Tokens already in `src/app/globals.css`. Reference layouts in the four root `.html` prototypes.
 5. `/docs/` — authoritative architecture decisions. Contents:
    - `schema.md`, `auth.md`, `rls-policies.md`, `slos.md`, `incident-response.md` — the foundation documents. Drafted and self-reviewed during build. **External IT advisor review is parked but not abandoned** — see Open gates below. Treat the docs as the current authoritative position; flag anything that looks wrong.
    - `deferred-prompts.md` — working file for tracked-but-not-yet-resolved scope or design decisions. Consult it for context, but it is not a contract — it captures things still under consideration.
@@ -118,7 +118,7 @@ These prototypes validated the UX decisions captured in the briefs. They are ref
 - `Isaac_Fong_report.html` — VALD performance report. Validated the report rendering for the testing module. **Not the source of design tokens** — superseded by `Odyssey_Design_System.pdf`.
 
 ## Design system
-`Odyssey_Design_System.pdf` is the authoritative source. Tokens live in `src/app/globals.css` and `src/lib/constants.ts`; the PDF is the documentation that explains the *why* behind each value. Do not duplicate token values into other files.
+`Odyssey_Design_System.pdf` is the authoritative source. Tokens live in `src/app/globals.css`; the PDF is the documentation that explains the *why* behind each value. Do not duplicate token values into other files. (`src/lib/constants.ts` holds non-design platform constants — e.g. `PRACTICE_TIMEZONE` — not design tokens; corrected 2026-06-12, the file did not exist before that date.)
 
 The load-bearing rules — easy to silently violate, expensive to fix later:
 
@@ -185,7 +185,7 @@ If any of the above is found to have drifted from this stated position, surface 
 - Every API route and server action authenticates via Supabase Auth; authorization is enforced by RLS. No exceptions.
 - Environment variables for all secrets and configuration. Nothing hardcoded. Service role key is server-only — never ships to the browser.
 - **Configuration is read at runtime, never compiled in.** Schema files (e.g. `physical_markers_schema_v1.1.json`) are loaded at server startup. Per-EP overrides live in the database, keyed on a stable identifier. The application reads `override OR default` through a resolver function — never reads schema files directly elsewhere in the code. This rule applies to every configurable surface, not just tests; the EP must be able to change configuration through settings without a code change or redeploy.
-- **Design tokens live in `src/app/globals.css` and `src/lib/constants.ts` only.** Do not hardcode colours, radii, spacing values, or font weights elsewhere in the codebase. Components reference tokens, never raw values.
+- **Design tokens live in `src/app/globals.css` only.** Do not hardcode colours, radii, spacing values, or font weights elsewhere in the codebase. Components reference tokens, never raw values. `src/lib/constants.ts` holds non-design platform constants (e.g. `PRACTICE_TIMEZONE`), not design tokens.
 - Responsive: 375px (mobile), 768px (tablet), 1440px (desktop).
 - Client portal is mobile-first. Staff portal is desktop-first.
 - Clean, readable code that works is better than fast, messy code that works today and breaks tomorrow.
