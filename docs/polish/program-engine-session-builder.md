@@ -248,3 +248,11 @@ Verification: `supabase db push` clean; pgTAP test 10 extended 14 → 20 asserti
 **Premortem disposition.** Mitigated: FM-1 (G-1 + regression-proofing assertions), FM-2 (G-2), FM-3 (G-3), FM-4 (G-4), FM-5 (G-5), FM-6 (G-6), FM-7 (G-7), FM-8 (G-8), FM-9 (G-9). Accepted, unchanged from the approved list (Q-D): the concurrent-reorder group race and two-tab refresh clobber (self-healing, two-staff scale; re-trigger: multi-practitioner UI work or any observed reorder anomaly), the `groupAcrossActionBarAction` TOCTOU window (same rationale), the `repeat_program_day_weekly` two-pass loop (now documented in the migration body), the builder monolith (reduced, not decomposed), and the absent dirty-state navigation guard (blur-autosave makes the loss window negligible).
 
 Per the sign-off ritual, this section is **not closed** until this closing commit is reviewed in the operator's claude.ai project chat and the sign-off is pasted beneath.
+
+---
+
+## Sign-off — operator review (2026-06-12)
+
+Closing commit reviewed in the operator's claude.ai project chat. All ten approved gaps (G-1 through G-10) are closed; the two P0 gaps (G-1 clone per-set fan-out, G-2 template lifecycle) are closed with their regression-proofing assertions, and the Q-A through Q-D decisions stand as recorded in §0.1. The three review items raised at sign-off — the test 05 fixture break, the copy/repeat matrix browser coverage, and the SectionTitleField eslint provenance — have been resolved. Section 5 (program engine and session builder) is signed off and closed.
+
+Riders carried forward unchanged: the SessionTypesEditor stale-add fix (closed section 1), the go-live SECURITY DEFINER sweep prioritising guardless internal helpers (_program_for_date and any siblings, anon-reachable, read-only), and the Q-D concurrency acceptances (reorder/group race, TOCTOU window, two-pass repeat loop, builder monolith, absent dirty-state guard).
