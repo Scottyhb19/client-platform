@@ -3,21 +3,20 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
-import {
-  loadCatalog,
-  loadPublicationsForClient,
-  loadTestHistoryForClient,
-} from '@/lib/testing/loaders'
+import { loadCatalog, loadTestHistoryForClient } from '@/lib/testing/loaders'
 import {
   SessionBuilder,
   type ExerciseTagOption,
   type LastLogged,
-  type LibraryPick,
   type MetricUnitOption,
   type MovementPatternOption,
   type ProgramExercise,
   type SectionTitleOption,
 } from './_components/SessionBuilder'
+import {
+  LIBRARY_EXERCISE_COLUMNS,
+  toLibraryExercises,
+} from '@/app/(staff)/library/_lib/exercise-query'
 import { type ClinicalNoteSummary } from '../../../_components/NotesPanel'
 import {
   NOTE_SUMMARY_COLUMNS,
@@ -122,13 +121,11 @@ export default async function SessionBuilderPage({
       .eq('program_day_id', dayId)
       .is('deleted_at', null)
       .order('sort_order'),
+    // G-7 (2026-06-12): full LibraryExercise card shape — the Library tab
+    // composes the standalone library's atoms, same select both surfaces.
     supabase
       .from('exercises')
-      .select(
-        `id, name, movement_pattern_id,
-         movement_pattern:movement_patterns(name),
-         tag_assignments:exercise_tag_assignments(tag_id)`,
-      )
+      .select(LIBRARY_EXERCISE_COLUMNS)
       .is('deleted_at', null)
       .order('name'),
     // Phase J.2 (2026-05-08): clinical notes for the right-rail Notes tab.
@@ -326,13 +323,7 @@ export default async function SessionBuilderPage({
     }),
   )
 
-  const libraryOptions: LibraryPick[] = (libraryRaw ?? []).map((e) => ({
-    id: e.id,
-    name: e.name,
-    movement_pattern_id: e.movement_pattern_id,
-    movement_pattern_name: e.movement_pattern?.name ?? null,
-    tag_ids: (e.tag_assignments ?? []).map((t) => t.tag_id),
-  }))
+  const libraryOptions = toLibraryExercises(libraryRaw)
 
   const sectionTitles: SectionTitleOption[] = (sectionTitlesRaw ?? []).map(
     (s) => ({ id: s.id, name: s.name }),

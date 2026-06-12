@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { LibraryView } from './_components/LibraryView'
-import type { LibraryExercise, Pattern, Tag } from './types'
+import { LIBRARY_EXERCISE_COLUMNS, toLibraryExercises } from './_lib/exercise-query'
+import type { Pattern, Tag } from './types'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,15 +18,11 @@ export default async function LibraryPage() {
     { data: patterns },
     { data: tags },
   ] = await Promise.all([
+    // Shared select with the session builder's Library tab (G-7,
+    // 2026-06-12) — one query shape, one card mapping, no drift.
     supabase
       .from('exercises')
-      .select(
-        `id, name, default_sets, default_reps, default_metric,
-         default_metric_value, usage_count, video_url,
-         movement_pattern_id,
-         movement_pattern:movement_patterns(name),
-         exercise_tag_assignments(tag:exercise_tags(id, name, deleted_at))`,
-      )
+      .select(LIBRARY_EXERCISE_COLUMNS)
       .is('deleted_at', null)
       .order('name'),
     supabase
@@ -42,32 +39,7 @@ export default async function LibraryPage() {
 
   if (exErr) throw new Error(`Load exercises: ${exErr.message}`)
 
-  const exercises: LibraryExercise[] = (exercisesRaw ?? []).map((e) => {
-    const assignments = e.exercise_tag_assignments ?? []
-    // Drop soft-deleted tags from the per-card chip render. The assignment
-    // row stays in the join table for historical context; the chip is
-    // hidden because the tag itself is no longer active.
-    const tagObjs = assignments
-      .map((a) => a.tag)
-      .filter(
-        (t): t is { id: string; name: string; deleted_at: string | null } =>
-          t !== null && t.deleted_at === null,
-      )
-    return {
-      id: e.id,
-      name: e.name,
-      movement_pattern_id: e.movement_pattern_id,
-      movement_pattern_name: e.movement_pattern?.name ?? null,
-      default_sets: e.default_sets,
-      default_reps: e.default_reps,
-      default_metric: e.default_metric,
-      default_metric_value: e.default_metric_value,
-      usage_count: e.usage_count ?? 0,
-      video_url: e.video_url,
-      tag_ids: tagObjs.map((t) => t.id),
-      tag_names: tagObjs.map((t) => t.name),
-    }
-  })
+  const exercises = toLibraryExercises(exercisesRaw)
 
   return (
     <div className="page">

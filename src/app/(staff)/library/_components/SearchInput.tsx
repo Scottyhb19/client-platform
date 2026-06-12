@@ -7,6 +7,9 @@ interface SearchInputProps {
   onChange: (value: string) => void
   placeholder?: string
   ariaLabel?: string
+  /** Tightened sizing for the session builder's 320px right panel
+   *  (G-7, program-engine polish pass 2026-06-12). */
+  dense?: boolean
 }
 
 export function SearchInput({
@@ -14,16 +17,17 @@ export function SearchInput({
   onChange,
   placeholder = 'Search exercises by name…',
   ariaLabel = 'Search exercises',
+  dense = false,
 }: SearchInputProps) {
   return (
     <div style={{ position: 'relative' }}>
       <Search
-        size={16}
+        size={dense ? 14 : 16}
         aria-hidden
         style={{
           position: 'absolute',
-          left: 12,
-          top: 11,
+          left: dense ? 10 : 12,
+          top: dense ? 9 : 11,
           color: 'var(--color-muted)',
         }}
       />
@@ -34,15 +38,16 @@ export function SearchInput({
         aria-label={ariaLabel}
         style={{
           width: '100%',
-          height: 38,
-          padding: '0 12px 0 36px',
+          height: dense ? 32 : 38,
+          padding: dense ? '0 12px 0 30px' : '0 12px 0 36px',
           border: '1px solid var(--color-border-subtle)',
           borderRadius: 'var(--radius-input)',
           background: 'var(--color-card)',
           fontFamily: 'var(--font-sans)',
-          fontSize: '.86rem',
+          fontSize: dense ? '.82rem' : '.86rem',
           outline: 'none',
           color: 'var(--color-text)',
+          boxSizing: 'border-box',
         }}
       />
     </div>

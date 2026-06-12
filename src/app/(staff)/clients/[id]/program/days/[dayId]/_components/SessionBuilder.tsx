@@ -14,7 +14,6 @@ import {
   Search,
   Trash2,
   Unlink,
-  X,
 } from 'lucide-react'
 import {
   DndContext,
@@ -37,7 +36,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  addExerciseToDayAction,
   addProgramExerciseSetAction,
   addSectionTitleAction,
   groupAcrossActionBarAction,
@@ -45,7 +43,6 @@ import {
   removeProgramExerciseAction,
   removeProgramExerciseSetAction,
   reorderProgramExercisesAction,
-  swapProgramExerciseAction,
   ungroupFromSupersetAction,
   updateProgramExerciseAction,
   updateProgramExerciseMetricAction,
@@ -55,6 +52,8 @@ import {
   type ProgramExercisePatch,
   type ProgramExerciseSetPatch,
 } from '../actions'
+import { LibraryPanel } from './LibraryPanel'
+import type { LibraryExercise } from '@/app/(staff)/library/types'
 import {
   NotesPanel,
   type ClinicalNoteSummary,
@@ -149,13 +148,12 @@ export type ProgramExercise = {
   lastLogged: LastLogged | null
 }
 
-export type LibraryPick = {
-  id: string
-  name: string
-  movement_pattern_id: string | null
-  movement_pattern_name: string | null
-  tag_ids: string[]
-}
+/**
+ * Library options are the full LibraryExercise card shape (G-7,
+ * 2026-06-12) — the right-panel Library tab composes the standalone
+ * library's atoms, so it renders the same cards. Loaded by page.tsx via
+ * the shared library/_lib/exercise-query module.
+ */
 
 /**
  * Lookup options sourced from the org's tenant-configurable tables. All
@@ -179,7 +177,7 @@ interface SessionBuilderProps {
   clientId: string
   dayId: string
   programExercises: ProgramExercise[]
-  libraryOptions: LibraryPick[]
+  libraryOptions: LibraryExercise[]
   clinicalNotes: ClinicalNoteSummary[]
   reports: SessionReport[]
   testHistory: ClientTestHistory
@@ -203,7 +201,12 @@ export function SessionBuilder({
   metricUnits,
 }: SessionBuilderProps) {
   const router = useRouter()
-  const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('library')
+  // §6.5.2: Notes is the default tab — clinical context visible while
+  // programming is the differentiator's thesis. Was 'library' until G-6
+  // (2026-06-12); the empty-day state still routes to the library in one
+  // click via "Browse the library", and arming any slot/swap force-switches
+  // the panel to the library tab.
+  const [tab, setTab] = useState<'notes' | 'reports' | 'library'>('notes')
 
   // Phase D: an insertion slot can be armed by a between-cards bar's
   // "+ Add exercise" click. The next library-pick consumes the slot. Cleared
@@ -305,6 +308,14 @@ export function SessionBuilder({
     activeDragId !== null
       ? programExercises.find((e) => e.id === activeDragId) ?? null
       : null
+
+  // pe id → exercise name, for the LibraryPanel's swap/insert banner
+  // labels (the panel no longer receives the full programExercises array).
+  const exerciseNameById = useMemo(
+    () =>
+      new Map(programExercises.map((pe) => [pe.id, pe.exercise_name] as const)),
+    [programExercises],
+  )
 
   function handleSwapClick(peId: string) {
     // Click again on the same name = cancel (toggle). Click a different
@@ -461,11 +472,12 @@ export function SessionBuilder({
             dayId={dayId}
             insertSlot={insertSlot}
             setInsertSlot={setInsertSlot}
-            programExercises={programExercises}
+            exerciseNameById={exerciseNameById}
             movementPatterns={movementPatterns}
             exerciseTags={exerciseTags}
             swapTarget={swapTarget}
             setSwapTarget={setSwapTarget}
+            onSwapComplete={() => setTab('notes')}
           />
         )}
         {tab === 'notes' && <NotesPanel notes={clinicalNotes} />}
@@ -1266,7 +1278,16 @@ function ExerciseBody({
               if (!isSwapping) e.currentTarget.style.textDecoration = 'none'
             }}
           >
-            {pe.exercise_name}
+            {/* §6.5.2 (G-6): while this card's swap is armed, the name
+                blanks to the brief-literal placeholder; cancelling the
+                swap (click again / banner Cancel) restores it. */}
+            {isSwapping ? (
+              <span style={{ color: MUTED, fontStyle: 'italic' }}>
+                Select exercise…
+              </span>
+            ) : (
+              pe.exercise_name
+            )}
           </button>
           <IconButton
             disabled={isFirst || pending}
@@ -2569,383 +2590,3 @@ function buildPatch(
   return { [field]: trimmed } as ProgramExercisePatch
 }
 
-/* ====================== Right column: Library / Notes / Reports ====================== */
-
-function LibraryPanel({
-  options,
-  clientId,
-  dayId,
-  insertSlot,
-  setInsertSlot,
-  programExercises,
-  movementPatterns,
-  exerciseTags,
-  swapTarget,
-  setSwapTarget,
-}: {
-  options: LibraryPick[]
-  clientId: string
-  dayId: string
-  insertSlot: InsertSlot | null
-  setInsertSlot: (s: InsertSlot | null) => void
-  programExercises: ProgramExercise[]
-  movementPatterns: MovementPatternOption[]
-  exerciseTags: ExerciseTagOption[]
-  swapTarget: string | null
-  setSwapTarget: (peId: string | null) => void
-}) {
-  const [query, setQuery] = useState('')
-  const [adding, setAdding] = useState<string | null>(null)
-  // Chip filter state. Multi-select within each category. AND across
-  // categories, OR within (Q3 sign-off 2026-05-07).
-  const [selectedPatternIds, setSelectedPatternIds] = useState<Set<string>>(
-    () => new Set(),
-  )
-  const [selectedTagIds, setSelectedTagIds] = useState<Set<string>>(
-    () => new Set(),
-  )
-  const [, startTransition] = useTransition()
-  const router = useRouter()
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return options.filter((o) => {
-      if (q && !o.name.toLowerCase().includes(q)) return false
-      if (selectedPatternIds.size > 0) {
-        if (
-          !o.movement_pattern_id ||
-          !selectedPatternIds.has(o.movement_pattern_id)
-        ) {
-          return false
-        }
-      }
-      if (selectedTagIds.size > 0) {
-        const hasAny = o.tag_ids.some((id) => selectedTagIds.has(id))
-        if (!hasAny) return false
-      }
-      return true
-    })
-  }, [options, query, selectedPatternIds, selectedTagIds])
-
-  const filtersActive =
-    selectedPatternIds.size > 0 || selectedTagIds.size > 0
-
-  function togglePattern(id: string) {
-    setSelectedPatternIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  function toggleTag(id: string) {
-    setSelectedTagIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  function resetFilters() {
-    setSelectedPatternIds(new Set())
-    setSelectedTagIds(new Set())
-  }
-
-  function handleAdd(exerciseId: string) {
-    setAdding(exerciseId)
-    // Swap takes priority — the two states are mutually exclusive at the
-    // setter level but the runtime check is defensive.
-    if (swapTarget) {
-      startTransition(async () => {
-        const res = await swapProgramExerciseAction(
-          clientId,
-          dayId,
-          swapTarget,
-          exerciseId,
-        )
-        if (res.error) {
-          alert(res.error)
-        } else {
-          setSwapTarget(null)
-          router.refresh()
-        }
-        setAdding(null)
-      })
-      return
-    }
-    const slot: InsertSlot = insertSlot ?? { kind: 'append' }
-    startTransition(async () => {
-      const res = await addExerciseToDayAction(clientId, dayId, exerciseId, slot)
-      if (res.error) {
-        alert(res.error)
-      } else {
-        setInsertSlot(null)
-        router.refresh()
-      }
-      setAdding(null)
-    })
-  }
-
-  // Slot/swap status banner. The label tells the EP exactly what the next
-  // pick will do; Cancel returns to default (append-at-end, no swap).
-  // Swap wins over insert when both armed (defensive — setters enforce
-  // mutual exclusion upstream).
-  let slotLabel: string | null = null
-  let cancelHandler: (() => void) | null = null
-  if (swapTarget) {
-    const target = programExercises.find((p) => p.id === swapTarget)
-    slotLabel = target
-      ? `Replacing: ${target.exercise_name}`
-      : 'Replacing exercise'
-    cancelHandler = () => setSwapTarget(null)
-  } else if (insertSlot?.kind === 'atStart') {
-    slotLabel = 'Inserting at top'
-    cancelHandler = () => setInsertSlot(null)
-  } else if (insertSlot?.kind === 'after') {
-    const anchor = programExercises.find((p) => p.id === insertSlot.afterPeId)
-    slotLabel = anchor
-      ? `Inserting after ${anchor.exercise_name}`
-      : 'Inserting at slot'
-    cancelHandler = () => setInsertSlot(null)
-  }
-
-  return (
-    <div className="card" style={{ padding: 14 }}>
-      <div className="eyebrow" style={{ fontSize: '.66rem', marginBottom: 10 }}>
-        Library — pick to add
-      </div>
-      {slotLabel && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 10,
-            padding: '6px 10px',
-            background: CREAM_DEEP,
-            border: `1px solid ${BORDER}`,
-            borderRadius: 6,
-          }}
-        >
-          <span
-            style={{
-              flex: 1,
-              fontFamily: 'var(--font-sans)',
-              fontSize: '.76rem',
-              fontWeight: 500,
-              color: INK,
-            }}
-          >
-            {slotLabel}
-          </span>
-          <button
-            type="button"
-            onClick={() => cancelHandler?.()}
-            aria-label={swapTarget ? 'Cancel swap' : 'Cancel insert'}
-            title={swapTarget ? 'Cancel swap' : 'Cancel insert'}
-            style={{
-              width: 18,
-              height: 18,
-              background: 'transparent',
-              border: 'none',
-              color: MUTED,
-              cursor: 'pointer',
-              display: 'grid',
-              placeItems: 'center',
-              padding: 0,
-            }}
-          >
-            <X size={12} aria-hidden />
-          </button>
-        </div>
-      )}
-      {/* Movement-pattern chips above the search. Multi-select; OR within. */}
-      <FilterChipRow
-        chips={movementPatterns}
-        selected={selectedPatternIds}
-        onToggle={togglePattern}
-        ariaLabel="Filter by movement pattern"
-      />
-
-      <div style={{ position: 'relative', marginTop: 8, marginBottom: 8 }}>
-        <Search
-          size={14}
-          aria-hidden
-          style={{ position: 'absolute', left: 10, top: 9, color: MUTED }}
-        />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search exercises…"
-          aria-label="Search exercises"
-          style={{
-            width: '100%',
-            height: 32,
-            padding: '0 12px 0 30px',
-            border: `1px solid ${BORDER}`,
-            borderRadius: 'var(--radius-input)',
-            fontFamily: 'var(--font-sans)',
-            fontSize: '.82rem',
-            background: CREAM,
-            outline: 'none',
-            boxSizing: 'border-box',
-          }}
-        />
-      </div>
-
-      {/* Exercise-tag chips below the search. Multi-select; OR within.
-          Tag filter is AND'd with the pattern filter (Q3 sign-off
-          2026-05-07). */}
-      <FilterChipRow
-        chips={exerciseTags}
-        selected={selectedTagIds}
-        onToggle={toggleTag}
-        prefix="#"
-        ariaLabel="Filter by tag"
-      />
-
-      {filtersActive && (
-        <button
-          type="button"
-          onClick={resetFilters}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: MUTED,
-            fontSize: '.72rem',
-            fontWeight: 500,
-            cursor: 'pointer',
-            padding: '2px 0',
-            marginBottom: 8,
-            textDecoration: 'underline',
-            textUnderlineOffset: 2,
-          }}
-        >
-          Reset filters
-        </button>
-      )}
-
-      {options.length === 0 ? (
-        <div
-          style={{
-            fontSize: '.82rem',
-            color: MUTED,
-            padding: '12px 0',
-            lineHeight: 1.5,
-          }}
-        >
-          Your exercise library is empty. Add exercises in /library first,
-          then come back here.
-        </div>
-      ) : filtered.length === 0 ? (
-        <div style={{ fontSize: '.82rem', color: MUTED, padding: '12px 0' }}>
-          No matches.
-        </div>
-      ) : (
-        <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-          {filtered.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => handleAdd(o.id)}
-              disabled={adding !== null}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '8px 0',
-                borderTop: `1px solid ${BORDER}`,
-                borderLeft: 'none',
-                borderRight: 'none',
-                borderBottom: 'none',
-                background: 'transparent',
-                textAlign: 'left',
-                cursor: adding === o.id ? 'wait' : 'pointer',
-                opacity: adding !== null && adding !== o.id ? 0.5 : 1,
-              }}
-            >
-              <div style={{ fontSize: '.84rem', fontWeight: 600 }}>
-                {o.name}
-              </div>
-              {o.movement_pattern_name && (
-                <div
-                  style={{
-                    fontSize: '.72rem',
-                    color: MUTED,
-                    marginTop: 1,
-                  }}
-                >
-                  {o.movement_pattern_name}
-                  {adding === o.id && ' · adding…'}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Multi-select chip row used by the LibraryPanel for movement-pattern and
- * tag filters. Local-first: filter state lives in LibraryPanel; this
- * component is purely presentational.
- *
- * Visual: small pill chips, hairline border, charcoal-on when selected
- * (matches the .chip token in globals.css but tightened for the session-
- * builder's denser right-panel context — 3px/9px padding vs the global
- * 6px/14px).
- */
-function FilterChipRow({
-  chips,
-  selected,
-  onToggle,
-  prefix,
-  ariaLabel,
-}: {
-  chips: { id: string; name: string }[]
-  selected: Set<string>
-  onToggle: (id: string) => void
-  prefix?: string
-  ariaLabel: string
-}) {
-  if (chips.length === 0) return null
-  return (
-    <div
-      role="group"
-      aria-label={ariaLabel}
-      style={{
-        display: 'flex',
-        gap: 4,
-        flexWrap: 'wrap',
-      }}
-    >
-      {chips.map((c) => {
-        const on = selected.has(c.id)
-        return (
-          <button
-            key={c.id}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onToggle(c.id)}
-            style={{
-              padding: '3px 9px',
-              borderRadius: 999,
-              border: `1px solid ${on ? 'var(--color-charcoal)' : BORDER}`,
-              background: on ? 'var(--color-charcoal)' : '#fff',
-              color: on ? '#fff' : MUTED,
-              fontFamily: 'var(--font-sans)',
-              fontSize: '.7rem',
-              fontWeight: 500,
-              cursor: 'pointer',
-              transition: 'all 150ms cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          >
-            {prefix}
-            {c.name}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
