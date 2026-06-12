@@ -14,13 +14,32 @@
 --
 -- Each test file wraps its own work in BEGIN; … ROLLBACK; so fixtures
 -- created mid-test never leak between files.
+--
+-- SECURITY MODEL (added 2026-06-12, program-calendar P0-1 follow-up — see
+-- docs/go-live-checklist.md §4). These helpers live on the LIVE project
+-- (no non-prod target yet, checklist §5) and several deliberately bypass
+-- normal flow (user creation, membership grants, RLS-bypass inserts, JWT
+-- spoofing). Two layers keep them out of API reach:
+--
+--   1. session_user guard in EVERY body. `SET ROLE` never changes
+--      session_user, so the test runner (a `postgres` session, even while
+--      role-switched to `authenticated` mid-test) passes, while a
+--      PostgREST session (session_user = 'authenticator') raises 42501
+--      REGARDLESS of grants. This survives the Supabase auto-grant trap:
+--      a future CREATE OR REPLACE re-trips EXECUTE grants, but the guard
+--      travels with the body.
+--   2. Explicit grants inline below. The JWT spoofers keep an
+--      `authenticated` EXECUTE grant — the suite calls them after
+--      `SET LOCAL ROLE authenticated` (the privilege check runs against
+--      the CURRENT role; the guard above is what actually protects the
+--      API path). The five fixture writers are owner-only at the grant
+--      level too.
+--
+-- This file is the canonical source for the helpers. Re-running it against
+-- the live project re-establishes the full posture; pgTAP 23 §D is the
+-- tripwire if it ever drifts.
 -- ============================================================================
 
--- Install pgTAP only if absent. Supabase managed installs extensions
--- into the `extensions` schema, not public — explicit WITH SCHEMA so
--- a fresh project gets it in the right place. Test files SET
--- search_path TO public, extensions, pg_temp so the plan(), is() etc.
--- functions resolve unqualified.
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 
 
@@ -43,6 +62,11 @@ AS $$
 DECLARE
   claims jsonb;
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   claims := jsonb_build_object(
     'sub',             p_user_id::text,
     'organization_id', p_organization_id::text,
@@ -53,21 +77,34 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_set_jwt(uuid, uuid, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_set_jwt(uuid, uuid, text) FROM anon;
+GRANT  EXECUTE ON FUNCTION public._test_set_jwt(uuid, uuid, text) TO authenticated;
+
 COMMENT ON FUNCTION public._test_set_jwt(uuid, uuid, text) IS
-  'pgTAP helper: spoof request.jwt.claims so RLS policies treat the session as the given user. SET LOCAL semantics — wrap test bodies in BEGIN/ROLLBACK.';
+  'pgTAP helper: spoof request.jwt.claims so RLS policies treat the session as the given user. SET LOCAL semantics — wrap test bodies in BEGIN/ROLLBACK. session_user-guarded: callable only from an owner session (authenticated grant exists solely for the SET LOCAL ROLE test pattern).';
 
 
 CREATE OR REPLACE FUNCTION public._test_clear_jwt() RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   PERFORM set_config('request.jwt.claims',    '',  true);
   PERFORM set_config('request.jwt.claim.sub', '',  true);
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_clear_jwt() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_clear_jwt() FROM anon;
+GRANT  EXECUTE ON FUNCTION public._test_clear_jwt() TO authenticated;
+
 COMMENT ON FUNCTION public._test_clear_jwt() IS
-  'pgTAP helper: clear spoofed JWT claims. Pair with _test_set_jwt.';
+  'pgTAP helper: clear spoofed JWT claims. Pair with _test_set_jwt. session_user-guarded.';
 
 
 -- ----------------------------------------------------------------------------
@@ -84,6 +121,11 @@ AS $$
 DECLARE
   uid uuid;
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   SELECT id INTO uid FROM auth.users WHERE email = p_email LIMIT 1;
   IF uid IS NOT NULL THEN
     RETURN uid;
@@ -115,8 +157,12 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_make_user(text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_make_user(text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public._test_make_user(text) FROM authenticated;
+
 COMMENT ON FUNCTION public._test_make_user(text) IS
-  'pgTAP helper: create an auth.users + user_profiles pair. Idempotent on email. Test-only — never call from application code.';
+  'pgTAP helper: create an auth.users + user_profiles pair. Idempotent on email. Test-only — never call from application code. session_user-guarded + owner-only grants.';
 
 
 -- ----------------------------------------------------------------------------
@@ -132,14 +178,23 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   INSERT INTO user_organization_roles (user_id, organization_id, role)
   VALUES (p_user_id, p_org_id, p_role)
   ON CONFLICT (user_id, organization_id) DO UPDATE SET role = EXCLUDED.role;
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_grant_membership(uuid, uuid, user_role) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_grant_membership(uuid, uuid, user_role) FROM anon;
+REVOKE EXECUTE ON FUNCTION public._test_grant_membership(uuid, uuid, user_role) FROM authenticated;
+
 COMMENT ON FUNCTION public._test_grant_membership(uuid, uuid, user_role) IS
-  'pgTAP helper: grant a user a role in an organization. Test-only.';
+  'pgTAP helper: grant a user a role in an organization. Test-only. session_user-guarded + owner-only grants.';
 
 
 -- ----------------------------------------------------------------------------
@@ -164,6 +219,11 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   INSERT INTO test_sessions (
     id, organization_id, client_id, conducted_by, conducted_at, source
   ) VALUES (
@@ -173,8 +233,12 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_insert_test_session(uuid, uuid, uuid, uuid, timestamptz, test_source_t) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_insert_test_session(uuid, uuid, uuid, uuid, timestamptz, test_source_t) FROM anon;
+REVOKE EXECUTE ON FUNCTION public._test_insert_test_session(uuid, uuid, uuid, uuid, timestamptz, test_source_t) FROM authenticated;
+
 COMMENT ON FUNCTION public._test_insert_test_session(uuid, uuid, uuid, uuid, timestamptz, test_source_t) IS
-  'pgTAP helper: insert a test_session bypassing RLS. Test-only.';
+  'pgTAP helper: insert a test_session bypassing RLS. Test-only. session_user-guarded + owner-only grants.';
 
 
 -- ----------------------------------------------------------------------------
@@ -194,6 +258,11 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   INSERT INTO test_results (
     organization_id, test_session_id, test_id, metric_id, side, value, unit
   ) VALUES (
@@ -202,8 +271,12 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_insert_test_result(uuid, uuid, text, text, test_side_t, numeric, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_insert_test_result(uuid, uuid, text, text, test_side_t, numeric, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public._test_insert_test_result(uuid, uuid, text, text, test_side_t, numeric, text) FROM authenticated;
+
 COMMENT ON FUNCTION public._test_insert_test_result(uuid, uuid, text, text, test_side_t, numeric, text) IS
-  'pgTAP helper: insert a test_result bypassing RLS. Test-only.';
+  'pgTAP helper: insert a test_result bypassing RLS. Test-only. session_user-guarded + owner-only grants.';
 
 
 -- ----------------------------------------------------------------------------
@@ -229,6 +302,11 @@ AS $$
 DECLARE
   pub_id uuid;
 BEGIN
+  IF session_user <> 'postgres' THEN
+    RAISE EXCEPTION 'Test helpers are owner-session only'
+      USING ERRCODE = '42501';
+  END IF;
+
   INSERT INTO client_publications (
     organization_id, test_session_id, published_by, test_id, framing_text
   ) VALUES (
@@ -238,5 +316,9 @@ BEGIN
 END;
 $$;
 
+REVOKE EXECUTE ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text, text) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text, text) FROM anon;
+REVOKE EXECUTE ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text, text) FROM authenticated;
+
 COMMENT ON FUNCTION public._test_insert_client_publication(uuid, uuid, uuid, text, text) IS
-  'pgTAP helper: insert a client_publication bypassing RLS. Test-only. Phase D.5: test_id is required (per-test publication granularity).';
+  'pgTAP helper: insert a client_publication bypassing RLS. Test-only. Phase D.5: test_id is required (per-test publication granularity). session_user-guarded + owner-only grants.';
