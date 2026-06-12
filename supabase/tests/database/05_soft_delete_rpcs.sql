@@ -104,11 +104,14 @@ BEGIN
     org_a, sess_id, 'fp_cmj_bilateral', 'jump_height', NULL, 32.4, 'cm'
   ) RETURNING id INTO result_id;
 
-  -- One client_publication for the session.
+  -- One client_publication for the session's CMJ test. test_id is
+  -- NOT NULL since 20260501120000 (per-test publish granularity) and
+  -- matches the test_result above so the publication publishes the
+  -- test this session actually holds.
   INSERT INTO client_publications (
-    id, organization_id, test_session_id, published_by
+    id, organization_id, test_session_id, test_id, published_by
   ) VALUES (
-    pub_id, org_a, sess_id, staff_a
+    pub_id, org_a, sess_id, 'fp_cmj_bilateral', staff_a
   );
 
   -- A note template + clinical_note authored by staff_a.
@@ -415,11 +418,16 @@ SELECT public._test_set_jwt(
 );
 SELECT public.soft_delete_client_publication((SELECT pub_id FROM _ids));
 
+-- Same test_id as the original on purpose: since 20260501120000 the
+-- unique-active index is (test_session_id, test_id), so only a same-test
+-- duplicate genuinely conflicts — keeps this assertion meaningful even
+-- if the RPC's session-level conflict check is tightened to per-test.
 INSERT INTO client_publications (
-  organization_id, test_session_id, published_by
+  organization_id, test_session_id, test_id, published_by
 ) VALUES (
   (SELECT org_a FROM _ids),
   (SELECT sess_id FROM _ids),
+  'fp_cmj_bilateral',
   (SELECT staff_a FROM _ids)
 );
 
