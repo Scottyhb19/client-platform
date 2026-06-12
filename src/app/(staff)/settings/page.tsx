@@ -16,6 +16,8 @@ import {
 } from './_components/LookupManager'
 import { SessionTypesEditor } from './session-types/_components/SessionTypesEditor'
 import type { SessionTypeRow } from './session-types/actions'
+import { SectionTitlesEditor } from './section-titles/_components/SectionTitlesEditor'
+import type { SectionTitleRow } from './section-titles/actions'
 import { NoteTemplatesEditor } from './note-templates/_components/NoteTemplatesEditor'
 import {
   seedDefaultNoteTemplatesIfEmpty,
@@ -41,6 +43,7 @@ export default async function SettingsPage() {
     { data: tags },
     { data: categories },
     { data: sessionTypes },
+    { data: sectionTitles },
     { data: noteTemplateRows },
     { data: noteTemplateFieldRows },
   ] = await Promise.all([
@@ -76,6 +79,13 @@ export default async function SettingsPage() {
       .select('id, name, color, sort_order')
       .is('deleted_at', null)
       .order('sort_order'),
+    // G-5 (2026-06-12): session-builder section titles (brief §6.5.1).
+    supabase
+      .from('section_titles')
+      .select('id, name, sort_order')
+      .is('deleted_at', null)
+      .order('sort_order')
+      .order('name'),
     supabase
       .from('note_templates')
       .select('id, name, note_type, sort_order')
@@ -122,6 +132,14 @@ export default async function SettingsPage() {
     color: s.color,
     sort_order: s.sort_order,
   }))
+
+  const sectionTitleRows: SectionTitleRow[] = (sectionTitles ?? []).map(
+    (s) => ({
+      id: s.id,
+      name: s.name,
+      sort_order: s.sort_order,
+    }),
+  )
 
   // Group fields under their parent template, preserving sort_order.
   const noteTemplates: NoteTemplateRow[] = (noteTemplateRows ?? []).map(
@@ -180,6 +198,13 @@ export default async function SettingsPage() {
         desc="Secondary classification for exercises in the library — DGR, PRI, Plyometrics, Rehab, Prehab."
       >
         <LookupManager kind="tags" rows={tagRows} />
+      </Section>
+
+      <Section
+        title="Section titles"
+        desc="Per-exercise section labels in the session builder — Mobility, Strength, Conditioning. Rename, reorder, or remove freely: titles are copied onto exercises at prescribe time, so existing programs keep the labels they were written with."
+      >
+        <SectionTitlesEditor initialTitles={sectionTitleRows} />
       </Section>
 
       <Section
