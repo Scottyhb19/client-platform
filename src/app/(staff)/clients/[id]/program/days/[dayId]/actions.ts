@@ -23,20 +23,20 @@ export type InsertSlot =
   | { kind: 'after'; afterPeId: string }
 
 /**
- * Add an exercise to a program_day at a given slot. Two code paths:
+ * Add an exercise to a program_day at a given slot. All three slots route
+ * through the insert_program_exercise_at RPC (migration 20260612110000),
+ * so insert + per-set fan-out from the exercise's defaults — and the
+ * sort_order shift where the slot needs one — is atomic under one
+ * transaction. The RPC handles group inheritance internally per Q3
+ * sign-off 2026-05-07: anchor and below share a superset_group_id ⇒ new
+ * row inherits it; otherwise solo. Appends and top inserts always start
+ * solo.
  *
- *   - append (default): TS-side compute MAX(sort_order)+1, insert
- *     program_exercises, fan out program_exercise_sets. Best-effort
- *     cleanup-via-soft-delete on per-set fan-out failure. Stable since
- *     Phase C — left alone.
- *   - atStart / after: routed through the insert_program_exercise_at RPC
- *     (migration 20260507100300) so shift + insert + per-set fan-out is
- *     atomic under one transaction. The RPC handles group inheritance
- *     internally per Q3 sign-off 2026-05-07: anchor and below share a
- *     superset_group_id ⇒ new row inherits it; otherwise solo.
- *
- * RLS scopes both paths via the parent chain (program_day → program →
- * organization).
+ * History: until G-3 of the program-engine polish pass (2026-06-12) the
+ * append slot ran a TS-side three-call sequence (read defaults, insert
+ * parent, fan out sets) with soft-delete compensation — one of two
+ * default-application paths that had to be kept field-identical by hand.
+ * Converged on the RPC per exercise-library rider 2.
  */
 export async function addExerciseToDayAction(
   clientId: string,
@@ -47,88 +47,23 @@ export async function addExerciseToDayAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  if (slot.kind !== 'append') {
-    const p_after_pe_id = slot.kind === 'after' ? slot.afterPeId : null
-    const { error } = await supabase.rpc('insert_program_exercise_at', {
-      p_day_id: dayId,
-      p_exercise_id: exerciseId,
-      // p_after_pe_id is nullable in SQL (NULL ⇒ insert at start), but
-      // generated types always treat function args as non-null. Cast at
-      // the call site so the rest of the file stays clean.
-      p_after_pe_id: p_after_pe_id as unknown as string,
-    })
-    if (error) return { error: `Couldn't insert exercise: ${error.message}` }
-    revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
-    return { error: null }
-  }
-
-  // ----- append path (unchanged from Phase C) ----- //
-
-  // Pull the exercise defaults so the prescription starts sensibly.
-  const { data: exercise, error: exErr } = await supabase
-    .from('exercises')
-    .select(
-      `id, default_sets, default_reps, default_metric,
-       default_metric_value, default_rest_seconds, instructions`,
-    )
-    .eq('id', exerciseId)
-    .is('deleted_at', null)
-    .single()
-
-  if (exErr || !exercise) {
-    return { error: `Exercise not found: ${exErr?.message ?? 'unknown'}` }
-  }
-
-  // Work out sort_order for appending.
-  const { data: existing, error: orderErr } = await supabase
-    .from('program_exercises')
-    .select('sort_order')
-    .eq('program_day_id', dayId)
-    .is('deleted_at', null)
-    .order('sort_order', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (orderErr) return { error: `Couldn't compute sort order: ${orderErr.message}` }
-  const nextOrder = (existing?.sort_order ?? -1) + 1
-
-  const { data: inserted, error: insertErr } = await supabase
-    .from('program_exercises')
-    .insert({
-      program_day_id: dayId,
-      exercise_id: exercise.id,
-      rest_seconds: exercise.default_rest_seconds,
-      instructions: exercise.instructions,
-      sort_order: nextOrder,
-    })
-    .select('id')
-    .single()
-
-  if (insertErr || !inserted) {
-    return { error: `Couldn't add exercise: ${insertErr?.message ?? 'unknown'}` }
-  }
-
-  // Fan out the per-set rows. Default to 1 row when default_sets is NULL
-  // so the SetTable always has at least one editable line.
-  const setCount = Math.max(1, exercise.default_sets ?? 1)
-  const setRows = Array.from({ length: setCount }, (_, idx) => ({
-    program_exercise_id: inserted.id,
-    set_number: idx + 1,
-    reps: exercise.default_reps,
-    optional_metric: exercise.default_metric,
-    optional_value: exercise.default_metric_value,
-  }))
-
-  const { error: setsErr } = await supabase
-    .from('program_exercise_sets')
-    .insert(setRows)
-
-  if (setsErr) {
-    // Best-effort cleanup: soft-delete the orphaned parent so the EP
-    // doesn't see an exercise with zero set rows.
-    await supabase.rpc('soft_delete_program_exercise', { p_id: inserted.id })
-    return { error: `Couldn't seed sets: ${setsErr.message}` }
-  }
+  const { error } = await supabase.rpc('insert_program_exercise_at', {
+    p_day_id: dayId,
+    p_exercise_id: exerciseId,
+    // p_after_pe_id is nullable in SQL (only the 'after' slot carries an
+    // anchor), but generated types treat function args as non-null. Cast
+    // at the call site so the rest of the file stays clean.
+    p_after_pe_id: (slot.kind === 'after'
+      ? slot.afterPeId
+      : null) as unknown as string,
+    p_slot:
+      slot.kind === 'after'
+        ? 'after'
+        : slot.kind === 'atStart'
+          ? 'at_start'
+          : 'append',
+  })
+  if (error) return { error: `Couldn't insert exercise: ${error.message}` }
 
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }

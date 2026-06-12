@@ -3487,7 +3487,12 @@ export type Database = {
         Returns: Json
       }
       insert_program_exercise_at: {
-        Args: { p_after_pe_id: string; p_day_id: string; p_exercise_id: string }
+        Args: {
+          p_after_pe_id?: string
+          p_day_id: string
+          p_exercise_id: string
+          p_slot?: string
+        }
         Returns: string
       }
       rate_limit_check_and_record: {
