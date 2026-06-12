@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { todayIsoInPracticeTz } from '@/lib/dates'
 import { NewProgramForm } from './_components/NewProgramForm'
 
 export const dynamic = 'force-dynamic'
@@ -44,7 +45,7 @@ export default async function NewProgramPage({
     ),
   }))
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIsoInPracticeTz()
   const fullName = `${client.first_name} ${client.last_name}`
 
   return (

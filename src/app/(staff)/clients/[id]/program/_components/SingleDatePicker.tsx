@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { todayIsoInPracticeTz } from '@/lib/dates'
 
 /*
  * SingleDatePicker — modal date picker for a one-off "pick a future date"
@@ -48,7 +49,9 @@ export function SingleDatePicker({
   onCancel,
   onConfirm,
 }: SingleDatePickerProps) {
-  const todayIso = isoFromDate(new Date())
+  // Practice-timezone today (P0-2) — the browser clock is only right while
+  // the browser is physically in the practice timezone.
+  const todayIso = todayIsoInPracticeTz()
   const floorIso = minDate ?? todayIso
   const initialIso = anchorDate ?? todayIso
   const initialParsed = parseIso(initialIso)

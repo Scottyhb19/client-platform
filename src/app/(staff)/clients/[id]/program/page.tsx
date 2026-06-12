@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
+import { todayIsoInPracticeTz } from '@/lib/dates'
 import { loadCatalog, loadTestHistoryForClient } from '@/lib/testing/loaders'
 import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import {
@@ -163,7 +164,11 @@ export default async function ClientProgramPage({
     }))
   }
 
-  const todayIso = new Date().toISOString().slice(0, 10)
+  // P0-2 / FM-1 (docs/polish/program-calendar.md): practice-timezone today,
+  // never UTC — the server clock is UTC, which is yesterday until ~10–11am
+  // in Australia. Every downstream consumer (today ring, Today snap-back,
+  // copy-pick past-dimming, resolveCurrentBlock) keys off this value.
+  const todayIso = todayIsoInPracticeTz()
   const currentBlock = resolveCurrentBlock(programs, todayIso)
 
   // Side panel content (Phase E, refreshed Phase J.2 2026-05-08). Only
