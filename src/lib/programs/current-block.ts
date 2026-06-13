@@ -2,7 +2,14 @@
  * "Current block" resolution — gap doc P1-8 / §4 Q3 (docs/polish/programs.md):
  *   1. The program containing today.
  *   2. Else the most recent past program.
- *   3. Else null.
+ *   3. Else the earliest upcoming program.
+ *   4. Else null (only when there are no blocks at all).
+ *
+ * Step 3 (P1-4 issue 4, 2026-06-12) is the strand fix: a client whose only
+ * active block is in the future used to resolve to null, which hid every
+ * block action in the toolbar even though the block was on the calendar.
+ * Now a future-only block still resolves, so the toolbar is never empty
+ * while blocks exist.
  *
  * Lifted out of the program-calendar page (P1-5, program-calendar polish
  * pass 2026-06-12) so the client-profile Program tab can use the same rule —
@@ -37,7 +44,9 @@ export function resolveCurrentBlock<T extends BlockLike>(
     if (b.start_date <= todayIso) return b
   }
 
-  return null
+  // Earliest upcoming — never strand a future-only block (P1-4 issue 4).
+  // Input is ascending by start_date, so the first one is the earliest.
+  return blocks[0] ?? null
 }
 
 function addDaysIso(iso: string, days: number): string {

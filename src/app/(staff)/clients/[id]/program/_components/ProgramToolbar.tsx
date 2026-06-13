@@ -158,11 +158,10 @@ export function ProgramToolbar({
     }
   }
 
-  async function runArchive() {
-    if (!currentBlock) return
+  async function runArchive(blockId: string) {
     setBusy(true)
     try {
-      const result = await archiveProgramAction(clientId, currentBlock.id)
+      const result = await archiveProgramAction(clientId, blockId)
       if ('error' in result) {
         setMode({
           kind: 'error',
@@ -345,7 +344,8 @@ export function ProgramToolbar({
 
       {mode.kind === 'confirm-archive' && currentBlock && (
         <ArchiveBlockDialog
-          currentBlock={currentBlock}
+          blocks={blocks.length > 0 ? blocks : [currentBlock]}
+          defaultBlock={currentBlock}
           onCancel={() => setMode({ kind: 'idle' })}
           onConfirm={runArchive}
           busy={busy}
@@ -403,16 +403,17 @@ function CopyBlockDialog({
   onConfirm,
   busy,
 }: CopyBlockDialogProps) {
-  const today = parseIso(todayIso)
-
   // Suggested defaults for a source block: start the copy the day after it
-  // ends (or +7 from today if that's already in the past), name "<b> (copy)".
+  // ends. That day is already source-weekday-aligned (a whole-week offset
+  // from the block start); if it's in the past, roll forward by whole weeks
+  // until it's today-or-later, keeping the weekday. Name "<b> (copy)".
   function defaultsFor(block: CurrentBlock) {
     const bEnd = addDaysTo(parseIso(block.start_date), block.duration_weeks * 7 - 1)
-    const start = isoFromDate(
-      addDaysTo(bEnd, 1) > today ? addDaysTo(bEnd, 1) : addDaysTo(today, 7),
-    )
-    return { start, name: `${block.name} (copy)` }
+    let startIso = isoFromDate(addDaysTo(bEnd, 1))
+    while (startIso < todayIso) {
+      startIso = isoFromDate(addDaysTo(parseIso(startIso), 7))
+    }
+    return { start: startIso, name: `${block.name} (copy)` }
   }
 
   const initial = defaultsFor(defaultSourceBlock)
@@ -604,7 +605,14 @@ function CopyBlockDialog({
               type="button"
               onClick={() => {
                 if (isPast) return
-                setPickedStart(c.iso)
+                // Snap to the source weekday in the clicked week so the
+                // clone preserves session weekdays (P1-4 issue 5). Push a
+                // week forward only if the aligned date would be in the past.
+                let aligned = alignToSourceWeekday(c.iso, sourceBlock.start_date)
+                if (aligned < todayIso) {
+                  aligned = isoFromDate(addDaysTo(parseIso(aligned), 7))
+                }
+                setPickedStart(aligned)
               }}
               disabled={isPast || busy}
               aria-label={c.iso}
@@ -654,6 +662,10 @@ function CopyBlockDialog({
             → <strong style={{ color: 'var(--color-charcoal)' }}>
               {formatLongDate(previewEndIso)}
             </strong>
+            <span style={{ display: 'block', marginTop: 4, color: 'var(--color-muted)' }}>
+              Sessions keep the same weekdays as the source — the date you
+              pick chooses the week.
+            </span>
           </>
         ) : (
           <span>Pick a start date.</span>
@@ -684,6 +696,11 @@ interface BlockSourceFieldProps {
   currentId: string
   onChange: (id: string) => void
   disabled: boolean
+  // Caller-supplied wording so the same control reads naturally for copy
+  // ("Copy which block" / "Copying from") and archive ("Archive which
+  // block" / "Archiving").
+  label?: string
+  singleLabel?: string
 }
 
 const blockFieldLabelStyle: CSSProperties = {
@@ -709,6 +726,8 @@ function BlockSourceField({
   currentId,
   onChange,
   disabled,
+  label = 'Copy which block',
+  singleLabel = 'Copying from',
 }: BlockSourceFieldProps) {
   // Single block: read-only line. Still surfaces the dates so the EP knows
   // where this block ends before picking the copy's start.
@@ -717,7 +736,7 @@ function BlockSourceField({
     if (!b) return null
     return (
       <div style={{ marginBottom: 14 }}>
-        <span style={blockFieldLabelStyle}>Copying from</span>
+        <span style={blockFieldLabelStyle}>{singleLabel}</span>
         <div style={{ fontSize: '.86rem', color: 'var(--color-charcoal)' }}>
           <strong style={{ fontWeight: 600 }}>{b.name}</strong>{' '}
           <span style={{ color: 'var(--color-muted)' }}>
@@ -730,11 +749,11 @@ function BlockSourceField({
 
   return (
     <div style={{ marginBottom: 14 }}>
-      <label htmlFor="copy-source-block" style={blockFieldLabelStyle}>
-        Copy which block
+      <label htmlFor="block-source-select" style={blockFieldLabelStyle}>
+        {label}
       </label>
       <select
-        id="copy-source-block"
+        id="block-source-select"
         value={sourceId}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
@@ -840,27 +859,44 @@ function RepeatBlockDialog({
 // ============================================================================
 
 interface ArchiveBlockDialogProps {
-  currentBlock: CurrentBlock
+  blocks: CurrentBlock[]
+  defaultBlock: CurrentBlock
   onCancel: () => void
-  onConfirm: () => void
+  onConfirm: (blockId: string) => void
   busy: boolean
 }
 
 function ArchiveBlockDialog({
-  currentBlock,
+  blocks,
+  defaultBlock,
   onCancel,
   onConfirm,
   busy,
 }: ArchiveBlockDialogProps) {
+  // P1-4 issue 4 — the EP picks WHICH block to archive (the toolbar used to
+  // act only on the resolved current block, so a second block couldn't be
+  // archived at all). Defaults to the resolved current one.
+  const [blockId, setBlockId] = useState<string>(defaultBlock.id)
+  const block = blocks.find((b) => b.id === blockId) ?? defaultBlock
   const endIso = isoFromDate(
-    addDaysTo(parseIso(currentBlock.start_date), currentBlock.duration_weeks * 7 - 1),
+    addDaysTo(parseIso(block.start_date), block.duration_weeks * 7 - 1),
   )
   return (
     <DialogShell onCancel={onCancel} disabled={busy} width={420}>
       <DialogHeader
-        title={`Archive ${currentBlock.name}?`}
+        title="Archive a block?"
         subtitle="The block stays in archived history; sessions disappear from the calendar and the date range opens up for a new block."
         onClose={onCancel}
+      />
+
+      <BlockSourceField
+        blocks={blocks}
+        sourceId={blockId}
+        currentId={defaultBlock.id}
+        onChange={setBlockId}
+        disabled={busy}
+        label="Archive which block"
+        singleLabel="Archiving"
       />
 
       <div
@@ -874,24 +910,20 @@ function ArchiveBlockDialog({
           lineHeight: 1.6,
         }}
       >
-        <div style={{ marginBottom: 6 }}>
-          <span style={{ color: 'var(--color-muted)' }}>Block:</span>{' '}
-          <strong>{currentBlock.name}</strong>
-        </div>
         <div>
           <span style={{ color: 'var(--color-muted)' }}>Range:</span>{' '}
-          <strong>{formatLongDate(currentBlock.start_date)}</strong>
+          <strong>{formatLongDate(block.start_date)}</strong>
           {' → '}
           <strong>{formatLongDate(endIso)}</strong>{' '}
           <span style={{ color: 'var(--color-muted)' }}>
-            ({currentBlock.duration_weeks} weeks)
+            ({block.duration_weeks} weeks)
           </span>
         </div>
       </div>
 
       <DialogActions
         onCancel={onCancel}
-        onConfirm={onConfirm}
+        onConfirm={() => onConfirm(blockId)}
         confirmLabel={busy ? 'Archiving…' : 'Archive block'}
         confirmDisabled={busy}
         cancelDisabled={busy}
@@ -1316,6 +1348,19 @@ function addDaysTo(d: Date, days: number): Date {
   const r = new Date(d)
   r.setDate(r.getDate() + days)
   return r
+}
+
+// P1-4 issue 5 — place the source-start weekday within the picked date's
+// Mon–Sun week. The result differs from source_start by whole weeks, so a
+// clone shifted to it preserves every session's weekday. Mirrors the SQL
+// in copy_program (20260612180000) so the dialog preview matches the RPC.
+function alignToSourceWeekday(pickedIso: string, sourceStartIso: string): string {
+  const picked = parseIso(pickedIso)
+  const src = parseIso(sourceStartIso)
+  const pickedMonOffset = (picked.getDay() + 6) % 7 // 0=Mon .. 6=Sun
+  const mondayOfPicked = addDaysTo(picked, -pickedMonOffset)
+  const srcOffset = (src.getDay() + 6) % 7
+  return isoFromDate(addDaysTo(mondayOfPicked, srcOffset))
 }
 
 function formatLongDate(iso: string): string {
