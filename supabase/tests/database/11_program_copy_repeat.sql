@@ -24,16 +24,20 @@ SET search_path TO public, extensions, pg_temp;
 --      cloned identically including per-set rows (D3).
 --   §E repeat_program overlap path: another active program already
 --      sits where the back-to-back clone would land → status='overlap'.
+--   §F overlap detail (P1-4, 20260612170000): the overlap response
+--      carries conflicts[{name,start_date,end_date}] naming the
+--      colliding active block(s) — the bare 'overlap' was technically
+--      true and humanly unexplainable in the field.
 --
 -- Output pattern: TAP lines captured into temp _tap so the supabase
 -- db query CLI returns all lines in the final SELECT.
 --
--- Test count: 12
+-- Test count: 14
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(12);
+SELECT plan(14);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -340,6 +344,41 @@ INSERT INTO _tap (n, line) VALUES (12, (
   )
 ));
 
+
+-- ----------------------------------------------------------------------------
+-- §F. Overlap detail (P1-4) — copying onto the source's own range must
+-- name the source block in the conflicts payload.
+-- ----------------------------------------------------------------------------
+RESET ROLE;
+SELECT public._test_set_jwt(
+  (SELECT staff_a FROM _ids), (SELECT org_a FROM _ids), 'staff'
+);
+SET LOCAL ROLE authenticated;
+
+CREATE TEMP TABLE _detail_result (result jsonb) ON COMMIT DROP;
+GRANT INSERT, SELECT ON _detail_result TO authenticated;
+
+INSERT INTO _detail_result
+  SELECT public.copy_program(
+    (SELECT program_a FROM _ids),
+    '2026-04-27'::date,
+    'F overlap detail probe'
+  );
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT ok(
+    (SELECT jsonb_array_length(result->'conflicts') >= 1 FROM _detail_result),
+    'F1: overlap response carries a non-empty conflicts array'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (14, (
+  SELECT ok(
+    (SELECT result->'conflicts' @> '[{"name": "BC11 Block"}]'::jsonb
+       FROM _detail_result),
+    'F2: conflicts names the colliding block (BC11 Block)'
+  )
+));
 
 -- ----------------------------------------------------------------------------
 -- Hand back to the test owner before final SELECT + ROLLBACK.
