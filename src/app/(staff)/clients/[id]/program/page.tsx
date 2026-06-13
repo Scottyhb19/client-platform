@@ -4,6 +4,7 @@ import { ArrowLeft, Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
 import { todayIsoInPracticeTz } from '@/lib/dates'
+import { resolveCurrentBlock } from '@/lib/programs/current-block'
 import { loadCatalog, loadTestHistoryForClient } from '@/lib/testing/loaders'
 import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import {
@@ -384,6 +385,12 @@ export default async function ClientProgramPage({
                 }
               : null
           }
+          blocks={programs.map((p) => ({
+            id: p.id,
+            name: p.name,
+            start_date: p.start_date,
+            duration_weeks: p.duration_weeks,
+          }))}
           todayIso={todayIso}
         />
         <CalendarPanelToggle />
@@ -420,38 +427,9 @@ export default async function ClientProgramPage({
   )
 }
 
-/**
- * "Current block" determination per gap doc P1-8 / §4 Q3:
- *   1. The program containing today.
- *   2. Else the most recent past program.
- *   3. Else null.
- */
-function resolveCurrentBlock(
-  programs: ProgramSummary[],
-  todayIso: string,
-): ProgramSummary | null {
-  if (programs.length === 0) return null
-  const today = todayIso
-
-  for (const p of programs) {
-    const end = addDaysIso(p.start_date, p.duration_weeks * 7)
-    if (today >= p.start_date && today < end) return p
-  }
-
-  // Most recent past (sorted ascending in the loader; iterate from end).
-  for (let i = programs.length - 1; i >= 0; i--) {
-    const p = programs[i]!
-    if (p.start_date <= today) return p
-  }
-
-  return null
-}
-
-function addDaysIso(iso: string, days: number): string {
-  const d = new Date(iso)
-  d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
-}
+// "Current block" determination (P1-8 / §4 Q3) now lives in
+// src/lib/programs/current-block.ts — shared with the client-profile
+// Program tab since the P1-5 maybeSingle fix (program-calendar pass).
 
 function EmptyProgram({ clientId }: { clientId: string }) {
   return (

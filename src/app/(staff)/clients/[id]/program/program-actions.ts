@@ -12,16 +12,28 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  * and revalidate the page on any successful write.
  */
 
+/**
+ * P1-4 (program-calendar pass) — an overlap names the colliding block(s)
+ * so the EP can see WHY a start date is rejected (the bare 'overlap' was
+ * unexplainable once auto-extend had silently grown a block's range).
+ * `endDate` is inclusive (the block's last covered day).
+ */
+export type BlockConflict = {
+  name: string
+  startDate: string
+  endDate: string
+}
+
 export type CopyProgramActionResult =
   | { error: string }
   | { status: 'created'; newProgramId: string }
-  | { status: 'overlap' }
+  | { status: 'overlap'; conflicts: BlockConflict[] }
   | { status: 'invalid_source' }
 
 export type RepeatProgramActionResult =
   | { error: string }
   | { status: 'created'; newProgramId: string }
-  | { status: 'overlap' }
+  | { status: 'overlap'; conflicts: BlockConflict[] }
   | { status: 'invalid_source' }
 
 export type ArchiveProgramActionResult =
@@ -68,14 +80,25 @@ export async function copyProgramAction(
     return { error: 'Unexpected response from copy_program' }
   }
 
-  const obj = data as { status: string; new_program_id?: string }
+  const obj = data as {
+    status: string
+    new_program_id?: string
+    conflicts?: Array<{ name: string; start_date: string; end_date: string }>
+  }
 
   switch (obj.status) {
     case 'created':
       revalidatePath(`/clients/${clientId}/program`)
       return { status: 'created', newProgramId: obj.new_program_id! }
     case 'overlap':
-      return { status: 'overlap' }
+      return {
+        status: 'overlap',
+        conflicts: (obj.conflicts ?? []).map((c) => ({
+          name: c.name,
+          startDate: c.start_date,
+          endDate: c.end_date,
+        })),
+      }
     case 'invalid_source':
       return { status: 'invalid_source' }
     default:
@@ -195,14 +218,25 @@ export async function repeatProgramAction(
     return { error: 'Unexpected response from repeat_program' }
   }
 
-  const obj = data as { status: string; new_program_id?: string }
+  const obj = data as {
+    status: string
+    new_program_id?: string
+    conflicts?: Array<{ name: string; start_date: string; end_date: string }>
+  }
 
   switch (obj.status) {
     case 'created':
       revalidatePath(`/clients/${clientId}/program`)
       return { status: 'created', newProgramId: obj.new_program_id! }
     case 'overlap':
-      return { status: 'overlap' }
+      return {
+        status: 'overlap',
+        conflicts: (obj.conflicts ?? []).map((c) => ({
+          name: c.name,
+          startDate: c.start_date,
+          endDate: c.end_date,
+        })),
+      }
     case 'invalid_source':
       return { status: 'invalid_source' }
     default:

@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState, useTransition } from 'react'
+import type { CSSProperties } from 'react'
 import {
   AlertCircle,
   Archive,
@@ -23,6 +24,7 @@ import {
   copyProgramAction,
   repeatProgramAction,
   saveProgramAsTemplateAction,
+  type BlockConflict,
 } from '../program-actions'
 
 // ============================================================================
@@ -60,6 +62,10 @@ interface CurrentBlock {
 interface ProgramToolbarProps {
   clientId: string
   currentBlock: CurrentBlock | null
+  // All active blocks for the client, ascending by start_date. Feeds the
+  // copy-source selector (P1-4 issue 3) so the EP can copy ANY block, not
+  // just the resolved current one, and see each block's date range.
+  blocks: CurrentBlock[]
   todayIso: string
 }
 
@@ -70,11 +76,19 @@ type Mode =
   | { kind: 'confirm-archive' }
   | { kind: 'save-template' }
   | { kind: 'notice'; title: string; description: string }
-  | { kind: 'error'; title: string; description: string }
+  // error carries optional block conflicts (P1-4) so an overlap names the
+  // colliding block(s) by date instead of a bare "pick another date".
+  | {
+      kind: 'error'
+      title: string
+      description: string
+      conflicts?: BlockConflict[]
+    }
 
 export function ProgramToolbar({
   clientId,
   currentBlock,
+  blocks,
   todayIso,
 }: ProgramToolbarProps) {
   const router = useRouter()
@@ -92,13 +106,16 @@ export function ProgramToolbar({
     return () => document.removeEventListener('keydown', onKey)
   }, [mode.kind])
 
-  async function runCopy(newStartDate: string, newName: string) {
-    if (!currentBlock) return
+  async function runCopy(
+    sourceBlockId: string,
+    newStartDate: string,
+    newName: string,
+  ) {
     setBusy(true)
     try {
       const result = await copyProgramAction(
         clientId,
-        currentBlock.id,
+        sourceBlockId,
         newStartDate,
         newName,
       )
@@ -116,11 +133,15 @@ export function ProgramToolbar({
           startTransition(() => router.refresh())
           break
         case 'overlap':
+          // P1-4 — name the colliding block(s). The bare message was
+          // unexplainable when an auto-extended block covered "empty"
+          // weeks the EP couldn't see on the calendar.
           setMode({
             kind: 'error',
             title: 'Date range overlaps another block',
             description:
-              "Pick a start date that doesn't fall inside another active training block for this client.",
+              'The new block would overlap an existing active block for this client. Pick a start date after it ends:',
+            conflicts: result.conflicts,
           })
           break
         case 'invalid_source':
@@ -128,7 +149,7 @@ export function ProgramToolbar({
             kind: 'error',
             title: 'Source block missing dates',
             description:
-              'The current block has no start date or duration. Set those before copying.',
+              'That block has no start date or duration. Set those before copying.',
           })
           break
       }
@@ -180,7 +201,8 @@ export function ProgramToolbar({
             kind: 'error',
             title: 'Block range overlaps another block',
             description:
-              "Another active block already starts where this would land. Archive that block first, or move it.",
+              'The back-to-back block would overlap an existing active block. Archive it first, or use Copy block to pick a later start:',
+            conflicts: result.conflicts,
           })
           break
         case 'invalid_source':
@@ -302,10 +324,11 @@ export function ProgramToolbar({
 
       {mode.kind === 'copy-pick' && currentBlock && (
         <CopyBlockDialog
-          currentBlock={currentBlock}
+          blocks={blocks.length > 0 ? blocks : [currentBlock]}
+          defaultSourceBlock={currentBlock}
           todayIso={todayIso}
           onCancel={() => setMode({ kind: 'idle' })}
-          onConfirm={(date, name) => runCopy(date, name)}
+          onConfirm={(sourceId, date, name) => runCopy(sourceId, date, name)}
           busy={busy}
         />
       )}
@@ -350,6 +373,7 @@ export function ProgramToolbar({
         <ErrorDialog
           title={mode.title}
           description={mode.description}
+          conflicts={mode.conflicts}
           onClose={() => setMode({ kind: 'idle' })}
         />
       )}
@@ -363,39 +387,60 @@ export function ProgramToolbar({
 // ============================================================================
 
 interface CopyBlockDialogProps {
-  currentBlock: CurrentBlock
+  blocks: CurrentBlock[]
+  defaultSourceBlock: CurrentBlock
   todayIso: string
   onCancel: () => void
-  onConfirm: (newStartDate: string, newName: string) => void
+  onConfirm: (sourceBlockId: string, newStartDate: string, newName: string) => void
   busy: boolean
 }
 
 function CopyBlockDialog({
-  currentBlock,
+  blocks,
+  defaultSourceBlock,
   todayIso,
   onCancel,
   onConfirm,
   busy,
 }: CopyBlockDialogProps) {
   const today = parseIso(todayIso)
-  const blockStart = parseIso(currentBlock.start_date)
-  const blockEnd = addDaysTo(
-    blockStart,
-    currentBlock.duration_weeks * 7 - 1,
+
+  // Suggested defaults for a source block: start the copy the day after it
+  // ends (or +7 from today if that's already in the past), name "<b> (copy)".
+  function defaultsFor(block: CurrentBlock) {
+    const bEnd = addDaysTo(parseIso(block.start_date), block.duration_weeks * 7 - 1)
+    const start = isoFromDate(
+      addDaysTo(bEnd, 1) > today ? addDaysTo(bEnd, 1) : addDaysTo(today, 7),
+    )
+    return { start, name: `${block.name} (copy)` }
+  }
+
+  const initial = defaultsFor(defaultSourceBlock)
+  const initialParsed = parseIso(initial.start)
+
+  const [sourceId, setSourceId] = useState<string>(defaultSourceBlock.id)
+  const [pickedStart, setPickedStart] = useState<string>(initial.start)
+  const [name, setName] = useState<string>(initial.name)
+  const [visibleYear, setVisibleYear] = useState(initialParsed.getFullYear())
+  const [visibleMonth, setVisibleMonth] = useState(initialParsed.getMonth())
+
+  const sourceBlock = blocks.find((b) => b.id === sourceId) ?? defaultSourceBlock
+  const sourceEndIso = isoFromDate(
+    addDaysTo(parseIso(sourceBlock.start_date), sourceBlock.duration_weeks * 7 - 1),
   )
 
-  // Default visible month: the day after current block ends.
-  const defaultStart = isoFromDate(
-    addDaysTo(blockEnd, 1) > today
-      ? addDaysTo(blockEnd, 1)
-      : addDaysTo(today, 7),
-  )
-  const defaultParsed = parseIso(defaultStart)
-
-  const [pickedStart, setPickedStart] = useState<string>(defaultStart)
-  const [name, setName] = useState<string>(`${currentBlock.name} (copy)`)
-  const [visibleYear, setVisibleYear] = useState(defaultParsed.getFullYear())
-  const [visibleMonth, setVisibleMonth] = useState(defaultParsed.getMonth())
+  // Switching the source block re-derives the suggested start, name, and
+  // visible month in one handler — no effect (avoids set-state-in-effect).
+  function changeSource(nextId: string) {
+    const next = blocks.find((b) => b.id === nextId) ?? defaultSourceBlock
+    const d = defaultsFor(next)
+    const dp = parseIso(d.start)
+    setSourceId(nextId)
+    setPickedStart(d.start)
+    setName(d.name)
+    setVisibleYear(dp.getFullYear())
+    setVisibleMonth(dp.getMonth())
+  }
 
   const cells = useMemo(
     () => buildMonthCells(visibleYear, visibleMonth),
@@ -405,9 +450,9 @@ function CopyBlockDialog({
   const previewEndIso = useMemo(() => {
     if (!pickedStart) return null
     return isoFromDate(
-      addDaysTo(parseIso(pickedStart), currentBlock.duration_weeks * 7 - 1),
+      addDaysTo(parseIso(pickedStart), sourceBlock.duration_weeks * 7 - 1),
     )
-  }, [pickedStart, currentBlock.duration_weeks])
+  }, [pickedStart, sourceBlock.duration_weeks])
 
   function gotoMonth(direction: 'prev' | 'next') {
     const delta = direction === 'prev' ? -1 : 1
@@ -419,9 +464,20 @@ function CopyBlockDialog({
   return (
     <DialogShell onCancel={onCancel} disabled={busy} width={400}>
       <DialogHeader
-        title={`Copy ${currentBlock.name}`}
-        subtitle={`Cloned with the same exercises and shape, ${currentBlock.duration_weeks} weeks long.`}
+        title="Copy block"
+        subtitle={`Cloned with the same exercises and shape, ${sourceBlock.duration_weeks} weeks long.`}
         onClose={onCancel}
+      />
+
+      {/* Source-block selector (P1-4 issue 3) — choose WHICH block to copy
+          and see each block's date range, so the EP knows where the gap
+          they're aiming for begins. */}
+      <BlockSourceField
+        blocks={blocks}
+        sourceId={sourceId}
+        currentId={defaultSourceBlock.id}
+        onChange={changeSource}
+        disabled={busy}
       />
 
       {/* Name input */}
@@ -539,8 +595,8 @@ function CopyBlockDialog({
           // start date that obviously overlaps. The EXCLUDE constraint
           // catches it server-side too, but visual hint helps.
           const isInSourceBlock =
-            c.iso >= currentBlock.start_date &&
-            c.iso <= isoFromDate(blockEnd)
+            c.iso >= sourceBlock.start_date &&
+            c.iso <= sourceEndIso
           const dimmed = !c.inMonth || isPast
           return (
             <button
@@ -606,12 +662,102 @@ function CopyBlockDialog({
 
       <DialogActions
         onCancel={onCancel}
-        onConfirm={() => onConfirm(pickedStart, name.trim())}
+        onConfirm={() => onConfirm(sourceId, pickedStart, name.trim())}
         confirmLabel={busy ? 'Copying…' : 'Copy block'}
         confirmDisabled={!pickedStart || !name.trim() || busy}
         cancelDisabled={busy}
       />
     </DialogShell>
+  )
+}
+
+
+// ============================================================================
+// BlockSourceField — "copy which block" control inside CopyBlockDialog.
+// Dropdown when the client has 2+ active blocks; a static line (still
+// showing the date range) when there's only one. (P1-4 issue 3.)
+// ============================================================================
+
+interface BlockSourceFieldProps {
+  blocks: CurrentBlock[]
+  sourceId: string
+  currentId: string
+  onChange: (id: string) => void
+  disabled: boolean
+}
+
+const blockFieldLabelStyle: CSSProperties = {
+  display: 'block',
+  fontSize: '.74rem',
+  fontWeight: 600,
+  color: 'var(--color-text-light)',
+  marginBottom: 4,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+}
+
+function blockRangeLabel(b: CurrentBlock): string {
+  const endIso = isoFromDate(
+    addDaysTo(parseIso(b.start_date), b.duration_weeks * 7 - 1),
+  )
+  return `${formatDateAU(b.start_date)} – ${formatDateAU(endIso)}`
+}
+
+function BlockSourceField({
+  blocks,
+  sourceId,
+  currentId,
+  onChange,
+  disabled,
+}: BlockSourceFieldProps) {
+  // Single block: read-only line. Still surfaces the dates so the EP knows
+  // where this block ends before picking the copy's start.
+  if (blocks.length < 2) {
+    const b = blocks.find((x) => x.id === sourceId) ?? blocks[0]
+    if (!b) return null
+    return (
+      <div style={{ marginBottom: 14 }}>
+        <span style={blockFieldLabelStyle}>Copying from</span>
+        <div style={{ fontSize: '.86rem', color: 'var(--color-charcoal)' }}>
+          <strong style={{ fontWeight: 600 }}>{b.name}</strong>{' '}
+          <span style={{ color: 'var(--color-muted)' }}>
+            · {blockRangeLabel(b)}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label htmlFor="copy-source-block" style={blockFieldLabelStyle}>
+        Copy which block
+      </label>
+      <select
+        id="copy-source-block"
+        value={sourceId}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '8px 10px',
+          fontSize: '.86rem',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 7,
+          background: 'var(--color-card)',
+          color: 'var(--color-charcoal)',
+          fontFamily: 'inherit',
+        }}
+      >
+        {blocks.map((b) => (
+          <option key={b.id} value={b.id}>
+            {b.name} · {blockRangeLabel(b)}
+            {b.id === currentId ? ' (current)' : ''}
+          </option>
+        ))}
+      </select>
+    </div>
   )
 }
 
@@ -896,10 +1042,11 @@ function NoticeDialog({ title, description, onClose }: NoticeDialogProps) {
 interface ErrorDialogProps {
   title: string
   description: string
+  conflicts?: BlockConflict[]
   onClose: () => void
 }
 
-function ErrorDialog({ title, description, onClose }: ErrorDialogProps) {
+function ErrorDialog({ title, description, conflicts, onClose }: ErrorDialogProps) {
   return (
     <DialogShell onCancel={onClose} disabled={false} width={420}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
@@ -930,6 +1077,39 @@ function ErrorDialog({ title, description, onClose }: ErrorDialogProps) {
           >
             {description}
           </p>
+          {/* P1-4 — name the colliding block(s) with their date range so
+              the EP knows exactly where the gap they're aiming for ends. */}
+          {conflicts && conflicts.length > 0 && (
+            <ul
+              style={{
+                margin: '10px 0 0',
+                padding: 0,
+                listStyle: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              {conflicts.map((c) => (
+                <li
+                  key={`${c.name}-${c.startDate}`}
+                  style={{
+                    fontSize: '.84rem',
+                    color: 'var(--color-charcoal)',
+                    padding: '6px 10px',
+                    background: 'var(--color-surface)',
+                    borderRadius: 7,
+                  }}
+                >
+                  <strong style={{ fontWeight: 600 }}>{c.name}</strong>
+                  <span style={{ color: 'var(--color-muted)' }}>
+                    {' '}— {formatLongDate(c.startDate)} to{' '}
+                    {formatLongDate(c.endDate)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1144,6 +1324,20 @@ function formatLongDate(iso: string): string {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
+    }).format(parseIso(iso))
+  } catch {
+    return iso
+  }
+}
+
+// Day-month-year (e.g. "8 May 2026") — block ranges can span years, so the
+// source selector carries the year the weekday-form formatLongDate omits.
+function formatDateAU(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-AU', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
     }).format(parseIso(iso))
   } catch {
     return iso

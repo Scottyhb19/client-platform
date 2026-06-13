@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
+import { todayIsoInPracticeTz } from '@/lib/dates'
+import { resolveCurrentBlock } from '@/lib/programs/current-block'
 import { statusFor } from '../_lib/client-helpers'
 import type { ClientFile } from './_components/FilesTab'
 import {
@@ -55,7 +57,7 @@ export default async function ClientProfilePage({
     { data: client, error: clientErr },
     { data: conditions, error: conditionsErr },
     { data: notes, error: notesErr },
-    { data: activeProgram },
+    { data: activeProgramRows },
     { data: noteTemplateRows },
     { data: noteTemplateFieldRows },
     { data: appointmentRows },
@@ -101,6 +103,10 @@ export default async function ClientProfilePage({
       .order('is_pinned', { ascending: false })
       .order('note_date', { ascending: false })
       .order('created_at', { ascending: false }),
+    // P1-5 (program-calendar pass, 2026-06-12): a client can hold multiple
+    // active blocks (back-to-back, D-PROG-002) — the old .maybeSingle()
+    // here threw the moment a second active block existed. Fetch all,
+    // resolve the display block below with the shared current-block rule.
     supabase
       .from('programs')
       .select(
@@ -110,7 +116,7 @@ export default async function ClientProfilePage({
       .eq('client_id', id)
       .eq('status', 'active')
       .is('deleted_at', null)
-      .maybeSingle(),
+      .order('start_date', { ascending: true }),
     supabase
       .from('note_templates')
       .select('id, name, sort_order')
@@ -264,6 +270,18 @@ export default async function ClientProfilePage({
     version: client.version,
   }
 
+  // Resolve which active block the Program tab summarises: the one
+  // containing today, else the most recent past one (shared rule with the
+  // calendar toolbar), else the earliest upcoming one.
+  const datedPrograms = (activeProgramRows ?? []).filter(
+    (p): p is (typeof p) & { start_date: string; duration_weeks: number } =>
+      p.start_date !== null && p.duration_weeks !== null,
+  )
+  const activeProgram =
+    resolveCurrentBlock(datedPrograms, todayIsoInPracticeTz()) ??
+    (activeProgramRows ?? [])[0] ??
+    null
+
   // Build program summary for the Program tab: current week (by calendar)
   // + max days per week across the training block.
   let programSummary: ProfileProgramSummary | null = null
@@ -275,10 +293,15 @@ export default async function ClientProfilePage({
     )
     let currentWeek: number | null = null
     if (activeProgram.start_date) {
-      const diffMs =
-        Date.now() - new Date(activeProgram.start_date).getTime()
-      if (diffMs >= 0) {
-        const wks = Math.floor(diffMs / (1000 * 60 * 60 * 24 * 7)) + 1
+      // Practice-timezone day delta (P0-2 class) — both operands are ISO
+      // date strings parsed at UTC midnight, so the division yields whole
+      // calendar days with no clock/DST skew. Was Date.now() (UTC, and
+      // lint-flagged as impure-during-render).
+      const startMs = Date.parse(activeProgram.start_date)
+      const todayMs = Date.parse(todayIsoInPracticeTz())
+      const diffDays = Math.floor((todayMs - startMs) / 86_400_000)
+      if (diffDays >= 0) {
+        const wks = Math.floor(diffDays / 7) + 1
         currentWeek = Math.min(wks, activeProgram.duration_weeks ?? wks)
       }
     }
