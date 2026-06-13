@@ -28,16 +28,19 @@ SET search_path TO public, extensions, pg_temp;
 --      carries conflicts[{name,start_date,end_date}] naming the
 --      colliding active block(s) — the bare 'overlap' was technically
 --      true and humanly unexplainable in the field.
+--   §G weekday alignment (P1-4 issue 5, 20260612180000): copying to a
+--      picked date on a DIFFERENT weekday than the source start still
+--      lands every session on its source weekday (shift is whole weeks).
 --
 -- Output pattern: TAP lines captured into temp _tap so the supabase
 -- db query CLI returns all lines in the final SELECT.
 --
--- Test count: 14
+-- Test count: 16
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(16);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -377,6 +380,48 @@ INSERT INTO _tap (n, line) VALUES (14, (
     (SELECT result->'conflicts' @> '[{"name": "BC11 Block"}]'::jsonb
        FROM _detail_result),
     'F2: conflicts names the colliding block (BC11 Block)'
+  )
+));
+
+-- ----------------------------------------------------------------------------
+-- §G. Weekday alignment (P1-4 issue 5) — the source day is a Monday
+-- (27 Apr). Copy to a THURSDAY pick far in the future; the aligned shift
+-- is whole weeks, so the cloned day must land on a Monday too.
+-- ----------------------------------------------------------------------------
+RESET ROLE;
+SELECT public._test_set_jwt(
+  (SELECT staff_a FROM _ids), (SELECT org_a FROM _ids), 'staff'
+);
+SET LOCAL ROLE authenticated;
+
+CREATE TEMP TABLE _align_result (result jsonb) ON COMMIT DROP;
+GRANT INSERT, SELECT ON _align_result TO authenticated;
+
+INSERT INTO _align_result
+  SELECT public.copy_program(
+    (SELECT program_a FROM _ids),
+    '2027-03-04'::date,   -- a Thursday; source block starts Monday
+    'G weekday align'
+  );
+
+INSERT INTO _tap (n, line) VALUES (15, (
+  SELECT is(
+    (SELECT result->>'status' FROM _align_result),
+    'created',
+    'G1: copy to a non-source weekday still succeeds'
+  )
+));
+
+INSERT INTO _tap (n, line) VALUES (16, (
+  SELECT is(
+    (SELECT EXTRACT(ISODOW FROM pd.scheduled_date)::int
+       FROM program_days pd
+      WHERE pd.program_id = ((SELECT result->>'new_program_id' FROM _align_result))::uuid
+        AND pd.deleted_at IS NULL
+      ORDER BY pd.scheduled_date
+      LIMIT 1),
+    1,
+    'G2: cloned day stays on Monday (source weekday preserved)'
   )
 ));
 
