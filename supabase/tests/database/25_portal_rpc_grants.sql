@@ -22,12 +22,12 @@ SET search_path TO public, extensions, pg_temp;
 -- sections and tracked in docs/go-live-checklist.md (see 20260614130000).
 --
 -- No fixtures, no JWT spoof — pure catalog checks as the test owner.
--- Test count: 22
+-- Test count: 20
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(22);
+SELECT plan(20);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -77,32 +77,22 @@ SELECT ord, ok(
 FROM family;
 
 -- ----------------------------------------------------------------------------
--- §C — the 1-arg backward-compat shim (20260614140000) holds the same
--- posture: anon denied, authenticated kept.
+-- §C — REMOVED. The 1-arg backward-compat shim (20260614140000) was dropped by
+-- migration 20260614160000 once the section-7 branch deployed and every caller
+-- moved to the 2-arg (uuid, date) device-tz path (go-live-checklist.md §8 /
+-- client-portal-pwa.md §8.6). Its two grant assertions went with it; plan 22→20.
 -- ----------------------------------------------------------------------------
-INSERT INTO _tap (n, line) VALUES (19, (
-  SELECT ok(
-    NOT has_function_privilege('anon', 'public.client_reschedule_program_day_to_today(uuid)', 'EXECUTE'),
-    'C1: anon cannot execute client_reschedule_program_day_to_today(uuid) shim'
-  )
-));
-INSERT INTO _tap (n, line) VALUES (20, (
-  SELECT ok(
-    has_function_privilege('authenticated', 'public.client_reschedule_program_day_to_today(uuid)', 'EXECUTE'),
-    'C2: authenticated keeps EXECUTE on the (uuid) shim'
-  )
-));
 
 -- ----------------------------------------------------------------------------
 -- §D — the per-group notes RPC (20260614150000, P1-4): same posture.
 -- ----------------------------------------------------------------------------
-INSERT INTO _tap (n, line) VALUES (21, (
+INSERT INTO _tap (n, line) VALUES (19, (
   SELECT ok(
     NOT has_function_privilege('anon', 'public.client_log_exercise_note(uuid, uuid, text)', 'EXECUTE'),
     'D1: anon cannot execute client_log_exercise_note'
   )
 ));
-INSERT INTO _tap (n, line) VALUES (22, (
+INSERT INTO _tap (n, line) VALUES (20, (
   SELECT ok(
     has_function_privilege('authenticated', 'public.client_log_exercise_note(uuid, uuid, text)', 'EXECUTE'),
     'D2: authenticated keeps EXECUTE on client_log_exercise_note'

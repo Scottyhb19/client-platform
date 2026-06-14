@@ -1,0 +1,30 @@
+-- ============================================================================
+-- 20260614160000_drop_reschedule_compat_shim
+-- ============================================================================
+-- Section 7 / P0-1 — armed post-deploy cleanup. Tracked in
+-- docs/go-live-checklist.md §8 and docs/polish/client-portal-pwa.md §8.6.
+--
+-- Fires ONLY now that the section-7 branch has merged to master and the new
+-- frontend is live in production (operator-confirmed green 2026-06-14). Never
+-- before deploy: while prod still served the old frontend, that code called
+-- the 1-arg overload, and dropping it then would have re-broken reschedule.
+--
+-- WHAT: the compat shim (20260614140000) re-added the 1-arg
+-- client_reschedule_program_day_to_today(uuid) overload so the *old* deployed
+-- prod frontend — which predated the (uuid, date) signature — kept working
+-- through the deploy window. That window is now closed: the deployed code
+-- calls the 2-arg (uuid, date) device-tz path exclusively.
+--
+-- WHY DROP IT RATHER THAN KEEP IT: the 1-arg overload resolves "today" in the
+-- ORG timezone, which contradicts P0-1's device-tz thesis. While it exists,
+-- anything routed to it would silently produce an org-tz "today" instead of
+-- the device-tz one the fix ships. Removing it forces every reschedule through
+-- the single, correct (uuid, date) device-tz path — no latent tz-inconsistent
+-- fallback left in the catalog.
+--
+-- The (uuid, date) function (20260614120000 v3) is untouched. IF EXISTS keeps
+-- this idempotent. No dependents: the only caller of the 1-arg overload was
+-- the now-replaced prod frontend (via PostgREST); no DB object references it.
+-- ============================================================================
+
+DROP FUNCTION IF EXISTS public.client_reschedule_program_day_to_today(uuid);
