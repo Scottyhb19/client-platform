@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
-import { Check, Play, X } from 'lucide-react'
+import { Check, ChevronLeft, Play, X } from 'lucide-react'
 import {
   completeSessionAction,
   logExerciseNoteAction,
@@ -24,11 +24,11 @@ export type LoggerExercise = {
   prescribedSets: PrescribedSet[]
   letter: string
   // Superset/tri-set membership. Consecutive exercises sharing a non-null
-  // id (group size > 1) render together as one on-screen group and are
-  // logged before advancing (P1-2, §6.3.1). NULL = standalone (singleton).
+  // id (group size > 1) render together as one on-screen group (P1-2,
+  // §6.3.1). NULL = standalone (singleton group).
   supersetGroupId: string | null
-  // YouTube link from the exercise library (NULL when the EP hasn't set
-  // one). Rendered as an expandable thumbnail per exercise (P1-3, §6.3.1).
+  // YouTube link from the exercise library (NULL when unset). Rendered as
+  // an expandable thumbnail per exercise (P1-3, §6.3.1).
   videoUrl: string | null
 }
 
@@ -49,6 +49,10 @@ export type LoggedSet = {
   rpe: number | null
 }
 
+// Editable strings for one set's three inputs (lifted to the Logger so
+// carry-forward can update later rows; see saveSet).
+type Draft = { reps: string; load: string; rpe: string }
+
 interface LoggerProps {
   sessionId: string
   dayId: string
@@ -59,6 +63,10 @@ interface LoggerProps {
   // Per-(program)exercise notes, keyed by programExerciseId — prefills the
   // per-group notes field on resume (P1-4, §6.3.1). Empty when none saved.
   exerciseNotes: Record<string, string>
+  // Per-device "autofill" preference (server-read cookie). ON: seed each
+  // set from your previous set / the prescription and carry your entries
+  // forward on save. OFF: blank boxes. (Section 7 / P1-2 follow-up.)
+  autofill: boolean
 }
 
 export function Logger({
@@ -69,79 +77,135 @@ export function Logger({
   exercises,
   existingLogs,
   exerciseNotes,
+  autofill,
 }: LoggerProps) {
-  const [logsByKey, setLogsByKey] = useState<Map<string, LoggedSet>>(() => {
-    const m = new Map<string, LoggedSet>()
-    for (const l of existingLogs) {
-      m.set(setKey(l.programExerciseId, l.setNumber), l)
-    }
-    return m
-  })
+  const initialLogs = useMemo(() => mapFromLogs(existingLogs), [existingLogs])
 
-  // Group consecutive exercises that share a superset/tri-set id (group
-  // size > 1) into one on-screen group; standalone exercises are their own
-  // singleton group. §6.3.1: a superset is shown together and logged before
-  // advancing. Memoised — `exercises` is stable for the session.
+  // Group consecutive exercises that share a superset/tri-set id into one
+  // on-screen group; standalone exercises are singleton groups (P1-2).
   const groups = useMemo(() => buildGroups(exercises), [exercises])
 
-  // Active position. The active set walks the current group ROUND-ROBIN by
-  // set number (B1·1, B2·1, B1·2, B2·2 …) — how supersets are actually
-  // performed (alternate exercises each round) — then advances to the next
-  // group, then to completion. `.some(...)` per set number honours
-  // non-contiguous set_numbers (e.g. after a soft-delete mid-list).
-  const { activeGroupIdx, activeExId, activeSetNumber, allDone } = useMemo(() => {
-    for (let gi = 0; gi < groups.length; gi++) {
-      const group = groups[gi]!
-      const maxSet = Math.max(
-        0,
-        ...group.exercises.map((e) =>
-          e.prescribedSets.reduce((m, s) => Math.max(m, s.setNumber), 0),
-        ),
-      )
-      for (let setNum = 1; setNum <= maxSet; setNum++) {
-        for (const e of group.exercises) {
-          const prescribes = e.prescribedSets.some((s) => s.setNumber === setNum)
-          if (
-            prescribes &&
-            !logsByKey.has(setKey(e.programExerciseId, setNum))
-          ) {
-            return {
-              activeGroupIdx: gi,
-              activeExId: e.programExerciseId,
-              activeSetNumber: setNum,
-              allDone: false,
-            }
+  const [logsByKey, setLogsByKey] = useState<Map<string, LoggedSet>>(
+    () => initialLogs,
+  )
+  // Editable input drafts for every set, keyed by setKey. Open form (P1-2
+  // follow-up): every set is editable in any order, not one gated "active"
+  // set. Seeded from prior actuals / the prescription when autofill is on.
+  const [drafts, setDrafts] = useState<Map<string, Draft>>(() =>
+    buildInitialDrafts(exercises, initialLogs, autofill),
+  )
+  // Sets the client has hand-edited — carry-forward never overwrites these.
+  const [touched, setTouched] = useState<Set<string>>(() => new Set())
+  // Which group's screen is showing. Manual nav (Back/Next) per the brief's
+  // "Next" button; starts at the first group with an unlogged set on resume.
+  const [currentGroupIdx, setCurrentGroupIdx] = useState<number>(() =>
+    initialGroupIdx(groups, initialLogs),
+  )
+
+  function updateDraft(
+    exerciseId: string,
+    setNumber: number,
+    field: keyof Draft,
+    value: string,
+  ) {
+    const key = setKey(exerciseId, setNumber)
+    setDrafts((prev) => {
+      const next = new Map(prev)
+      const cur = next.get(key) ?? { reps: '', load: '', rpe: '' }
+      next.set(key, { ...cur, [field]: value })
+      return next
+    })
+    setTouched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }
+
+  async function saveSet(
+    exerciseId: string,
+    setNumber: number,
+  ): Promise<{ error: string | null }> {
+    const key = setKey(exerciseId, setNumber)
+    const d = drafts.get(key) ?? { reps: '', load: '', rpe: '' }
+
+    const repsNum = d.reps.trim() === '' ? null : parseInt(d.reps, 10)
+    const rpeNum = d.rpe.trim() === '' ? null : parseInt(d.rpe, 10)
+    if (repsNum !== null && (!Number.isFinite(repsNum) || repsNum < 0)) {
+      return { error: 'Reps must be a whole number.' }
+    }
+    if (rpeNum !== null && (!Number.isFinite(rpeNum) || rpeNum < 1 || rpeNum > 10)) {
+      return { error: 'RPE is 1–10.' }
+    }
+    const parsedLoad = parseLoad(d.load)
+
+    const res = await logSetAction({
+      sessionId,
+      programExerciseId: exerciseId,
+      setNumber,
+      reps: repsNum,
+      weightValue: parsedLoad.weightValue,
+      weightMetric: parsedLoad.weightMetric,
+      optionalValue: parsedLoad.optionalValue,
+      rpe: rpeNum,
+    })
+    if (res.error) return { error: res.error }
+
+    const log: LoggedSet = {
+      programExerciseId: exerciseId,
+      setNumber,
+      reps: repsNum,
+      weightValue: parsedLoad.weightValue,
+      weightMetric: parsedLoad.weightMetric,
+      optionalValue: parsedLoad.optionalValue,
+      rpe: rpeNum,
+    }
+    setLogsByKey((prev) => new Map(prev).set(key, log))
+
+    setDrafts((prev) => {
+      const next = new Map(prev)
+      // Canonicalise this set's draft to the stored form so it doesn't read
+      // as "edited" right after saving ("82.5" → "82.5kg").
+      const canonical = loggedToDraft(log)
+      next.set(key, canonical)
+      // Carry the entered numbers forward into later, still-untouched,
+      // unlogged sets of the same exercise (autofill on only).
+      if (autofill) {
+        const ex = exercises.find((e) => e.programExerciseId === exerciseId)
+        for (const ps of ex?.prescribedSets ?? []) {
+          if (ps.setNumber <= setNumber) continue
+          const k2 = setKey(exerciseId, ps.setNumber)
+          if (!logsByKey.has(k2) && !touched.has(k2)) {
+            next.set(k2, { ...canonical })
           }
         }
       }
-    }
-    return {
-      activeGroupIdx: groups.length,
-      activeExId: '',
-      activeSetNumber: 0,
-      allDone: true,
-    }
-  }, [groups, logsByKey])
+      return next
+    })
+    return { error: null }
+  }
 
-  if (allDone) {
+  if (currentGroupIdx >= groups.length) {
     return (
       <CompletePrompt
         sessionId={sessionId}
         dayId={dayId}
         dayLabel={dayLabel}
         name={clientName}
+        onBack={
+          groups.length > 0
+            ? () => setCurrentGroupIdx(groups.length - 1)
+            : null
+        }
       />
     )
   }
 
-  const group = groups[activeGroupIdx]!
+  const group = groups[currentGroupIdx]!
   const multi = group.exercises.length > 1
+  const isLastGroup = currentGroupIdx === groups.length - 1
 
   return (
     <>
       <TopBar
         dayId={dayId}
-        groupIdx={activeGroupIdx}
+        groupIdx={currentGroupIdx}
         totalGroups={groups.length}
       />
       <GroupHead group={group} />
@@ -149,43 +213,20 @@ export function Logger({
         {group.exercises.map((gex) => (
           <ExerciseBlock key={gex.programExerciseId} exercise={gex} compact={multi}>
             {gex.prescribedSets.map((prescribed) => {
-              const setNumber = prescribed.setNumber
-              const logged = logsByKey.get(
-                setKey(gex.programExerciseId, setNumber),
+              const sn = prescribed.setNumber
+              const key = setKey(gex.programExerciseId, sn)
+              return (
+                <SetRow
+                  key={sn}
+                  setNumber={sn}
+                  draft={drafts.get(key) ?? { reps: '', load: '', rpe: '' }}
+                  logged={logsByKey.get(key)}
+                  onChange={(field, value) =>
+                    updateDraft(gex.programExerciseId, sn, field, value)
+                  }
+                  onSave={() => saveSet(gex.programExerciseId, sn)}
+                />
               )
-              const isActive =
-                !logged &&
-                gex.programExerciseId === activeExId &&
-                setNumber === activeSetNumber
-              const isLastPrescribed =
-                setNumber ===
-                gex.prescribedSets[gex.prescribedSets.length - 1]?.setNumber
-              if (logged)
-                return (
-                  <SetRowDone
-                    key={setNumber}
-                    logged={logged}
-                    setNumber={setNumber}
-                  />
-                )
-              if (isActive)
-                return (
-                  <ActiveSet
-                    key={setNumber}
-                    sessionId={sessionId}
-                    exercise={gex}
-                    prescribed={prescribed}
-                    isLast={isLastPrescribed}
-                    onLogged={(log) =>
-                      setLogsByKey((prev) => {
-                        const next = new Map(prev)
-                        next.set(setKey(log.programExerciseId, log.setNumber), log)
-                        return next
-                      })
-                    }
-                  />
-                )
-              return <SetRowPending key={setNumber} setNumber={setNumber} />
             })}
           </ExerciseBlock>
         ))}
@@ -194,6 +235,15 @@ export function Logger({
           sessionId={sessionId}
           programExerciseId={group.exercises[0]!.programExerciseId}
           initial={exerciseNotes[group.exercises[0]!.programExerciseId] ?? ''}
+        />
+        <NavRow
+          onBack={
+            currentGroupIdx > 0
+              ? () => setCurrentGroupIdx((i) => i - 1)
+              : null
+          }
+          onNext={() => setCurrentGroupIdx((i) => i + 1)}
+          nextLabel={isLastGroup ? 'Wrap up' : 'Next'}
         />
       </div>
     </>
@@ -211,8 +261,7 @@ function TopBar({
   groupIdx: number
   totalGroups: number
 }) {
-  const pct =
-    totalGroups === 0 ? 0 : ((groupIdx + 1) / totalGroups) * 100
+  const pct = totalGroups === 0 ? 0 : ((groupIdx + 1) / totalGroups) * 100
   return (
     <>
       <div
@@ -256,11 +305,71 @@ function TopBar({
   )
 }
 
-// Expandable per-exercise video (P1-3, §6.3.1). Tap the thumbnail to
-// expand to a 16:9 tile; tap that to open the YouTube link in a new tab
-// (no embedded player — "YouTube links only"). Placeholder play tiles, no
-// external poster fetch, so it stays fast on gym connections; no
-// backdrop-filter (design system). Only rendered when a URL exists.
+// Bottom navigation between exercise groups (P1-2 follow-up). "Next" is
+// always tappable — the open form lets you advance with a set unlogged
+// (deliberately skip); "Finish session" stays on the final RPE screen only
+// (§6.3.1). Back returns to the previous group to finish a skipped set.
+function NavRow({
+  onBack,
+  onNext,
+  nextLabel,
+}: {
+  onBack: (() => void) | null
+  onNext: () => void
+  nextLabel: string
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 10, padding: '6px 0 8px' }}>
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            padding: '14px 18px',
+            background: 'transparent',
+            color: 'var(--session-text)',
+            border: '1px solid var(--session-border)',
+            borderRadius: 'var(--radius-chip)',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '1rem',
+            letterSpacing: '.02em',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <ChevronLeft size={16} aria-hidden /> Back
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onNext}
+        style={{
+          flex: 1,
+          padding: 16,
+          background: 'var(--session-cta-bg)',
+          color: 'var(--session-cta-text)',
+          border: 'none',
+          borderRadius: 'var(--radius-chip)',
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '1.1rem',
+          letterSpacing: '.02em',
+          cursor: 'pointer',
+        }}
+      >
+        {nextLabel}
+      </button>
+    </div>
+  )
+}
+
+// Expandable per-exercise video (P1-3, §6.3.1). Tap the thumbnail to expand
+// to a 16:9 tile; tap that to open the YouTube link in a new tab (no
+// embedded player — "YouTube links only"). Placeholder play tiles, no
+// external poster fetch (fast on gym connections); no backdrop-filter.
 function VideoThumb({ url }: { url: string }) {
   const [open, setOpen] = useState(false)
 
@@ -360,8 +469,7 @@ function VideoThumb({ url }: { url: string }) {
 }
 
 // Optional per-group notes (P1-4, §6.3.1). Saved on blur to the group's
-// first exercise's exercise_logs.notes via logExerciseNoteAction; prefilled
-// on resume. Quiet by design — only saves when the text actually changed.
+// first exercise's exercise_logs.notes; prefilled on resume.
 function GroupNotes({
   sessionId,
   programExerciseId,
@@ -392,7 +500,7 @@ function GroupNotes({
   }
 
   return (
-    <div style={{ marginTop: 4, marginBottom: 8 }}>
+    <div style={{ marginTop: 4, marginBottom: 12 }}>
       <div className="session-eyebrow" style={{ marginBottom: 6 }}>
         Notes · optional
       </div>
@@ -436,7 +544,6 @@ function GroupNotes({
 
 // Group header — section title (once for the whole group) + a Superset /
 // Tri-set / Giant set badge when the group holds more than one exercise.
-// Renders outside the set-rows container, so it carries its own 20px gutter.
 function GroupHead({ group }: { group: LoggerGroup }) {
   const size = group.exercises.length
   const sectionTitle = group.exercises[0]?.sectionTitle ?? null
@@ -470,8 +577,8 @@ function GroupHead({ group }: { group: LoggerGroup }) {
       )}
       {badge && (
         <span
-          // Superset/tri-set badge — a sanctioned accent use (a grouping
-          // signal, not decoration): the group must read as one unit (§6.3.1).
+          // Superset/tri-set badge — a sanctioned accent use (grouping
+          // signal, not decoration): the group must read as one unit.
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
@@ -492,16 +599,13 @@ function GroupHead({ group }: { group: LoggerGroup }) {
 }
 
 // One exercise within the active group: its letter, name, instructions, rx
-// summary, then its set rows (passed as children). Rendered inside the
-// set-rows container, so no horizontal gutter of its own.
+// summary, video, then its set rows (children).
 function ExerciseBlock({
   exercise,
   compact,
   children,
 }: {
   exercise: LoggerExercise
-  // True when the exercise sits in a multi-exercise group — the name shrinks
-  // so two/three stack cleanly; a standalone exercise keeps the hero size.
   compact: boolean
   children: React.ReactNode
 }) {
@@ -560,191 +664,52 @@ function ExerciseBlock({
   )
 }
 
-function SetRowPending({ setNumber }: { setNumber: number }) {
-  return (
-    <div
-      style={{
-        background: 'var(--session-card)',
-        border: '1px solid var(--session-border)',
-        borderRadius: 'var(--radius-card-dense)',
-        padding: '12px 14px',
-        marginBottom: 8,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-      }}
-    >
-      <span
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.78rem',
-          color: 'var(--session-num-pending-text)',
-          background: 'var(--session-num-pending-bg)',
-          width: 26,
-          height: 26,
-          borderRadius: '50%',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        {setNumber}
-      </span>
-      <span style={{ fontWeight: 600, fontSize: '.88rem', flex: 1 }}>
-        Set {setNumber}
-      </span>
-    </div>
-  )
-}
-
-function SetRowDone({
-  logged,
+// One open, editable set row (P1-2 follow-up). Inputs are always editable;
+// the check/log button saves them (upsert) in any order. A logged set shows
+// a green check + quiet "Logged"; editing it re-exposes a "Save changes"
+// button (dirty), since the backend upserts. Controlled by the parent's
+// draft map so carry-forward updates show live.
+function SetRow({
   setNumber,
+  draft,
+  logged,
+  onChange,
+  onSave,
 }: {
-  logged: LoggedSet
   setNumber: number
+  draft: Draft
+  logged: LoggedSet | undefined
+  onChange: (field: keyof Draft, value: string) => void
+  onSave: () => Promise<{ error: string | null }>
 }) {
-  const parts: string[] = []
-  if (logged.reps !== null) parts.push(`${logged.reps} reps`)
-  if (logged.weightValue !== null)
-    parts.push(
-      `${logged.weightValue}${logged.weightMetric ?? ''}`.trim(),
-    )
-  else if (logged.optionalValue) parts.push(logged.optionalValue)
-  if (logged.rpe !== null) parts.push(`RPE ${logged.rpe}`)
-  return (
-    <div
-      style={{
-        background: 'var(--session-card-done)',
-        border: '1px solid var(--session-border)',
-        borderRadius: 'var(--radius-card-dense)',
-        padding: '12px 14px',
-        marginBottom: 8,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-      }}
-    >
-      <span
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.78rem',
-          color: 'var(--session-on-accent)',
-          background: 'var(--session-accent)',
-          width: 26,
-          height: 26,
-          borderRadius: '50%',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        <Check size={14} aria-hidden />
-      </span>
-      <span style={{ fontWeight: 600, fontSize: '.88rem', flex: 1 }}>
-        Set {setNumber}
-      </span>
-      <span
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '.82rem',
-          color: 'var(--session-text-muted)',
-        }}
-      >
-        {parts.join(' · ')}
-      </span>
-    </div>
-  )
-}
-
-function ActiveSet({
-  sessionId,
-  exercise,
-  prescribed,
-  isLast,
-  onLogged,
-}: {
-  sessionId: string
-  exercise: LoggerExercise
-  prescribed: PrescribedSet
-  isLast: boolean
-  onLogged: (log: LoggedSet) => void
-}) {
-  // Reps prefill: only when the prescription is a numeric reps value.
-  const [reps, setReps] = useState(
-    prescribed.reps && /^\d+$/.test(prescribed.reps.trim())
-      ? prescribed.reps.trim()
-      : '',
-  )
-  // Load prefill: optional_value, unless the metric is RPE (in which case
-  // optional_value is the prescribed RPE and shouldn't go in the load slot).
-  const [load, setLoad] = useState(
-    prescribed.optionalMetric === 'rpe' ? '' : (prescribed.optionalValue ?? ''),
-  )
-  // RPE prefill: when the metric is rpe, surface the prescribed RPE; the
-  // client overwrites with their actual perceived RPE during the set.
-  const [rpe, setRpe] = useState(
-    prescribed.optionalMetric === 'rpe' ? (prescribed.optionalValue ?? '') : '',
-  )
-  const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
 
-  const setNumber = prescribed.setNumber
+  const dirty = logged !== undefined && !draftEqualsLogged(draft, logged)
+  const done = logged !== undefined && !dirty
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const repsNum = reps.trim() === '' ? null : parseInt(reps, 10)
-    const rpeNum = rpe.trim() === '' ? null : parseInt(rpe, 10)
-    if (repsNum !== null && (!Number.isFinite(repsNum) || repsNum < 0)) {
-      setError('Reps must be a whole number.')
-      return
-    }
-    if (rpeNum !== null && (!Number.isFinite(rpeNum) || rpeNum < 1 || rpeNum > 10)) {
-      setError('RPE is 1–10.')
-      return
-    }
-
-    const parsedLoad = parseLoad(load)
-
+  function handleSave() {
     setError(null)
     startTransition(async () => {
-      const res = await logSetAction({
-        sessionId,
-        programExerciseId: exercise.programExerciseId,
-        setNumber,
-        reps: repsNum,
-        weightValue: parsedLoad.weightValue,
-        weightMetric: parsedLoad.weightMetric,
-        optionalValue: parsedLoad.optionalValue,
-        rpe: rpeNum,
-      })
-      if (res.error) {
-        setError(res.error)
-        return
-      }
-      onLogged({
-        programExerciseId: exercise.programExerciseId,
-        setNumber,
-        reps: repsNum,
-        weightValue: parsedLoad.weightValue,
-        weightMetric: parsedLoad.weightMetric,
-        optionalValue: parsedLoad.optionalValue,
-        rpe: rpeNum,
-      })
+      const res = await onSave()
+      setError(res?.error ?? null)
     })
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
+    <div
       style={{
-        background: 'var(--session-card-active)',
-        border: '1px solid var(--session-border-active)',
+        background: done
+          ? 'var(--session-card-done)'
+          : dirty
+            ? 'var(--session-card-active)'
+            : 'var(--session-card)',
+        border: `1px solid ${
+          dirty ? 'var(--session-border-active)' : 'var(--session-border)'
+        }`,
         borderRadius: 'var(--radius-card-dense)',
         padding: '12px 14px',
         marginBottom: 8,
-        boxShadow: '0 0 0 3px var(--session-active-ring)',
       }}
     >
       <div
@@ -760,8 +725,12 @@ function ActiveSet({
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
             fontSize: '.78rem',
-            color: 'var(--session-on-accent)',
-            background: 'var(--session-accent)',
+            color: done
+              ? 'var(--session-on-accent)'
+              : 'var(--session-num-pending-text)',
+            background: done
+              ? 'var(--session-accent)'
+              : 'var(--session-num-pending-bg)',
             width: 26,
             height: 26,
             borderRadius: '50%',
@@ -769,11 +738,25 @@ function ActiveSet({
             placeItems: 'center',
           }}
         >
-          {setNumber}
+          {done ? <Check size={14} aria-hidden /> : setNumber}
         </span>
         <span style={{ fontWeight: 600, fontSize: '.88rem', flex: 1 }}>
           Set {setNumber}
         </span>
+        {done && (
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.72rem',
+              letterSpacing: '.04em',
+              textTransform: 'uppercase',
+              color: 'var(--session-text-muted)',
+            }}
+          >
+            Logged
+          </span>
+        )}
       </div>
 
       {error && (
@@ -798,48 +781,51 @@ function ActiveSet({
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
           gap: 8,
-          marginBottom: 10,
+          marginBottom: done ? 0 : 10,
         }}
       >
         <LogInput
           label="Reps"
-          value={reps}
-          onChange={setReps}
+          value={draft.reps}
+          onChange={(v) => onChange('reps', v)}
           inputMode="numeric"
         />
-        <LogInput label="Load" value={load} onChange={setLoad} />
+        <LogInput
+          label="Load"
+          value={draft.load}
+          onChange={(v) => onChange('load', v)}
+        />
         <LogInput
           label="RPE"
-          value={rpe}
-          onChange={setRpe}
+          value={draft.rpe}
+          onChange={(v) => onChange('rpe', v)}
           inputMode="numeric"
         />
       </div>
 
-      <button
-        type="submit"
-        disabled={pending}
-        style={{
-          width: '100%',
-          padding: 16,
-          background: 'var(--session-cta-bg)',
-          color: 'var(--session-cta-text)',
-          border: 'none',
-          borderRadius: 'var(--radius-chip)',
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: '1.1rem',
-          letterSpacing: '.02em',
-          cursor: 'pointer',
-        }}
-      >
-        {pending
-          ? 'Saving…'
-          : isLast
-            ? 'Finish exercise · next'
-            : 'Log set · next'}
-      </button>
-    </form>
+      {!done && (
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={pending}
+          style={{
+            width: '100%',
+            padding: 14,
+            background: 'var(--session-cta-bg)',
+            color: 'var(--session-cta-text)',
+            border: 'none',
+            borderRadius: 'var(--radius-chip)',
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '1rem',
+            letterSpacing: '.02em',
+            cursor: 'pointer',
+          }}
+        >
+          {pending ? 'Saving…' : dirty ? 'Save changes' : 'Log set'}
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -884,6 +870,7 @@ function LogInput({
           fontSize: '1.05rem',
           color: 'var(--session-input-text)',
           outline: 'none',
+          boxSizing: 'border-box',
         }}
       />
     </div>
@@ -895,11 +882,13 @@ function CompletePrompt({
   dayId,
   dayLabel,
   name,
+  onBack,
 }: {
   sessionId: string
   dayId: string
   dayLabel: string
   name: string
+  onBack: (() => void) | null
 }) {
   const [pending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState('')
@@ -925,17 +914,37 @@ function CompletePrompt({
   return (
     <div
       style={{
-        padding: '40px 24px 20px',
+        padding: '20px 24px',
         textAlign: 'center',
       }}
     >
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            background: 'none',
+            border: 'none',
+            color: 'var(--session-text-muted)',
+            fontSize: '.82rem',
+            cursor: 'pointer',
+            marginBottom: 16,
+            float: 'left',
+          }}
+        >
+          <ChevronLeft size={14} aria-hidden /> Back
+        </button>
+      )}
       <div
         style={{
           width: 64,
           height: 64,
           borderRadius: '50%',
           background: 'var(--session-accent)',
-          margin: '0 auto 20px',
+          margin: '20px auto 20px',
           display: 'grid',
           placeItems: 'center',
           color: 'var(--session-on-accent)',
@@ -946,8 +955,6 @@ function CompletePrompt({
       </div>
       <div
         className="session-eyebrow"
-        // Same accent-override as the active exercise eyebrow: this is
-        // the celebratory state, not a quiet label.
         style={{ color: 'var(--session-accent)' }}
       >
         {dayLabel} · sets logged
@@ -964,13 +971,9 @@ function CompletePrompt({
         Great work, {name}.
       </h2>
 
-      {/* Optional session RPE — 1-10 chips. Null = skipped. The RPC accepts
-          NULL since 20260510130100_client_complete_session_v2. */}
+      {/* Optional session RPE — 1-10 chips. Null = skipped. */}
       <div style={{ marginBottom: 18, textAlign: 'left' }}>
-        <div
-          className="session-eyebrow"
-          style={{ marginBottom: 8 }}
-        >
+        <div className="session-eyebrow" style={{ marginBottom: 8 }}>
           Session RPE · optional
         </div>
         <div
@@ -1000,16 +1003,9 @@ function CompletePrompt({
         </div>
       </div>
 
-      {/* Optional free-text feedback. Empty string normalises to NULL on
-          submit so blank submissions don't store '' in sessions.feedback.
-          maxLength is a hard cap; the counter only surfaces once the client
-          is approaching it (>400 chars) so the field stays quiet in the
-          common short-note case. */}
+      {/* Optional free-text feedback. Empty normalises to NULL on submit. */}
       <div style={{ marginBottom: 24, textAlign: 'left' }}>
-        <div
-          className="session-eyebrow"
-          style={{ marginBottom: 8 }}
-        >
+        <div className="session-eyebrow" style={{ marginBottom: 8 }}>
           Feedback · optional
         </div>
         <textarea
@@ -1071,9 +1067,6 @@ function CompletePrompt({
         onClick={handleComplete}
         disabled={pending}
         className="portal-btn-primary"
-        // Session-themed CTA: keep the primitive's sizing/font/radius, swap
-        // the colours to the in-session palette so it reads on the dark
-        // (or light) session surface rather than the portal default.
         style={{
           background: 'var(--session-cta-bg)',
           color: 'var(--session-cta-text)',
@@ -1091,11 +1084,17 @@ function setKey(programExerciseId: string, setNumber: number): string {
   return `${programExerciseId}#${setNumber}`
 }
 
+function mapFromLogs(logs: LoggedSet[]): Map<string, LoggedSet> {
+  const m = new Map<string, LoggedSet>()
+  for (const l of logs) m.set(setKey(l.programExerciseId, l.setNumber), l)
+  return m
+}
+
 /**
  * Fold the ordered exercise list into on-screen groups. Consecutive
- * exercises sharing the same NON-NULL superset id merge into one group
- * (a superset/tri-set); a standalone exercise (null id) is always its own
- * singleton group — two adjacent standalones never merge. Preserves order.
+ * exercises sharing the same NON-NULL superset id merge into one group; a
+ * standalone exercise (null id) is always its own singleton — two adjacent
+ * standalones never merge. Preserves order.
  */
 function buildGroups(exercises: LoggerExercise[]): LoggerGroup[] {
   const groups: LoggerGroup[] = []
@@ -1114,13 +1113,89 @@ function buildGroups(exercises: LoggerExercise[]): LoggerGroup[] {
   return groups
 }
 
+/** Index of the first group with an unlogged set; groups.length if all done. */
+function initialGroupIdx(
+  groups: LoggerGroup[],
+  logs: Map<string, LoggedSet>,
+): number {
+  for (let gi = 0; gi < groups.length; gi++) {
+    for (const e of groups[gi]!.exercises) {
+      for (const s of e.prescribedSets) {
+        if (!logs.has(setKey(e.programExerciseId, s.setNumber))) return gi
+      }
+    }
+  }
+  return groups.length
+}
+
+/** Draft strings reconstructed from a saved set (for editing + dirty checks). */
+function loggedToDraft(l: LoggedSet): Draft {
+  const load =
+    l.weightValue !== null
+      ? `${l.weightValue}${l.weightMetric ?? ''}`
+      : (l.optionalValue ?? '')
+  return {
+    reps: l.reps !== null ? String(l.reps) : '',
+    load,
+    rpe: l.rpe !== null ? String(l.rpe) : '',
+  }
+}
+
+/** Draft seeded from the EP's prescription (reps numeric; load/rpe by metric). */
+function draftFromPrescription(p: PrescribedSet): Draft {
+  return {
+    reps: p.reps && /^\d+$/.test(p.reps.trim()) ? p.reps.trim() : '',
+    load: p.optionalMetric === 'rpe' ? '' : (p.optionalValue ?? ''),
+    rpe: p.optionalMetric === 'rpe' ? (p.optionalValue ?? '') : '',
+  }
+}
+
+function draftEqualsLogged(d: Draft, l: LoggedSet): boolean {
+  const x = loggedToDraft(l)
+  return (
+    d.reps.trim() === x.reps.trim() &&
+    d.load.trim() === x.load.trim() &&
+    d.rpe.trim() === x.rpe.trim()
+  )
+}
+
+/**
+ * Seed the editable drafts for every set. A logged set always shows its
+ * saved values. For an unlogged set with autofill ON, carry the most recent
+ * earlier *actuals* in the same exercise (1), falling back to the
+ * prescription (3); with autofill OFF, leave it blank.
+ */
+function buildInitialDrafts(
+  exercises: LoggerExercise[],
+  logs: Map<string, LoggedSet>,
+  autofill: boolean,
+): Map<string, Draft> {
+  const drafts = new Map<string, Draft>()
+  for (const ex of exercises) {
+    let lastActuals: Draft | null = null
+    for (const p of ex.prescribedSets) {
+      const key = setKey(ex.programExerciseId, p.setNumber)
+      const logged = logs.get(key)
+      if (logged) {
+        const d = loggedToDraft(logged)
+        drafts.set(key, d)
+        lastActuals = d
+      } else if (autofill) {
+        drafts.set(key, lastActuals ? { ...lastActuals } : draftFromPrescription(p))
+      } else {
+        drafts.set(key, { reps: '', load: '', rpe: '' })
+      }
+    }
+  }
+  return drafts
+}
+
 function buildRxLabel(e: LoggerExercise): string {
   const sets = e.prescribedSets
   if (sets.length === 0) return ''
 
-  // Q5 sign-off (2026-05-07): render the eyebrow summary only when every
-  // set is identical. Wave-loading and other non-uniform prescriptions
-  // hide the summary — the per-set rows below speak for themselves.
+  // Render the eyebrow summary only when every set is identical. Wave-loading
+  // and other non-uniform prescriptions hide it — the per-set rows speak.
   const first = sets[0]!
   const allSame = sets.every(
     (s) =>
@@ -1145,10 +1220,9 @@ function buildRxLabel(e: LoggerExercise): string {
 
 /**
  * Parse a load string into structured + free-text parts.
- *   "80kg"   → { weightValue: 80, weightMetric: 'kg', optionalValue: null }
- *   "80"     → { weightValue: 80, weightMetric: 'kg', optionalValue: null }
- *   "BW"     → { weightValue: null, weightMetric: null, optionalValue: 'BW' }
- *   ""       → all null
+ *   "80kg" / "80" → { weightValue: 80, weightMetric: 'kg', optionalValue: null }
+ *   "BW"          → { weightValue: null, weightMetric: null, optionalValue: 'BW' }
+ *   ""            → all null
  */
 function parseLoad(raw: string): {
   weightValue: number | null
@@ -1158,10 +1232,9 @@ function parseLoad(raw: string): {
   const s = raw.trim()
   if (!s) return { weightValue: null, weightMetric: null, optionalValue: null }
 
-  // Matches "80", "80 kg", "80kg", "80.5", "80.5lb"
   const numMatch = /^(\d+(?:\.\d+)?)\s*(kg|lb|lbs)?$/i.exec(s)
   if (numMatch) {
-    const n = parseFloat(numMatch[1])
+    const n = parseFloat(numMatch[1]!)
     const metric = (numMatch[2] ?? 'kg').toLowerCase()
     return {
       weightValue: Number.isFinite(n) ? n : null,
@@ -1170,6 +1243,5 @@ function parseLoad(raw: string): {
     }
   }
 
-  // Anything else — "BW", "45kg each side", "2x bands" — goes to optional.
   return { weightValue: null, weightMetric: null, optionalValue: s }
 }

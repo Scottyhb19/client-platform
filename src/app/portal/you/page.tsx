@@ -1,7 +1,10 @@
+import { cookies } from 'next/headers'
 import { SignOutButton } from './_components/SignOutButton'
 import { SessionThemeToggle } from './_components/SessionThemeToggle'
+import { SessionAutofillToggle } from './_components/SessionAutofillToggle'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { PortalTop } from '../_components/PortalTop'
+import { PORTAL_AUTOFILL_COOKIE } from '../_lib/portal-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +64,9 @@ export default async function PortalYouPage() {
     ],
   ]
 
+  const autofillOn =
+    (await cookies()).get(PORTAL_AUTOFILL_COOKIE)?.value !== 'off'
+
   return (
     <>
       <PortalTop
@@ -99,6 +105,9 @@ export default async function PortalYouPage() {
 
         {/* In-session screen theme preference (P1-1) */}
         <SessionThemeToggle />
+
+        {/* In-session autofill preference (P1-2 follow-up) */}
+        <SessionAutofillToggle initialOn={autofillOn} />
 
         {/* Install-to-home tip */}
         <div

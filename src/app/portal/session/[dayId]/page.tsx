@@ -1,8 +1,10 @@
 import Link from 'next/link'
+import { cookies } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { Logger, type LoggedSet, type LoggerExercise } from './_components/Logger'
 import { startOrResumeSessionAction } from './actions'
+import { PORTAL_AUTOFILL_COOKIE } from '../../_lib/portal-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -67,6 +69,10 @@ export default async function PortalSessionPage({
   }
 
   const clientName = clientRes.data?.first_name ?? 'there'
+
+  // Per-device autofill preference (cookie, default on). Read server-side so
+  // the initial input values are correct on first paint (no hydration flash).
+  const autofill = (await cookies()).get(PORTAL_AUTOFILL_COOKIE)?.value !== 'off'
 
   const sorted = [...(exerciseRows ?? [])].sort(
     (a, b) => a.sort_order - b.sort_order,
@@ -202,6 +208,7 @@ export default async function PortalSessionPage({
       exercises={exercises}
       existingLogs={existingLogs}
       exerciseNotes={exerciseNotes}
+      autofill={autofill}
     />
   )
 }

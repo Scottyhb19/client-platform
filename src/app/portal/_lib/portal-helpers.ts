@@ -21,6 +21,16 @@ export const PORTAL_TZ_COOKIE = 'portal_tz'
  */
 export const SESSION_THEME_KEY = 'portal_session_theme'
 
+/**
+ * Cookie carrying the per-device "autofill" preference for the in-session
+ * logging form (section 7 / P1-2 follow-up). Values: absent/'on' (default)
+ * | 'off'. A cookie, not localStorage, because it decides the *initial*
+ * input values the server renders — a localStorage read would only resolve
+ * after hydration and leave an off-preference user staring at prefilled
+ * boxes. Read in the session page, written by the You-tab toggle.
+ */
+export const PORTAL_AUTOFILL_COOKIE = 'portal_autofill'
+
 /** Returns Monday-of-this-week as a Date at 00:00 local time. */
 export function mondayOfCurrentWeek(now = new Date()): Date {
   const day = now.getDay() // 0 = Sunday
