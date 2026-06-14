@@ -22,12 +22,12 @@ SET search_path TO public, extensions, pg_temp;
 -- sections and tracked in docs/go-live-checklist.md (see 20260614130000).
 --
 -- No fixtures, no JWT spoof — pure catalog checks as the test owner.
--- Test count: 18
+-- Test count: 20
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(18);
+SELECT plan(20);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -75,6 +75,23 @@ SELECT ord, ok(
   format('B%s: authenticated keeps EXECUTE on %s', ord - 9, sig)
 )
 FROM family;
+
+-- ----------------------------------------------------------------------------
+-- §C — the 1-arg backward-compat shim (20260614140000) holds the same
+-- posture: anon denied, authenticated kept.
+-- ----------------------------------------------------------------------------
+INSERT INTO _tap (n, line) VALUES (19, (
+  SELECT ok(
+    NOT has_function_privilege('anon', 'public.client_reschedule_program_day_to_today(uuid)', 'EXECUTE'),
+    'C1: anon cannot execute client_reschedule_program_day_to_today(uuid) shim'
+  )
+));
+INSERT INTO _tap (n, line) VALUES (20, (
+  SELECT ok(
+    has_function_privilege('authenticated', 'public.client_reschedule_program_day_to_today(uuid)', 'EXECUTE'),
+    'C2: authenticated keeps EXECUTE on the (uuid) shim'
+  )
+));
 
 SELECT line FROM _tap ORDER BY n;
 

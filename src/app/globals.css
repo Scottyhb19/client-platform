@@ -1323,6 +1323,21 @@ body {
 .portal-bottom-nav__item.is-active .portal-bottom-nav__item-label {
   font-weight: 700;
 }
+/* Dark variant — BottomNav sets data-theme="dark" on the in-session route
+   when the session theme is dark, so the persistent nav matches the screen
+   above it (section 7 / P1-1 operator follow-up). Mirrors the .session-screen
+   dark palette (charcoal field, white-alpha chrome). data-theme="light" /
+   absent → the light base above. */
+.portal-bottom-nav[data-theme='dark'] {
+  background: var(--color-charcoal);
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+.portal-bottom-nav[data-theme='dark'] .portal-bottom-nav__item {
+  color: rgba(255, 255, 255, 0.55);
+}
+.portal-bottom-nav[data-theme='dark'] .portal-bottom-nav__item.is-active {
+  color: #ffffff;
+}
 
 /* --- Shell ---
    Outer wrapper used once by src/app/portal/layout.tsx. Centres a 480px
