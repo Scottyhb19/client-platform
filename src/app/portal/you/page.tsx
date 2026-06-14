@@ -1,4 +1,5 @@
 import { SignOutButton } from './_components/SignOutButton'
+import { SessionThemeToggle } from './_components/SessionThemeToggle'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { PortalTop } from '../_components/PortalTop'
 
@@ -95,6 +96,9 @@ export default async function PortalYouPage() {
             </span>
           </div>
         ))}
+
+        {/* In-session screen theme preference (P1-1) */}
+        <SessionThemeToggle />
 
         {/* Install-to-home tip */}
         <div

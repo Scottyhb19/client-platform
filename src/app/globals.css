@@ -1386,3 +1386,113 @@ body {
   border-color: var(--color-charcoal);
   color: #fff;
 }
+
+/* ============================================================================
+   In-session screen theme (section 7 / P1-1)
+   ----------------------------------------------------------------------------
+   The guided logging screen is dark by default (brief §6.3.1: "dark
+   background, gym-friendly, reduces glare"; matches client-portal.html
+   .session-screen). A per-device light option is offered on the You tab and
+   carried via the `portal_session_theme` localStorage key; the wrapper sets
+   data-theme accordingly.
+
+   Theming is a variable swap: the dark palette is the default on .session-
+   screen; [data-theme="light"] overrides the same scoped vars with the warm
+   light values. The Logger and complete screen reference ONLY these
+   --session-* vars — no hardcoded hex/rgba in the components (this also
+   discharges the P2-1 token sweep for the in-session surface). The dark-
+   surface white-alpha tints live here, in globals.css, per the tokens-only
+   rule — components never inline them.
+   ============================================================================ */
+.session-screen {
+  /* Dark theme (default). */
+  --session-bg: var(--color-charcoal);
+  --session-text: #ffffff;
+  --session-text-muted: rgba(255, 255, 255, 0.55);
+  --session-text-faint: rgba(255, 255, 255, 0.38);
+  --session-card: rgba(255, 255, 255, 0.05);
+  --session-card-active: rgba(255, 255, 255, 0.08);
+  --session-card-done: rgba(45, 178, 76, 0.12);
+  --session-border: rgba(255, 255, 255, 0.12);
+  --session-border-active: var(--color-accent);
+  --session-input-bg: rgba(255, 255, 255, 0.08);
+  --session-input-text: #ffffff;
+  --session-num-pending-bg: rgba(255, 255, 255, 0.16);
+  --session-num-pending-text: rgba(255, 255, 255, 0.7);
+  --session-accent: var(--color-accent);
+  --session-on-accent: var(--color-charcoal);
+  --session-cta-bg: var(--color-accent);
+  --session-cta-text: var(--color-charcoal);
+  --session-error-bg: rgba(214, 64, 69, 0.18);
+  --session-error-border: rgba(214, 64, 69, 0.4);
+  --session-error-text: #ff8d91;
+  --session-progress-track: rgba(255, 255, 255, 0.12);
+  --session-active-ring: rgba(45, 178, 76, 0.25);
+
+  min-height: 100%;
+  background: var(--session-bg);
+  color: var(--session-text);
+}
+
+.session-screen[data-theme='light'] {
+  --session-bg: var(--color-surface);
+  --session-text: var(--color-text);
+  --session-text-muted: var(--color-text-light);
+  --session-text-faint: var(--color-text-faint);
+  --session-card: var(--color-card);
+  --session-card-active: var(--color-card);
+  --session-card-done: var(--color-accent-soft);
+  --session-border: var(--color-border-subtle);
+  --session-border-active: var(--color-primary);
+  --session-input-bg: var(--color-surface);
+  --session-input-text: var(--color-charcoal);
+  --session-num-pending-bg: var(--color-border);
+  --session-num-pending-text: #ffffff;
+  --session-accent: var(--color-accent);
+  --session-on-accent: #ffffff;
+  --session-cta-bg: var(--color-primary);
+  --session-cta-text: #ffffff;
+  --session-error-bg: rgba(214, 64, 69, 0.08);
+  --session-error-border: rgba(214, 64, 69, 0.25);
+  --session-error-text: var(--color-alert);
+  --session-progress-track: var(--color-border-subtle);
+  --session-active-ring: rgba(30, 26, 24, 0.08);
+}
+
+/* Progress track at the top of the logging screen. */
+.session-progress {
+  height: 4px;
+  background: var(--session-progress-track);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.session-progress__fill {
+  height: 100%;
+  background: var(--session-accent);
+  transition: width var(--motion-base) var(--ease);
+}
+
+/* Eyebrow label on the session screen — themed muted by default; the
+   "active/celebratory" spots override color to --session-accent inline. */
+.session-eyebrow {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--session-text-muted);
+}
+
+/* The session-RPE picker (CompletePrompt) reuses the .portal-rpe-picker
+   markup but must theme to the session vars, not the portal (light)
+   defaults. Scoped under .session-screen so it only applies in-session. */
+.session-screen .portal-rpe-picker__btn {
+  background: var(--session-card);
+  border-color: var(--session-border);
+  color: var(--session-text);
+}
+.session-screen .portal-rpe-picker__btn.is-selected {
+  background: var(--session-accent);
+  border-color: var(--session-accent);
+  color: var(--session-on-accent);
+}

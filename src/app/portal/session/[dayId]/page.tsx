@@ -214,7 +214,7 @@ function SessionError({
           href="/portal"
           style={{
             fontSize: '.82rem',
-            color: 'var(--color-text-light)',
+            color: 'var(--session-text-muted)',
             textDecoration: 'none',
           }}
         >
@@ -222,11 +222,13 @@ function SessionError({
         </Link>
       </div>
       <div
-        className="portal-card"
         style={{
           margin: '0 16px 16px',
           padding: '32px 20px',
           textAlign: 'center',
+          background: 'var(--session-card)',
+          border: '1px solid var(--session-border)',
+          borderRadius: 'var(--radius-card)',
         }}
       >
         <div
@@ -234,7 +236,7 @@ function SessionError({
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
             fontSize: '1.1rem',
-            color: 'var(--color-charcoal)',
+            color: 'var(--session-text)',
             marginBottom: 6,
           }}
         >
@@ -244,7 +246,7 @@ function SessionError({
           style={{
             fontSize: '.86rem',
             lineHeight: 1.5,
-            color: 'var(--color-text-light)',
+            color: 'var(--session-text-muted)',
             margin: 0,
           }}
         >

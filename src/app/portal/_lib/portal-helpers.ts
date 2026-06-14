@@ -13,6 +13,14 @@
  */
 export const PORTAL_TZ_COOKIE = 'portal_tz'
 
+/**
+ * localStorage key for the per-device in-session screen theme (section 7 /
+ * P1-1). Values: 'dark' (default) | 'light'. Written by the You-tab toggle,
+ * read by SessionThemeRoot on the session route. Lives here (server-import-
+ * free) so both client components can import it.
+ */
+export const SESSION_THEME_KEY = 'portal_session_theme'
+
 /** Returns Monday-of-this-week as a Date at 00:00 local time. */
 export function mondayOfCurrentWeek(now = new Date()): Date {
   const day = now.getDay() // 0 = Sunday

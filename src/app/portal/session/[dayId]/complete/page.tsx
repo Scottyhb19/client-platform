@@ -91,21 +91,21 @@ export default async function PortalSessionCompletePage({
           width: 64,
           height: 64,
           borderRadius: '50%',
-          background: 'var(--color-accent)',
+          background: 'var(--session-accent)',
           margin: '0 auto 20px',
           display: 'grid',
           placeItems: 'center',
-          color: '#fff',
+          color: 'var(--session-on-accent)',
         }}
       >
         <Check size={32} aria-hidden />
       </div>
 
       <div
-        className="portal-eyebrow"
+        className="session-eyebrow"
         // Override eyebrow's default muted colour — completion screen wants
-        // the eyebrow to read as a "yes you did it" primary, not a quiet label.
-        style={{ color: 'var(--color-primary)' }}
+        // the eyebrow to read as a "yes you did it" accent, not a quiet label.
+        style={{ color: 'var(--session-accent)' }}
       >
         Session complete
       </div>
@@ -123,7 +123,7 @@ export default async function PortalSessionCompletePage({
       <p
         style={{
           fontSize: '.92rem',
-          color: 'var(--color-text-light)',
+          color: 'var(--session-text-muted)',
           lineHeight: 1.5,
           marginBottom: 28,
         }}
@@ -157,7 +157,14 @@ export default async function PortalSessionCompletePage({
         />
       </div>
 
-      <Link href="/portal" className="portal-btn-primary">
+      <Link
+        href="/portal"
+        className="portal-btn-primary"
+        style={{
+          background: 'var(--session-cta-bg)',
+          color: 'var(--session-cta-text)',
+        }}
+      >
         Back to today
       </Link>
     </div>
@@ -173,8 +180,9 @@ export default async function PortalSessionCompletePage({
 function StatTile({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="portal-card"
       style={{
+        background: 'var(--session-card)',
+        border: '1px solid var(--session-border)',
         borderRadius: 'var(--radius-chip)',
         padding: '10px 12px',
       }}
@@ -184,7 +192,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
         // tiles need a smaller label to balance the tile's own size.
         style={{
           fontSize: '.62rem',
-          color: 'var(--color-muted)',
+          color: 'var(--session-text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '.04em',
           fontWeight: 600,
@@ -197,7 +205,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '1.15rem',
-          color: 'var(--color-charcoal)',
+          color: 'var(--session-text)',
           marginTop: 2,
         }}
       >
@@ -223,7 +231,7 @@ function FallbackCard({
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '1.2rem',
-          color: 'var(--color-charcoal)',
+          color: 'var(--session-text)',
           marginBottom: 6,
         }}
       >
@@ -232,7 +240,7 @@ function FallbackCard({
       <p
         style={{
           fontSize: '.88rem',
-          color: 'var(--color-text-light)',
+          color: 'var(--session-text-muted)',
           lineHeight: 1.5,
           marginBottom: 20,
         }}
@@ -244,14 +252,16 @@ function FallbackCard({
         className="portal-btn-primary"
         // Inline-block override — fallback is centred under a paragraph,
         // not the full-width primary CTA shape that .portal-btn-primary
-        // assumes. Keeping the class so colour/font/transition come from
-        // the primitive; just tightening the box.
+        // assumes. Keep the class for font/transition; tighten the box and
+        // swap to the in-session palette.
         style={{
           display: 'inline-block',
           width: 'auto',
           padding: '12px 22px',
           fontSize: '.95rem',
           borderRadius: 'var(--radius-chip)',
+          background: 'var(--session-cta-bg)',
+          color: 'var(--session-cta-text)',
         }}
       >
         Back to the logger

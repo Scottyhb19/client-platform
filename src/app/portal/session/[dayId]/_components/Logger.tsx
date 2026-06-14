@@ -160,7 +160,7 @@ function TopBar({
           style={{
             background: 'none',
             border: 'none',
-            color: 'var(--color-text-light)',
+            color: 'var(--session-text-muted)',
             fontSize: '.82rem',
             fontFamily: 'var(--font-sans)',
             textDecoration: 'none',
@@ -171,28 +171,14 @@ function TopBar({
         >
           <X size={14} aria-hidden /> Exit
         </Link>
-        <div className="portal-eyebrow">
+        <div className="session-eyebrow">
           Exercise {exerciseIdx + 1} of {totalExercises}
         </div>
         <div style={{ width: 46 }} />
       </div>
       <div style={{ padding: '0 20px 16px' }}>
-        <div
-          style={{
-            height: 4,
-            background: 'var(--color-border-subtle)',
-            borderRadius: 2,
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              width: `${pct}%`,
-              background: 'var(--color-primary)',
-              transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          />
+        <div className="session-progress">
+          <div className="session-progress__fill" style={{ width: `${pct}%` }} />
         </div>
       </div>
       {/* Dummy dayId reference so the hook's revalidation target stays
@@ -207,11 +193,11 @@ function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
   return (
     <div style={{ padding: '0 20px', marginBottom: 16 }}>
       <div
-        className="portal-eyebrow"
-        // Override muted → primary: this is the active exercise label,
+        className="session-eyebrow"
+        // Override muted → accent: this is the active exercise label,
         // not a quiet section heading. The section-title-plus-letter line
         // anchors the screen.
-        style={{ color: 'var(--color-primary)' }}
+        style={{ color: 'var(--session-accent)' }}
       >
         {exercise.sectionTitle
           ? `${exercise.sectionTitle} · ${exercise.letter}`
@@ -232,7 +218,7 @@ function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
         <div
           style={{
             fontSize: '.84rem',
-            color: 'var(--color-text-light)',
+            color: 'var(--session-text-muted)',
             lineHeight: 1.5,
           }}
         >
@@ -247,10 +233,10 @@ function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
             fontSize: '.95rem',
-            color: 'var(--color-charcoal)',
-            background: 'var(--color-surface)',
+            color: 'var(--session-text)',
+            background: 'var(--session-card-active)',
             padding: '6px 12px',
-            borderRadius: 7,
+            borderRadius: 'var(--radius-button)',
           }}
         >
           {rx}
@@ -264,9 +250,9 @@ function SetRowPending({ setNumber }: { setNumber: number }) {
   return (
     <div
       style={{
-        background: '#fff',
-        border: '1px solid var(--color-border-subtle)',
-        borderRadius: 10,
+        background: 'var(--session-card)',
+        border: '1px solid var(--session-border)',
+        borderRadius: 'var(--radius-card-dense)',
         padding: '12px 14px',
         marginBottom: 8,
         display: 'flex',
@@ -279,8 +265,8 @@ function SetRowPending({ setNumber }: { setNumber: number }) {
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '.78rem',
-          color: '#fff',
-          background: '#C7BEB4',
+          color: 'var(--session-num-pending-text)',
+          background: 'var(--session-num-pending-bg)',
           width: 26,
           height: 26,
           borderRadius: '50%',
@@ -315,9 +301,9 @@ function SetRowDone({
   return (
     <div
       style={{
-        background: 'rgba(45,178,76,.04)',
-        border: '1px solid var(--color-border-subtle)',
-        borderRadius: 10,
+        background: 'var(--session-card-done)',
+        border: '1px solid var(--session-border)',
+        borderRadius: 'var(--radius-card-dense)',
         padding: '12px 14px',
         marginBottom: 8,
         display: 'flex',
@@ -330,8 +316,8 @@ function SetRowDone({
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '.78rem',
-          color: '#fff',
-          background: 'var(--color-accent)',
+          color: 'var(--session-on-accent)',
+          background: 'var(--session-accent)',
           width: 26,
           height: 26,
           borderRadius: '50%',
@@ -349,7 +335,7 @@ function SetRowDone({
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '.82rem',
-          color: 'var(--color-text-light)',
+          color: 'var(--session-text-muted)',
         }}
       >
         {parts.join(' · ')}
@@ -439,12 +425,12 @@ function ActiveSet({
     <form
       onSubmit={handleSubmit}
       style={{
-        background: '#fff',
-        border: '1px solid var(--color-primary)',
-        borderRadius: 10,
+        background: 'var(--session-card-active)',
+        border: '1px solid var(--session-border-active)',
+        borderRadius: 'var(--radius-card-dense)',
         padding: '12px 14px',
         marginBottom: 8,
-        boxShadow: '0 0 0 3px rgba(30,26,24,.08)',
+        boxShadow: '0 0 0 3px var(--session-active-ring)',
       }}
     >
       <div
@@ -460,8 +446,8 @@ function ActiveSet({
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
             fontSize: '.78rem',
-            color: '#fff',
-            background: 'var(--color-primary)',
+            color: 'var(--session-on-accent)',
+            background: 'var(--session-accent)',
             width: 26,
             height: 26,
             borderRadius: '50%',
@@ -481,10 +467,10 @@ function ActiveSet({
           role="alert"
           style={{
             padding: '6px 10px',
-            background: 'rgba(214,64,69,.08)',
-            border: '1px solid rgba(214,64,69,.25)',
-            borderRadius: 6,
-            color: 'var(--color-alert)',
+            background: 'var(--session-error-bg)',
+            border: '1px solid var(--session-error-border)',
+            borderRadius: 'var(--radius-input)',
+            color: 'var(--session-error-text)',
             fontSize: '.78rem',
             marginBottom: 10,
           }}
@@ -522,10 +508,10 @@ function ActiveSet({
         style={{
           width: '100%',
           padding: 16,
-          background: 'var(--color-primary)',
-          color: '#fff',
+          background: 'var(--session-cta-bg)',
+          color: 'var(--session-cta-text)',
           border: 'none',
-          borderRadius: 12,
+          borderRadius: 'var(--radius-chip)',
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '1.1rem',
@@ -560,7 +546,7 @@ function LogInput({
         style={{
           fontSize: '.62rem',
           fontWeight: 600,
-          color: 'var(--color-muted)',
+          color: 'var(--session-text-muted)',
           textTransform: 'uppercase',
           letterSpacing: '.04em',
           marginBottom: 3,
@@ -575,14 +561,14 @@ function LogInput({
         style={{
           width: '100%',
           height: 40,
-          border: '1px solid var(--color-border-subtle)',
-          borderRadius: 7,
-          background: 'var(--color-surface)',
+          border: '1px solid var(--session-border)',
+          borderRadius: 'var(--radius-input)',
+          background: 'var(--session-input-bg)',
           textAlign: 'center',
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '1.05rem',
-          color: 'var(--color-charcoal)',
+          color: 'var(--session-input-text)',
           outline: 'none',
         }}
       />
@@ -628,21 +614,21 @@ function CompletePrompt({
           width: 64,
           height: 64,
           borderRadius: '50%',
-          background: 'var(--color-accent)',
+          background: 'var(--session-accent)',
           margin: '0 auto 20px',
           display: 'grid',
           placeItems: 'center',
-          color: '#fff',
+          color: 'var(--session-on-accent)',
           fontSize: '1.8rem',
         }}
       >
         <Check size={28} aria-hidden />
       </div>
       <div
-        className="portal-eyebrow"
-        // Same primary-override as the active exercise eyebrow: this is
+        className="session-eyebrow"
+        // Same accent-override as the active exercise eyebrow: this is
         // the celebratory state, not a quiet label.
-        style={{ color: 'var(--color-primary)' }}
+        style={{ color: 'var(--session-accent)' }}
       >
         {dayLabel} · sets logged
       </div>
@@ -662,7 +648,7 @@ function CompletePrompt({
           NULL since 20260510130100_client_complete_session_v2. */}
       <div style={{ marginBottom: 18, textAlign: 'left' }}>
         <div
-          className="portal-eyebrow"
+          className="session-eyebrow"
           style={{ marginBottom: 8 }}
         >
           Session RPE · optional
@@ -701,7 +687,7 @@ function CompletePrompt({
           common short-note case. */}
       <div style={{ marginBottom: 24, textAlign: 'left' }}>
         <div
-          className="portal-eyebrow"
+          className="session-eyebrow"
           style={{ marginBottom: 8 }}
         >
           Feedback · optional
@@ -714,14 +700,14 @@ function CompletePrompt({
           maxLength={500}
           style={{
             width: '100%',
-            border: '1px solid var(--color-border-subtle)',
+            border: '1px solid var(--session-border)',
             borderRadius: 'var(--radius-input)',
-            background: 'var(--color-surface)',
+            background: 'var(--session-input-bg)',
             padding: '10px 12px',
             fontFamily: 'inherit',
             fontSize: '.88rem',
             lineHeight: 1.5,
-            color: 'var(--color-charcoal)',
+            color: 'var(--session-input-text)',
             outline: 'none',
             resize: 'vertical',
             minHeight: 80,
@@ -732,7 +718,7 @@ function CompletePrompt({
           <div
             style={{
               fontSize: '.7rem',
-              color: 'var(--color-muted)',
+              color: 'var(--session-text-muted)',
               textAlign: 'right',
               marginTop: 4,
             }}
@@ -747,6 +733,13 @@ function CompletePrompt({
         onClick={handleComplete}
         disabled={pending}
         className="portal-btn-primary"
+        // Session-themed CTA: keep the primitive's sizing/font/radius, swap
+        // the colours to the in-session palette so it reads on the dark
+        // (or light) session surface rather than the portal default.
+        style={{
+          background: 'var(--session-cta-bg)',
+          color: 'var(--session-cta-text)',
+        }}
       >
         {pending ? 'Wrapping up…' : 'Finish session'}
       </button>
