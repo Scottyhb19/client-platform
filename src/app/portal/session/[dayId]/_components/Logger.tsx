@@ -191,18 +191,31 @@ export function Logger({
 
   // Log every still-unlogged set of one exercise in one tap, sequentially
   // (each shares the exercise_log find-or-create, so parallel could race).
-  // Uses a draft snapshot taken now so the loop is consistent.
+  // Applies the same carry-forward the per-set Log does: an untouched set
+  // inherits the previous set's values, so filling set 1 and tapping "Log
+  // all" logs them all with set 1's numbers (autofill on). Hand-edited
+  // (touched) sets keep their own. Works on a local copy because state
+  // updates inside the loop don't reflect synchronously.
   async function saveAll(exerciseId: string): Promise<void> {
     const ex = exercises.find((e) => e.programExerciseId === exerciseId)
     if (!ex) return
-    const snapshot = drafts
+    const working = new Map(drafts)
+    let carry: Draft | null = null
     for (const ps of ex.prescribedSets) {
       const key = setKey(exerciseId, ps.setNumber)
-      if (logsByKey.has(key)) continue
-      // Stop on the first validation error so the offending set keeps its
-      // value for the client to fix via its own Log button.
-      const res = await saveSet(exerciseId, ps.setNumber, snapshot)
+      if (logsByKey.has(key)) {
+        const lg = logsByKey.get(key)
+        if (lg) carry = loggedToDraft(lg)
+        continue
+      }
+      const own = working.get(key) ?? { reps: '', load: '', rpe: '' }
+      const use = autofill && !touched.has(key) && carry ? carry : own
+      working.set(key, use)
+      // Stop on the first validation error so that set keeps its value for
+      // the client to fix via its own Log button.
+      const res = await saveSet(exerciseId, ps.setNumber, working)
       if (res.error) break
+      carry = use
     }
   }
 
