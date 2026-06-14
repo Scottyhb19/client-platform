@@ -9,7 +9,7 @@ import {
   addDays,
   buildWeekDots,
   deriveDayState,
-  greetingFor,
+  greetingFromHour,
   isoFromDate,
   mondayFromIso,
   mondayOfCurrentWeek,
@@ -17,6 +17,8 @@ import {
   type DayCompletionEntry,
   type WeekDot,
 } from './_lib/portal-helpers'
+import { hourInTimeZone } from '@/lib/dates'
+import { resolvePortalToday } from './_lib/timezone'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,6 +46,12 @@ export default async function PortalTodayPage({
     .is('deleted_at', null)
     .maybeSingle()
   if (!client) notFound()
+
+  // Resolve "today" in the device/org timezone (section 7 / P0-1) — never
+  // from a UTC `new Date()`. Feeds the today-highlight, the card CTA state
+  // machine, the greeting, the week anchor, and the week-number.
+  const { tz, todayIso } = await resolvePortalToday(supabase)
+  const todayDate = parseIso(todayIso)
 
   // Active program (lightweight — for header / week-number context).
   const { data: program } = await supabase
@@ -84,15 +92,15 @@ export default async function PortalTodayPage({
       (sessionsRes.count ?? 0) === 0
   }
 
-  const weekStart = weekParam ? mondayFromIso(weekParam) : mondayOfCurrentWeek()
+  const weekStart = weekParam
+    ? mondayFromIso(weekParam, todayDate)
+    : mondayOfCurrentWeek(todayDate)
   const weekStartIso = isoFromDate(weekStart)
   const prevWeekIso = isoFromDate(addDays(weekStart, -7))
   const nextWeekIso = isoFromDate(addDays(weekStart, 7))
   const monthLabel = formatMonth(weekStart)
-  const now = new Date()
-  const todayIso = isoFromDate(now)
   const isCurrentWeek =
-    weekStart.getTime() === mondayOfCurrentWeek(now).getTime()
+    weekStart.getTime() === mondayOfCurrentWeek(todayDate).getTime()
 
   // Phase K: selected-day ISO. Defaults to today on missing/invalid.
   // Invalid means: not parseable as YYYY-MM-DD or outside this week.
@@ -172,7 +180,11 @@ export default async function PortalTodayPage({
     })
   }
 
-  const weekDots: WeekDot[] = buildWeekDots(weekStart, programmedByWeekday)
+  const weekDots: WeekDot[] = buildWeekDots(
+    weekStart,
+    programmedByWeekday,
+    todayIso,
+  )
 
   // Phase K (Q-K7): every cell navigates. Per-cell hrefs keyed by index
   // — programmed and rest days alike land at /portal?d=<iso>&w=<weekIso>.
@@ -200,6 +212,7 @@ export default async function PortalTodayPage({
         exercises: buildExerciseList(selectedDay.exercises),
         state: deriveDayState(
           selectedDate,
+          todayIso,
           true,
           completedDayIds.has(selectedDay.program_day_id),
           inProgressDayIds.has(selectedDay.program_day_id),
@@ -211,14 +224,14 @@ export default async function PortalTodayPage({
 
   return (
     <DayScreen
-      greeting={greetingFor(now)}
+      greeting={greetingFromHour(hourInTimeZone(tz))}
       name={client.first_name}
       weekHeading={
         program
           ? weekNumber
-            ? `${formatShort(now)} · Week ${weekNumber}`
-            : formatShort(now)
-          : formatShort(now)
+            ? `${formatShort(todayDate)} · Week ${weekNumber}`
+            : formatShort(todayDate)
+          : formatShort(todayDate)
       }
       weekDots={weekDots}
       session={session}
@@ -233,6 +246,7 @@ export default async function PortalTodayPage({
       isCurrentWeek={isCurrentWeek}
       backToTodayHref="/portal"
       selectedDayIso={selectedDayIso}
+      todayIso={todayIso}
       cellHrefs={cellHrefs}
       firstRun={firstRun}
     />

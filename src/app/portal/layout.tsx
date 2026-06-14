@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BottomNav } from './_components/BottomNav'
 import { RegisterSW } from './_components/RegisterSW'
+import { TimezoneSync } from './_components/TimezoneSync'
 
 export const metadata: Metadata = {
   title: 'Odyssey',
@@ -94,6 +95,7 @@ export default async function PortalLayout({
         />
       </div>
       <RegisterSW />
+      <TimezoneSync />
     </div>
   )
 }

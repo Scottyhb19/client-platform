@@ -3,6 +3,7 @@
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { resolvePortalToday } from '../../_lib/timezone'
 
 /**
  * Phase K (2026-05-13). "Begin session early" on a future programmed day.
@@ -29,14 +30,17 @@ export async function rescheduleAndStartSessionAction(
   } = await supabase.auth.getUser()
   if (!user) return { sessionId: null, error: 'Not authenticated.' }
 
-  // Step 1: move scheduled_date → today. RPC returns the program_day_id
-  // on success (or RAISEs an exception that supabase-js surfaces as an
-  // error object). Generated types don't yet know about the new RPC —
-  // cast to never matches the same idiom used by logSetAction and
-  // completeSessionAction below.
+  // Step 1: move scheduled_date → today. The RPC no longer derives "today"
+  // from UTC CURRENT_DATE (section 7 P0-1 — that caused the false "Today
+  // already has a session" collision); we resolve the device/org-timezone
+  // today here and pass it as p_today. RPC returns the program_day_id on
+  // success (or RAISEs an exception supabase-js surfaces as an error). The
+  // `as never` cast matches the idiom used by logSetAction /
+  // completeSessionAction below (generated types lag the new signature).
+  const { todayIso } = await resolvePortalToday(supabase)
   const { error: rescheduleErr } = await supabase.rpc(
     'client_reschedule_program_day_to_today' as never,
-    { p_program_day_id: programDayId } as never,
+    { p_program_day_id: programDayId, p_today: todayIso } as never,
   )
   if (rescheduleErr) {
     // Pass the RPC's user-facing message through unchanged. The RPC

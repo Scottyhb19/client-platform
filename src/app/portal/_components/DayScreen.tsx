@@ -6,7 +6,6 @@ import { useState, useTransition } from 'react'
 import { ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
 import { rescheduleAndStartSessionAction } from '../session/[dayId]/actions'
 import {
-  sameCalendarDay,
   type DayState,
   type WeekDot,
 } from '../_lib/portal-helpers'
@@ -60,6 +59,11 @@ interface DayScreenProps {
   // Empty string falls back to "today's cell" so a stray ?d= miss reads
   // as "no selection."
   selectedDayIso: string
+  // ISO `YYYY-MM-DD` of "today" in the device/org timezone (section 7 /
+  // P0-1) — the first-paint strip-highlight fallback uses this instead of a
+  // client-side `new Date()`, which could disagree with the server's
+  // tz-anchored today (a hydration split) and rendered the wrong cell.
+  todayIso: string
   // C-9: true only for a client with no client-visible program (any
   // status) and no sessions ever — computed server-side in page.tsx.
   // Swaps the empty-card slot from "Rest day" (false for a client with
@@ -87,6 +91,7 @@ export function DayScreen({
   isCurrentWeek,
   backToTodayHref,
   selectedDayIso,
+  todayIso,
   cellHrefs,
   firstRun,
 }: DayScreenProps) {
@@ -96,9 +101,7 @@ export function DayScreen({
   const selectedIdx = (() => {
     const idx = weekDots.findIndex((d) => isoOf(d.date) === selectedDayIso)
     if (idx >= 0) return idx
-    const todayIdx = weekDots.findIndex((d) =>
-      sameCalendarDay(d.date, new Date()),
-    )
+    const todayIdx = weekDots.findIndex((d) => isoOf(d.date) === todayIso)
     return todayIdx >= 0 ? todayIdx : 0
   })()
 

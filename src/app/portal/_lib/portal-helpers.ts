@@ -3,6 +3,16 @@
  * small surface area so we avoid the abstraction tax.
  */
 
+/**
+ * Cookie carrying the device's IANA timezone. Set client-side by
+ * TimezoneSync, read server-side by resolvePortalTimeZone, so server-
+ * rendered "today" matches where the client physically is and auto-adjusts
+ * on travel (section 7 / Q2). Lives here — a plain module with no server
+ * imports — so both the client component and the server helper can import
+ * it without pulling `next/headers` into the client bundle.
+ */
+export const PORTAL_TZ_COOKIE = 'portal_tz'
+
 /** Returns Monday-of-this-week as a Date at 00:00 local time. */
 export function mondayOfCurrentWeek(now = new Date()): Date {
   const day = now.getDay() // 0 = Sunday
@@ -15,18 +25,23 @@ export function mondayOfCurrentWeek(now = new Date()): Date {
 /**
  * Returns the Monday of the calendar week containing the supplied ISO date
  * (YYYY-MM-DD). Tolerates the input being a non-Monday by snapping to the
- * preceding Monday. Returns mondayOfCurrentWeek() when the input is missing
- * or fails to parse — used by the Today page's ?w= query-param navigation.
+ * preceding Monday. Falls back to the week containing `today` when the
+ * input is missing or fails to parse — `today` is passed in tz-resolved by
+ * the caller (section 7 / P0-1) so a malformed ?w= still lands on the
+ * client's real current week, not a UTC-derived one.
  */
-export function mondayFromIso(iso: string | null | undefined): Date {
-  if (!iso) return mondayOfCurrentWeek()
+export function mondayFromIso(
+  iso: string | null | undefined,
+  today?: Date,
+): Date {
+  if (!iso) return mondayOfCurrentWeek(today)
   const parts = iso.split('-').map(Number)
   if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) {
-    return mondayOfCurrentWeek()
+    return mondayOfCurrentWeek(today)
   }
   const [y, m, d] = parts as [number, number, number]
   const dt = new Date(y, m - 1, d)
-  if (Number.isNaN(dt.getTime())) return mondayOfCurrentWeek()
+  if (Number.isNaN(dt.getTime())) return mondayOfCurrentWeek(today)
   return mondayOfCurrentWeek(dt)
 }
 
@@ -65,10 +80,15 @@ export function formatDayLabel(d: Date): string {
   }).format(d)
 }
 
-export function greetingFor(now = new Date()): string {
-  const h = now.getHours()
-  if (h < 12) return 'Morning'
-  if (h < 17) return 'Afternoon'
+/**
+ * Greeting word from an hour-of-day (0–23). The caller passes the hour in
+ * the resolved device/org timezone (`hourInTimeZone(tz)`) — previously this
+ * read `new Date().getHours()`, which is the UTC hour on the server and so
+ * greeted "Evening" at 8am AEST. (Section 7 / P0-1.)
+ */
+export function greetingFromHour(hour: number): string {
+  if (hour < 12) return 'Morning'
+  if (hour < 17) return 'Afternoon'
   return 'Evening'
 }
 
@@ -111,14 +131,16 @@ export type DayCompletionEntry = {
 export function buildWeekDots(
   weekStart: Date,
   programmedByWeekday: Map<number, DayCompletionEntry>,
+  // ISO `YYYY-MM-DD` of "today" in the device/org timezone (section 7 /
+  // P0-1) — passed in rather than read from `new Date()` so the strip's
+  // today-highlight matches the client's real local day, not UTC.
+  todayIso: string,
 ): WeekDot[] {
   const out: WeekDot[] = []
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
   for (let i = 0; i < 7; i++) {
     const date = addDays(weekStart, i)
     const entry = programmedByWeekday.get(weekdayIndex(date))
-    const isToday = sameCalendarDay(date, today)
+    const isToday = isoFromDate(date) === todayIso
     let state: WeekDot['state'] = 'rest'
     if (entry) {
       // Phase I (§4.5 I-Q4) dropped the `|| isPast` short-circuit so the
@@ -172,27 +194,31 @@ export type DayState =
 /**
  * Compute the card's state for the selected day. Inputs:
  *   - selectedDate     the date the user has selected (today by default)
+ *   - todayIso         ISO `YYYY-MM-DD` of "today" in the device/org
+ *                      timezone (section 7 / P0-1). Passed in, not read from
+ *                      `new Date()` — a UTC "today" mis-filed today's session
+ *                      as `future-scheduled` before ~11am AEST, turning the
+ *                      primary CTA into "Begin session early" + confirm modal.
  *   - hasProgrammedDay whether this date carries a published program_day
  *   - completed        whether that program_day has a completed session
  *   - inProgress       whether that program_day has an in-progress session
  *
  * Pure function — easy to reason about and easy to test in isolation.
+ * ISO `YYYY-MM-DD` strings compare lexicographically == chronologically.
  */
 export function deriveDayState(
   selectedDate: Date,
+  todayIso: string,
   hasProgrammedDay: boolean,
   completed: boolean,
   inProgress: boolean,
 ): DayState {
   if (!hasProgrammedDay) return { kind: 'rest-day' }
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const sel = new Date(selectedDate)
-  sel.setHours(0, 0, 0, 0)
-  const isToday = sel.getTime() === today.getTime()
-  const isPast = sel.getTime() < today.getTime()
-  const isFuture = sel.getTime() > today.getTime()
+  const selIso = isoFromDate(selectedDate)
+  const isToday = selIso === todayIso
+  const isPast = selIso < todayIso
+  const isFuture = selIso > todayIso
 
   if (isToday) {
     if (completed) return { kind: 'today-completed' }
