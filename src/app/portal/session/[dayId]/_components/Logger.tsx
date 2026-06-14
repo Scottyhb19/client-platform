@@ -22,6 +22,17 @@ export type LoggerExercise = {
   instructions: string | null
   prescribedSets: PrescribedSet[]
   letter: string
+  // Superset/tri-set membership. Consecutive exercises sharing a non-null
+  // id (group size > 1) render together as one on-screen group and are
+  // logged before advancing (P1-2, §6.3.1). NULL = standalone (singleton).
+  supersetGroupId: string | null
+}
+
+// One on-screen group: a superset/tri-set (>1 exercise, shared id) or a
+// standalone exercise (a singleton group).
+type LoggerGroup = {
+  supersetGroupId: string | null
+  exercises: LoggerExercise[]
 }
 
 export type LoggedSet = {
@@ -57,25 +68,50 @@ export function Logger({
     return m
   })
 
-  // Derived: the first unlogged exercise/set is "active". If everything
-  // is logged, the session is ready to complete. Walks the prescribed
-  // sets in order so non-contiguous set_numbers (e.g. after a soft-delete
-  // mid-list) are honoured.
-  const { activeExIdx, activeSetNumber, allDone } = useMemo(() => {
-    for (let exIdx = 0; exIdx < exercises.length; exIdx++) {
-      const ex = exercises[exIdx]
-      for (const prescribed of ex.prescribedSets) {
-        if (!logsByKey.has(setKey(ex.programExerciseId, prescribed.setNumber))) {
-          return {
-            activeExIdx: exIdx,
-            activeSetNumber: prescribed.setNumber,
-            allDone: false,
+  // Group consecutive exercises that share a superset/tri-set id (group
+  // size > 1) into one on-screen group; standalone exercises are their own
+  // singleton group. §6.3.1: a superset is shown together and logged before
+  // advancing. Memoised — `exercises` is stable for the session.
+  const groups = useMemo(() => buildGroups(exercises), [exercises])
+
+  // Active position. The active set walks the current group ROUND-ROBIN by
+  // set number (B1·1, B2·1, B1·2, B2·2 …) — how supersets are actually
+  // performed (alternate exercises each round) — then advances to the next
+  // group, then to completion. `.some(...)` per set number honours
+  // non-contiguous set_numbers (e.g. after a soft-delete mid-list).
+  const { activeGroupIdx, activeExId, activeSetNumber, allDone } = useMemo(() => {
+    for (let gi = 0; gi < groups.length; gi++) {
+      const group = groups[gi]!
+      const maxSet = Math.max(
+        0,
+        ...group.exercises.map((e) =>
+          e.prescribedSets.reduce((m, s) => Math.max(m, s.setNumber), 0),
+        ),
+      )
+      for (let setNum = 1; setNum <= maxSet; setNum++) {
+        for (const e of group.exercises) {
+          const prescribes = e.prescribedSets.some((s) => s.setNumber === setNum)
+          if (
+            prescribes &&
+            !logsByKey.has(setKey(e.programExerciseId, setNum))
+          ) {
+            return {
+              activeGroupIdx: gi,
+              activeExId: e.programExerciseId,
+              activeSetNumber: setNum,
+              allDone: false,
+            }
           }
         }
       }
     }
-    return { activeExIdx: exercises.length, activeSetNumber: 0, allDone: true }
-  }, [exercises, logsByKey])
+    return {
+      activeGroupIdx: groups.length,
+      activeExId: '',
+      activeSetNumber: 0,
+      allDone: true,
+    }
+  }, [groups, logsByKey])
 
   if (allDone) {
     return (
@@ -87,46 +123,61 @@ export function Logger({
     )
   }
 
-  const ex = exercises[activeExIdx]
+  const group = groups[activeGroupIdx]!
+  const multi = group.exercises.length > 1
 
   return (
     <>
       <TopBar
         dayId={dayId}
-        exerciseIdx={activeExIdx}
-        totalExercises={exercises.length}
+        groupIdx={activeGroupIdx}
+        totalGroups={groups.length}
       />
-      <ExerciseHead exercise={ex} />
+      <GroupHead group={group} />
       <div style={{ padding: '0 20px 20px' }}>
-        {ex.prescribedSets.map((prescribed) => {
-          const setNumber = prescribed.setNumber
-          const logged = logsByKey.get(
-            setKey(ex.programExerciseId, setNumber),
-          )
-          const isLastPrescribed =
-            setNumber === ex.prescribedSets[ex.prescribedSets.length - 1]?.setNumber
-          const isActive = !logged && setNumber === activeSetNumber
-          if (logged)
-            return <SetRowDone key={setNumber} logged={logged} setNumber={setNumber} />
-          if (isActive)
-            return (
-              <ActiveSet
-                key={setNumber}
-                sessionId={sessionId}
-                exercise={ex}
-                prescribed={prescribed}
-                isLast={isLastPrescribed}
-                onLogged={(log) =>
-                  setLogsByKey((prev) => {
-                    const next = new Map(prev)
-                    next.set(setKey(log.programExerciseId, log.setNumber), log)
-                    return next
-                  })
-                }
-              />
-            )
-          return <SetRowPending key={setNumber} setNumber={setNumber} />
-        })}
+        {group.exercises.map((gex) => (
+          <ExerciseBlock key={gex.programExerciseId} exercise={gex} compact={multi}>
+            {gex.prescribedSets.map((prescribed) => {
+              const setNumber = prescribed.setNumber
+              const logged = logsByKey.get(
+                setKey(gex.programExerciseId, setNumber),
+              )
+              const isActive =
+                !logged &&
+                gex.programExerciseId === activeExId &&
+                setNumber === activeSetNumber
+              const isLastPrescribed =
+                setNumber ===
+                gex.prescribedSets[gex.prescribedSets.length - 1]?.setNumber
+              if (logged)
+                return (
+                  <SetRowDone
+                    key={setNumber}
+                    logged={logged}
+                    setNumber={setNumber}
+                  />
+                )
+              if (isActive)
+                return (
+                  <ActiveSet
+                    key={setNumber}
+                    sessionId={sessionId}
+                    exercise={gex}
+                    prescribed={prescribed}
+                    isLast={isLastPrescribed}
+                    onLogged={(log) =>
+                      setLogsByKey((prev) => {
+                        const next = new Map(prev)
+                        next.set(setKey(log.programExerciseId, log.setNumber), log)
+                        return next
+                      })
+                    }
+                  />
+                )
+              return <SetRowPending key={setNumber} setNumber={setNumber} />
+            })}
+          </ExerciseBlock>
+        ))}
       </div>
     </>
   )
@@ -136,15 +187,15 @@ export function Logger({
 
 function TopBar({
   dayId,
-  exerciseIdx,
-  totalExercises,
+  groupIdx,
+  totalGroups,
 }: {
   dayId: string
-  exerciseIdx: number
-  totalExercises: number
+  groupIdx: number
+  totalGroups: number
 }) {
   const pct =
-    totalExercises === 0 ? 0 : ((exerciseIdx + 1) / totalExercises) * 100
+    totalGroups === 0 ? 0 : ((groupIdx + 1) / totalGroups) * 100
   return (
     <>
       <div
@@ -172,7 +223,7 @@ function TopBar({
           <X size={14} aria-hidden /> Exit
         </Link>
         <div className="session-eyebrow">
-          Exercise {exerciseIdx + 1} of {totalExercises}
+          {groupIdx + 1} of {totalGroups}
         </div>
         <div style={{ width: 46 }} />
       </div>
@@ -188,26 +239,91 @@ function TopBar({
   )
 }
 
-function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
+// Group header — section title (once for the whole group) + a Superset /
+// Tri-set / Giant set badge when the group holds more than one exercise.
+// Renders outside the set-rows container, so it carries its own 20px gutter.
+function GroupHead({ group }: { group: LoggerGroup }) {
+  const size = group.exercises.length
+  const sectionTitle = group.exercises[0]?.sectionTitle ?? null
+  const badge =
+    size <= 1
+      ? null
+      : size === 2
+        ? 'Superset'
+        : size === 3
+          ? 'Tri-set'
+          : 'Giant set'
+  if (!sectionTitle && !badge) return null
+  return (
+    <div
+      style={{
+        padding: '0 20px',
+        marginBottom: 14,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        flexWrap: 'wrap',
+      }}
+    >
+      {sectionTitle && (
+        <span
+          className="session-eyebrow"
+          style={{ color: 'var(--session-text-muted)' }}
+        >
+          {sectionTitle}
+        </span>
+      )}
+      {badge && (
+        <span
+          // Superset/tri-set badge — a sanctioned accent use (a grouping
+          // signal, not decoration): the group must read as one unit (§6.3.1).
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '.62rem',
+            letterSpacing: '.06em',
+            textTransform: 'uppercase',
+            color: 'var(--session-accent)',
+            background: 'var(--session-card-done)',
+            padding: '3px 8px',
+            borderRadius: 'var(--radius-pill)',
+          }}
+        >
+          {badge}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// One exercise within the active group: its letter, name, instructions, rx
+// summary, then its set rows (passed as children). Rendered inside the
+// set-rows container, so no horizontal gutter of its own.
+function ExerciseBlock({
+  exercise,
+  compact,
+  children,
+}: {
+  exercise: LoggerExercise
+  // True when the exercise sits in a multi-exercise group — the name shrinks
+  // so two/three stack cleanly; a standalone exercise keeps the hero size.
+  compact: boolean
+  children: React.ReactNode
+}) {
   const rx = buildRxLabel(exercise)
   return (
-    <div style={{ padding: '0 20px', marginBottom: 16 }}>
+    <div style={{ marginBottom: compact ? 18 : 4 }}>
       <div
         className="session-eyebrow"
-        // Override muted → accent: this is the active exercise label,
-        // not a quiet section heading. The section-title-plus-letter line
-        // anchors the screen.
         style={{ color: 'var(--session-accent)' }}
       >
-        {exercise.sectionTitle
-          ? `${exercise.sectionTitle} · ${exercise.letter}`
-          : exercise.letter}
+        {exercise.letter}
       </div>
       <h2
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
-          fontSize: '1.8rem',
+          fontSize: compact ? '1.35rem' : '1.8rem',
           margin: '2px 0 6px',
           letterSpacing: '-.01em',
         }}
@@ -229,6 +345,7 @@ function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
         <div
           style={{
             marginTop: 10,
+            marginBottom: 10,
             display: 'inline-block',
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
@@ -242,6 +359,7 @@ function ExerciseHead({ exercise }: { exercise: LoggerExercise }) {
           {rx}
         </div>
       )}
+      {children}
     </div>
   )
 }
@@ -751,6 +869,29 @@ function CompletePrompt({
 
 function setKey(programExerciseId: string, setNumber: number): string {
   return `${programExerciseId}#${setNumber}`
+}
+
+/**
+ * Fold the ordered exercise list into on-screen groups. Consecutive
+ * exercises sharing the same NON-NULL superset id merge into one group
+ * (a superset/tri-set); a standalone exercise (null id) is always its own
+ * singleton group — two adjacent standalones never merge. Preserves order.
+ */
+function buildGroups(exercises: LoggerExercise[]): LoggerGroup[] {
+  const groups: LoggerGroup[] = []
+  for (const ex of exercises) {
+    const last = groups[groups.length - 1]
+    if (
+      last &&
+      ex.supersetGroupId !== null &&
+      last.supersetGroupId === ex.supersetGroupId
+    ) {
+      last.exercises.push(ex)
+    } else {
+      groups.push({ supersetGroupId: ex.supersetGroupId, exercises: [ex] })
+    }
+  }
+  return groups
 }
 
 function buildRxLabel(e: LoggerExercise): string {

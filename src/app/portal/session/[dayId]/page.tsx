@@ -126,6 +126,7 @@ export default async function PortalSessionPage({
         optionalValue: s.optional_value,
       })),
       letter,
+      supersetGroupId: e.superset_group_id,
     })
   }
 
