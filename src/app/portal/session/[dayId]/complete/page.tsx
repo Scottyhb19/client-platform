@@ -83,6 +83,10 @@ export default async function PortalSessionCompletePage({
         )
       : null
   const avgRpe = rpeCount > 0 ? rpeSum / rpeCount : null
+  // P2-3: exercises count (distinct exercise_logs for the session) — the
+  // brief's §6.3.1 stat set names "exercises". Kept alongside Volume / Avg
+  // RPE / Duration per the operator's call, so the panel is four tiles.
+  const exerciseCount = session.exercise_logs?.length ?? 0
 
   return (
     <div style={{ padding: '60px 24px 32px', textAlign: 'center' }}>
@@ -133,14 +137,20 @@ export default async function PortalSessionCompletePage({
       </p>
 
       <div
+        // 2×2 at 375px — four tiles across would crush a value like
+        // "1,234kg"; a 2×2 keeps each tile readable.
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateColumns: 'repeat(2, 1fr)',
           gap: 10,
           marginBottom: 28,
           textAlign: 'left',
         }}
       >
+        <StatTile
+          label="Exercises"
+          value={exerciseCount > 0 ? String(exerciseCount) : '—'}
+        />
         <StatTile
           label="Volume"
           value={
