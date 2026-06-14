@@ -6,7 +6,7 @@
 **Carried in from section 6 (program calendar, closed 2026-06-14):** the P0-2 closing commit recorded a rider — *"the client portal's week-strip today-highlight shares the same UTC pattern → recorded to section 7."* The audit below confirms it and finds it is **broader** than a highlight: the same UTC root contaminates the day-card CTA state machine, the greeting, and the week anchor. Section 6 already built the fix primitives — `todayIsoInPracticeTz()` ([`src/lib/dates.ts`](../../src/lib/dates.ts)) and `PRACTICE_TIMEZONE` ([`src/lib/constants.ts`](../../src/lib/constants.ts)) — so this section inherits a tested helper, not a greenfield problem.
 **Current implementation:** [`src/app/portal/`](../../src/app/portal/) — `page.tsx` (Today/Day server builder), `_components/DayScreen.tsx` (week strip + day card + CTA state machine), `_lib/portal-helpers.ts` (date + state logic), `session/[dayId]/page.tsx` + `actions.ts` + `_components/Logger.tsx` (in-session flow), `session/[dayId]/complete/page.tsx` (summary), `_components/BottomNav.tsx`, `program/`, `reports/`, `book/`, `messages/`, `you/`; PWA wiring in [`public/manifest.json`](../../public/manifest.json), [`public/sw.js`](../../public/sw.js), `_components/RegisterSW.tsx`. Portal primitives in [`globals.css`](../../src/app/globals.css) lines ~912–1388.
 **Audit date:** 2026-06-14
-**Status:** Gap document — **awaiting sign-off before any code changes** (protocol step 5). No progress log / closing commit yet.
+**Status (2026-06-14):** All gaps closed — P0-1, P0-2, P1-1…P1-7, P2-1…P2-5. Progress log in §7; **closing commit written in §8**; awaiting the claude.ai project-chat sign-off (§9). Build gates green; P0/P1 migrations pushed + pgTAP 25 → 22/22 on live; P2 was migration-free.
 
 ---
 
@@ -269,3 +269,86 @@ Operator on the P1-2 walkthrough: forcing one set at a time in a fixed order (th
 - **Refinements (operator walkthrough 2026-06-14):** (1) **one-tap video** — the demo is now a direct `target="_blank"` link to YouTube (removed the expand-then-tap step); on a home-screen iOS PWA this hands off to the YouTube app or an in-app Safari sheet and leaves the session in place (not popup-blocked — it's a direct tap). (2) **Per-group notes persist across Back/Next** — they were lost because the field re-seeded from the server prop on remount; the note text is now lifted into the Logger (controlled), so it survives nav and still saves on blur. (3) **Fewer taps / less space** — the per-set full-width button became a compact header **Log / Save** button, plus a **"Log all N sets"** button at the top of each exercise that logs every unlogged set in one tap (sequential; per-set buttons stay for one-at-a-time). Fixed 2026-06-14: "Log all" now applies the same carry-forward as a per-set save, so filling set 1 and tapping "Log all" logs them all with set 1's numbers (it previously used a pre-save snapshot, so the carry never reached sets 2/3).
 
 - **Pending (operator):** push the P1-4 notes migration (above), then verify all of P1 together (below) — now including the open form (log sets any order, alternate a superset or finish an exercise; Back/Next; skip-and-come-back) and the You-tab "Autofill sets" toggle (on → numbers carry forward; off → blank).
+
+### P2 — polish (code complete 2026-06-14; type-check + eslint baseline + `next build` green; no migrations)
+
+All four operator decisions were taken before editing (AskUserQuestion, 2026-06-14): P2-2 → **wire**; P2-3 → **add Exercises, keep the rest (4 tiles)**; P2-4 feedback → **soften, drop the EP mention**; P2-4 greeting/rest-day → **greeting prefix + keep the warmer rest-day line, and name the client on both day kinds**. P2-1 was already discharged for the in-session surface by P1-1; only a residual remained.
+
+- **P2-2 — Dead "Avg" weekly stat → wired** ([`page.tsx`](../../src/app/portal/page.tsx)). The This Week panel's `avgRpe` was hardcoded `null` (permanent "—"). Extended the **existing** week `sessions` SELECT to also pull `session_rpe`, and average the **non-null** values from **completed** sessions (`session_rpe` is optional since [`20260510150000`](../../supabase/migrations/20260510150000_relax_sessions_completed_requires_rpe.sql), so an empty week still shows a *true* "—", not a dead tile). **No new round-trip** — same query, one more column. `DayScreen`'s tile already rendered `RPE x.x` / "—" conditionally, so no component change.
+- **P2-3 — Completion stat set → 4 tiles** ([`complete/page.tsx`](../../src/app/portal/session/[dayId]/complete/page.tsx)). Brief §6.3.1 names "exercises" in the stat set; the screen showed Volume / Avg RPE / Duration. Added the **Exercises** count (`session.exercise_logs.length` — distinct exercise logs, already fetched) as a fourth tile; switched the grid `repeat(3,1fr)` → `repeat(2,1fr)` so four tiles read as a 2×2 and don't crush a value like "1,234kg" at 375px. Operator chose to keep Volume + Avg RPE rather than swap to the brief's exact three.
+- **P2-4 — Copy pass** ([`portal-helpers.ts`](../../src/app/portal/_lib/portal-helpers.ts), [`DayScreen.tsx`](../../src/app/portal/_components/DayScreen.tsx), [`Logger.tsx`](../../src/app/portal/session/[dayId]/_components/Logger.tsx)). (1) **Greeting** — `greetingFromHour` now returns "Good morning / Good afternoon / Good evening" (brief §6.3 "Good morning, [Name]"); rendered as "Good morning, {name}." (2) **Rest-day** — kept the warmer line per the operator (not the brief-verbatim "Recovery is part of the process.") but now **names the client**: "Nothing scheduled, {name}. Recovery is part of the plan — hydrate, walk, sleep." (operator: address the client by name on both day kinds; the top greeting already names them on session days). (3) **Feedback placeholder** — "…Anything to flag for your EP?" → "**How did that feel? Anything worth noting?**", dropping the EP reference to sit clear of the §6.3 no-surveillance rule.
+- **P2-1 — Token sweep residual** ([`PortalTestCard.tsx`](../../src/app/portal/reports/_components/PortalTestCard.tsx)). The in-session surface was tokenised by P1-1. Residual: the comparison-toggle's active segment hardcoded `#fff` → `var(--color-card)` (an **exact** swap — `--color-card` is `#ffffff`, zero visual change). The card shadow `0 1px 3px rgba(0,0,0,.06)` is **left as-is** — it is the design-system card shadow with no token to map to, hardcoded inline by the same established portal pattern (`DayCard`, `ConfirmOverlay`). PortalTestCard is a §8 testing-module surface; touched only for the in-contract token item the gap doc folded into P2-1.
+- **Gates:** `tsc --noEmit` clean; `eslint src/app/portal/**` → **6 problems (3 errors / 3 warnings), all pre-existing** — no new findings; `next build` exit 0, all portal routes generate (`/portal/program` correctly absent — P1-6).
+- **Commits:** `ada6ec6` (P2-5), `4c05d5e` (P2-2), `fb547f1` (P2-3), `40335f8` (P2-4), `f6c4b53` (P2-1). No migration — nothing to push.
+- **Pending (operator):** phone/dev visual confirm of the cosmetic items — the Avg tile showing a real "RPE x.x" on a week with a rated session, the 2×2 completion grid at 375px, and the three copy strings. Build-green and migration-free, so low-risk.
+
+---
+
+## 8. Closing commit
+
+**Section 7 — Client portal PWA. Closing commit written 2026-06-14 (Claude Code).** Per the section sign-off ritual, this is the documentary artifact for the claude.ai project-chat review; the section is **not closed** until that sign-off is recorded in §9 below.
+
+### 8.1 What was changed (by gap number)
+
+**P0 — foundation / security**
+- **P0-1** — Device-timezone "today" across client, server, and the reschedule RPC. `TimezoneSync` writes the device IANA zone to the `portal_tz` cookie; `resolvePortalTimeZone` resolves cookie → `organization.timezone` → `PRACTICE_TIMEZONE`. Every bare `new Date()` date-derivation in the Today/Day screen replaced with a tz-resolved `todayIso`. Reschedule RPC v3 takes a caller-resolved `p_today` (±1-day clamp) instead of UTC `CURRENT_DATE`. **Closes the operator-reported "Begin session early" false-collision.**
+- **P0-2** — Anon-EXECUTE sweep of the 8 client-portal definer RPCs (live grant-probe first, then `REVOKE … FROM anon`), plus pgTAP `25_portal_rpc_grants.sql` as a regression tripwire for the Supabase auto-grant trap. Cross-section `client_*` funcs flagged but **not** revoked (other sections own them).
+
+**P1 — named-scope in-session flow + honest errors**
+- **P1-1** — In-session light/dark theme, **default dark** (`.session-screen` scoped `--session-*` vars; You-tab toggle; per-device store). Bottom nav themed to match on session routes. Discharged the in-session token sweep (P2-1) by replacement.
+- **P1-2** — Superset / tri-set grouping on one screen — then reworked (operator walkthrough) into an **open logging form**: every set editable in any order with a compact Log/Save, "Log all N sets", Back/Next group nav (skip allowed), plus a per-device **autofill** cookie toggle.
+- **P1-3** — Per-exercise video (one-tap direct YouTube link; `exercise_video_url` already returned by the RPC — UI-only).
+- **P1-4** — "Great work, {name}" end screen + per-group notes (`client_log_exercise_note` RPC, additive migration). Per-set RPE **kept** (Q1 = b).
+- **P1-5** — Honest completion error: `alert(res.error)` → inline themed error block.
+- **P1-6** — Removed the Program tab + orphaned `/portal/program` route (nav 6 → 5). Accepted deviation from §6.3 (the week-strip *is* the program view).
+- **P1-7** — Perceived-latency pass: session page's independent loaders collapsed into one `Promise.all` (one wait, not ~four). Network floor to ap-southeast-2 named as the honest cap.
+
+**P2 — polish** (this pass — see §7 P2 block for detail)
+- **P2-1** residual `#fff` → `var(--color-card)` in PortalTestCard; design-system shadow left by design.
+- **P2-2** wired the dead weekly Avg RPE stat to real `session_rpe` data.
+- **P2-3** added the Exercises tile (4-tile 2×2) to the completion summary.
+- **P2-4** copy: "Good morning" greeting, named rest-day card, de-EP'd feedback placeholder.
+- **P2-5** bottom-nav "Book" → "Bookings".
+
+### 8.2 Acceptance tests + results
+
+- **Build gates (P2 pass, this session):** `tsc --noEmit` clean; `eslint src/app/portal/**` = **6 problems (3 errors / 3 warnings), all pre-existing** (booking `Date.now` purity ×2, `ClientThread` set-state, `_programName`/`totalReps`/`_dayId` unused) — **no new findings**; `next build` exit 0, all portal routes generate.
+- **Database (P0/P1, operator-pushed + verified earlier this section):** migrations `20260614120000` (reschedule v3), `20260614130000` (anon revoke), `20260614140000` (compat shim), `20260614150000` (exercise note) all pushed to the live DB; **pgTAP `25_portal_rpc_grants.sql` → 22/22 green on live.** P2 touched **no** RPC, so pgTAP 25 is unchanged.
+- **Behavioural verification:** P0 and P1 were operator-verified on the dev server / phone this section (see §7). The P2 changes are UI/copy/data-wiring only, migration-free, and build-green; the cosmetic confirmations (Avg tile value, 2×2 completion grid at 375px, the three copy strings) are the operator's remaining phone check. The portal is auth-gated, so Claude Code cannot self-verify the rendered screens — by design, build/type-check/lint is the engineering gate and behaviour is the operator's.
+
+### 8.3 Premortem failure-mode disposition (FM-1 … FM-11)
+
+| FM | Disposition | How |
+|---|---|---|
+| **FM-1** UTC "today" wrong every morning | **Mitigated** | P0-1 — device-tz client + server + reschedule RPC; false-collision closed |
+| **FM-2** Anon-EXECUTE on portal RPC family | **Mitigated** | P0-2 — revoke + pgTAP 25 tripwire; cross-section funcs flagged, not revoked |
+| **FM-3** In-session screen diverges from brief/prototype | **Mitigated** | P1-1…P1-4 + open-form rework — dark default w/ light toggle, grouping, video, "Great work, {name}", per-group notes; per-set RPE kept (Q1 = b) |
+| **FM-4** No offline resilience for in-session logging | **Accepted** | B3 trigger unchanged (5 clients × 10 sessions; escalate on any data-loss report) |
+| **FM-5** Raw `alert()` on completion failure | **Mitigated** | P1-5 — inline themed error |
+| **FM-6** Booking slot range bounded in UTC | **Deferred (cross-section)** | §9 Scheduling owns it; recorded in go-live-checklist §4 |
+| **FM-7** Dead / off-spec stats | **Mitigated** | P2-2 (Avg wired) + P2-3 (Exercises added) |
+| **FM-8** Design-token drift (Logger-concentrated) | **Mitigated** | P1-1 in-session sweep + P2-1 residual `#fff`; one design-system shadow left by design (no token exists) |
+| **FM-9** 6-item nav ergonomics at 375px | **Mitigated** | P1-6 (6 → 5) + P2-5 relabel |
+| **FM-10** Copy drift from the brief's voice | **Mitigated** | P2-4 |
+| **FM-11** In-session writes feel slow | **Partially mitigated** | P1-7 — parallelized loaders; per-round-trip network floor to ap-southeast-2 named honestly, not over-promised |
+
+### 8.4 Deferred / accepted (with re-trigger)
+
+- **FM-4 offline in-session logging** — accepted under the B3 trigger (re-trigger: first 5 real clients × 10 sessions each → review session-log integrity; escalate offline-queue work to a launch blocker on any data-loss report).
+- **Optimistic per-set writes have no retry queue** — accepted at f&f scale; folded into the FM-4 trigger.
+- **`logSetAction` passes `p_optional_metric: null`** — accepted (low data-fidelity cost); re-trigger: an EP needs typed optional metrics back out of logged sets for reporting.
+- **No `error.tsx` boundary for the portal route group** — accepted at f&f scope; re-trigger: any observed portal 500 in real use.
+- **In-session theme persisted in localStorage (not DB)** — accepted; re-trigger: a client wants the theme choice to follow them across devices.
+- **PortalTestCard card-shadow hardcode** — left as-is (design-system shadow value, no token to map to; established inline pattern).
+
+### 8.5 Cross-section riders surfaced (other sections own — not section 7)
+
+- **Booking slot-range UTC bug (FM-6)** — [`book/page.tsx:43`](../../src/app/portal/book/page.tsx), [`book/new/page.tsx:90-91`](../../src/app/portal/book/new/page.tsx) → **§9 Scheduling**. Recorded in [`docs/go-live-checklist.md`](../go-live-checklist.md) §4.
+- **Anon-reachable `client_*` funcs owned by other sections** — `client_accept_invite` (§2 — **verify pre-auth use before any revoke**), booking RPCs (§9), `client_cascade_thread_archive` (§10). Recorded in go-live-checklist §4 as the still-open platform-wide sweep.
+- **Messaging UTC `read_at` / optimistic timestamps** — [`messages/actions.ts:89`](../../src/app/portal/messages/actions.ts), [`ClientThread.tsx:124`](../../src/app/portal/messages/_components/ClientThread.tsx) → **§10 Messaging** (non-functional; server `created_at` authoritative).
+
+### 8.6 Operational note
+
+- The P0-1 reschedule **signature change** (`(uuid)` → `(uuid, date)`) is on the live DB ahead of deployed prod code; the compat shim `20260614140000` re-adds the `(uuid)` overload (org-tz-resolving, tz-correct) so deployed prod keeps working. **The shim is vestigial once this branch merges to master and deploys.** Root lesson recorded in §7: this no-staging setup pushes migrations to the live DB ahead of code — keep old overloads as shims rather than dropping them on signature changes.
+
+**Claude Code's job ends here.** Awaiting operator paste of this closing commit into the claude.ai project chat and the sign-off (§9).
