@@ -237,3 +237,22 @@ The reported "Begin session early" false-collision is **root-caused** (§0.1) an
 - **Unchanged:** the set-row components (ActiveSet/done/pending), the per-set `client_log_set` flow, resume — all intact; a standalone-only day renders exactly as before (one exercise per screen).
 - **Gate:** `tsc` clean; `eslint` at baseline (the single pre-existing Logger react-compiler memo notice, relocated by the rewrite — no new findings); `next build` exit 0.
 - **Pending (operator):** phone/dev verification — **needs a program day containing a superset/tri-set** to see the grouping (a standalone-only day looks unchanged). On a superset day: B1 and B2 render together under a "Superset" badge, the active set alternates B1→B2→B1→B2, and the group completes before the next screen.
+
+### P1-3 — Per-exercise video thumbnail (code complete 2026-06-14; build green; UI-only)
+
+- `VideoThumb` in [`Logger.tsx`](../../src/app/portal/session/[dayId]/_components/Logger.tsx) renders inside `ExerciseBlock` when the exercise has a `videoUrl`: a compact "Watch demo" play tile → tap expands to a 16:9 tile → tap opens the YouTube link in a new tab (`rel="noopener noreferrer"`). No embedded player ("YouTube links only"), **no external poster fetch** (placeholder play tiles — stays fast on gym connections), **no backdrop-filter** (design system). `videoUrl` threaded from the RPC's `exercise_video_url` (already returned — UI-only, no migration).
+
+### P1-4 — End-of-session: "Great work, {name}" + per-group notes (code complete 2026-06-14; build green; **needs migration push**)
+
+- **"Great work, {name}"** — the session-RPE screen (`CompletePrompt`) now greets by name (was "All the work is in."); the page fetches the client first name and passes it. The overall RPE picker + "How are you feeling?" feedback field were already present (Phase C); **per-set RPE is kept** (Q1 = b — richer clinical data) rather than the prototype's single per-group slider.
+- **Per-group notes** ([§6.3.1 line 101]) — a `GroupNotes` textarea at the bottom of each group, saved on blur to the group's **first exercise's** `exercise_logs.notes` via the new `client_log_exercise_note` RPC (migration [`20260614150000`](../../supabase/migrations/20260614150000_client_log_exercise_note.sql), find-or-creates the exercise_log mirroring `client_log_set`; anon-revoked; pgTAP 25 → **22**). Prefilled on resume from `exercise_logs.notes` (folded into the existing logs read — no extra round-trip). **Additive migration (new function) — backward-compatible, no prod skew.**
+
+### P1-5 — Honest completion error (code complete 2026-06-14; build green)
+
+- Replaced `alert(res.error)` in `CompletePrompt` with an inline themed error block (factual: "Couldn't finish the session. Check your connection and try again."); the raw error path is gone, the button re-enables for retry.
+
+### P1-7 — In-session perceived latency (code complete 2026-06-14; build green)
+
+- [`session/[dayId]/page.tsx`](../../src/app/portal/session/[dayId]/page.tsx): the day lookup, completed-session guard, exercises RPC, and client-name read now run in one `Promise.all` instead of three sequential awaits — **one round-trip wait instead of ~four** before the screen renders. Session start (needs the not-completed guard) and the existing-logs read (needs the sessionId) stay sequential. The honest cap stands: per-round-trip latency to Supabase ap-southeast-2 is the floor; this cuts the *number* of serial trips, not each trip's latency. (Fully-optimistic per-set logging was considered and **not** done — it would risk showing success on a failed write; the current optimistic-after-confirm is the safer trade.)
+
+- **Pending (operator):** push the one new migration, then verify all of P1 together (below).

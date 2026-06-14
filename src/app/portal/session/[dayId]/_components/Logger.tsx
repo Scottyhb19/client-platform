@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
-import { Check, X } from 'lucide-react'
+import { Check, Play, X } from 'lucide-react'
 import {
   completeSessionAction,
+  logExerciseNoteAction,
   logSetAction,
 } from '../actions'
 
@@ -26,6 +27,9 @@ export type LoggerExercise = {
   // id (group size > 1) render together as one on-screen group and are
   // logged before advancing (P1-2, §6.3.1). NULL = standalone (singleton).
   supersetGroupId: string | null
+  // YouTube link from the exercise library (NULL when the EP hasn't set
+  // one). Rendered as an expandable thumbnail per exercise (P1-3, §6.3.1).
+  videoUrl: string | null
 }
 
 // One on-screen group: a superset/tri-set (>1 exercise, shared id) or a
@@ -49,16 +53,22 @@ interface LoggerProps {
   sessionId: string
   dayId: string
   dayLabel: string
+  clientName: string
   exercises: LoggerExercise[]
   existingLogs: LoggedSet[]
+  // Per-(program)exercise notes, keyed by programExerciseId — prefills the
+  // per-group notes field on resume (P1-4, §6.3.1). Empty when none saved.
+  exerciseNotes: Record<string, string>
 }
 
 export function Logger({
   sessionId,
   dayId,
   dayLabel,
+  clientName,
   exercises,
   existingLogs,
+  exerciseNotes,
 }: LoggerProps) {
   const [logsByKey, setLogsByKey] = useState<Map<string, LoggedSet>>(() => {
     const m = new Map<string, LoggedSet>()
@@ -119,6 +129,7 @@ export function Logger({
         sessionId={sessionId}
         dayId={dayId}
         dayLabel={dayLabel}
+        name={clientName}
       />
     )
   }
@@ -178,6 +189,12 @@ export function Logger({
             })}
           </ExerciseBlock>
         ))}
+        <GroupNotes
+          key={group.exercises[0]!.programExerciseId}
+          sessionId={sessionId}
+          programExerciseId={group.exercises[0]!.programExerciseId}
+          initial={exerciseNotes[group.exercises[0]!.programExerciseId] ?? ''}
+        />
       </div>
     </>
   )
@@ -236,6 +253,184 @@ function TopBar({
           typed; unused at runtime. */}
       <div data-session-day={dayId} style={{ display: 'none' }} />
     </>
+  )
+}
+
+// Expandable per-exercise video (P1-3, §6.3.1). Tap the thumbnail to
+// expand to a 16:9 tile; tap that to open the YouTube link in a new tab
+// (no embedded player — "YouTube links only"). Placeholder play tiles, no
+// external poster fetch, so it stays fast on gym connections; no
+// backdrop-filter (design system). Only rendered when a URL exists.
+function VideoThumb({ url }: { url: string }) {
+  const [open, setOpen] = useState(false)
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        style={{
+          marginTop: 10,
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '7px 12px 7px 8px',
+          background: 'var(--session-card)',
+          border: '1px solid var(--session-border)',
+          borderRadius: 'var(--radius-button)',
+          color: 'var(--session-text)',
+          fontFamily: 'var(--font-sans)',
+          fontSize: '.8rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}
+      >
+        <span
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            background: 'var(--session-accent)',
+            color: 'var(--session-on-accent)',
+          }}
+        >
+          <Play size={12} aria-hidden />
+        </span>
+        Watch demo
+      </button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          aspectRatio: '16 / 9',
+          background: 'var(--session-card)',
+          border: '1px solid var(--session-border)',
+          borderRadius: 'var(--radius-card-dense)',
+          color: 'var(--session-text)',
+          textDecoration: 'none',
+        }}
+      >
+        <span
+          style={{
+            display: 'grid',
+            placeItems: 'center',
+            width: 48,
+            height: 48,
+            borderRadius: '50%',
+            background: 'var(--session-accent)',
+            color: 'var(--session-on-accent)',
+          }}
+        >
+          <Play size={22} aria-hidden />
+        </span>
+        <span style={{ fontSize: '.78rem', fontWeight: 600 }}>
+          Tap to watch on YouTube
+        </span>
+      </a>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        style={{
+          marginTop: 6,
+          background: 'none',
+          border: 'none',
+          color: 'var(--session-text-muted)',
+          fontSize: '.76rem',
+          cursor: 'pointer',
+          padding: '2px 0',
+        }}
+      >
+        Hide
+      </button>
+    </div>
+  )
+}
+
+// Optional per-group notes (P1-4, §6.3.1). Saved on blur to the group's
+// first exercise's exercise_logs.notes via logExerciseNoteAction; prefilled
+// on resume. Quiet by design — only saves when the text actually changed.
+function GroupNotes({
+  sessionId,
+  programExerciseId,
+  initial,
+}: {
+  sessionId: string
+  programExerciseId: string
+  initial: string
+}) {
+  const [notes, setNotes] = useState(initial)
+  const [saved, setSaved] = useState(initial)
+  const [error, setError] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
+  function save() {
+    const trimmed = notes.trim()
+    if (trimmed === saved.trim()) return
+    setError(null)
+    startTransition(async () => {
+      const res = await logExerciseNoteAction(
+        sessionId,
+        programExerciseId,
+        trimmed.length === 0 ? null : trimmed,
+      )
+      if (res.error) setError(res.error)
+      else setSaved(trimmed)
+    })
+  }
+
+  return (
+    <div style={{ marginTop: 4, marginBottom: 8 }}>
+      <div className="session-eyebrow" style={{ marginBottom: 6 }}>
+        Notes · optional
+      </div>
+      <textarea
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        onBlur={save}
+        placeholder="Anything to note for this block?"
+        rows={2}
+        maxLength={500}
+        style={{
+          width: '100%',
+          border: '1px solid var(--session-border)',
+          borderRadius: 'var(--radius-input)',
+          background: 'var(--session-input-bg)',
+          padding: '10px 12px',
+          fontFamily: 'inherit',
+          fontSize: '.84rem',
+          lineHeight: 1.5,
+          color: 'var(--session-input-text)',
+          outline: 'none',
+          resize: 'vertical',
+          minHeight: 56,
+          boxSizing: 'border-box',
+        }}
+      />
+      {error && (
+        <div
+          style={{
+            fontSize: '.74rem',
+            color: 'var(--session-error-text)',
+            marginTop: 4,
+          }}
+        >
+          Couldn&rsquo;t save that note — it&rsquo;ll retry when you tap away again.
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -359,6 +554,7 @@ function ExerciseBlock({
           {rx}
         </div>
       )}
+      {exercise.videoUrl && <VideoThumb url={exercise.videoUrl} />}
       {children}
     </div>
   )
@@ -698,17 +894,21 @@ function CompletePrompt({
   sessionId,
   dayId,
   dayLabel,
+  name,
 }: {
   sessionId: string
   dayId: string
   dayLabel: string
+  name: string
 }) {
   const [pending, startTransition] = useTransition()
   const [feedback, setFeedback] = useState('')
   const [sessionRpe, setSessionRpe] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   function handleComplete() {
     const trimmed = feedback.trim()
+    setError(null)
     startTransition(async () => {
       const res = await completeSessionAction(
         sessionId,
@@ -716,7 +916,9 @@ function CompletePrompt({
         trimmed.length === 0 ? null : trimmed,
         sessionRpe,
       )
-      if (res && res.error) alert(res.error)
+      // completeSessionAction redirects on success; only an error returns.
+      // P1-5: surface it inline (themed) rather than via a raw alert().
+      if (res && res.error) setError(res.error)
     })
   }
 
@@ -759,7 +961,7 @@ function CompletePrompt({
           letterSpacing: '-.01em',
         }}
       >
-        All the work is in.
+        Great work, {name}.
       </h2>
 
       {/* Optional session RPE — 1-10 chips. Null = skipped. The RPC accepts
@@ -846,6 +1048,24 @@ function CompletePrompt({
         )}
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: '10px 12px',
+            marginBottom: 12,
+            textAlign: 'left',
+            background: 'var(--session-error-bg)',
+            border: '1px solid var(--session-error-border)',
+            borderRadius: 'var(--radius-input)',
+            color: 'var(--session-error-text)',
+            fontSize: '.82rem',
+            lineHeight: 1.45,
+          }}
+        >
+          Couldn&rsquo;t finish the session. Check your connection and try again.
+        </div>
+      )}
       <button
         type="button"
         onClick={handleComplete}

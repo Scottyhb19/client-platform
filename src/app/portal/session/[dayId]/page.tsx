@@ -14,56 +14,59 @@ export default async function PortalSessionPage({
   const { dayId } = await params
   const supabase = await createSupabaseServerClient()
 
-  // The program_day must be published — can't start a session on a
-  // draft day. Portal layout already verified the caller is a client.
-  const { data: day } = await supabase
-    .from('program_days')
-    .select('id, day_label, published_at')
-    .eq('id', dayId)
-    .is('deleted_at', null)
-    .maybeSingle()
+  // P1-7: these four reads are independent (each keyed on dayId / auth, no
+  // inter-dependency), so fetch them in parallel and run the guards after —
+  // one wait instead of three sequential round-trips. The session start
+  // (needs the not-completed guard to pass) and the existing-logs read
+  // (needs the sessionId) stay sequential below.
+  //   - day: must be published (can't start a session on a draft day).
+  //   - completed: if this program_day already has a completed session for
+  //     the caller, route to the summary — covers every entry path (strip
+  //     tap, deep link, back, shared URL). RLS scopes it to the caller.
+  //   - exercises: via the SECURITY DEFINER RPC (exercises isn't client-
+  //     readable under RLS; the RPC pins to auth.uid()).
+  //   - client first name: for the "Great work, {name}" completion screen.
+  const [dayRes, completedRes, exercisesRes, clientRes] = await Promise.all([
+    supabase
+      .from('program_days')
+      .select('id, day_label, published_at')
+      .eq('id', dayId)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    supabase
+      .from('sessions')
+      .select('id')
+      .eq('program_day_id', dayId)
+      .not('completed_at', 'is', null)
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle(),
+    supabase.rpc('client_get_program_day_exercises', {
+      p_program_day_id: dayId,
+    }),
+    supabase
+      .from('clients')
+      .select('first_name')
+      .is('deleted_at', null)
+      .maybeSingle(),
+  ])
 
+  const day = dayRes.data
   if (!day) notFound()
   if (!day.published_at) {
     redirect('/portal')
   }
 
-  // If this program_day already has a completed session for the caller,
-  // route to the summary page. Belt-and-braces with the v3
-  // client_start_session backstop: the RPC will refuse a duplicate
-  // completion, but landing on the SessionError card is user-hostile.
-  // This guard covers every path to /portal/session/<dayId> — strip-cell
-  // tap, deep link, browser back, shared URL — not just the Today CTA.
-  // RLS on `sessions` scopes the lookup to the caller's own rows.
-  const { data: completedSession } = await supabase
-    .from('sessions')
-    .select('id')
-    .eq('program_day_id', dayId)
-    .not('completed_at', 'is', null)
-    .is('deleted_at', null)
-    .limit(1)
-    .maybeSingle()
-
-  if (completedSession) {
+  if (completedRes.data) {
     redirect(`/portal/session/${dayId}/complete`)
   }
 
-  // Load the exercise list via the SECURITY DEFINER RPC. Using the RPC
-  // rather than a direct SELECT because the exercises table isn't
-  // client-readable under RLS; the RPC pins the query to auth.uid().
-  const { data: exerciseRows, error: exErr } = await supabase.rpc(
-    'client_get_program_day_exercises',
-    { p_program_day_id: dayId },
-  )
-
+  const { data: exerciseRows, error: exErr } = exercisesRes
   if (exErr) {
-    return (
-      <SessionError
-        dayId={dayId}
-        message={exErr.message}
-      />
-    )
+    return <SessionError dayId={dayId} message={exErr.message} />
   }
+
+  const clientName = clientRes.data?.first_name ?? 'there'
 
   const sorted = [...(exerciseRows ?? [])].sort(
     (a, b) => a.sort_order - b.sort_order,
@@ -127,6 +130,7 @@ export default async function PortalSessionPage({
       })),
       letter,
       supersetGroupId: e.superset_group_id,
+      videoUrl: e.exercise_video_url,
     })
   }
 
@@ -155,12 +159,13 @@ export default async function PortalSessionPage({
     )
   }
 
-  // Pull existing set logs for this session so a resume shows what's
-  // already been done.
+  // Pull existing set logs + per-exercise notes for this session so a
+  // resume shows what's already been done (sets) and prefills the per-group
+  // notes field (notes, P1-4).
   const { data: logRows } = await supabase
     .from('exercise_logs')
     .select(
-      `id, program_exercise_id,
+      `id, program_exercise_id, notes,
        sets:set_logs(
          set_number, reps_performed, weight_value, weight_metric,
          optional_value, rpe
@@ -170,8 +175,10 @@ export default async function PortalSessionPage({
     .is('deleted_at', null)
 
   const existingLogs: LoggedSet[] = []
+  const exerciseNotes: Record<string, string> = {}
   for (const el of logRows ?? []) {
     if (!el.program_exercise_id) continue
+    if (el.notes) exerciseNotes[el.program_exercise_id] = el.notes
     for (const s of el.sets ?? []) {
       existingLogs.push({
         programExerciseId: el.program_exercise_id,
@@ -191,8 +198,10 @@ export default async function PortalSessionPage({
       sessionId={sessionId}
       dayId={dayId}
       dayLabel={day.day_label}
+      clientName={clientName}
       exercises={exercises}
       existingLogs={existingLogs}
+      exerciseNotes={exerciseNotes}
     />
   )
 }

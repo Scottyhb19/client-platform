@@ -22,12 +22,12 @@ SET search_path TO public, extensions, pg_temp;
 -- sections and tracked in docs/go-live-checklist.md (see 20260614130000).
 --
 -- No fixtures, no JWT spoof — pure catalog checks as the test owner.
--- Test count: 20
+-- Test count: 22
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(20);
+SELECT plan(22);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -90,6 +90,22 @@ INSERT INTO _tap (n, line) VALUES (20, (
   SELECT ok(
     has_function_privilege('authenticated', 'public.client_reschedule_program_day_to_today(uuid)', 'EXECUTE'),
     'C2: authenticated keeps EXECUTE on the (uuid) shim'
+  )
+));
+
+-- ----------------------------------------------------------------------------
+-- §D — the per-group notes RPC (20260614150000, P1-4): same posture.
+-- ----------------------------------------------------------------------------
+INSERT INTO _tap (n, line) VALUES (21, (
+  SELECT ok(
+    NOT has_function_privilege('anon', 'public.client_log_exercise_note(uuid, uuid, text)', 'EXECUTE'),
+    'D1: anon cannot execute client_log_exercise_note'
+  )
+));
+INSERT INTO _tap (n, line) VALUES (22, (
+  SELECT ok(
+    has_function_privilege('authenticated', 'public.client_log_exercise_note(uuid, uuid, text)', 'EXECUTE'),
+    'D2: authenticated keeps EXECUTE on client_log_exercise_note'
   )
 ));
 

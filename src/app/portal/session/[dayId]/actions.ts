@@ -157,3 +157,29 @@ export async function completeSessionAction(
   revalidatePath('/portal')
   redirect(`/portal/session/${dayId}/complete`)
 }
+
+/**
+ * P1-4: save an optional per-group note. Stored on the group's first
+ * exercise's exercise_logs.notes via client_log_exercise_note, which
+ * find-or-creates the exercise_log (mirroring client_log_set). Cast to
+ * `never` matches the idiom above (generated types lag the new RPC).
+ */
+export async function logExerciseNoteAction(
+  sessionId: string,
+  programExerciseId: string,
+  notes: string | null,
+): Promise<{ error: string | null }> {
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc(
+    'client_log_exercise_note' as never,
+    {
+      p_session_id: sessionId,
+      p_program_exercise_id: programExerciseId,
+      p_notes: notes,
+    } as never,
+  )
+
+  if (error) return { error: error.message }
+  return { error: null }
+}
