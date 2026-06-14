@@ -178,11 +178,15 @@ Each gap closes with a brief note in the progress log below.
 - **The four day-level runners in [`MonthCalendar.tsx`](../../src/app/(staff)/clients/[id]/program/_components/MonthCalendar.tsx) migrated to the `error-toast` mode** introduced with the week ops: `runCopy` no longer mislabels a network/auth failure as the no-program toast ("No active block on that date" was a false explanation); `runRepeat` and `runDelete` no longer return silently to idle; `runCreate` no longer just closes the popover. Each now shows a factual one-button dialog ("Copy failed. The session could not be copied. Check your connection and try again." voice) and still logs the raw error to the console for diagnosis.
 - FM-3 closed. Verified by type-check + lint (no new findings); the dialogs reuse the `ConflictDialog` shell already visually approved in the programs pass.
 
-### P1-3 — Browser pass of the clone paths (STAGED 2026-06-12; blocked on operator login)
+### P1-3 — Browser pass of the clone paths (CLOSED 2026-06-12; operator-confirmed across two walkthrough rounds)
 
-- Dev server started on port 3000 via the preview harness; landing and login pages verified rendering; middleware correctly bounces a stale session. `next build` already green (strongest compile gate).
-- **The authenticated walkthrough requires the operator to sign in** — entering credentials is the operator's step, never automated. Walkthrough script on login: (1) today ring on the correct practice-timezone date (P0-2); (2) copy day → target-pick → cloned day's exercises and per-set prescriptions render in popover and builder; (3) repeat day weekly → all occurrences; (4) **week copy from the collapsed row** (Q1 amendment) → both days land on matching weekdays; (5) week repeat → conflict dialog accumulates the full week, force overwrites; (6) block copy + repeat from the toolbar; (7) delete the days/blocks created during the pass (test-client cleanup). DB-level fan-out is already proven (pgTAP 10/24); this pass proves the UI wiring and rendering.
-- **Walkthrough run by operator 2026-06-12: seven of eight steps passed (incl. P0-2 today-ring).** Step 10 (block copy) failed and surfaced three real defects → P1-4 below. The seven passing steps stand as their browser-pass evidence; block copy/repeat re-verify under P1-4.
+The authenticated walkthrough was run by the operator (entering credentials is the operator's step, never automated; Claude drove the dev server and diagnosis). DB-level fan-out was already proven by pgTAP 10/24; this pass proved the UI wiring and rendering.
+
+**Round one — 7 of 8 steps passed.** Today-ring on the correct practice-timezone date (P0-2) ✓; copy day → target-pick → cloned day renders ✓; repeat day weekly ✓; **week copy from the collapsed row** (Q1 amendment) → days land on matching weekdays ✓; week repeat → conflict dialog accumulates the full week, force overwrites ✓. **Step 10 (block copy) failed** and surfaced three real defects (overlap-on-empty-date, archived block lingering on the profile, no source visibility) → fixed under P1-4 issues 1–3.
+
+**Round two — all clear.** After the P1-4 fixes the operator re-tested and confirmed **"Everything works"**, including the two further defects the re-test surfaced (toolbar stranding on a future-only block, copy weekday misalignment) → P1-4 issues 4–5, also fixed and confirmed. The P2-6 header menu landed on top and is live for visual sign-off.
+
+**Net:** every clone path — copy day, repeat day weekly, week copy, week repeat, block copy, block repeat — has its end-to-end browser pass. Section-5 carried items (a) re-verify Copy/Repeat against the G-1 clone RPCs and (b) browser pass for the pgTAP-substituted clone operations are **both discharged**.
 
 ### P1-4 — Block copy/repeat defects from the P1-3 walkthrough (closed; pgTAP 11 16/16 + 23 32/32 green on live, type-check/lint/build clean 2026-06-12; re-walkthrough pending operator)
 
