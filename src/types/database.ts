@@ -3454,6 +3454,14 @@ export type Database = {
           week_number: number
         }[]
       }
+      client_log_exercise_note: {
+        Args: {
+          p_notes: string
+          p_program_exercise_id: string
+          p_session_id: string
+        }
+        Returns: string
+      }
       client_log_set: {
         Args: {
           p_notes: string
@@ -3474,7 +3482,7 @@ export type Database = {
         Returns: boolean
       }
       client_reschedule_program_day_to_today: {
-        Args: { p_program_day_id: string }
+        Args: { p_program_day_id: string; p_today: string }
         Returns: string
       }
       client_start_session: {
