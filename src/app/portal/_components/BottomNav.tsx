@@ -19,7 +19,7 @@ const ITEMS = [
     href: '/portal/reports',
     icon: BarChart2,
   },
-  { key: 'book', label: 'Book', href: '/portal/book', icon: Clock },
+  { key: 'book', label: 'Bookings', href: '/portal/book', icon: Clock },
   {
     key: 'messages',
     label: 'Messages',
