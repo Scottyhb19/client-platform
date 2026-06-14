@@ -203,7 +203,7 @@ function ToggleSegment({
       onClick={onClick}
       aria-pressed={active}
       style={{
-        background: active ? '#fff' : 'transparent',
+        background: active ? 'var(--color-card)' : 'transparent',
         border: 'none',
         padding: '4px 11px',
         borderRadius: 999,
