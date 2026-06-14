@@ -2,15 +2,17 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState, useTransition } from 'react'
-import type { CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import {
   AlertCircle,
   Archive,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Copy,
+  Layers,
   LayoutTemplate,
   Plus,
   Repeat,
@@ -95,6 +97,10 @@ export function ProgramToolbar({
   const [, startTransition] = useTransition()
   const [mode, setMode] = useState<Mode>({ kind: 'idle' })
   const [busy, setBusy] = useState(false)
+  // P2-6 — the four block actions live behind one "Training block actions"
+  // menu so the header stops squashing the title.
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -105,6 +111,25 @@ export function ProgramToolbar({
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [mode.kind])
+
+  // Close the actions menu on Esc or an outside click.
+  useEffect(() => {
+    if (!menuOpen) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMenuOpen(false)
+    }
+    function onDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [menuOpen])
 
   async function runCopy(
     sourceBlockId: string,
@@ -271,46 +296,83 @@ export function ProgramToolbar({
     <>
       <div style={{ display: 'flex', gap: 10 }}>
         {currentBlock && (
-          <>
+          <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               type="button"
               className="btn outline"
-              onClick={() => setMode({ kind: 'copy-pick' })}
+              onClick={() => setMenuOpen((o) => !o)}
               disabled={busy}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
             >
-              <Copy size={14} aria-hidden />
-              Copy current block
+              <Layers size={14} aria-hidden />
+              Training block actions
+              <ChevronDown
+                size={14}
+                aria-hidden
+                style={{
+                  transition: 'transform 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+                  transform: menuOpen ? 'rotate(180deg)' : 'none',
+                }}
+              />
             </button>
-            <button
-              type="button"
-              className="btn outline"
-              onClick={() => setMode({ kind: 'confirm-repeat' })}
-              disabled={busy}
-            >
-              <Repeat size={14} aria-hidden />
-              Repeat current block
-            </button>
-            <button
-              type="button"
-              className="btn outline"
-              onClick={() => setMode({ kind: 'confirm-archive' })}
-              disabled={busy}
-              title="Archive this training block — frees the date range for a new block"
-            >
-              <Archive size={14} aria-hidden />
-              Archive block
-            </button>
-            <button
-              type="button"
-              className="btn outline"
-              onClick={() => setMode({ kind: 'save-template' })}
-              disabled={busy}
-              title="Save this block to the template library — reusable for any client"
-            >
-              <LayoutTemplate size={14} aria-hidden />
-              Save as template
-            </button>
-          </>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 6px)',
+                  left: 0,
+                  zIndex: 50,
+                  minWidth: 208,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: 4,
+                  background: 'var(--color-card)',
+                  border: '1px solid var(--color-border-subtle)',
+                  borderRadius: 10,
+                }}
+              >
+                <ActionMenuItem
+                  icon={<Copy size={14} aria-hidden />}
+                  label="Copy block"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setMode({ kind: 'copy-pick' })
+                  }}
+                />
+                <ActionMenuItem
+                  icon={<Repeat size={14} aria-hidden />}
+                  label="Repeat block"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setMode({ kind: 'confirm-repeat' })
+                  }}
+                />
+                <ActionMenuItem
+                  icon={<Archive size={14} aria-hidden />}
+                  label="Archive block"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setMode({ kind: 'confirm-archive' })
+                  }}
+                />
+                <ActionMenuItem
+                  icon={<LayoutTemplate size={14} aria-hidden />}
+                  label="Save as template"
+                  disabled={busy}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setMode({ kind: 'save-template' })
+                  }}
+                />
+              </div>
+            )}
+          </div>
         )}
         <Link
           href={`/clients/${clientId}/program/new`}
@@ -680,6 +742,53 @@ function CopyBlockDialog({
         cancelDisabled={busy}
       />
     </DialogShell>
+  )
+}
+
+
+// ============================================================================
+// ActionMenuItem — one row in the "Training block actions" menu (P2-6).
+// Sentence-case label + Lucide icon, subtle surface hover, no shadow
+// (design system: menus carry no shadow).
+// ============================================================================
+
+interface ActionMenuItemProps {
+  icon: ReactNode
+  label: string
+  onClick: () => void
+  disabled: boolean
+}
+
+function ActionMenuItem({ icon, label, onClick, disabled }: ActionMenuItemProps) {
+  const [hover, setHover] = useState(false)
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        textAlign: 'left',
+        padding: '8px 10px',
+        fontFamily: 'inherit',
+        fontSize: '.86rem',
+        color: 'var(--color-charcoal)',
+        background: hover && !disabled ? 'var(--color-surface)' : 'transparent',
+        border: 'none',
+        borderRadius: 7,
+        cursor: disabled ? 'default' : 'pointer',
+        transition: 'background 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+      }}
+    >
+      {icon}
+      {label}
+    </button>
   )
 }
 
