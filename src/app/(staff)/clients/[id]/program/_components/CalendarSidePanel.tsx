@@ -24,10 +24,6 @@ import type { ClientTestHistory } from '@/lib/testing/loader-types'
  * "default to clinical context" intent of the panel.
  */
 
-const INK = '#1E1A18'
-const MUTED = '#78746F'
-const CREAM_DEEP = '#EDE8E2'
-
 interface CalendarSidePanelProps {
   notes: ClinicalNoteSummary[]
   reports: SessionReport[]
@@ -47,9 +43,10 @@ export function CalendarSidePanel({
         style={{
           display: 'flex',
           gap: 4,
-          background: CREAM_DEEP,
+          // P2-2: was the inline CREAM_DEEP literal — same value, now the token.
+          background: 'var(--color-surface-2)',
           padding: 3,
-          borderRadius: 7,
+          borderRadius: 'var(--radius-button)',
           marginBottom: 14,
         }}
       >
@@ -66,8 +63,11 @@ export function CalendarSidePanel({
               fontSize: '.78rem',
               fontWeight: 600,
               cursor: 'pointer',
-              background: tab === k ? '#fff' : 'transparent',
-              color: tab === k ? INK : MUTED,
+              // P2-2: INK/MUTED/#fff literals → tokens. The active-tab card
+              // shadow is the one sanctioned card shadow (design system), left
+              // as the canonical literal — there is no shadow token.
+              background: tab === k ? 'var(--color-card)' : 'transparent',
+              color: tab === k ? 'var(--color-primary)' : 'var(--color-muted)',
               boxShadow: tab === k ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
               textTransform: 'capitalize',
             }}

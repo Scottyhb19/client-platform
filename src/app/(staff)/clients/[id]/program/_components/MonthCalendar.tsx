@@ -963,6 +963,20 @@ function MonthGrid({
     setCollapsedWeeks(new Set())
   }, [year, month])
 
+  // P2-3 / FM-7 — one toggle shared by the chevron gutter AND the collapsed
+  // summary strip, so the collapse affordance is the whole row edge / strip,
+  // not just the small chevron glyph. Default stays expanded (accepted
+  // deviation from §2.1: collapsed-by-default would hide the month at a
+  // glance in the operator-validated single-month grid).
+  function toggleWeek(ord: number) {
+    setCollapsedWeeks((prev) => {
+      const next = new Set(prev)
+      if (next.has(ord)) next.delete(ord)
+      else next.add(ord)
+      return next
+    })
+  }
+
   const gridTemplate = '24px repeat(7, 1fr)'
 
   return (
@@ -971,6 +985,13 @@ function MonthGrid({
       style={{
         position: 'relative',
         padding: 12,
+        // P2-2 TODO: no design token exists for this calendar cream surface
+        // (#f5f0ea — distinct from --color-surface #f7f4f0 / --color-surface-2
+        // #ede8e2). Adding one edits the design-system layer, an operator/design
+        // decision — surfaced, not invented here. Same posture for the accent
+        // tints (4/6/8% — only 10% is tokenised), the modal scrim
+        // rgba(28,25,23,0.5), and the off-system 5/6/8px radii. See the P2-2
+        // closing note for the full surfaced inventory.
         background: '#f5f0ea',
       }}
     >
@@ -1044,26 +1065,24 @@ function MonthGrid({
             >
               <button
                 type="button"
-                onClick={() =>
-                  setCollapsedWeeks((prev) => {
-                    const next = new Set(prev)
-                    if (next.has(week.ord)) next.delete(week.ord)
-                    else next.add(week.ord)
-                    return next
-                  })
-                }
+                onClick={() => toggleWeek(week.ord)}
                 aria-label={collapsed ? 'Expand week' : 'Collapse week'}
                 aria-expanded={!collapsed}
+                title={collapsed ? 'Expand week' : 'Collapse week'}
                 style={{
                   border: 'none',
                   background: 'transparent',
                   cursor: 'pointer',
                   padding: 0,
                   display: 'grid',
-                  placeItems: 'center',
+                  // Expanded: the chevron sits at the top, but the whole
+                  // gutter column stretches to a full-height click target
+                  // (P2-3 — widen the affordance beyond the glyph).
+                  // Collapsed: a compact centred hit area on the strip row.
+                  placeItems: collapsed ? 'center' : 'start center',
                   color: 'var(--color-muted)',
-                  alignSelf: 'flex-start',
-                  marginTop: collapsed ? 0 : 4,
+                  alignSelf: collapsed ? 'flex-start' : 'stretch',
+                  paddingTop: collapsed ? 0 : 4,
                   height: collapsed ? 28 : 'auto',
                 }}
               >
@@ -1084,6 +1103,13 @@ function MonthGrid({
                   onClick={
                     weekIsPickTarget
                       ? () => onCellClick(weekStartIso, null)
+                      : mode.kind === 'idle'
+                      ? () => toggleWeek(week.ord)
+                      : undefined
+                  }
+                  title={
+                    !weekIsPickTarget && mode.kind === 'idle'
+                      ? 'Expand week'
                       : undefined
                   }
                   style={{
@@ -1094,14 +1120,22 @@ function MonthGrid({
                     border: weekIsPickTarget
                       ? '1px dashed var(--color-primary)'
                       : '1px solid var(--color-border-subtle)',
-                    borderRadius: 7,
+                    borderRadius: 'var(--radius-button)',
                     padding: '6px 12px',
                     fontSize: '.74rem',
                     color: 'var(--color-muted)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
-                    cursor: weekIsPickTarget ? 'copy' : undefined,
+                    // P2-3 — the whole collapsed strip expands the week (not
+                    // just the chevron). Copy/Repeat buttons stopPropagation,
+                    // so they still act independently. Suppressed during any
+                    // pick mode so it can't hijack an in-progress copy.
+                    cursor: weekIsPickTarget
+                      ? 'copy'
+                      : mode.kind === 'idle'
+                      ? 'pointer'
+                      : undefined,
                     opacity:
                       weekIsPickSource || weekIsPickPast ? 0.4 : 1,
                   }}
@@ -1501,12 +1535,40 @@ function DaySummaryPopover({
         boxSizing: 'border-box',
         background: 'var(--color-card)',
         border: '1px solid var(--color-border-subtle)',
-        borderRadius: 10,
+        borderRadius: 'var(--radius-card-dense)',
+        // Accepted floating-overlay elevation (Phase F P2-4) — a popover must
+        // lift off the grid. NOT the banned button/menu shadow; no shadow
+        // token exists, so the literal stays, named here.
         boxShadow: '0 12px 28px rgba(0,0,0,.12)',
         padding: 8,
         zIndex: 25,
       }}
     >
+      {/* P2-1 / FM-6 — quiet block-name eyebrow so any day self-identifies
+          its training block. Without it a month spanning two blocks reads
+          identically across the boundary; this lets the EP confirm which
+          block a day belongs to the moment they open it. Truncates with a
+          title fallback for long block names. */}
+      {program && (
+        <div
+          title={program.name}
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 600,
+            fontSize: '.62rem',
+            letterSpacing: '0.06em',
+            textTransform: 'uppercase',
+            color: 'var(--color-muted)',
+            marginBottom: 6,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {program.name}
+        </div>
+      )}
+
       {/* Header. Default layout: Day badge on the left, action icons on
           the right (single row). Compact layout (when the side panel is
           open and cells are narrow): icons row on top, Day badge below
@@ -1732,7 +1794,8 @@ function EmptyCellPopover({
         boxSizing: 'border-box',
         background: 'var(--color-card)',
         border: '1px solid var(--color-border-subtle)',
-        borderRadius: 10,
+        borderRadius: 'var(--radius-card-dense)',
+        // Accepted floating-overlay elevation (see DaySummaryPopover).
         boxShadow: '0 12px 28px rgba(0,0,0,.12)',
         padding: 10,
         zIndex: 25,
@@ -1816,15 +1879,6 @@ const iconLinkStyle: React.CSSProperties = {
   background: 'transparent',
   border: '1px solid var(--color-border-subtle)',
   textDecoration: 'none',
-}
-
-const iconBtnStyle: React.CSSProperties = {
-  ...iconBtnBase,
-  border: '1px solid var(--color-border-subtle)',
-  background: 'var(--color-card)',
-  cursor: 'not-allowed',
-  color: 'var(--color-muted)',
-  opacity: 0.5,
 }
 
 const iconCloseStyle: React.CSSProperties = {
@@ -1972,7 +2026,9 @@ function RepeatEndDatePicker({
           width: 360,
           background: 'var(--color-card)',
           border: '1px solid var(--color-border-subtle)',
-          borderRadius: 14,
+          borderRadius: 'var(--radius-card)',
+          // Accepted floating-overlay elevation (Phase F P2-4) — a centred
+          // modal dialog lifts above the scrim. Not a button/menu shadow.
           boxShadow: '0 24px 60px rgba(0,0,0,.18)',
           padding: 16,
         }}
@@ -2146,7 +2202,7 @@ function RepeatEndDatePicker({
             marginTop: 12,
             padding: '8px 10px',
             background: 'var(--color-surface)',
-            borderRadius: 7,
+            borderRadius: 'var(--radius-input)',
             fontSize: '.78rem',
             color: 'var(--color-text-light)',
             minHeight: 36,
@@ -2263,7 +2319,8 @@ function ConflictDialog({
           maxWidth: '90vw',
           background: 'var(--color-card)',
           border: '1px solid var(--color-border-subtle)',
-          borderRadius: 14,
+          borderRadius: 'var(--radius-card)',
+          // Accepted floating-overlay elevation (see RepeatEndDatePicker).
           boxShadow: '0 24px 60px rgba(0,0,0,.18)',
           padding: 20,
         }}
@@ -2272,7 +2329,7 @@ function ConflictDialog({
           <AlertCircle
             size={18}
             aria-hidden
-            style={{ color: 'var(--color-warning, #d97706)', flexShrink: 0, marginTop: 2 }}
+            style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: 2 }}
           />
           <div
             style={{

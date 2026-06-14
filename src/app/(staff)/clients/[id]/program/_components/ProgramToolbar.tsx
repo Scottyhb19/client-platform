@@ -331,7 +331,7 @@ export function ProgramToolbar({
                   padding: 4,
                   background: 'var(--color-card)',
                   border: '1px solid var(--color-border-subtle)',
-                  borderRadius: 10,
+                  borderRadius: 'var(--radius-card-dense)',
                 }}
               >
                 <ActionMenuItem
@@ -1194,7 +1194,10 @@ function ErrorDialog({ title, description, conflicts, onClose }: ErrorDialogProp
         <AlertCircle
           size={18}
           aria-hidden
-          style={{ color: '#d97706', flexShrink: 0, marginTop: 2 }}
+          // P2-2: was a bare #d97706 — now the existing --color-warning token
+          // (#e8a317), matching ConflictDialog's warning icon (which already
+          // resolved to the token via its fallback chain). Removes the drift.
+          style={{ color: 'var(--color-warning)', flexShrink: 0, marginTop: 2 }}
         />
         <div>
           <div
@@ -1305,7 +1308,9 @@ function DialogShell({
           maxWidth: '90vw',
           background: 'var(--color-card)',
           border: '1px solid var(--color-border-subtle)',
-          borderRadius: 14,
+          borderRadius: 'var(--radius-card)',
+          // Accepted floating-overlay elevation (Phase F P2-4) — a centred
+          // modal dialog lifts above the scrim. Not a button/menu shadow.
           boxShadow: '0 24px 60px rgba(0,0,0,.18)',
           padding: 20,
         }}

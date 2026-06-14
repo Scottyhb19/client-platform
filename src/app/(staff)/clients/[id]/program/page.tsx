@@ -116,7 +116,7 @@ export default async function ClientProgramPage({
 
     // Bulk-fetch all exercises for those days. Single round-trip; the
     // calendar renders each day's summary inline without lazy-loading.
-    let exercisesByDayId = new Map<string, ProgramExerciseWithMeta[]>()
+    const exercisesByDayId = new Map<string, ProgramExerciseWithMeta[]>()
     if ((daysRaw ?? []).length > 0) {
       const dayIds = (daysRaw ?? []).map((d) => d.id)
 
@@ -303,16 +303,19 @@ export default async function ClientProgramPage({
     })
   }
 
-  // When the side panel is open the calendar needs more horizontal room
-  // so the day popover (which sizes to cell width) stays comfortable.
-  // Closed state keeps the standard .page width — default looks unchanged.
-  const widePageStyle = panelOpen
-    ? {
-        maxWidth: 'min(2000px, 98vw)',
-        paddingLeft: 8,
-        paddingRight: 8,
-      }
-    : undefined
+  // P2-4 / FM-9 (Q3 = a): §6.2 — the calendar "fills full screen width by
+  // default." The wide container now applies in BOTH panel states. The
+  // closed-state 1200px cap was inherited from the standard .page container
+  // (Phase E.0a only ever decided the panel-open width), never weighed
+  // against the brief. The day popover sizes to cell width, so wider cells
+  // just give it more room; the week-row buttons sit cleanly at any width.
+  // paddingLeft/Right override only the horizontal .page padding; top/bottom
+  // (32px) stay from the stylesheet.
+  const widePageStyle = {
+    maxWidth: 'min(2000px, 98vw)',
+    paddingLeft: 8,
+    paddingRight: 8,
+  }
 
   return (
     <div className="page" style={widePageStyle}>
@@ -362,14 +365,26 @@ export default async function ClientProgramPage({
           {currentBlock && (
             <div
               style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
                 fontSize: '.86rem',
                 color: 'var(--color-text-light)',
                 marginTop: 4,
               }}
             >
-              {currentBlock.duration_weeks} week block · starts{' '}
-              {formatDate(currentBlock.start_date)}
-              {programs.length > 1 && ` · ${programs.length} blocks total`}
+              {/* P2-5 (§6.2 — "an Active tag"): quiet status chip beside the
+                  current-block descriptor. Archived blocks are excluded from
+                  this surface, so this is confirmation, not disambiguation;
+                  the accent-green .tag.active is a sanctioned success-state
+                  use of the green. */}
+              <span className="tag active">Active</span>
+              <span>
+                {currentBlock.duration_weeks} week block · starts{' '}
+                {formatDate(currentBlock.start_date)}
+                {programs.length > 1 && ` · ${programs.length} blocks total`}
+              </span>
             </div>
           )}
         </div>

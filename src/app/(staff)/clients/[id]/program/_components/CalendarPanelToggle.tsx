@@ -14,11 +14,6 @@ import { PanelRight } from 'lucide-react'
  * Close -> no param
  */
 
-const BORDER = '#E2DDD7'
-const INK = '#1E1A18'
-const MUTED = '#78746F'
-const ACCENT = '#2DB24C'
-
 export function CalendarPanelToggle() {
   const router = useRouter()
   const pathname = usePathname()
@@ -48,10 +43,14 @@ export function CalendarPanelToggle() {
         placeItems: 'center',
         width: 36,
         height: 36,
-        border: `1px solid ${isOpen ? ACCENT : BORDER}`,
-        borderRadius: 7,
-        background: isOpen ? 'rgba(45,178,76,.06)' : '#fff',
-        color: isOpen ? INK : MUTED,
+        // P2-2: ACCENT/BORDER/INK/MUTED/#fff literals → tokens. The active
+        // tint stays an inline literal — it's accent green at 6% alpha, and
+        // the only accent-tint token is 10% (--color-accent-soft); a 4/6/8%
+        // scale is a design-layer decision, surfaced not invented.
+        border: `1px solid ${isOpen ? 'var(--color-accent)' : 'var(--color-border-hairline)'}`,
+        borderRadius: 'var(--radius-button)',
+        background: isOpen ? 'rgba(45,178,76,.06)' : 'var(--color-card)',
+        color: isOpen ? 'var(--color-primary)' : 'var(--color-muted)',
         cursor: 'pointer',
         transition:
           'background 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1)',
