@@ -23,12 +23,9 @@ export type LoggerExercise = {
   instructions: string | null
   prescribedSets: PrescribedSet[]
   letter: string
-  // Superset/tri-set membership. Consecutive exercises sharing a non-null
-  // id (group size > 1) render together as one on-screen group (P1-2,
-  // §6.3.1). NULL = standalone (singleton group).
+  // Superset/tri-set membership (P1-2, §6.3.1). NULL = standalone.
   supersetGroupId: string | null
-  // YouTube link from the exercise library (NULL when unset). Rendered as
-  // an expandable thumbnail per exercise (P1-3, §6.3.1).
+  // YouTube link from the exercise library (NULL when unset). (P1-3.)
   videoUrl: string | null
 }
 
@@ -50,7 +47,7 @@ export type LoggedSet = {
 }
 
 // Editable strings for one set's three inputs (lifted to the Logger so
-// carry-forward can update later rows; see saveSet).
+// carry-forward + "log all" can update rows; see saveSet/saveAll).
 type Draft = { reps: string; load: string; rpe: string }
 
 interface LoggerProps {
@@ -65,7 +62,7 @@ interface LoggerProps {
   exerciseNotes: Record<string, string>
   // Per-device "autofill" preference (server-read cookie). ON: seed each
   // set from your previous set / the prescription and carry your entries
-  // forward on save. OFF: blank boxes. (Section 7 / P1-2 follow-up.)
+  // forward on save. OFF: blank boxes.
   autofill: boolean
 }
 
@@ -81,23 +78,29 @@ export function Logger({
 }: LoggerProps) {
   const initialLogs = useMemo(() => mapFromLogs(existingLogs), [existingLogs])
 
-  // Group consecutive exercises that share a superset/tri-set id into one
-  // on-screen group; standalone exercises are singleton groups (P1-2).
+  // Group consecutive exercises sharing a superset id into one on-screen
+  // group; standalone exercises are singleton groups (P1-2).
   const groups = useMemo(() => buildGroups(exercises), [exercises])
 
   const [logsByKey, setLogsByKey] = useState<Map<string, LoggedSet>>(
     () => initialLogs,
   )
-  // Editable input drafts for every set, keyed by setKey. Open form (P1-2
-  // follow-up): every set is editable in any order, not one gated "active"
-  // set. Seeded from prior actuals / the prescription when autofill is on.
+  // Open form: every set is editable in any order. Drafts lifted here so
+  // carry-forward / "log all" / group nav don't lose input.
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() =>
     buildInitialDrafts(exercises, initialLogs, autofill),
   )
-  // Sets the client has hand-edited — carry-forward never overwrites these.
   const [touched, setTouched] = useState<Set<string>>(() => new Set())
-  // Which group's screen is showing. Manual nav (Back/Next) per the brief's
-  // "Next" button; starts at the first group with an unlogged set on resume.
+  // Per-group notes, lifted here so the text survives Back/Next (the field
+  // unmounts on nav; the server prop doesn't carry in-session edits).
+  const [noteText, setNoteText] = useState<Map<string, string>>(
+    () => new Map(Object.entries(exerciseNotes)),
+  )
+  const [noteSaved, setNoteSaved] = useState<Map<string, string>>(
+    () => new Map(Object.entries(exerciseNotes)),
+  )
+  // Which group's screen is showing. Manual Back/Next; starts at the first
+  // group with an unlogged set on resume.
   const [currentGroupIdx, setCurrentGroupIdx] = useState<number>(() =>
     initialGroupIdx(groups, initialLogs),
   )
@@ -118,12 +121,18 @@ export function Logger({
     setTouched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
   }
 
+  // Persist one set from its current draft. Returns an error string (no
+  // throw) so callers can show it inline. Used by the per-set Log button
+  // and by saveAll. `draftsOverride` lets saveAll pass a consistent snapshot
+  // (state updates within a loop don't reflect synchronously).
   async function saveSet(
     exerciseId: string,
     setNumber: number,
+    draftsOverride?: Map<string, Draft>,
   ): Promise<{ error: string | null }> {
     const key = setKey(exerciseId, setNumber)
-    const d = drafts.get(key) ?? { reps: '', load: '', rpe: '' }
+    const src = draftsOverride ?? drafts
+    const d = src.get(key) ?? { reps: '', load: '', rpe: '' }
 
     const repsNum = d.reps.trim() === '' ? null : parseInt(d.reps, 10)
     const rpeNum = d.rpe.trim() === '' ? null : parseInt(d.rpe, 10)
@@ -160,12 +169,11 @@ export function Logger({
 
     setDrafts((prev) => {
       const next = new Map(prev)
-      // Canonicalise this set's draft to the stored form so it doesn't read
-      // as "edited" right after saving ("82.5" → "82.5kg").
+      // Canonicalise so it doesn't read as "edited" right after saving.
       const canonical = loggedToDraft(log)
       next.set(key, canonical)
-      // Carry the entered numbers forward into later, still-untouched,
-      // unlogged sets of the same exercise (autofill on only).
+      // Carry the numbers forward into later untouched, unlogged sets
+      // (autofill on). Skips sets touched/logged at call time.
       if (autofill) {
         const ex = exercises.find((e) => e.programExerciseId === exerciseId)
         for (const ps of ex?.prescribedSets ?? []) {
@@ -178,6 +186,40 @@ export function Logger({
       }
       return next
     })
+    return { error: null }
+  }
+
+  // Log every still-unlogged set of one exercise in one tap, sequentially
+  // (each shares the exercise_log find-or-create, so parallel could race).
+  // Uses a draft snapshot taken now so the loop is consistent.
+  async function saveAll(exerciseId: string): Promise<void> {
+    const ex = exercises.find((e) => e.programExerciseId === exerciseId)
+    if (!ex) return
+    const snapshot = drafts
+    for (const ps of ex.prescribedSets) {
+      const key = setKey(exerciseId, ps.setNumber)
+      if (logsByKey.has(key)) continue
+      // Stop on the first validation error so the offending set keeps its
+      // value for the client to fix via its own Log button.
+      const res = await saveSet(exerciseId, ps.setNumber, snapshot)
+      if (res.error) break
+    }
+  }
+
+  function setNote(peId: string, text: string) {
+    setNoteText((prev) => new Map(prev).set(peId, text))
+  }
+
+  async function saveNote(peId: string): Promise<{ error: string | null }> {
+    const text = (noteText.get(peId) ?? '').trim()
+    if (text === (noteSaved.get(peId) ?? '').trim()) return { error: null }
+    const res = await logExerciseNoteAction(
+      sessionId,
+      peId,
+      text.length === 0 ? null : text,
+    )
+    if (res.error) return { error: res.error }
+    setNoteSaved((prev) => new Map(prev).set(peId, text))
     return { error: null }
   }
 
@@ -200,6 +242,7 @@ export function Logger({
   const group = groups[currentGroupIdx]!
   const multi = group.exercises.length > 1
   const isLastGroup = currentGroupIdx === groups.length - 1
+  const noteKey = group.exercises[0]!.programExerciseId
 
   return (
     <>
@@ -210,31 +253,45 @@ export function Logger({
       />
       <GroupHead group={group} />
       <div style={{ padding: '0 20px 20px' }}>
-        {group.exercises.map((gex) => (
-          <ExerciseBlock key={gex.programExerciseId} exercise={gex} compact={multi}>
-            {gex.prescribedSets.map((prescribed) => {
-              const sn = prescribed.setNumber
-              const key = setKey(gex.programExerciseId, sn)
-              return (
-                <SetRow
-                  key={sn}
-                  setNumber={sn}
-                  draft={drafts.get(key) ?? { reps: '', load: '', rpe: '' }}
-                  logged={logsByKey.get(key)}
-                  onChange={(field, value) =>
-                    updateDraft(gex.programExerciseId, sn, field, value)
-                  }
-                  onSave={() => saveSet(gex.programExerciseId, sn)}
+        {group.exercises.map((gex) => {
+          const unlogged = gex.prescribedSets.filter(
+            (ps) => !logsByKey.has(setKey(gex.programExerciseId, ps.setNumber)),
+          ).length
+          return (
+            <ExerciseBlock
+              key={gex.programExerciseId}
+              exercise={gex}
+              compact={multi}
+            >
+              {unlogged >= 2 && (
+                <LogAllButton
+                  count={unlogged}
+                  onRun={() => saveAll(gex.programExerciseId)}
                 />
-              )
-            })}
-          </ExerciseBlock>
-        ))}
+              )}
+              {gex.prescribedSets.map((prescribed) => {
+                const sn = prescribed.setNumber
+                const key = setKey(gex.programExerciseId, sn)
+                return (
+                  <SetRow
+                    key={sn}
+                    setNumber={sn}
+                    draft={drafts.get(key) ?? { reps: '', load: '', rpe: '' }}
+                    logged={logsByKey.get(key)}
+                    onChange={(field, value) =>
+                      updateDraft(gex.programExerciseId, sn, field, value)
+                    }
+                    onSave={() => saveSet(gex.programExerciseId, sn)}
+                  />
+                )
+              })}
+            </ExerciseBlock>
+          )
+        })}
         <GroupNotes
-          key={group.exercises[0]!.programExerciseId}
-          sessionId={sessionId}
-          programExerciseId={group.exercises[0]!.programExerciseId}
-          initial={exerciseNotes[group.exercises[0]!.programExerciseId] ?? ''}
+          value={noteText.get(noteKey) ?? ''}
+          onChange={(text) => setNote(noteKey, text)}
+          onSave={() => saveNote(noteKey)}
         />
         <NavRow
           onBack={
@@ -305,10 +362,9 @@ function TopBar({
   )
 }
 
-// Bottom navigation between exercise groups (P1-2 follow-up). "Next" is
-// always tappable — the open form lets you advance with a set unlogged
-// (deliberately skip); "Finish session" stays on the final RPE screen only
-// (§6.3.1). Back returns to the previous group to finish a skipped set.
+// Bottom navigation between groups. "Next" is always tappable — the open
+// form lets you advance with a set unlogged (skip); "Finish session" stays
+// on the final RPE screen (§6.3.1). Back returns to finish a skipped set.
 function NavRow({
   onBack,
   onNext,
@@ -366,136 +422,70 @@ function NavRow({
   )
 }
 
-// Expandable per-exercise video (P1-3, §6.3.1). Tap the thumbnail to expand
-// to a 16:9 tile; tap that to open the YouTube link in a new tab (no
-// embedded player — "YouTube links only"). Placeholder play tiles, no
-// external poster fetch (fast on gym connections); no backdrop-filter.
-function VideoThumb({ url }: { url: string }) {
-  const [open, setOpen] = useState(false)
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        style={{
-          marginTop: 10,
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '7px 12px 7px 8px',
-          background: 'var(--session-card)',
-          border: '1px solid var(--session-border)',
-          borderRadius: 'var(--radius-button)',
-          color: 'var(--session-text)',
-          fontFamily: 'var(--font-sans)',
-          fontSize: '.8rem',
-          fontWeight: 600,
-          cursor: 'pointer',
-        }}
-      >
-        <span
-          style={{
-            display: 'grid',
-            placeItems: 'center',
-            width: 22,
-            height: 22,
-            borderRadius: '50%',
-            background: 'var(--session-accent)',
-            color: 'var(--session-on-accent)',
-          }}
-        >
-          <Play size={12} aria-hidden />
-        </span>
-        Watch demo
-      </button>
-    )
-  }
-
+// Per-exercise video link (P1-3, §6.3.1). One tap opens the YouTube link
+// externally (target="_blank" → iOS hands off to the YouTube app or an
+// in-app Safari sheet; the PWA stays put). No embedded player, no external
+// poster fetch, no backdrop-filter. Only rendered when a URL exists.
+function VideoLink({ url }: { url: string }) {
   return (
-    <div style={{ marginTop: 10 }}>
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        marginTop: 10,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '7px 12px 7px 8px',
+        background: 'var(--session-card)',
+        border: '1px solid var(--session-border)',
+        borderRadius: 'var(--radius-button)',
+        color: 'var(--session-text)',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '.8rem',
+        fontWeight: 600,
+        textDecoration: 'none',
+      }}
+    >
+      <span
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          aspectRatio: '16 / 9',
-          background: 'var(--session-card)',
-          border: '1px solid var(--session-border)',
-          borderRadius: 'var(--radius-card-dense)',
-          color: 'var(--session-text)',
-          textDecoration: 'none',
+          display: 'grid',
+          placeItems: 'center',
+          width: 22,
+          height: 22,
+          borderRadius: '50%',
+          background: 'var(--session-accent)',
+          color: 'var(--session-on-accent)',
         }}
       >
-        <span
-          style={{
-            display: 'grid',
-            placeItems: 'center',
-            width: 48,
-            height: 48,
-            borderRadius: '50%',
-            background: 'var(--session-accent)',
-            color: 'var(--session-on-accent)',
-          }}
-        >
-          <Play size={22} aria-hidden />
-        </span>
-        <span style={{ fontSize: '.78rem', fontWeight: 600 }}>
-          Tap to watch on YouTube
-        </span>
-      </a>
-      <button
-        type="button"
-        onClick={() => setOpen(false)}
-        style={{
-          marginTop: 6,
-          background: 'none',
-          border: 'none',
-          color: 'var(--session-text-muted)',
-          fontSize: '.76rem',
-          cursor: 'pointer',
-          padding: '2px 0',
-        }}
-      >
-        Hide
-      </button>
-    </div>
+        <Play size={12} aria-hidden />
+      </span>
+      Watch demo
+    </a>
   )
 }
 
-// Optional per-group notes (P1-4, §6.3.1). Saved on blur to the group's
-// first exercise's exercise_logs.notes; prefilled on resume.
+// Optional per-group notes (P1-4, §6.3.1). Controlled by the Logger so the
+// text survives Back/Next; saved on blur to the group's first exercise's
+// exercise_logs.notes.
 function GroupNotes({
-  sessionId,
-  programExerciseId,
-  initial,
+  value,
+  onChange,
+  onSave,
 }: {
-  sessionId: string
-  programExerciseId: string
-  initial: string
+  value: string
+  onChange: (text: string) => void
+  onSave: () => Promise<{ error: string | null }>
 }) {
-  const [notes, setNotes] = useState(initial)
-  const [saved, setSaved] = useState(initial)
   const [error, setError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
-  function save() {
-    const trimmed = notes.trim()
-    if (trimmed === saved.trim()) return
+  function handleBlur() {
     setError(null)
     startTransition(async () => {
-      const res = await logExerciseNoteAction(
-        sessionId,
-        programExerciseId,
-        trimmed.length === 0 ? null : trimmed,
-      )
+      const res = await onSave()
       if (res.error) setError(res.error)
-      else setSaved(trimmed)
     })
   }
 
@@ -505,9 +495,9 @@ function GroupNotes({
         Notes · optional
       </div>
       <textarea
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        onBlur={save}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={handleBlur}
         placeholder="Anything to note for this block?"
         rows={2}
         maxLength={500}
@@ -542,8 +532,45 @@ function GroupNotes({
   )
 }
 
-// Group header — section title (once for the whole group) + a Superset /
-// Tri-set / Giant set badge when the group holds more than one exercise.
+// "Log all N sets" — logs every still-unlogged set of the exercise in one
+// tap (their current boxes). The per-set Log buttons stay for one-at-a-time.
+function LogAllButton({
+  count,
+  onRun,
+}: {
+  count: number
+  onRun: () => Promise<void>
+}) {
+  const [pending, startTransition] = useTransition()
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => startTransition(async () => { await onRun() })}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 10,
+        padding: '8px 14px',
+        background: 'transparent',
+        color: 'var(--session-accent)',
+        border: '1px solid var(--session-border-active)',
+        borderRadius: 'var(--radius-button)',
+        fontFamily: 'var(--font-display)',
+        fontWeight: 700,
+        fontSize: '.82rem',
+        letterSpacing: '.02em',
+        cursor: 'pointer',
+      }}
+    >
+      <Check size={14} aria-hidden />
+      {pending ? 'Logging…' : `Log all ${count} sets`}
+    </button>
+  )
+}
+
+// Group header — section title (once) + Superset / Tri-set / Giant set badge.
 function GroupHead({ group }: { group: LoggerGroup }) {
   const size = group.exercises.length
   const sectionTitle = group.exercises[0]?.sectionTitle ?? null
@@ -577,8 +604,6 @@ function GroupHead({ group }: { group: LoggerGroup }) {
       )}
       {badge && (
         <span
-          // Superset/tri-set badge — a sanctioned accent use (grouping
-          // signal, not decoration): the group must read as one unit.
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
@@ -598,8 +623,8 @@ function GroupHead({ group }: { group: LoggerGroup }) {
   )
 }
 
-// One exercise within the active group: its letter, name, instructions, rx
-// summary, video, then its set rows (children).
+// One exercise within the active group: letter, name, instructions, rx,
+// video, then its set rows / log-all (children).
 function ExerciseBlock({
   exercise,
   compact,
@@ -658,17 +683,16 @@ function ExerciseBlock({
           {rx}
         </div>
       )}
-      {exercise.videoUrl && <VideoThumb url={exercise.videoUrl} />}
-      {children}
+      {exercise.videoUrl && <VideoLink url={exercise.videoUrl} />}
+      <div style={{ marginTop: 10 }}>{children}</div>
     </div>
   )
 }
 
-// One open, editable set row (P1-2 follow-up). Inputs are always editable;
-// the check/log button saves them (upsert) in any order. A logged set shows
-// a green check + quiet "Logged"; editing it re-exposes a "Save changes"
-// button (dirty), since the backend upserts. Controlled by the parent's
-// draft map so carry-forward updates show live.
+// One open, editable set row (P1-2 follow-up). Compact: inputs + a small
+// Log/Save button in the header (no full-width button — saves space). Logged
+// shows a green check + "Logged"; editing re-exposes "Save". Controlled by
+// the parent's draft map so carry-forward / log-all update live.
 function SetRow({
   setNumber,
   draft,
@@ -708,7 +732,7 @@ function SetRow({
           dirty ? 'var(--session-border-active)' : 'var(--session-border)'
         }`,
         borderRadius: 'var(--radius-card-dense)',
-        padding: '12px 14px',
+        padding: '10px 12px',
         marginBottom: 8,
       }}
     >
@@ -717,7 +741,7 @@ function SetRow({
           display: 'flex',
           alignItems: 'center',
           gap: 10,
-          marginBottom: 10,
+          marginBottom: 8,
         }}
       >
         <span
@@ -731,24 +755,25 @@ function SetRow({
             background: done
               ? 'var(--session-accent)'
               : 'var(--session-num-pending-bg)',
-            width: 26,
-            height: 26,
+            width: 24,
+            height: 24,
             borderRadius: '50%',
             display: 'grid',
             placeItems: 'center',
+            flexShrink: 0,
           }}
         >
-          {done ? <Check size={14} aria-hidden /> : setNumber}
+          {done ? <Check size={13} aria-hidden /> : setNumber}
         </span>
-        <span style={{ fontWeight: 600, fontSize: '.88rem', flex: 1 }}>
+        <span style={{ fontWeight: 600, fontSize: '.86rem', flex: 1 }}>
           Set {setNumber}
         </span>
-        {done && (
+        {done ? (
           <span
             style={{
               fontFamily: 'var(--font-display)',
               fontWeight: 700,
-              fontSize: '.72rem',
+              fontSize: '.7rem',
               letterSpacing: '.04em',
               textTransform: 'uppercase',
               color: 'var(--session-text-muted)',
@@ -756,6 +781,27 @@ function SetRow({
           >
             Logged
           </span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={pending}
+            style={{
+              padding: '7px 16px',
+              background: 'var(--session-cta-bg)',
+              color: 'var(--session-cta-text)',
+              border: 'none',
+              borderRadius: 'var(--radius-button)',
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.82rem',
+              letterSpacing: '.02em',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {pending ? '…' : dirty ? 'Save' : 'Log'}
+          </button>
         )}
       </div>
 
@@ -769,7 +815,7 @@ function SetRow({
             borderRadius: 'var(--radius-input)',
             color: 'var(--session-error-text)',
             fontSize: '.78rem',
-            marginBottom: 10,
+            marginBottom: 8,
           }}
         >
           {error}
@@ -781,7 +827,6 @@ function SetRow({
           display: 'grid',
           gridTemplateColumns: '1fr 1fr 1fr',
           gap: 8,
-          marginBottom: done ? 0 : 10,
         }}
       >
         <LogInput
@@ -802,29 +847,6 @@ function SetRow({
           inputMode="numeric"
         />
       </div>
-
-      {!done && (
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={pending}
-          style={{
-            width: '100%',
-            padding: 14,
-            background: 'var(--session-cta-bg)',
-            color: 'var(--session-cta-text)',
-            border: 'none',
-            borderRadius: 'var(--radius-chip)',
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: '1rem',
-            letterSpacing: '.02em',
-            cursor: 'pointer',
-          }}
-        >
-          {pending ? 'Saving…' : dirty ? 'Save changes' : 'Log set'}
-        </button>
-      )}
     </div>
   )
 }
@@ -905,8 +927,7 @@ function CompletePrompt({
         trimmed.length === 0 ? null : trimmed,
         sessionRpe,
       )
-      // completeSessionAction redirects on success; only an error returns.
-      // P1-5: surface it inline (themed) rather than via a raw alert().
+      // Redirects on success; only an error returns. P1-5: surface inline.
       if (res && res.error) setError(res.error)
     })
   }
@@ -1093,8 +1114,7 @@ function mapFromLogs(logs: LoggedSet[]): Map<string, LoggedSet> {
 /**
  * Fold the ordered exercise list into on-screen groups. Consecutive
  * exercises sharing the same NON-NULL superset id merge into one group; a
- * standalone exercise (null id) is always its own singleton — two adjacent
- * standalones never merge. Preserves order.
+ * standalone exercise (null id) is always its own singleton.
  */
 function buildGroups(exercises: LoggerExercise[]): LoggerGroup[] {
   const groups: LoggerGroup[] = []
@@ -1162,8 +1182,8 @@ function draftEqualsLogged(d: Draft, l: LoggedSet): boolean {
 /**
  * Seed the editable drafts for every set. A logged set always shows its
  * saved values. For an unlogged set with autofill ON, carry the most recent
- * earlier *actuals* in the same exercise (1), falling back to the
- * prescription (3); with autofill OFF, leave it blank.
+ * earlier actuals in the same exercise, falling back to the prescription;
+ * with autofill OFF, leave it blank.
  */
 function buildInitialDrafts(
   exercises: LoggerExercise[],
@@ -1194,8 +1214,6 @@ function buildRxLabel(e: LoggerExercise): string {
   const sets = e.prescribedSets
   if (sets.length === 0) return ''
 
-  // Render the eyebrow summary only when every set is identical. Wave-loading
-  // and other non-uniform prescriptions hide it — the per-set rows speak.
   const first = sets[0]!
   const allSame = sets.every(
     (s) =>
