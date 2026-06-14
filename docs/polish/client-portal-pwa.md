@@ -358,3 +358,22 @@ All four operator decisions were taken before editing (AskUserQuestion, 2026-06-
 - **Explicit removal re-trigger** (recorded in [`docs/go-live-checklist.md`](../go-live-checklist.md) §8 so it actually fires — per CLAUDE.md's technical-gate-index rule, a re-trigger in a closed polish doc alone does **not** fire): **immediately after the section-7 branch merges to master and deploys**, drop the 1-arg overload in a new, **post-deploy** migration — `DROP FUNCTION client_reschedule_program_day_to_today(uuid);` — so every reschedule goes through the 2-arg device-tz path, and trim the 1-arg assertions from pgTAP `25`. Do **not** create or push that migration before deploy: in this no-staging setup `supabase db push` reaches the live DB ahead of code, and dropping the 1-arg overload while prod still calls it re-breaks reschedule. Root lesson: a signature-changing migration needs a temporary back-compat overload **plus a tracked removal trigger**, never a silent permanent shim.
 
 **Claude Code's job ends here.** Awaiting operator paste of this closing commit into the claude.ai project chat and the sign-off (§9).
+
+---
+
+## 9. Sign-off
+
+- **Date signed off:** 2026-06-14
+- **Reviewer:** claude.ai project chat (Odyssey build project)
+- **Decision:** **Closed.** All gaps **P0-1 through P2-5** are mitigated or consciously accepted with re-triggers; pgTAP `25_portal_rpc_grants.sql` at **22/22 on live**; build gates green (`tsc` clean, `eslint` 6/baseline, `next build` exit 0). The three review conditions were met before close: (1) the reworked open-form logging core (any-order set logging, Back/Next skip-allowed, "Log all" carry-forward, autofill cookie) now has its **own explicit on-device verification in §8.2**, fenced off from the general P1-verified claim — a real superset/tri-set day, autofill on and off, and the "Log all" carry-forward including the `3c3d31a` fix; (2) the **per-set-RPE-richness vs skip-allowed-form** trade is recorded in **§8.4** as a conscious friends-and-family acceptance with a re-trigger at the paying-client threshold or any clinical-decision dependence; (3) the **reschedule compat shim** is reframed in **§8.6** as a temporary bridge carrying a real org-tz-vs-device-tz contradiction, with an explicit post-deploy removal trigger recorded in `docs/go-live-checklist.md` §8 so it actually fires.
+
+### Live re-triggers carried forward (standing items — not closed by this sign-off)
+
+These survive the section close and fire on their own conditions:
+
+- **Post-deploy compat-shim removal** — drop the 1-arg `client_reschedule_program_day_to_today(uuid)` overload and trim its pgTAP `25` assertions **immediately after this branch merges to master and deploys, never before** (dropping it while prod still calls the 1-arg form re-breaks reschedule). Recorded in [`docs/go-live-checklist.md`](../go-live-checklist.md) §8 (detail in §8.6 above).
+- **FM-4 offline-queue trigger** — the no-op service worker stays until the first **5 real clients have each completed 10 sessions**; review session-log integrity then, and escalate offline-queue work to a launch blocker on **any data-loss report**. (B3 trigger; §8.4 / §2.1.)
+- **Per-set completeness re-trigger** — folded alongside FM-4: if per-set completeness becomes load-bearing for a clinical decision, or at the paying-client threshold, revisit a soft "unlogged sets" nudge / required-set enforcement (§8.4).
+- **Platform-wide anon-EXECUTE sweep (still open)** — `client_accept_invite` (§2 — **verify pre-auth use before any revoke**), the §9 booking RPCs (`client_available_slots` / `client_book_appointment` / `client_cancel_appointment`), and `client_cascade_thread_archive` (§10) remain anon-reachable, protected by their in-body auth guards until revoked. Recorded in [`docs/go-live-checklist.md`](../go-live-checklist.md) §4.
+
+**Section 7 — Client portal PWA — is Closed.** Per the locked polish-pass order, section 8 (Testing and reports module) is already complete, so the next active section is **section 9 — Scheduling**, which inherits the booking slot-range UTC bug (FM-6) and the §9 booking-RPC slice of the anon-EXECUTE sweep.
