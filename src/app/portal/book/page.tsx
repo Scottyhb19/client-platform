@@ -55,7 +55,7 @@ export default async function PortalBookPage({
 
   return (
     <>
-      <PortalTop title="Book" greeting="Your sessions" />
+      <PortalTop title="Bookings" greeting="Your sessions" />
 
       {justBooked && (
         <div

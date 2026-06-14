@@ -69,7 +69,7 @@ export default async function PortalBookNewPage({
   if (!org) {
     return (
       <>
-        <PortalTop title="Book" greeting="Find a time" />
+        <PortalTop title="Bookings" greeting="Find a time" />
         <PortalEmpty
           title="No organization found"
           message="Your account isn't linked to a practice yet — please contact your EP."
@@ -108,7 +108,7 @@ export default async function PortalBookNewPage({
   if (typeErr || slotErr) {
     return (
       <>
-        <PortalTop title="Book" greeting="Find a time" />
+        <PortalTop title="Bookings" greeting="Find a time" />
         <PortalEmpty
           title="Couldn't load times"
           message="Something went wrong loading the booking page. Please refresh."
@@ -154,7 +154,7 @@ export default async function PortalBookNewPage({
   if (slots.length === 0) {
     return (
       <>
-        <PortalTop title="Book" greeting="Find a time" />
+        <PortalTop title="Bookings" greeting="Find a time" />
         <PortalEmpty
           title="No times open in the next four weeks"
           message="Your EP hasn't published availability for this window yet. Check back soon, or message them through the portal."
