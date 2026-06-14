@@ -3,12 +3,11 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
-import { BarChart2, Calendar, Clock, Home, MessageCircle, User } from 'lucide-react'
+import { BarChart2, Clock, Home, MessageCircle, User } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
 const ITEMS = [
   { key: 'today', label: 'Today', href: '/portal', icon: Home },
-  { key: 'program', label: 'Program', href: '/portal/program', icon: Calendar },
   {
     key: 'reports',
     label: 'Reports',
@@ -79,7 +78,8 @@ export function BottomNav({ messageCount = 0, threadId = null }: BottomNavProps)
     <nav
       aria-label="Portal"
       className="portal-bottom-nav"
-      // Column count is per-instance (6 items today; Phase F may change it).
+      // Column count is per-instance (5 items since the Program tab was
+      // removed — P1-6; the Today week-strip already is the program view).
       style={{ gridTemplateColumns: `repeat(${ITEMS.length}, 1fr)` }}
     >
       {ITEMS.map((item) => {
