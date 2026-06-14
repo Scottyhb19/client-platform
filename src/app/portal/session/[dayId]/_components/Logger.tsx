@@ -1045,7 +1045,7 @@ function CompletePrompt({
         <textarea
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="How did that feel? Anything to flag for your EP?"
+          placeholder="How did that feel? Anything worth noting?"
           rows={3}
           maxLength={500}
           style={{

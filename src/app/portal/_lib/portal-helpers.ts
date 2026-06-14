@@ -99,15 +99,17 @@ export function formatDayLabel(d: Date): string {
 }
 
 /**
- * Greeting word from an hour-of-day (0–23). The caller passes the hour in
- * the resolved device/org timezone (`hourInTimeZone(tz)`) — previously this
- * read `new Date().getHours()`, which is the UTC hour on the server and so
- * greeted "Evening" at 8am AEST. (Section 7 / P0-1.)
+ * Greeting phrase from an hour-of-day (0–23), e.g. "Good morning". The
+ * caller passes the hour in the resolved device/org timezone
+ * (`hourInTimeZone(tz)`) — previously this read `new Date().getHours()`,
+ * which is the UTC hour on the server and so greeted "Evening" at 8am AEST.
+ * (Section 7 / P0-1.) The "Good " prefix matches the brief's §6.3 greeting
+ * ("Good morning, [Name]") — P2-4 copy pass.
  */
 export function greetingFromHour(hour: number): string {
-  if (hour < 12) return 'Morning'
-  if (hour < 17) return 'Afternoon'
-  return 'Evening'
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
 }
 
 /**

@@ -230,8 +230,8 @@ export function DayScreen({
         <div className="portal-empty is-rest-day">
           <div className="portal-empty__title">Rest day</div>
           <div className="portal-empty__body">
-            Nothing scheduled. Recovery is part of the plan — hydrate, walk,
-            sleep.
+            Nothing scheduled, {name}. Recovery is part of the plan — hydrate,
+            walk, sleep.
           </div>
         </div>
       )}
