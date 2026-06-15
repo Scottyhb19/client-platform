@@ -1,0 +1,53 @@
+-- ============================================================================
+-- 20260615120000_revoke_anon_execute_scheduling_rpcs
+-- ============================================================================
+-- Section 9 (Scheduling) — P0-1 (FM-1). Anon-EXECUTE sweep of the scheduling
+-- RPC family. Discharges the §9 (scheduling) slice of the platform-wide
+-- SECURITY DEFINER anon-EXECUTE sweep that the section-7 revoke
+-- (20260614130000) explicitly deferred to this section
+-- (docs/go-live-checklist.md §4). Mirrors that migration one surface across.
+--
+-- WHY. Every public function auto-grants EXECUTE to anon on creation (project
+-- memory `project_supabase_default_execute_grants`), and the grant re-trips on
+-- every CREATE OR REPLACE. `REVOKE … FROM PUBLIC` (present in each function's
+-- source) does NOT strip the role-specific anon grant — so source-absence is
+-- not runtime-absence. A live has_function_privilege probe on 2026-06-15
+-- confirmed all four functions below are anon-executable on the live DB.
+--
+-- These functions are SECURITY DEFINER and each already pins the caller with an
+-- in-body auth.uid()/org guard that refuses an anon caller (auth.uid() is NULL),
+-- so this revoke is defence-in-depth hardening, not a hole being plugged — but
+-- two of them are writes (client_book_appointment INSERTs an appointment;
+-- soft_delete_availability_rule UPDATEs deleted_at), and anon should hold
+-- EXECUTE on none of them regardless. pgTAP `26_scheduling_rpc_grants` is the
+-- regression tripwire against a future CREATE OR REPLACE silently re-tripping
+-- the auto-grant.
+--
+-- SCOPE — the scheduling family, signatures from the live probe:
+--   client_available_slots(timestamptz, timestamptz)            — read
+--   client_book_appointment(uuid,uuid,timestamptz,timestamptz)  — write (INSERT)
+--   client_cancel_appointment(uuid)                             — write (UPDATE)
+--   soft_delete_availability_rule(uuid)                         — write (UPDATE)
+-- All four are called only by an authenticated user (the first three by a
+-- logged-in client from the portal booking surface; soft_delete_… by a
+-- logged-in EP from the availability editor), so REVOKE FROM anon cannot break
+-- a legitimate path. authenticated keeps its grant (untouched here, asserted by
+-- the test §B). Backward-compatible with the deployed master frontend — grants
+-- only, the functions still execute for every logged-in caller.
+--
+-- NOT a target: appointments_client_field_lockdown is a trigger function
+-- (RETURNS trigger, security_definer=false) — Postgres refuses to invoke it
+-- directly (0A000: trigger functions can only be called as triggers), so its
+-- anon grant is meaningless. Left untouched.
+--
+-- The platform-wide sweep continues beyond scheduling: client_accept_invite
+-- (§2, verify pre-auth use before revoking) and client_cascade_thread_archive
+-- (§10) stay indexed in docs/go-live-checklist.md, owned by their sections.
+--
+-- No signature or body changes — grants only. No type regen needed.
+-- ============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.client_available_slots(timestamptz, timestamptz) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.client_book_appointment(uuid, uuid, timestamptz, timestamptz) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.client_cancel_appointment(uuid) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.soft_delete_availability_rule(uuid) FROM anon;
