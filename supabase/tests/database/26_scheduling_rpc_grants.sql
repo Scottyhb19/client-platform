@@ -22,13 +22,18 @@ SET search_path TO public, extensions, pg_temp;
 -- joins them here as the fourth scheduling-family SECURITY DEFINER write
 -- surfaced by the same live probe.
 --
+--   §C the P1-6 3-arg per-type overload of client_available_slots: anon none,
+--      authenticated keeps it. (The welded 2-arg overload is dropped in a
+--      post-deploy migration after deploy #1; its §A1/§B1 assertions go with
+--      it then, plan 10 → 8.)
+--
 -- No fixtures, no JWT spoof — pure catalog checks as the test owner.
--- Test count: 8
+-- Test count: 10
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(10);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -65,6 +70,22 @@ SELECT ord, ok(
   format('B%s: authenticated keeps EXECUTE on %s', ord - 4, sig)
 )
 FROM family;
+
+-- ----------------------------------------------------------------------------
+-- §C — the P1-6 3-arg per-type overload (20260615140000): same posture.
+-- ----------------------------------------------------------------------------
+INSERT INTO _tap (n, line) VALUES (9, (
+  SELECT ok(
+    NOT has_function_privilege('anon', 'public.client_available_slots(timestamptz, timestamptz, integer)', 'EXECUTE'),
+    'C1: anon cannot execute client_available_slots(timestamptz, timestamptz, integer)'
+  )
+));
+INSERT INTO _tap (n, line) VALUES (10, (
+  SELECT ok(
+    has_function_privilege('authenticated', 'public.client_available_slots(timestamptz, timestamptz, integer)', 'EXECUTE'),
+    'C2: authenticated keeps EXECUTE on client_available_slots(timestamptz, timestamptz, integer)'
+  )
+));
 
 SELECT line FROM _tap ORDER BY n;
 

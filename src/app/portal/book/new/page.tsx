@@ -23,6 +23,7 @@ interface SessionType {
   name: string
   color: string
   sort_order: number
+  default_duration_minutes: number
 }
 
 interface Organization {
@@ -84,26 +85,42 @@ export default async function PortalBookNewPage({
     timezone: org.timezone ?? 'Australia/Sydney',
   }
 
-  // Fetch all session types and the next 4 weeks of slots in parallel.
-  // Slots are returned by the SECURITY DEFINER client_available_slots RPC
-  // which already pins to the caller's org via auth.uid().
+  // Session types first: the slot length depends on the chosen type's
+  // duration (P1-6), so slots can't be fetched until the type is known.
+  // Slots come from the SECURITY DEFINER client_available_slots RPC, which
+  // already pins to the caller's org via auth.uid().
   const fromIso = new Date().toISOString()
   const toIso = new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString()
 
-  const [
-    { data: sessionTypeRows, error: typeErr },
-    { data: slotRows, error: slotErr },
-  ] = await Promise.all([
-    supabase
-      .from('session_types')
-      .select('id, name, color, sort_order')
-      .is('deleted_at', null)
-      .order('sort_order'),
-    supabase.rpc('client_available_slots', {
-      p_from: fromIso,
-      p_to: toIso,
-    }),
-  ])
+  const { data: sessionTypeRows, error: typeErr } = await supabase
+    .from('session_types')
+    .select('id, name, color, sort_order, default_duration_minutes')
+    .is('deleted_at', null)
+    .order('sort_order')
+
+  const sessionTypes: SessionType[] = (sessionTypeRows ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    color: s.color,
+    sort_order: s.sort_order,
+    default_duration_minutes: s.default_duration_minutes,
+  }))
+
+  // Slot length = the selected type's duration. Before a type is chosen (the
+  // 'type' step) use the shortest type's duration so the "any times open?"
+  // empty-state stays the most permissive (P1-6).
+  const slotMinutes =
+    (params.type
+      ? sessionTypes.find((t) => t.id === params.type)?.default_duration_minutes
+      : undefined) ??
+    (sessionTypes.length > 0
+      ? Math.min(...sessionTypes.map((t) => t.default_duration_minutes))
+      : 60)
+
+  const { data: slotRows, error: slotErr } = await supabase.rpc(
+    'client_available_slots',
+    { p_from: fromIso, p_to: toIso, p_slot_minutes: slotMinutes },
+  )
 
   if (typeErr || slotErr) {
     return (
@@ -116,13 +133,6 @@ export default async function PortalBookNewPage({
       </>
     )
   }
-
-  const sessionTypes: SessionType[] = (sessionTypeRows ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    color: s.color,
-    sort_order: s.sort_order,
-  }))
 
   const slots: Slot[] = (slotRows ?? []).map((s) => ({
     staff_user_id: s.staff_user_id,

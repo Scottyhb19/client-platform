@@ -2512,6 +2512,7 @@ export type Database = {
         Row: {
           color: string
           created_at: string
+          default_duration_minutes: number
           deleted_at: string | null
           id: string
           name: string
@@ -2522,6 +2523,7 @@ export type Database = {
         Insert: {
           color: string
           created_at?: string
+          default_duration_minutes?: number
           deleted_at?: string | null
           id?: string
           name: string
@@ -2532,6 +2534,7 @@ export type Database = {
         Update: {
           color?: string
           created_at?: string
+          default_duration_minutes?: number
           deleted_at?: string | null
           id?: string
           name?: string
@@ -3375,14 +3378,23 @@ export type Database = {
         Args: { p_client_id: string }
         Returns: undefined
       }
-      client_available_slots: {
-        Args: { p_from: string; p_to: string }
-        Returns: {
-          slot_end: string
-          slot_start: string
-          staff_user_id: string
-        }[]
-      }
+      client_available_slots:
+        | {
+            Args: { p_from: string; p_to: string }
+            Returns: {
+              slot_end: string
+              slot_start: string
+              staff_user_id: string
+            }[]
+          }
+        | {
+            Args: { p_from: string; p_slot_minutes: number; p_to: string }
+            Returns: {
+              slot_end: string
+              slot_start: string
+              staff_user_id: string
+            }[]
+          }
       client_book_appointment: {
         Args: {
           p_end_at: string

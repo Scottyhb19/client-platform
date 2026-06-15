@@ -250,6 +250,20 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **P1-7 dependency (noted in-migration).** When the Unavailable kind lands, the constraint must be recreated with `AND kind = 'appointment'` so admin/note blocks may overlap a client appointment.
 
+### P1-6 — Per-type session durations + 15-minute slot granularity — done 2026-06-15
+
+**Schema.** `session_types.default_duration_minutes` (smallint, CHECK 5–240, default 60), seeded **Initial 60 / Review 45 / Session 45 / Telehealth 30** (operator confirmed the standard "Session" is 45, not the gap doc's tentative 30). Migration [`20260615140000`](../../supabase/migrations/20260615140000_session_type_durations_and_slot_granularity.sql).
+
+**Slot engine.** New 3-arg `client_available_slots(p_from, p_to, p_slot_minutes)`: candidate starts every **15 min** (decoupled from the slot length), each slot `p_slot_minutes` long, minus pending/confirmed appointments — so the part-hour after a shorter session is bookable. **Deploy-skew bridge:** the welded 2-arg overload is left untouched (the deployed portal still calls it); `p_slot_minutes` has no default so `{p_from,p_to}` and `{p_from,p_to,p_slot_minutes}` never resolve ambiguously. **Post-deploy re-trigger (after deploy #1):** drop the 2-arg overload + trim test 26 §A1/§B1 (plan 10→8), so every caller uses the per-type path.
+
+**Booking re-check.** `client_book_appointment` recreated ([`20260615140100`](../../supabase/migrations/20260615140100_client_book_appointment_per_type_recheck.sql)) to re-check via the 3-arg form, passing the booking's own length — the 2-arg welded re-check would reject every non-60-min booking as "slot no longer available". Backward-compatible (a deployed 60-min booking re-checks with `p_slot_minutes = 60`). 3rd recreation this section; re-asserts the P0-1 anon revoke (pgTAP 26 A2 confirms anon held).
+
+**Picker.** [`book/new/page.tsx`](../../src/app/portal/book/new/page.tsx) fetches `default_duration_minutes`, resolves the chosen type's duration (shortest type's duration before a type is picked, for the empty-state check), and calls the 3-arg RPC. Now sequential (types → duration → slots) since slots depend on the chosen length.
+
+**Tests.** New pgTAP [`28_slot_granularity.sql`](../../supabase/tests/database/28_slot_granularity.sql) **3/3 on live**: 11:30 offered after an 11:00 booking · 11:00 not offered (overlap) · 30-minute length. Test 26 extended to **10/10** (§C: the 3-arg overload anon-revoked / authenticated-kept). Test 27 still 5/5; `tsc` clean.
+
+**Deferred into P1-7 (same cluster):** the SessionTypesEditor duration-editing field + the `seed_organization_defaults` rewrite (durations + `kind` + the seeded Unavailable types) — consolidated so the editor grid and the seed function are each touched once, alongside the kind work.
+
 ---
 
 ## 8. Closing commit
