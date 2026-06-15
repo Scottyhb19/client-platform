@@ -220,6 +220,22 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **Discharges** the §9 (scheduling) slice of the go-live anon-EXECUTE rider (recorded in [`go-live-checklist.md`](../go-live-checklist.md) §4). Platform-wide sweep continues — `client_accept_invite` (§2, verify pre-auth use first), `client_cascade_thread_archive` (§10) — owned by their sections.
 
+### P0-2 — Timezone reconciliation foundation — done 2026-06-15
+
+**Decision (Q2):** the staff `/schedule` grid is governed by `PRACTICE_TIMEZONE` (the clinic/org tz), independent of both the Vercel server clock (UTC) and the viewer's browser tz. Slot generation already uses org-tz; the portal's personal "today" stays device-tz (section 7) — so the portal-today vs booking-day split is intentional, not accidental.
+
+**Helpers (`src/lib/dates.ts`).** Added `wallClockPartsInTimeZone(instant, tz)` (instant → `{year,month,day,hour,minute,weekday 0=Mon}` via `Intl.formatToParts`), `zonedTimeToInstant(y,m,d,h,min,tz)` (the inverse — a wall-clock time in a zone → its UTC instant, single-offset-correction; exact outside the ~1h DST window, and Sydney transitions at 02:00–03:00 so clinic hours and midnight boundaries are unaffected), and `startOfDayInstant(isoDate, tz)`. Algorithm verified by a standalone node check for AEST (UTC+10) + AEDT (UTC+11) midnights, a 09:00 clinic time, and a round-trip — 7/7 pass.
+
+**Server (`schedule/page.tsx`).** Re-plumbed onto ISO calendar-date strings resolved in practice-tz: `todayIso = todayIsoInPracticeTz()`; the week default, `?d=`/`?w=` parsing, the day-view seed, and "today in week" are now ISO-string / UTC-day-number math (tz-agnostic). The appointments query window is bounded by `startOfDayInstant(weekStartIso/weekEndIso, PRACTICE_TIMEZONE)` — fixing the prior server-local-midnight (UTC) window that shifted ~10–11h, dropping this week's early-Monday rows while leaking next week's. The old browser-local helpers (`mondayOfWeek`, `parseOptionalIsoDate`, `dayIdxMonBased`, `sameCalendarDay`, `toIsoDate`…) were replaced with ISO equivalents.
+
+**Client (`WeekView.tsx`).** Every instant→wall-clock conversion used for positioning or display now resolves in `PRACTICE_TIMEZONE`: day-column bucketing (`dayIndexInPracticeTz`, replacing the browser-local `dayIndexFromMonday`), the block vertical position, the now-line, the cross-day-drag column index (`dayIndexFromStart`), the `formatTime`/`formatDayDate` display formatters, and `slotToDate` (click-to-create now builds the instant in practice-tz so it lands at the intended clinic-local time on any device). The date-anchor math (`isToday`, the rolodex, month nav) was left untouched — it operates on date-only anchors and is correct once the source ISO strings are practice-tz.
+
+**Verification.** `tsc --noEmit` clean. eslint net −1 error vs master (the edit removed a pre-existing `appointmentsByDay` memoization error and introduced none; the 3 remaining file-level errors pre-date this work and sit in untouched code — the drag-handler `react-hooks/immutability` self-reference + two unescaped JSX quotes — out of P0-2 scope). Node algorithm test 7/7. Browser smoke-test rides on the operator's authenticated `:3000` at the P0/P1 cluster checkpoint (the route is auth-gated; a headless preview can't reach it, and the change is visually identical for a clinic-tz browser — the check is "no regression").
+
+**Deliberate residual (accepted, off-tz only).** The drag *write-path* delta math (`addMinutes` is tz-safe; cross-day `addDaysDate` keeps browser-local wall-clock) is correct for the operator on a clinic-tz browser. A *cross-day drag on a browser whose tz differs from the clinic* could land a day off — the same low-likelihood off-tz class the audit downgraded. The read/display path and click-to-create are fully practice-tz on any device. Re-trigger: a routinely off-tz staff device.
+
+**Downstream.** `startOfDayInstant` is the exact primitive P2-1 (booking-window edge) reuses; the governing-tz map locked here is the basis for P2-2.
+
 ---
 
 ## 8. Closing commit

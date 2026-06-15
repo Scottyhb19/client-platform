@@ -40,6 +40,8 @@ import {
   PractitionerSidebar,
   type StaffMember,
 } from './PractitionerSidebar'
+import { PRACTICE_TIMEZONE } from '@/lib/constants'
+import { wallClockPartsInTimeZone, zonedTimeToInstant } from '@/lib/dates'
 
 export type Appointment = {
   id: string
@@ -232,12 +234,11 @@ export function WeekView({
   const appointmentsByDay = useMemo(() => {
     const map: Appointment[][] = Array.from({ length: 7 }, () => [])
     for (const a of appointments) {
-      const start = new Date(a.start_at)
-      const dayIdx = dayIndexFromMonday(start, weekStart)
+      const dayIdx = dayIndexInPracticeTz(a.start_at, weekStartIso)
       if (dayIdx >= 0 && dayIdx < 7) map[dayIdx].push(a)
     }
     return map
-  }, [appointments, weekStart])
+  }, [appointments, weekStartIso])
 
   const monthLabel = formatMonthYear(weekStart)
 
@@ -621,12 +622,22 @@ export function WeekView({
   )
 }
 
-/* Convert (day, quarter-index) → Date at that slot in local time. */
+/* Convert (day, quarter-index) → the instant of that slot in the practice tz. */
 function slotToDate(day: Date, quarterIndex: number): Date {
   const totalMin = quarterIndex * 15
   const h = HOUR_START + Math.floor(totalMin / 60)
   const m = totalMin % 60
-  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0)
+  // `day` is a date-only anchor, so y/m/d read back the intended calendar day;
+  // build the instant in the practice tz so click-to-create lands at the
+  // intended clinic-local time on any device (P0-2).
+  return zonedTimeToInstant(
+    day.getFullYear(),
+    day.getMonth() + 1,
+    day.getDate(),
+    h,
+    m,
+    PRACTICE_TIMEZONE,
+  )
 }
 
 /* ====================== Date rolodex ====================== */
@@ -1162,9 +1173,12 @@ function AppointmentBlock({
   const pxPerHour = pxPerQuarter * QUARTERS_PER_HOUR
   const start = new Date(appointment.start_at)
   const end = new Date(appointment.end_at)
+  // Position by the start's wall-clock in the practice tz, not the browser's
+  // getHours()/getMinutes() — the grid is a clinic-local canvas (P0-2 / FM-2).
+  const startParts = wallClockPartsInTimeZone(start, PRACTICE_TIMEZONE)
   const baseTop =
-    (start.getHours() - HOUR_START) * pxPerHour +
-    (start.getMinutes() / 15) * pxPerQuarter
+    (startParts.hour - HOUR_START) * pxPerHour +
+    (startParts.minute / 15) * pxPerQuarter
   const baseHeight =
     ((end.getTime() - start.getTime()) / (1000 * 60 * 15)) *
       pxPerQuarter -
@@ -1511,8 +1525,8 @@ function dayIndexFromStart(
   startIso: string,
   _gridRef: React.RefObject<HTMLDivElement | null>,
 ): number {
-  const d = new Date(startIso)
-  return (d.getDay() + 6) % 7 // Mon=0 … Sun=6
+  // Practice-tz weekday so the cross-day drag delta is correct on any device.
+  return wallClockPartsInTimeZone(new Date(startIso), PRACTICE_TIMEZONE).weekday
 }
 
 /* ====================== Current-time line ====================== */
@@ -1524,12 +1538,10 @@ function NowLine({
   now: Date
   pxPerQuarter: number
 }) {
-  const hour = now.getHours()
+  const { hour, minute } = wallClockPartsInTimeZone(now, PRACTICE_TIMEZONE)
   if (hour < HOUR_START || hour >= HOUR_END) return null
   const pxPerHour = pxPerQuarter * QUARTERS_PER_HOUR
-  const top =
-    (hour - HOUR_START) * pxPerHour +
-    (now.getMinutes() / 15) * pxPerQuarter
+  const top = (hour - HOUR_START) * pxPerHour + (minute / 15) * pxPerQuarter
   return (
     <div
       style={{
@@ -2548,9 +2560,18 @@ function sameCalendarDay(a: Date, b: Date): boolean {
   )
 }
 
-function dayIndexFromMonday(d: Date, monday: Date): number {
-  const ms = d.getTime() - monday.getTime()
-  return Math.floor(ms / (1000 * 60 * 60 * 24))
+/**
+ * Which Mon–Sun column (0–6) an instant falls into, evaluated in the practice
+ * timezone (not the browser's) so the grid buckets correctly on any device
+ * (P0-2 / FM-2). Compared as UTC-day numbers of the practice-tz calendar date,
+ * which is tz-safe.
+ */
+function dayIndexInPracticeTz(startIso: string, weekStartIso: string): number {
+  const p = wallClockPartsInTimeZone(new Date(startIso), PRACTICE_TIMEZONE)
+  const apptDay = Date.UTC(p.year, p.month - 1, p.day)
+  const [wy, wm, wd] = weekStartIso.split('-').map(Number)
+  const weekDay = Date.UTC(wy!, wm! - 1, wd!)
+  return Math.floor((apptDay - weekDay) / 86_400_000)
 }
 
 function formatHour(h: number): string {
@@ -2568,6 +2589,7 @@ function formatMonthYear(d: Date): string {
 
 function formatDayDate(d: Date): string {
   return new Intl.DateTimeFormat('en-AU', {
+    timeZone: PRACTICE_TIMEZONE,
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -2576,6 +2598,7 @@ function formatDayDate(d: Date): string {
 
 function formatTime(d: Date): string {
   return new Intl.DateTimeFormat('en-AU', {
+    timeZone: PRACTICE_TIMEZONE,
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,

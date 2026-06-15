@@ -69,3 +69,91 @@ export function hourInTimeZone(timeZone: string): number {
   }).format(new Date())
   return Number(h) % 24
 }
+
+/**
+ * Wall-clock parts of an instant as observed in a given IANA timezone.
+ *
+ * The staff schedule grid (section 9, P0-2) positions every block and the
+ * now-line by hour/minute. Reading those off a Date via getHours()/getMinutes()
+ * uses the *browser's* timezone, so the grid renders wrong on any off-tz device
+ * (a travelling EP, an interstate collaborator). Resolving the parts in
+ * PRACTICE_TIMEZONE makes the grid render in clinic-local wall-clock regardless
+ * of where the server or the viewer's browser sits.
+ *
+ * `weekday` is normalised to the project convention 0=Mon … 6=Sun and is
+ * derived from y/m/d (locale-independent), not parsed from a localised string.
+ */
+export type WallClockParts = {
+  year: number
+  month: number // 1–12
+  day: number // 1–31
+  hour: number // 0–23
+  minute: number
+  weekday: number // 0=Mon … 6=Sun
+}
+
+export function wallClockPartsInTimeZone(
+  instant: Date,
+  timeZone: string,
+): WallClockParts {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(instant)
+  const get = (t: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((p) => p.type === t)?.value ?? '0')
+  const year = get('year')
+  const month = get('month')
+  const day = get('day')
+  // Some engines emit '24' for midnight under hour12:false; normalise to 0.
+  const hour = get('hour') % 24
+  const minute = get('minute')
+  const jsDow = new Date(Date.UTC(year, month - 1, day)).getUTCDay() // 0=Sun
+  return { year, month, day, hour, minute, weekday: (jsDow + 6) % 7 }
+}
+
+/**
+ * The UTC instant at which a given wall-clock time occurs in `timeZone` — the
+ * inverse of wallClockPartsInTimeZone. Used to turn a clicked grid slot (write
+ * path) and the practice-tz day boundaries of the appointments query window
+ * into real instants without hard-coding the AEST/AEDT offset.
+ *
+ * Algorithm: guess the instant as if the wall-clock were UTC, measure what
+ * wall-clock that guess actually shows in `timeZone`, and correct by the
+ * difference (the zone's offset at that moment). Exact outside the ~1h
+ * DST-transition window — Sydney transitions at 02:00–03:00, so clinic hours
+ * and midnight boundaries are unaffected.
+ */
+export function zonedTimeToInstant(
+  year: number,
+  month: number, // 1–12
+  day: number,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): Date {
+  const guess = Date.UTC(year, month - 1, day, hour, minute, 0, 0)
+  const wall = wallClockPartsInTimeZone(new Date(guess), timeZone)
+  const wallAsUtc = Date.UTC(
+    wall.year,
+    wall.month - 1,
+    wall.day,
+    wall.hour,
+    wall.minute,
+    0,
+    0,
+  )
+  const offsetMs = wallAsUtc - guess
+  return new Date(guess - offsetMs)
+}
+
+/** Midnight (00:00) of an ISO `YYYY-MM-DD` in `timeZone`, as a UTC instant. */
+export function startOfDayInstant(isoDate: string, timeZone: string): Date {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return zonedTimeToInstant(y!, m!, d!, 0, 0, timeZone)
+}
