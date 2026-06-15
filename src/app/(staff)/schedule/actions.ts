@@ -119,7 +119,18 @@ export async function createAppointmentAction(
     .select('id')
     .single()
 
-  if (error) return { error: `Failed to create booking: ${error.message}`, id: null }
+  if (error) {
+    // P1-4: the appointments_no_staff_overlap EXCLUDE constraint rejects a
+    // double-booking (exclusion_violation, 23P01). Surface a clean inline
+    // message instead of the raw constraint error.
+    if (error.code === '23P01') {
+      return {
+        error: 'That time overlaps an existing booking for this practitioner.',
+        id: null,
+      }
+    }
+    return { error: `Failed to create booking: ${error.message}`, id: null }
+  }
 
   revalidatePath('/schedule')
   return { error: null, id: data.id }
@@ -177,7 +188,15 @@ export async function updateAppointmentTimeAction(
     })
     .eq('id', appointmentId)
 
-  if (error) return { error: `Update failed: ${error.message}` }
+  if (error) {
+    // P1-4: same double-booking backstop on the drag-move/resize path.
+    if (error.code === '23P01') {
+      return {
+        error: 'That time overlaps an existing booking for this practitioner.',
+      }
+    }
+    return { error: `Update failed: ${error.message}` }
+  }
   revalidatePath('/schedule')
   return { error: null }
 }

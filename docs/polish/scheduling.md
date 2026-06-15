@@ -236,6 +236,20 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **Downstream.** `startOfDayInstant` is the exact primitive P2-1 (booking-window edge) reuses; the governing-tz map locked here is the basis for P2-2.
 
+### P1-4 — DB double-booking backstop + staff-path overlap check — done 2026-06-15
+
+**Constraint.** `appointments_no_staff_overlap` — `EXCLUDE USING gist (staff_user_id WITH =, tstzrange(start_at, end_at, '[)') WITH &&) WHERE (status IN ('pending','confirmed') AND deleted_at IS NULL)` (migration [`20260615130000`](../../supabase/migrations/20260615130000_appointment_no_staff_overlap.sql), mirroring `programs_no_active_overlap`; `btree_gist` already installed). One DB authority closes the double-booking race for **every** path at once — replacing the portal RPC's TOCTOU-only `SELECT EXISTS` guard (false under READ COMMITTED for concurrent inserts) and giving the previously-unguarded staff write paths a backstop they shared no lock with. A live probe confirmed **zero** existing overlapping pending/confirmed pairs, so `ADD CONSTRAINT` validated cleanly. Two deliberate exemptions in the WHERE: cancelled/no_show/completed rows don't block a booking (a replacement may be booked over a cancelled slot — the **P2-8 enabler**) and soft-deleted rows are ignored. The predicate matches the existing `appointments_reminder_scan_idx`.
+
+**RPC.** `client_book_appointment` recreated to catch the constraint's `exclusion_violation` (23P01) — the genuine concurrent race that beats the in-body slot re-check — and re-surface `"slot no longer available"`, so the portal shows one consistent message. The `CREATE OR REPLACE` re-trips Supabase's anon auto-grant, so the migration re-asserts the P0-1 `REVOKE … FROM anon`; **pgTAP 26 re-ran 8/8** confirming the posture held (A2/B2).
+
+**Staff actions.** `createAppointmentAction` + `updateAppointmentTimeAction` map `23P01` → *"That time overlaps an existing booking for this practitioner."* (clean inline error, not a raw constraint message).
+
+**Tests.** New pgTAP [`27_appointment_overlap.sql`](../../supabase/tests/database/27_appointment_overlap.sql) (`plan(5)`) **5/5 green on live**: overlap rejected · back-to-back (half-open) allowed · cancelled-overlap allowed · different-staff allowed · catalog predicate tripwire. The cross-path guarantee the prior sequential-only acceptance test lacked (the constraint is path-agnostic).
+
+**Backward-compat (shared DB).** Grant- and signature-stable; the only live-frontend behavioural change is that a true race now raises 23P01 instead of creating a double-booking — harmless and rare at f&f scale, cleanly handled once the section-9 frontend deploys. `tsc` clean.
+
+**P1-7 dependency (noted in-migration).** When the Unavailable kind lands, the constraint must be recreated with `AND kind = 'appointment'` so admin/note blocks may overlap a client appointment.
+
 ---
 
 ## 8. Closing commit
