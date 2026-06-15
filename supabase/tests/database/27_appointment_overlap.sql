@@ -21,17 +21,19 @@ SET search_path TO public, extensions, pg_temp;
 --   4. overlapping confirmed, DIFFERENT staff  → allowed (constraint is per-staff)
 --   5. catalog: the constraint exists over (staff_user_id, tstzrange) — a
 --      drift tripwire (e.g. if P1-7 recreates it and drops the predicate).
+--   6. an Unavailable-kind block (no client) may overlap a confirmed
+--      appointment for the same staff → allowed (P1-7 exemption).
 --
 -- Fixtures built as the test owner inside BEGIN/ROLLBACK (appointments carries
 -- RLS but not FORCE RLS, so the owner bypasses it; the EXCLUDE constraint fires
 -- regardless of role). Behavioural results are captured in _r inside a DO block
 -- (so each INSERT's exception can be trapped), then asserted at top level.
--- Test count: 5
+-- Test count: 6
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(5);
+SELECT plan(6);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 CREATE TEMP TABLE _r   (k text PRIMARY KEY, v boolean NOT NULL) ON COMMIT DROP;
@@ -112,6 +114,19 @@ BEGIN
   EXCEPTION WHEN exclusion_violation THEN caught := true;
   END;
   INSERT INTO _r VALUES ('other_staff_ok', NOT caught);
+
+  -- 5. an UNAVAILABLE-kind block (no client) overlapping a confirmed
+  --    appointment for the same staff → must succeed (exempt; P1-7).
+  caught := false;
+  BEGIN
+    INSERT INTO appointments
+      (organization_id, client_id, staff_user_id, start_at, end_at, status, appointment_type, kind, confirmed_at)
+    VALUES
+      (v_org, NULL, v_staff,
+       '2026-07-06T00:30:00Z', '2026-07-06T01:30:00Z', 'confirmed', 'Admin/paperwork', 'unavailable', now());
+  EXCEPTION WHEN exclusion_violation THEN caught := true;
+  END;
+  INSERT INTO _r VALUES ('unavailable_ok', NOT caught);
 END $$;
 
 -- ----------------------------------------------------------------------------
@@ -154,6 +169,12 @@ SELECT 5, string_agg(l, E'\n') FROM ok(
             AND conrelid = 'public.appointments'::regclass)
       ) ILIKE '%staff_user_id%tstzrange%',
   '5: appointments_no_staff_overlap exists as an EXCLUDE over (staff_user_id, tstzrange)'
+) AS l;
+
+INSERT INTO _tap (n, line)
+SELECT 6, string_agg(l, E'\n') FROM ok(
+  (SELECT v FROM _r WHERE k = 'unavailable_ok'),
+  '6: an Unavailable-kind block (no client) may overlap a confirmed appointment (P1-7 exemption)'
 ) AS l;
 
 SELECT line FROM _tap ORDER BY n;

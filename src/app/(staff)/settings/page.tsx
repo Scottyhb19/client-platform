@@ -76,7 +76,7 @@ export default async function SettingsPage() {
       .order('name'),
     supabase
       .from('session_types')
-      .select('id, name, color, sort_order')
+      .select('id, name, color, sort_order, default_duration_minutes, kind')
       .is('deleted_at', null)
       .order('sort_order'),
     // G-5 (2026-06-12): session-builder section titles (brief §6.5.1).
@@ -131,6 +131,8 @@ export default async function SettingsPage() {
     name: s.name,
     color: s.color,
     sort_order: s.sort_order,
+    default_duration_minutes: s.default_duration_minutes,
+    kind: s.kind as SessionTypeRow['kind'],
   }))
 
   const sectionTitleRows: SectionTitleRow[] = (sectionTitles ?? []).map(

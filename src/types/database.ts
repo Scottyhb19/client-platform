@@ -79,13 +79,14 @@ export type Database = {
           cancellation_reason: string | null
           cancelled_at: string | null
           cancelled_by_role: string | null
-          client_id: string
+          client_id: string | null
           confirmed_at: string | null
           created_at: string
           created_by_role: string
           deleted_at: string | null
           end_at: string
           id: string
+          kind: string
           location: string | null
           no_show_marked_at: string | null
           notes: string | null
@@ -100,13 +101,14 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cancelled_by_role?: string | null
-          client_id: string
+          client_id?: string | null
           confirmed_at?: string | null
           created_at?: string
           created_by_role?: string
           deleted_at?: string | null
           end_at: string
           id?: string
+          kind?: string
           location?: string | null
           no_show_marked_at?: string | null
           notes?: string | null
@@ -121,13 +123,14 @@ export type Database = {
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cancelled_by_role?: string | null
-          client_id?: string
+          client_id?: string | null
           confirmed_at?: string | null
           created_at?: string
           created_by_role?: string
           deleted_at?: string | null
           end_at?: string
           id?: string
+          kind?: string
           location?: string | null
           no_show_marked_at?: string | null
           notes?: string | null
@@ -2515,6 +2518,7 @@ export type Database = {
           default_duration_minutes: number
           deleted_at: string | null
           id: string
+          kind: string
           name: string
           organization_id: string
           sort_order: number
@@ -2526,6 +2530,7 @@ export type Database = {
           default_duration_minutes?: number
           deleted_at?: string | null
           id?: string
+          kind?: string
           name: string
           organization_id: string
           sort_order?: number
@@ -2537,6 +2542,7 @@ export type Database = {
           default_duration_minutes?: number
           deleted_at?: string | null
           id?: string
+          kind?: string
           name?: string
           organization_id?: string
           sort_order?: number

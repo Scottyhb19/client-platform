@@ -4,22 +4,29 @@ import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
+export type SessionTypeKind = 'appointment' | 'unavailable'
+
 export type SessionTypeRow = {
   id: string
   name: string
   color: string
   sort_order: number
+  default_duration_minutes: number
+  kind: SessionTypeKind
 }
 
 export type CreateSessionTypeInput = {
   name: string
   color: string
+  default_duration_minutes: number
+  kind: SessionTypeKind
 }
 
 export type UpdateSessionTypeInput = {
   id: string
   name: string
   color: string
+  default_duration_minutes: number
 }
 
 /**
@@ -29,22 +36,31 @@ export type UpdateSessionTypeInput = {
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
 type Normalized =
-  | { ok: true; name: string; color: string }
+  | { ok: true; name: string; color: string; durationMinutes: number }
   | { ok: false; error: string }
 
 function normalizeInputs(input: {
   name: string
   color: string
+  default_duration_minutes: number
 }): Normalized {
   const name = input.name.trim()
   const color = input.color.trim().toLowerCase()
+  const durationMinutes = Math.round(input.default_duration_minutes)
   if (name.length < 1 || name.length > 60) {
     return { ok: false, error: 'Name must be 1–60 characters.' }
   }
   if (!HEX_COLOR.test(color)) {
     return { ok: false, error: 'Color must be a 6-digit hex like #1E1A18.' }
   }
-  return { ok: true, name, color }
+  if (
+    !Number.isFinite(durationMinutes) ||
+    durationMinutes < 5 ||
+    durationMinutes > 240
+  ) {
+    return { ok: false, error: 'Duration must be 5–240 minutes.' }
+  }
+  return { ok: true, name, color, durationMinutes }
 }
 
 export async function createSessionTypeAction(
@@ -72,6 +88,8 @@ export async function createSessionTypeAction(
       name: normalized.name,
       color: normalized.color,
       sort_order: nextOrder,
+      default_duration_minutes: normalized.durationMinutes,
+      kind: input.kind,
     })
     .select('id')
     .single()
@@ -100,6 +118,7 @@ export async function updateSessionTypeAction(
     .update({
       name: normalized.name,
       color: normalized.color,
+      default_duration_minutes: normalized.durationMinutes,
     })
     .eq('id', input.id)
 

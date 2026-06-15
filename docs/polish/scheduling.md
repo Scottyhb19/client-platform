@@ -264,6 +264,18 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **Deferred into P1-7 (same cluster):** the SessionTypesEditor duration-editing field + the `seed_organization_defaults` rewrite (durations + `kind` + the seeded Unavailable types) — consolidated so the editor grid and the seed function are each touched once, alongside the kind work.
 
+### P1-7 — "Unavailable" appointment-type kind — done 2026-06-15
+
+**Migration ([`20260615150000`](../../supabase/migrations/20260615150000_appointment_unavailable_kind.sql)).** `session_types.kind` + `appointments.kind` (text+CHECK, default `'appointment'`); `appointments.client_id` → nullable + CHECK (`appointment` needs a client, `unavailable` may not); `appointments_no_staff_overlap` recreated with `AND kind = 'appointment'` so unavailable blocks may overlap a client appointment; 8 Unavailable sub-types seeded (Meeting, Admin/paperwork, Note/reminder, Break/lunch, Travel, Phone call, Professional development, Personal/leave — muted grey, EP-editable); consolidated `seed_organization_defaults` rewrite (durations + kind + unavailable, so new orgs inherit them). All additive + backward-compatible (kind defaults to `'appointment'`; zero existing overlaps → constraint revalidated clean).
+
+**Behaviour.** Unavailable blocks are written `status='confirmed'`, so the existing slot subtraction already removes their time from client-bookable slots (closes FM-19 — a client can't book over the EP's admin time), while the constraint exemption lets the EP pin them beside a client appointment.
+
+**Frontend.** `createAppointmentAction` sets `kind` + allows a null client for unavailable. The composer's type selector is grouped (Appointment / Unavailable optgroups); picking an unavailable type hides the client field, drops the client requirement, and defaults the duration to the type's. The schedule grid's `client !== null` filter is removed and the block label + popover render null-client blocks (type name + note + a "Remove block" action). [`SessionTypesEditor`](../../src/app/(staff)/settings/session-types/_components/SessionTypesEditor.tsx) reworked: a duration column (P1-6 EP-editable) + Appointment / Unavailable sub-sections + a kind-aware add row.
+
+**Tests.** pgTAP [`27_appointment_overlap`](../../supabase/tests/database/27_appointment_overlap.sql) extended to **6/6** (assertion 6: an unavailable-kind block may overlap a confirmed appointment — the exemption). Types regenerated; `tsc` clean; eslint net-zero new errors (the 4 file-level errors are pre-existing react-compiler / react-hooks rules on code that predates them — confirmed against master — and ship in prod).
+
+**P1-6 + P1-7 cluster complete.** Durations seeded + EP-editable; the slot engine offers per-type slots on a 15-min step; unavailable blocks are bookable, rendered staff-only, and managed in Settings. **Post-deploy re-trigger (after deploy #1):** drop the 2-arg `client_available_slots` overload + trim test 26 §A1/§B1 (plan 10→8).
+
 ---
 
 ## 8. Closing commit

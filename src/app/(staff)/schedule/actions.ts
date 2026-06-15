@@ -5,12 +5,15 @@ import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export type CreateAppointmentInput = {
-  clientId: string
+  clientId: string | null
   startAtIso: string
   durationMinutes: number
   appointmentType: string
   location: string | null
   notes: string | null
+  // 'unavailable' creates a staff-only block (admin/meeting/note) with no
+  // client; defaults to 'appointment' (P1-7).
+  kind?: 'appointment' | 'unavailable'
 }
 
 export type NewClientInlineInput = {
@@ -88,7 +91,11 @@ export async function createAppointmentAction(
 ): Promise<{ error: string | null; id: string | null }> {
   const { organizationId, userId } = await requireRole(['owner', 'staff'])
 
-  if (!input.clientId) return { error: 'Client required.', id: null }
+  const kind = input.kind === 'unavailable' ? 'unavailable' : 'appointment'
+
+  if (kind === 'appointment' && !input.clientId) {
+    return { error: 'Client required.', id: null }
+  }
   if (!input.startAtIso) return { error: 'Start time required.', id: null }
   if (!Number.isFinite(input.durationMinutes) || input.durationMinutes <= 0) {
     return { error: 'Duration must be positive.', id: null }
@@ -106,10 +113,11 @@ export async function createAppointmentAction(
     .insert({
       organization_id: organizationId,
       staff_user_id: userId,
-      client_id: input.clientId,
+      client_id: kind === 'appointment' ? input.clientId : null,
       start_at: start.toISOString(),
       end_at: end.toISOString(),
       appointment_type: input.appointmentType || 'Session',
+      kind,
       location: input.location,
       notes: input.notes,
       status: 'confirmed',

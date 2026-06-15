@@ -133,7 +133,7 @@ export default async function SchedulePage({
     supabase
       .from('appointments')
       .select(
-        `id, start_at, end_at, appointment_type, status, location, notes,
+        `id, start_at, end_at, appointment_type, status, kind, location, notes,
          staff_user_id, created_by_role, cancelled_by_role,
          client:clients(id, first_name, last_name,
            category:client_categories(name))`,
@@ -154,7 +154,7 @@ export default async function SchedulePage({
       .order('first_name'),
     supabase
       .from('session_types')
-      .select('id, name, color, sort_order')
+      .select('id, name, color, sort_order, kind, default_duration_minutes')
       .is('deleted_at', null)
       .order('sort_order'),
   ])
@@ -169,13 +169,13 @@ export default async function SchedulePage({
   }))
 
   const appointments: Appointment[] = (data ?? [])
-    .filter((a) => a.client !== null)
     .map((a) => ({
       id: a.id,
       start_at: a.start_at,
       end_at: a.end_at,
       appointment_type: a.appointment_type,
       status: a.status as Appointment['status'],
+      kind: a.kind as Appointment['kind'],
       location: a.location,
       notes: a.notes,
       staff_user_id: a.staff_user_id,
@@ -183,18 +183,23 @@ export default async function SchedulePage({
         a.created_by_role as Appointment['created_by_role'],
       cancelled_by_role:
         a.cancelled_by_role as Appointment['cancelled_by_role'],
-      client: {
-        id: a.client!.id,
-        first_name: a.client!.first_name,
-        last_name: a.client!.last_name,
-        category_name: a.client!.category?.name ?? null,
-      },
+      // Unavailable-kind blocks (P1-7) have no client — the join returns null.
+      client: a.client
+        ? {
+            id: a.client.id,
+            first_name: a.client.first_name,
+            last_name: a.client.last_name,
+            category_name: a.client.category?.name ?? null,
+          }
+        : null,
     }))
 
   const sessionTypes: SessionType[] = (sessionTypeRows ?? []).map((s) => ({
     id: s.id,
     name: s.name,
     color: s.color,
+    kind: s.kind as SessionType['kind'],
+    default_duration_minutes: s.default_duration_minutes,
   }))
 
   return (

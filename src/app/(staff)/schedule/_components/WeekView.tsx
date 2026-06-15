@@ -49,17 +49,19 @@ export type Appointment = {
   end_at: string
   appointment_type: string
   status: 'pending' | 'confirmed' | 'cancelled' | 'no_show' | 'completed'
+  kind: 'appointment' | 'unavailable'
   location: string | null
   notes: string | null
   staff_user_id: string
   created_by_role: 'staff' | 'client_portal' | 'system' | null
   cancelled_by_role: 'staff' | 'client_portal' | 'system' | null
+  // null for unavailable-kind blocks (admin / meeting / note time) — P1-7.
   client: {
     id: string
     first_name: string
     last_name: string
     category_name: string | null
-  }
+  } | null
 }
 
 export type BookingClient = {
@@ -75,6 +77,8 @@ export type SessionType = {
   id: string
   name: string
   color: string // #RRGGBB
+  kind: 'appointment' | 'unavailable'
+  default_duration_minutes: number
 }
 
 interface WeekViewProps {
@@ -548,7 +552,9 @@ export function WeekView({
 
                 {/* Appointment blocks */}
                 {appointmentsByDay[dayIdx].map((a) => {
-                  const fullName = `${a.client.first_name} ${a.client.last_name}`.toLowerCase()
+                  const fullName = a.client
+                    ? `${a.client.first_name} ${a.client.last_name}`.toLowerCase()
+                    : ''
                   const dimmed =
                     normalisedFilter.length > 0 &&
                     !fullName.includes(normalisedFilter)
@@ -1417,7 +1423,9 @@ function AppointmentBlock({
               lineHeight: 1.1,
             }}
           >
-            {appointment.client.first_name} {appointment.client.last_name}
+            {appointment.client
+              ? `${appointment.client.first_name} ${appointment.client.last_name}`
+              : appointment.appointment_type}
             {isAppCancellation && ' · App Cancellation'}
           </span>
           {/* Right column: Odyssey mark stacks above the time on app-booked
@@ -1615,7 +1623,6 @@ function AppointmentPopover({
 }) {
   const { appt, x, y } = data
   const c = appt.client
-  const tone = toneFor(c.id)
   const start = new Date(appt.start_at)
   const end = new Date(appt.end_at)
   const [cancelling, startCancel] = useTransition()
@@ -1623,7 +1630,9 @@ function AppointmentPopover({
   function handleCancel() {
     if (
       !confirm(
-        `Cancel ${c.first_name}'s ${formatTime(start)} ${appt.appointment_type}?`,
+        c
+          ? `Cancel ${c.first_name}'s ${formatTime(start)} ${appt.appointment_type}?`
+          : `Remove this ${appt.appointment_type} block?`,
       )
     )
       return
@@ -1642,6 +1651,126 @@ function AppointmentPopover({
   const cardH = 280
   const left = Math.min(Math.max(x + 12, 8), window.innerWidth - cardW - 8)
   const top = Math.min(Math.max(y + 12, 8), window.innerHeight - cardH - 8)
+
+  // Unavailable-kind block (P1-7): no client. Render the type + note with a
+  // Remove action — none of the client-profile actions apply.
+  if (!c) {
+    return (
+      <div
+        data-popover-card
+        role="dialog"
+        aria-label={`${appt.appointment_type} block`}
+        style={{
+          position: 'fixed',
+          top,
+          left,
+          width: cardW,
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 12,
+          boxShadow: '0 10px 30px rgba(0,0,0,.15)',
+          zIndex: 1000,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            padding: '16px 18px',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '1.05rem',
+                color: 'var(--color-charcoal)',
+                lineHeight: 1.2,
+              }}
+            >
+              {appt.appointment_type}
+            </div>
+            <div
+              style={{
+                fontSize: '.72rem',
+                color: 'var(--color-muted)',
+                marginTop: 1,
+              }}
+            >
+              Unavailable · not client-visible
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-muted)',
+              cursor: 'pointer',
+              padding: 4,
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <X size={16} aria-hidden />
+          </button>
+        </div>
+        <div
+          style={{
+            padding: '12px 18px',
+            fontSize: '.82rem',
+            color: 'var(--color-text)',
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>
+            {formatDayDate(start)} · {formatTime(start)}–{formatTime(end)}
+          </div>
+          {appt.notes && (
+            <div style={{ color: 'var(--color-text-light)', marginTop: 4 }}>
+              {appt.notes}
+            </div>
+          )}
+        </div>
+        {appt.status !== 'cancelled' && (
+          <div
+            style={{
+              padding: '10px 12px',
+              borderTop: '1px solid var(--color-border-subtle)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+            }}
+          >
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={cancelling}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-alert)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.8rem',
+                fontWeight: 600,
+                cursor: cancelling ? 'wait' : 'pointer',
+                padding: '4px 8px',
+              }}
+            >
+              {cancelling ? 'Removing…' : 'Remove block'}
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const tone = toneFor(c.id)
 
   return (
     <div
@@ -1852,7 +1981,9 @@ function BookingComposer({
   const [clientId, setClientId] = useState(allClients[0]?.id ?? '')
   const [date, setDate] = useState(toIsoDate(startAt))
   const [time, setTime] = useState(toHhMm(startAt))
-  const [duration, setDuration] = useState(60)
+  const [duration, setDuration] = useState(
+    sessionTypes[0]?.default_duration_minutes ?? 60,
+  )
   const [type, setType] = useState(sessionTypes[0]?.name ?? 'Session')
   const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
@@ -1902,9 +2033,16 @@ function BookingComposer({
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // P1-7: an "unavailable" session type (admin/meeting/note/…) creates a
+  // staff-only block with no client.
+  const appointmentTypes = sessionTypes.filter((t) => t.kind !== 'unavailable')
+  const unavailableTypes = sessionTypes.filter((t) => t.kind === 'unavailable')
+  const isUnavailable =
+    sessionTypes.find((t) => t.name === type)?.kind === 'unavailable'
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!clientId) {
+    if (!isUnavailable && !clientId) {
       setError('Pick a client.')
       return
     }
@@ -1912,12 +2050,13 @@ function BookingComposer({
     setError(null)
     startTransition(async () => {
       const res = await createAppointmentAction({
-        clientId,
+        clientId: isUnavailable ? null : clientId,
         startAtIso: startIso,
         durationMinutes: duration,
         appointmentType: type,
         location: location.trim() || null,
         notes: notes.trim() || null,
+        kind: isUnavailable ? 'unavailable' : 'appointment',
       })
       if (res.error) {
         setError(res.error)
@@ -1978,7 +2117,7 @@ function BookingComposer({
                 margin: 0,
               }}
             >
-              Book an appointment
+              {isUnavailable ? 'Add an unavailable block' : 'Book an appointment'}
             </h2>
           </div>
           <button
@@ -2017,7 +2156,9 @@ function BookingComposer({
             </div>
           )}
 
-          {/* Client — with inline "+ New client" affordance */}
+          {/* Client — appointment-kind only (P1-7); hidden for Unavailable
+              blocks, which have no client. */}
+          {!isUnavailable && (
           <div>
             <div
               style={{
@@ -2174,6 +2315,7 @@ function BookingComposer({
               </div>
             )}
           </div>
+          )}
 
           {/* Date + time + duration row */}
           <div
@@ -2229,17 +2371,35 @@ function BookingComposer({
             <ComposerField label="Type">
               <select
                 value={type}
-                onChange={(e) => setType(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setType(next)
+                  const t = sessionTypes.find((st) => st.name === next)
+                  if (t) setDuration(t.default_duration_minutes)
+                }}
                 style={composerInput}
               >
                 {sessionTypes.length === 0 && (
                   <option value="Session">Session</option>
                 )}
-                {sessionTypes.map((t) => (
-                  <option key={t.id} value={t.name}>
-                    {t.name}
-                  </option>
-                ))}
+                {appointmentTypes.length > 0 && (
+                  <optgroup label="Appointment">
+                    {appointmentTypes.map((t) => (
+                      <option key={t.id} value={t.name}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {unavailableTypes.length > 0 && (
+                  <optgroup label="Unavailable (no client)">
+                    {unavailableTypes.map((t) => (
+                      <option key={t.id} value={t.name}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </ComposerField>
             <ComposerField label="Location">
