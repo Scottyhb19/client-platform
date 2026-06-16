@@ -157,3 +157,18 @@ export function startOfDayInstant(isoDate: string, timeZone: string): Date {
   const [y, m, d] = isoDate.split('-').map(Number)
   return zonedTimeToInstant(y!, m!, d!, 0, 0, timeZone)
 }
+
+/**
+ * An ISO `YYYY-MM-DD` shifted by `days` whole calendar days.
+ *
+ * Pure calendar arithmetic done on the UTC ladder (`Date.UTC` normalises month
+ * and year rollover), so it never drifts with the server or browser timezone —
+ * the input and output are *date labels*, not instants, so there is no DST or
+ * offset to get wrong. Used to derive the far edge of the booking window
+ * (today + 28 days) before resolving it to a clinic-tz midnight via
+ * startOfDayInstant (P2-1).
+ */
+export function addDaysToIsoDate(isoDate: string, days: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  return new Date(Date.UTC(y!, m! - 1, d! + days)).toISOString().slice(0, 10)
+}

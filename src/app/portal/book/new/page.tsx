@@ -6,6 +6,12 @@ import { StepDay } from './_components/StepDay'
 import { StepTime } from './_components/StepTime'
 import { StepReview } from './_components/StepReview'
 import { isoDateInTz } from './_lib/format'
+import { PRACTICE_TIMEZONE } from '@/lib/constants'
+import {
+  addDaysToIsoDate,
+  startOfDayInstant,
+  todayIsoInTimeZone,
+} from '@/lib/dates'
 
 export const dynamic = 'force-dynamic'
 
@@ -82,15 +88,33 @@ export default async function PortalBookNewPage({
   const organization: Organization = {
     id: org.id,
     name: org.name,
-    timezone: org.timezone ?? 'Australia/Sydney',
+    // The booking surface is governed by the CLINIC timezone, not the device
+    // cookie that drives the portal home's personal "today" (section 7). The
+    // slot engine (client_available_slots) generates and buckets slots in the
+    // org timezone, so the picker's day labels must match it — otherwise a slot
+    // generated as "Sat 9am" clinic-local could mislabel under a travelling
+    // client's device "Fri"/"Sun" (FM-9). The home-today (device) vs booking-
+    // day (org) split is intentional, locked in P0-2 / Q2. Fall back to the
+    // PRACTICE_TIMEZONE constant, not a hardcoded literal. (P2-2.)
+    timezone: org.timezone ?? PRACTICE_TIMEZONE,
   }
 
   // Session types first: the slot length depends on the chosen type's
   // duration (P1-6), so slots can't be fetched until the type is known.
   // Slots come from the SECURITY DEFINER client_available_slots RPC, which
   // already pins to the caller's org via auth.uid().
+  //
+  // Booking window = whole calendar days in the clinic timezone, NOT a rolling
+  // 28×24h UTC span. p_from stays "now" so slots earlier today drop off as the
+  // day advances (the past isn't bookable); p_to is midnight at the START of
+  // day+28 — a stable whole-day boundary, so the final day's afternoon slots
+  // are no longer truncated by the load time-of-day (P2-1 / FM-8). The far edge
+  // is independent of when the page loads; the last bookable day is today+27
+  // (28 days). Reuses startOfDayInstant, the P0-2 primitive.
+  const bookingTz = organization.timezone
   const fromIso = new Date().toISOString()
-  const toIso = new Date(Date.now() + 28 * 24 * 60 * 60 * 1000).toISOString()
+  const windowEndIso = addDaysToIsoDate(todayIsoInTimeZone(bookingTz), 28)
+  const toIso = startOfDayInstant(windowEndIso, bookingTz).toISOString()
 
   const { data: sessionTypeRows, error: typeErr } = await supabase
     .from('session_types')

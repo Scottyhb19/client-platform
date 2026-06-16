@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { PRACTICE_TIMEZONE } from '@/lib/constants'
 import { PortalEmpty, PortalTop } from '../_components/PortalTop'
 import { CancelButton } from './_components/CancelButton'
 import {
@@ -37,7 +38,11 @@ export default async function PortalBookPage({
     .from('organizations')
     .select('timezone, phone')
     .maybeSingle()
-  const timezone = org?.timezone ?? 'Australia/Sydney'
+  // Org timezone governs the booking surface (clinic-local times); the device
+  // cookie drives only the portal home's personal "today" (section 7). The
+  // split is intentional (P0-2 / Q2, P2-2). Fall back to the PRACTICE_TIMEZONE
+  // constant, not a hardcoded literal.
+  const timezone = org?.timezone ?? PRACTICE_TIMEZONE
   const practicePhone = org?.phone?.trim() || null
 
   const nowIso = new Date().toISOString()

@@ -311,6 +311,18 @@ A **Bookings** tab on [`ClientProfile`](../../src/app/(staff)/clients/[id]/_comp
 
 **All of P0 + P1 complete** — ready for the P0+P1 cluster review and the first prod deploy (deploy #1).
 
+### P2 phase — started 2026-06-16
+
+The 15 P2 items, worked in the gap-doc §6 build order on `polish/section-9-scheduling` (stacked). Deploy #2 (merge → master) + the formal section-close sign-off follow once P2 is complete and `:3000`-reviewed.
+
+#### P2-1 + P2-2 — booking-window edge + portal booking tz — done 2026-06-16
+
+**P2-1 (FM-8).** The picker's slot-window far edge was `now() + 28×24h` — a rolling UTC span that truncated the final day's afternoon slots by the load time-of-day (the later the page opened, the fewer far-edge slots showed). [`book/new/page.tsx`](../../src/app/portal/book/new/page.tsx) now derives the window from whole calendar days in the clinic tz: `p_from` stays `now()` and `p_to = startOfDayInstant(today + 28, clinicTz)` — a stable whole-day boundary independent of load time (last bookable day = today+27, 28 days). New `addDaysToIsoDate` helper in [`dates.ts`](../../src/lib/dates.ts) (pure UTC-ladder calendar math). **Deliberate deviation from the gap-doc's literal "start-of-today" near edge, surfaced + operator-approved 2026-06-16:** the near edge stays `now()` because the RPC has no internal past-slot filter, so start-of-today would resurface this morning's already-passed slots as bookable — FM-8's diagnosis is the far edge only, so this is a far-edge-only fix.
+
+**P2-2 (FM-9).** [`book/new/page.tsx`](../../src/app/portal/book/new/page.tsx) + [`book/page.tsx`](../../src/app/portal/book/page.tsx) read `org.timezone` directly (correct — the slot engine buckets in org-tz, so the picker labels must match it) but fell back to a hardcoded `'Australia/Sydney'` literal. Now documented as the **intentional** clinic-tz booking-day vs device-tz home-today split (P0-2 / Q2) and falls back to the `PRACTICE_TIMEZONE` constant. **No device-tz routing** — that would reintroduce FM-9 (a slot generated "Sat 9am" clinic-local mislabelled under a travelling client's device "Fri"/"Sun"). Dormant for the same-tz beta population; the change is hardening + honesty.
+
+**Tests.** No unit-test runner ships (same as the P0-2 date-algorithm check), so [`scripts/booking-window-verify.mjs`](../../scripts/booking-window-verify.mjs) is the committed regression proof: **12/12** across AEST + AEDT — the new far edge is identical at an 08:00 vs a 23:30 load (the late-evening offset the gap doc asked for) while the old far edge moved; far edge == clinic midnight of today+28; day+27 23:00 slot fits, day+28 00:00 excluded; near edge == now. `tsc` clean; eslint net-zero new (the lone `book/page.tsx` `Date.now()`-in-render purity error pre-dates this work, present on master, untouched). Frontend-only, no migration — backward-compatible with deployed master. Browser check rides on the operator's authenticated `:3000`.
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)
