@@ -20,7 +20,7 @@ export default async function SettingsAvailabilityPage() {
     .select(
       `id, staff_user_id, recurrence, day_of_week, specific_date,
        start_time, end_time, slot_duration_minutes,
-       effective_from, effective_to, notes`,
+       effective_from, effective_to, notes, is_blocked`,
     )
     .eq('staff_user_id', userId)
     .is('deleted_at', null)
@@ -37,6 +37,7 @@ export default async function SettingsAvailabilityPage() {
     effective_from: r.effective_from,
     effective_to: r.effective_to,
     notes: r.notes,
+    is_blocked: r.is_blocked,
   }))
 
   const weeklyRules = rules.filter((r) => r.recurrence === 'weekly')

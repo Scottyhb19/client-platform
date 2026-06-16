@@ -295,6 +295,16 @@ Two issues from the operator's authenticated `:3000` walkthrough:
 
 **Tests.** New pgTAP [`29_reminder_lifecycle.sql`](../../supabase/tests/database/29_reminder_lifecycle.sql) **4/4 on live**: enqueue at start − 24h · cancel on cancel · re-time on reschedule · none for unavailable. pgTAP 26 still 10/10; `tsc` clean. (Browser booking→reminder loop rides on the operator's `:3000` cluster review.)
 
+### P1-5 — Negative availability ("close a date") — done 2026-06-15
+
+**Schema + slot engine.** `availability_rules.is_blocked` (default false; migration [`20260615180000`](../../supabase/migrations/20260615180000_availability_close_a_date.sql)). A one-off rule with `is_blocked=true` **subtracts** its window — the mirror of the positive one-off. The 3-arg `client_available_slots` now excludes `is_blocked` rows from the positive `rules` CTE and adds a `blocks` CTE that subtracts closed windows before the appointment filter. Only the 3-arg is taught this (the dead 2-arg bridge has no closure producer/consumer and is dropped post-deploy). Re-asserts the P0-1 anon revoke. Closes the non-buildable AVL-1 workaround.
+
+**Action.** `createDateClosureAction` — single date or range (fanned out to one blocked one-off per day, cap 90), whole-day default (00:00–23:59:59) or a partial window; already-closed dates (23505) skipped. Positive one-offs keep `is_blocked=false` (column default).
+
+**UI.** `OneOffOverrides` splits positive exceptions from closures: closures render in a distinct **"Closed"**-tagged list (date + "All day"/window + a re-open delete), and a **"Close a date"** button opens an inline form (from · optional to · whole-day toggle → start/end). The availability page threads `is_blocked` through.
+
+**Tests.** New pgTAP [`30_date_closure.sql`](../../supabase/tests/database/30_date_closure.sql) **3/3 on live**: whole-day closure removes the day · morning closure leaves the afternoon · removes the morning. pgTAP 28 still 3/3; `tsc` clean. The partial unique index deliberately excludes `is_blocked` (a positive one-off + a whole-day closure at the identical window is not realistic). Public-holiday auto-detection (AVL-8) stays deferred — closures are manual.
+
 ---
 
 ## 8. Closing commit

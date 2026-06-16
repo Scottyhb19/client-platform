@@ -368,6 +368,7 @@ export type Database = {
           effective_to: string | null
           end_time: string
           id: string
+          is_blocked: boolean
           notes: string | null
           organization_id: string
           recurrence: Database["public"]["Enums"]["availability_recurrence"]
@@ -385,6 +386,7 @@ export type Database = {
           effective_to?: string | null
           end_time: string
           id?: string
+          is_blocked?: boolean
           notes?: string | null
           organization_id: string
           recurrence: Database["public"]["Enums"]["availability_recurrence"]
@@ -402,6 +404,7 @@ export type Database = {
           effective_to?: string | null
           end_time?: string
           id?: string
+          is_blocked?: boolean
           notes?: string | null
           organization_id?: string
           recurrence?: Database["public"]["Enums"]["availability_recurrence"]

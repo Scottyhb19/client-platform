@@ -24,6 +24,7 @@ export type AvailabilityRuleRow = {
   effective_from: string
   effective_to: string | null
   notes: string | null
+  is_blocked: boolean
 }
 
 export type CreateWeeklyRuleInput = {
@@ -242,6 +243,102 @@ export async function createOneOffRuleAction(
   revalidatePath('/schedule')
   revalidatePath('/portal/book/new')
   return { error: null, id: data.id }
+}
+
+// ----------------------------------------------------------------------------
+// "Close a date" (P1-5). A closure is a one-off rule with is_blocked=true that
+// SUBTRACTS its window from generated slots. Whole-day by default
+// (00:00–23:59:59), or a partial window; a date range fans out to one blocked
+// row per day. Already-closed date+window collisions (23505) are skipped.
+// ----------------------------------------------------------------------------
+export type CreateDateClosureInput = {
+  from_date: string
+  to_date?: string | null
+  start_time?: string | null // empty/null = whole day
+  end_time?: string | null
+  notes?: string | null
+}
+
+function enumerateDays(from: string, to: string): string[] {
+  const [fy, fm, fd] = from.split('-').map(Number)
+  const [ty, tm, td] = to.split('-').map(Number)
+  let cur = Date.UTC(fy!, fm! - 1, fd!)
+  const end = Date.UTC(ty!, tm! - 1, td!)
+  const out: string[] = []
+  while (cur <= end && out.length <= 400) {
+    const d = new Date(cur)
+    out.push(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(
+        d.getUTCDate(),
+      ).padStart(2, '0')}`,
+    )
+    cur += 86_400_000
+  }
+  return out
+}
+
+export async function createDateClosureAction(
+  input: CreateDateClosureInput,
+): Promise<{ error: string | null; created: number }> {
+  const { userId, organizationId } = await requireRole(['owner', 'staff'])
+
+  if (!DATE_RE.test(input.from_date)) {
+    return { error: 'Date must be YYYY-MM-DD.', created: 0 }
+  }
+  const to =
+    input.to_date && input.to_date.length > 0 ? input.to_date : input.from_date
+  if (!DATE_RE.test(to)) {
+    return { error: 'End date must be YYYY-MM-DD.', created: 0 }
+  }
+  if (to < input.from_date) {
+    return { error: 'End date must be on or after the start date.', created: 0 }
+  }
+
+  const wholeDay =
+    (!input.start_time || input.start_time.length === 0) &&
+    (!input.end_time || input.end_time.length === 0)
+  const start = wholeDay ? '00:00:00' : (input.start_time ?? '00:00:00')
+  const end = wholeDay ? '23:59:59' : (input.end_time ?? '23:59:59')
+  const times = validateTimes(start, end)
+  if (!times.ok) return { error: times.error, created: 0 }
+
+  const days = enumerateDays(input.from_date, to)
+  if (days.length === 0) {
+    return { error: 'No dates in that range.', created: 0 }
+  }
+  if (days.length > 90) {
+    return { error: 'Closure range too large (max 90 days).', created: 0 }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  let created = 0
+  for (const d of days) {
+    const { error } = await supabase.from('availability_rules').insert({
+      organization_id: organizationId,
+      staff_user_id: userId,
+      recurrence: 'one_off',
+      day_of_week: null,
+      specific_date: d,
+      start_time: start,
+      end_time: end,
+      slot_duration_minutes: 60, // vestigial for a block — it generates no slots
+      effective_from: d,
+      effective_to: null,
+      notes: trimNotes(input.notes),
+      is_blocked: true,
+    })
+    if (!error) {
+      created += 1
+    } else if (error.code !== '23505') {
+      // 23505 = that date+window is already closed; skip. Anything else aborts.
+      return { error: `Could not close ${d}: ${error.message}`, created }
+    }
+  }
+
+  revalidatePath('/settings/availability')
+  revalidatePath('/schedule')
+  revalidatePath('/portal/book/new')
+  return { error: null, created }
 }
 
 export async function updateAvailabilityRuleAction(
