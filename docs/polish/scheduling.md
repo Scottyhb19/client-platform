@@ -347,6 +347,8 @@ A **Repeat** toggle in the [`BookingComposer`](../../src/app/(staff)/schedule/_c
 
 **Tests + verification.** [`scripts/recurrence-verify.mjs`](../../scripts/recurrence-verify.mjs) **9/9** (cadence, month-clamp, year rollover, until-inclusive, until-before-start → none, 52-cap). `tsc` clean; eslint net-zero new. **No migration** — frontend + a server action over the existing appointments table, the P1-4 constraint, and the P1-2 reminder trigger (pgTAP 27/29 already cover that DB behaviour). Browser check rides on the operator's `:3000`.
 
+**Follow-up fix (modal overflow, operator-reported):** the expanded Repeat section pushed the composer taller than the viewport — the header and the Book button were clipped with no way to scroll. Fixed by capping the modal to `calc(100vh - 32px)` as a flex column: header and footer pinned (`flexShrink: 0`), body scrolls (`flex: 1; minHeight: 0; overflowY: auto`). Same treatment applied to the recurring result card (up to 52 skipped dates).
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)

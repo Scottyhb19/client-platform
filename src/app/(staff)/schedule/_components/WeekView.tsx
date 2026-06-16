@@ -2362,6 +2362,12 @@ function BookingComposer({
           boxShadow: '0 20px 60px rgba(0,0,0,.25)',
           width: 520,
           maxWidth: 'calc(100vw - 32px)',
+          // Cap to the viewport and let the body scroll, so a tall form (e.g.
+          // the Repeat section expanded) keeps the header and the Book button
+          // reachable instead of overflowing off-screen.
+          maxHeight: 'calc(100vh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
           overflow: 'hidden',
         }}
       >
@@ -2373,6 +2379,7 @@ function BookingComposer({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexShrink: 0,
           }}
         >
           <div>
@@ -2408,8 +2415,17 @@ function BookingComposer({
           </button>
         </div>
 
-        {/* Body */}
-        <div style={{ padding: '20px 22px', display: 'grid', gap: 14 }}>
+        {/* Body — scrolls when the form is taller than the viewport. */}
+        <div
+          style={{
+            padding: '20px 22px',
+            display: 'grid',
+            gap: 14,
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+          }}
+        >
           {error && (
             <div
               role="alert"
@@ -2852,6 +2868,7 @@ function BookingComposer({
             display: 'flex',
             justifyContent: 'flex-end',
             gap: 10,
+            flexShrink: 0,
           }}
         >
           <button
@@ -2909,10 +2926,22 @@ function RecurResultCard({
         boxShadow: '0 20px 60px rgba(0,0,0,.25)',
         width: 460,
         maxWidth: 'calc(100vw - 32px)',
+        maxHeight: 'calc(100vh - 32px)',
+        display: 'flex',
+        flexDirection: 'column',
         overflow: 'hidden',
       }}
     >
-      <div style={{ padding: '20px 22px', display: 'grid', gap: 12 }}>
+      <div
+        style={{
+          padding: '20px 22px',
+          display: 'grid',
+          gap: 12,
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+        }}
+      >
         <h2
           style={{
             fontFamily: 'var(--font-display)',
@@ -2959,6 +2988,7 @@ function RecurResultCard({
           borderTop: '1px solid var(--color-border-subtle)',
           display: 'flex',
           justifyContent: 'flex-end',
+          flexShrink: 0,
         }}
       >
         <button type="button" className="btn primary" onClick={onDone}>
