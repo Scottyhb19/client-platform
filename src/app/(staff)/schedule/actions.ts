@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { headers } from 'next/headers'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
@@ -523,10 +524,21 @@ export async function findNextAvailableSlotAction(
 /**
  * The public, unauthenticated .ics feed URL for a token (P2-15 B). The token
  * IS the credential, so the URL embeds it; keep it private.
+ *
+ * Origin comes from the actual request host, not a build-time
+ * NEXT_PUBLIC_APP_URL — so the link points to wherever the app is running
+ * (localhost in dev, the deployed domain in prod), and never to a host where
+ * this route isn't deployed yet.
  */
-function calendarFeedUrl(token: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
-  const origin = base ? (base.startsWith('http') ? base : `https://${base}`) : ''
+async function calendarFeedUrl(token: string): Promise<string> {
+  const h = await headers()
+  const host = h.get('host') ?? ''
+  const proto =
+    h.get('x-forwarded-proto') ??
+    (host.startsWith('localhost') || host.startsWith('127.0.0.1')
+      ? 'http'
+      : 'https')
+  const origin = host ? `${proto}://${host}` : ''
   return `${origin}/api/calendar/${token}`
 }
 
@@ -540,7 +552,7 @@ export async function getCalendarFeedAction(): Promise<{ url: string | null }> {
     .select('token')
     .eq('staff_user_id', userId)
     .maybeSingle()
-  return { url: data?.token ? calendarFeedUrl(data.token) : null }
+  return { url: data?.token ? await calendarFeedUrl(data.token) : null }
 }
 
 /** Mint or rotate the caller's feed token; returns the new URL. */
@@ -552,7 +564,10 @@ export async function regenerateCalendarFeedAction(): Promise<{
   const supabase = await createSupabaseServerClient()
   const { data, error } = await supabase.rpc('regenerate_calendar_feed_token')
   if (error) return { url: null, error: error.message }
-  return { url: data ? calendarFeedUrl(data as string) : null, error: null }
+  return {
+    url: data ? await calendarFeedUrl(data as string) : null,
+    error: null,
+  }
 }
 
 /** Turn the caller's feed off (the URL stops working). */

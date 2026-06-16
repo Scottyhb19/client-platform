@@ -657,6 +657,10 @@ export function WeekView({
             setPopover(null)
             router.refresh()
           }}
+          onNavigateToSession={(iso) => {
+            setPopover(null)
+            navigateTo(new Date(iso))
+          }}
         />
       )}
 
@@ -1765,12 +1769,15 @@ function AppointmentPopover({
   data,
   onClose,
   onChanged,
+  onNavigateToSession,
 }: {
   data: { appt: Appointment; x: number; y: number }
   onClose: () => void
   // Fires after any persisted change (cancel or a lifecycle transition) —
   // the parent closes the popover and refreshes the grid.
   onChanged: () => void
+  // Jump the grid to the client's next session (P2-14).
+  onNavigateToSession: (startIso: string) => void
 }) {
   const { appt, x, y } = data
   const c = appt.client
@@ -1844,11 +1851,13 @@ function AppointmentPopover({
     })
   }
 
-  // Clamp the card into the viewport — 320px wide, 280px tall.
+  // Clamp the card into the viewport. It can be tall (lifecycle actions + next
+  // session), so cap the height and scroll inside rather than letting the
+  // footer (no-show / completed) fall off-screen.
   const cardW = 320
-  const cardH = 280
+  const cardMaxH = Math.min(460, window.innerHeight - 16)
   const left = Math.min(Math.max(x + 12, 8), window.innerWidth - cardW - 8)
-  const top = Math.min(Math.max(y + 12, 8), window.innerHeight - cardH - 8)
+  const top = Math.min(Math.max(y + 12, 8), window.innerHeight - cardMaxH - 8)
 
   // Unavailable-kind block (P1-7): no client. Render the type + note with a
   // Remove action — none of the client-profile actions apply.
@@ -1868,7 +1877,8 @@ function AppointmentPopover({
           borderRadius: 12,
           boxShadow: '0 10px 30px rgba(0,0,0,.15)',
           zIndex: 1000,
-          overflow: 'hidden',
+          maxHeight: cardMaxH,
+          overflowY: 'auto',
         }}
       >
         <div
@@ -1985,7 +1995,8 @@ function AppointmentPopover({
         borderRadius: 12,
         boxShadow: '0 10px 30px rgba(0,0,0,.15)',
         zIndex: 1000,
-        overflow: 'hidden',
+        maxHeight: cardMaxH,
+        overflowY: 'auto',
       }}
     >
       {/* Header */}
@@ -2080,13 +2091,30 @@ function AppointmentPopover({
           }}
         >
           Next session ·{' '}
-          {nextSession === undefined
-            ? '…'
-            : nextSession
-              ? `${formatDayDate(new Date(nextSession))} · ${formatTime(
-                  new Date(nextSession),
-                )}`
-              : 'none booked'}
+          {nextSession === undefined ? (
+            '…'
+          ) : nextSession ? (
+            <button
+              type="button"
+              onClick={() => onNavigateToSession(nextSession)}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: 'var(--color-primary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+              }}
+            >
+              {formatDayDate(new Date(nextSession))} ·{' '}
+              {formatTime(new Date(nextSession))}
+            </button>
+          ) : (
+            'none booked'
+          )}
         </div>
       </div>
 

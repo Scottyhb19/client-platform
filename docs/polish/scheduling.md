@@ -363,6 +363,8 @@ A practitioner can subscribe to their own schedule from Google/Apple/Outlook via
 
 **Migration** `20260616140000` applied to live (additive, backward-compatible). pgTAP [`32`](../../supabase/tests/database/32_calendar_feed.sql) **8/8** (feed anon-grant intentional · token RPCs anon-revoked · return type carries no client/notes column · unknown+NULL token → empty). [`scripts/ics-verify.mjs`](../../scripts/ics-verify.mjs) **12/12** (well-formed VCALENDAR · no DESCRIPTION/ATTENDEE · unavailable label · escaping). Full scheduling suite green on live (`26`·`27`·`28`·`29`·`30`·`31`·`32` = 38 assertions). `tsc` clean; eslint net-zero new. Browser check rides on the operator's `:3000`. **P2-15 complete.**
 
+**Follow-up fixes (operator-reported, 2026-06-16, round 2):** (1) the appointment popover grew too tall once "Next session" was added — the no-show/complete footer fell off-screen. Capped to `min(460, 100vh − 16)` with internal scroll, on both popover paths. (2) "Next session" is now a **link** that snaps the grid to that session's day (`onNavigateToSession` → `navigateTo`). (3) the `.ics` feed URL was built from `NEXT_PUBLIC_APP_URL`, which `.env.local` sets to the prod domain (it's defined twice; the prod value wins), so the link pointed at production — where the route isn't deployed until #2 → 404. It's now built from the **request host**, so it resolves wherever the app runs (localhost in dev, prod after deploy #2). *(Heads-up: the duplicate `NEXT_PUBLIC_APP_URL` in `.env.local` is the operator's to reconcile; any other code using that var resolves to prod in local dev.)*
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)
