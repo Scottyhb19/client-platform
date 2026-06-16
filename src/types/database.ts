@@ -431,6 +431,32 @@ export type Database = {
           },
         ]
       }
+      calendar_feed_tokens: {
+        Row: {
+          created_at: string
+          staff_user_id: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          staff_user_id: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          staff_user_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_feed_tokens_staff_user_id_fkey"
+            columns: ["staff_user_id"]
+            isOneToOne: true
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       client_categories: {
         Row: {
           created_at: string
@@ -3383,6 +3409,16 @@ export type Database = {
         Args: { p_battery_id: string }
         Returns: boolean
       }
+      calendar_feed_events: {
+        Args: { p_token: string }
+        Returns: {
+          appointment_type: string
+          end_at: string
+          kind: string
+          location: string
+          start_at: string
+        }[]
+      }
       client_accept_invite: {
         Args: { p_client_id: string }
         Returns: undefined
@@ -3586,6 +3622,7 @@ export type Database = {
         Returns: Record<string, unknown>
       }
       rate_limit_record_failure: { Args: { p_key: string }; Returns: undefined }
+      regenerate_calendar_feed_token: { Args: never; Returns: string }
       reorder_program_exercises: {
         Args: {
           p_day_id: string
@@ -3623,6 +3660,7 @@ export type Database = {
       restore_test_battery: { Args: { p_id: string }; Returns: undefined }
       restore_test_result: { Args: { p_id: string }; Returns: undefined }
       restore_test_session: { Args: { p_id: string }; Returns: undefined }
+      revoke_calendar_feed_token: { Args: never; Returns: undefined }
       save_program_as_template: {
         Args: { p_name?: string; p_program_id: string }
         Returns: Json

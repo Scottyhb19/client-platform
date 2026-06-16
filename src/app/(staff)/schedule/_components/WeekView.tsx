@@ -12,6 +12,7 @@ import {
   useTransition,
 } from 'react'
 import {
+  CalendarPlus,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -39,8 +40,11 @@ import {
   createClientInlineAction,
   createRecurringAppointmentsAction,
   findNextAvailableSlotAction,
+  getCalendarFeedAction,
   getClientNextAppointmentAction,
+  regenerateCalendarFeedAction,
   removeUnavailableBlockAction,
+  revokeCalendarFeedAction,
   setAppointmentStatusAction,
   updateAppointmentTimeAction,
 } from '../actions'
@@ -3052,6 +3056,7 @@ function ToolsMenu({
     [sessionTypes],
   )
   const [open, setOpen] = useState(false)
+  const [subscribeOpen, setSubscribeOpen] = useState(false)
   // Default to the first appointment type. Lazy initial state (not an effect) —
   // session types are loaded server-side and stable for the component's life.
   const [typeId, setTypeId] = useState(() => appointmentTypes[0]?.id ?? '')
@@ -3168,8 +3173,306 @@ function ToolsMenu({
               {msg}
             </div>
           )}
+
+          <div
+            style={{
+              borderTop: '1px solid var(--color-border-subtle)',
+              margin: '4px 0 0',
+              paddingTop: 10,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                setSubscribeOpen(true)
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                color: 'var(--color-text)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.84rem',
+                fontWeight: 600,
+              }}
+            >
+              <CalendarPlus size={15} aria-hidden />
+              Subscribe in your calendar
+            </button>
+          </div>
         </div>
       )}
+      {subscribeOpen && (
+        <CalendarSubscribe onClose={() => setSubscribeOpen(false)} />
+      )}
+    </div>
+  )
+}
+
+/** Calendar-subscribe modal (P2-15 B): the de-identified .ics feed URL. */
+function CalendarSubscribe({ onClose }: { onClose: () => void }) {
+  const [url, setUrl] = useState<string | null | undefined>(undefined) // undefined = loading
+  const [pending, startTransition] = useTransition()
+  const [copied, setCopied] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+    getCalendarFeedAction().then((res) => {
+      if (active) setUrl(res.url)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  function handleRegenerate() {
+    setError(null)
+    startTransition(async () => {
+      const res = await regenerateCalendarFeedAction()
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setUrl(res.url)
+      setCopied(false)
+    })
+  }
+
+  function handleRevoke() {
+    setError(null)
+    startTransition(async () => {
+      const res = await revokeCalendarFeedAction()
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setUrl(null)
+      setCopied(false)
+    })
+  }
+
+  function handleCopy() {
+    if (!url) return
+    navigator.clipboard?.writeText(url).then(
+      () => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      },
+      () => setError('Could not copy — select the link and copy it manually.'),
+    )
+  }
+
+  return (
+    <div
+      onMouseDown={(e) => {
+        if ((e.target as HTMLElement).dataset.backdrop === '1') onClose()
+      }}
+      data-backdrop="1"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(30,26,24,.35)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 1100,
+      }}
+    >
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Subscribe in your calendar"
+        style={{
+          background: 'var(--color-card)',
+          borderRadius: 14,
+          boxShadow: '0 20px 60px rgba(0,0,0,.25)',
+          width: 480,
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: 'calc(100vh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            padding: '16px 22px',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <div className="eyebrow" style={{ marginBottom: 2 }}>
+              03 Schedule · Tools
+            </div>
+            <h2
+              style={{
+                fontFamily: 'var(--font-display)',
+                fontWeight: 700,
+                fontSize: '1.25rem',
+                margin: 0,
+              }}
+            >
+              Subscribe in your calendar
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-muted)',
+              cursor: 'pointer',
+              padding: 6,
+              display: 'grid',
+              placeItems: 'center',
+            }}
+          >
+            <X size={18} aria-hidden />
+          </button>
+        </div>
+
+        <div
+          style={{
+            padding: '20px 22px',
+            display: 'grid',
+            gap: 14,
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: '.86rem',
+              color: 'var(--color-text)',
+              lineHeight: 1.5,
+            }}
+          >
+            Add this link to Google, Apple, or Outlook calendar to see your
+            schedule there. It shows session{' '}
+            <strong>times, types and locations only</strong> — never client
+            names or notes.
+          </p>
+
+          {error && (
+            <div
+              role="alert"
+              style={{ fontSize: '.82rem', color: 'var(--color-alert)' }}
+            >
+              {error}
+            </div>
+          )}
+
+          {url === undefined ? (
+            <div style={{ fontSize: '.86rem', color: 'var(--color-muted)' }}>
+              Loading…
+            </div>
+          ) : url ? (
+            <>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  readOnly
+                  value={url}
+                  onFocus={(e) => e.currentTarget.select()}
+                  style={{ ...composerInput, flex: 1, fontSize: '.76rem' }}
+                />
+                <button
+                  type="button"
+                  className="btn outline"
+                  onClick={handleCopy}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: '.78rem',
+                  color: 'var(--color-text-light)',
+                  lineHeight: 1.5,
+                }}
+              >
+                Anyone with this link can view your schedule, so keep it
+                private. Regenerate to revoke the old link, or turn the feed off
+                entirely.
+              </p>
+            </>
+          ) : (
+            <p
+              style={{
+                margin: 0,
+                fontSize: '.84rem',
+                color: 'var(--color-text-light)',
+                lineHeight: 1.5,
+              }}
+            >
+              No calendar link yet. Create one to subscribe.
+            </p>
+          )}
+        </div>
+
+        <div
+          style={{
+            padding: '14px 22px',
+            borderTop: '1px solid var(--color-border-subtle)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 10,
+            flexShrink: 0,
+          }}
+        >
+          {url ? (
+            <button
+              type="button"
+              onClick={handleRevoke}
+              disabled={pending}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--color-alert)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.8rem',
+                fontWeight: 600,
+                cursor: pending ? 'wait' : 'pointer',
+                padding: '4px 8px',
+              }}
+            >
+              Turn off
+            </button>
+          ) : (
+            <span />
+          )}
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleRegenerate}
+            disabled={pending}
+          >
+            {pending ? 'Working…' : url ? 'Regenerate link' : 'Create link'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

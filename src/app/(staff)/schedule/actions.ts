@@ -519,3 +519,48 @@ export async function findNextAvailableSlotAction(
   const row = Array.isArray(data) ? data[0] : null
   return { error: null, slotStartIso: row?.slot_start ?? null }
 }
+
+/**
+ * The public, unauthenticated .ics feed URL for a token (P2-15 B). The token
+ * IS the credential, so the URL embeds it; keep it private.
+ */
+function calendarFeedUrl(token: string): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
+  const origin = base ? (base.startsWith('http') ? base : `https://${base}`) : ''
+  return `${origin}/api/calendar/${token}`
+}
+
+/** The caller's current calendar-feed URL, or null if they have no feed yet. */
+export async function getCalendarFeedAction(): Promise<{ url: string | null }> {
+  const { userId } = await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+  // Owner-only SELECT RLS on calendar_feed_tokens — a co-member can't read it.
+  const { data } = await supabase
+    .from('calendar_feed_tokens')
+    .select('token')
+    .eq('staff_user_id', userId)
+    .maybeSingle()
+  return { url: data?.token ? calendarFeedUrl(data.token) : null }
+}
+
+/** Mint or rotate the caller's feed token; returns the new URL. */
+export async function regenerateCalendarFeedAction(): Promise<{
+  url: string | null
+  error: string | null
+}> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await supabase.rpc('regenerate_calendar_feed_token')
+  if (error) return { url: null, error: error.message }
+  return { url: data ? calendarFeedUrl(data as string) : null, error: null }
+}
+
+/** Turn the caller's feed off (the URL stops working). */
+export async function revokeCalendarFeedAction(): Promise<{
+  error: string | null
+}> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase.rpc('revoke_calendar_feed_token')
+  return { error: error?.message ?? null }
+}

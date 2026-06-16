@@ -357,6 +357,12 @@ A quiet **Tools** dropdown on the `/schedule` toolbar; its first item is **Find 
 
 **Migration** `20260616130000` applied to live (additive, backward-compatible — deployed master never calls it; anon EXECUTE revoked per P0-1). pgTAP `26` → **12/12** (the new RPC's anon-revoked / authenticated-kept tripwire). `tsc` clean; eslint net-zero new. Browser check rides on the operator's `:3000`. **De-identified `.ics` subscribe (P2-15 B) lands next.**
 
+#### P2-15 (B) — de-identified `.ics` calendar subscribe — done 2026-06-16
+
+A practitioner can subscribe to their own schedule from Google/Apple/Outlook via a private, revocable URL. **Security design (reviewed + operator-approved):** the public route [`/api/calendar/[token]`](../../src/app/api/calendar/[token]/route.ts) uses an **anon** client — **not** service-role, so the health route stays the only unauthenticated service-role route — and calls the anon-EXECUTE [`calendar_feed_events(token)`](../../supabase/migrations/20260616140000_calendar_feed.sql) RPC. That RPC is the boundary: it validates the token in-body and RETURNS only `appointment_type, kind, start_at, end_at, location` — structurally incapable of returning client_id, notes, or a name. The `.ics` SUMMARY is the session type only (Unavailable blocks labelled; notes omitted for every kind, since an unavailable note can name a client). The token (64 hex, ~244 bits) lives in `calendar_feed_tokens` with **owner-only SELECT RLS** (a co-member can't read it); writes go only through the SECURITY DEFINER `regenerate_calendar_feed_token` / `revoke_calendar_feed_token` RPCs (authenticated-only, anon-revoked). `calendar_feed_events` is the **one deliberate** anon-EXECUTE in the scheduling family — the token is the credential. Tools → **"Subscribe in your calendar"** opens a modal (feed URL + copy · Regenerate · Turn off · the de-identified disclaimer).
+
+**Migration** `20260616140000` applied to live (additive, backward-compatible). pgTAP [`32`](../../supabase/tests/database/32_calendar_feed.sql) **8/8** (feed anon-grant intentional · token RPCs anon-revoked · return type carries no client/notes column · unknown+NULL token → empty). [`scripts/ics-verify.mjs`](../../scripts/ics-verify.mjs) **12/12** (well-formed VCALENDAR · no DESCRIPTION/ATTENDEE · unavailable label · escaping). Full scheduling suite green on live (`26`·`27`·`28`·`29`·`30`·`31`·`32` = 38 assertions). `tsc` clean; eslint net-zero new. Browser check rides on the operator's `:3000`. **P2-15 complete.**
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)
