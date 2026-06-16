@@ -7,33 +7,27 @@ SET search_path TO public, extensions, pg_temp;
 -- ============================================================================
 -- Why: P0-1 of the scheduling (section 9) polish pass
 -- (docs/polish/scheduling.md, FM-1). Locks in the EXECUTE-grant posture for the
--- scheduling RPC family after the revoke migration (20260615120000). The
--- Supabase auto-grant trap means any future CREATE OR REPLACE on these
--- functions can silently re-grant anon — this test is the tripwire.
+-- scheduling RPC family. The Supabase auto-grant trap means any future
+-- CREATE OR REPLACE on these functions can silently re-grant anon — this test
+-- is the tripwire.
 --
 --   §A anon holds EXECUTE on NOTHING in the scheduling family (4 functions).
 --   §B caller-facing functions keep their authenticated grant — the portal
---      books as a logged-in client and the EP soft-deletes a rule as a
---      logged-in staff member; a blanket revoke that stripped authenticated
---      would pass §A while breaking the surface, not securing it.
+--      books / reads slots as a logged-in client and the EP soft-deletes a
+--      rule as a logged-in staff member; a blanket revoke that stripped
+--      authenticated would pass §A while breaking the surface, not securing it.
 --
--- Companion to 25_portal_rpc_grants (section 7), which deliberately scoped
--- these §9 booking functions out (see its header). soft_delete_availability_rule
--- joins them here as the fourth scheduling-family SECURITY DEFINER write
--- surfaced by the same live probe.
---
---   §C the P1-6 3-arg per-type overload of client_available_slots: anon none,
---      authenticated keeps it. (The welded 2-arg overload is dropped in a
---      post-deploy migration after deploy #1; its §A1/§B1 assertions go with
---      it then, plan 10 → 8.)
+-- client_available_slots is the 3-arg per-type signature (P1-6); the welded
+-- 2-arg overload was dropped post-deploy-#1 (20260615190000), so this is now a
+-- flat 4-function family (plan 8). Companion to 25_portal_rpc_grants (section 7).
 --
 -- No fixtures, no JWT spoof — pure catalog checks as the test owner.
--- Test count: 10
+-- Test count: 8
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(10);
+SELECT plan(8);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -42,7 +36,7 @@ CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 -- ----------------------------------------------------------------------------
 WITH family(ord, sig) AS (
   VALUES
-    (1, 'public.client_available_slots(timestamptz, timestamptz)'),
+    (1, 'public.client_available_slots(timestamptz, timestamptz, integer)'),
     (2, 'public.client_book_appointment(uuid, uuid, timestamptz, timestamptz)'),
     (3, 'public.client_cancel_appointment(uuid)'),
     (4, 'public.soft_delete_availability_rule(uuid)')
@@ -59,7 +53,7 @@ FROM family;
 -- ----------------------------------------------------------------------------
 WITH family(ord, sig) AS (
   VALUES
-    (5, 'public.client_available_slots(timestamptz, timestamptz)'),
+    (5, 'public.client_available_slots(timestamptz, timestamptz, integer)'),
     (6, 'public.client_book_appointment(uuid, uuid, timestamptz, timestamptz)'),
     (7, 'public.client_cancel_appointment(uuid)'),
     (8, 'public.soft_delete_availability_rule(uuid)')
@@ -70,22 +64,6 @@ SELECT ord, ok(
   format('B%s: authenticated keeps EXECUTE on %s', ord - 4, sig)
 )
 FROM family;
-
--- ----------------------------------------------------------------------------
--- §C — the P1-6 3-arg per-type overload (20260615140000): same posture.
--- ----------------------------------------------------------------------------
-INSERT INTO _tap (n, line) VALUES (9, (
-  SELECT ok(
-    NOT has_function_privilege('anon', 'public.client_available_slots(timestamptz, timestamptz, integer)', 'EXECUTE'),
-    'C1: anon cannot execute client_available_slots(timestamptz, timestamptz, integer)'
-  )
-));
-INSERT INTO _tap (n, line) VALUES (10, (
-  SELECT ok(
-    has_function_privilege('authenticated', 'public.client_available_slots(timestamptz, timestamptz, integer)', 'EXECUTE'),
-    'C2: authenticated keeps EXECUTE on client_available_slots(timestamptz, timestamptz, integer)'
-  )
-));
 
 SELECT line FROM _tap ORDER BY n;
 

@@ -9,7 +9,7 @@
 **Carried-in riders this section OWNS** (from CLAUDE.md active-section line + [`docs/go-live-checklist.md`](../go-live-checklist.md) §4): (a) **FM-6** booking slot-range UTC bug (`book/page.tsx` / `book/new/page.tsx`); (b) the **§9 anon-EXECUTE sweep** of `client_available_slots` / `client_book_appointment` / `client_cancel_appointment`; (c) **timezone reconciliation** between the staff side (`PRACTICE_TIMEZONE`, section 6) and the portal device-tz "today" (section 7).
 **Current implementation:** staff availability — [`settings/availability/`](../../src/app/(staff)/settings/availability/); staff schedule — [`schedule/page.tsx`](../../src/app/(staff)/schedule/page.tsx), [`WeekView.tsx`](../../src/app/(staff)/schedule/_components/WeekView.tsx), [`actions.ts`](../../src/app/(staff)/schedule/actions.ts); portal booking — [`portal/book/`](../../src/app/portal/book/); reminders — [`send-appointment-reminders/index.ts`](../../supabase/functions/send-appointment-reminders/index.ts) + [`src/lib/email/`](../../src/lib/email/); DB — migrations `20260420102000`–`20260513160000` + the `client_*` RPC family.
 **Audit date:** 2026-06-15
-**Status:** Gap document — awaiting sign-off before any code changes (protocol step 5). The list below is the contract.
+**Status:** In progress. **P0 + P1 implemented, verified, and deployed to production** (deploy #1, 2026-06-15) — see §7 (progress log) and §8 (closing commit, P0+P1). The 15 P2 items are the remaining scope ahead of the formal section close + final sign-off. The gap list (§3) remains the contract.
 
 ---
 
@@ -254,7 +254,7 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **Schema.** `session_types.default_duration_minutes` (smallint, CHECK 5–240, default 60), seeded **Initial 60 / Review 45 / Session 45 / Telehealth 30** (operator confirmed the standard "Session" is 45, not the gap doc's tentative 30). Migration [`20260615140000`](../../supabase/migrations/20260615140000_session_type_durations_and_slot_granularity.sql).
 
-**Slot engine.** New 3-arg `client_available_slots(p_from, p_to, p_slot_minutes)`: candidate starts every **15 min** (decoupled from the slot length), each slot `p_slot_minutes` long, minus pending/confirmed appointments — so the part-hour after a shorter session is bookable. **Deploy-skew bridge:** the welded 2-arg overload is left untouched (the deployed portal still calls it); `p_slot_minutes` has no default so `{p_from,p_to}` and `{p_from,p_to,p_slot_minutes}` never resolve ambiguously. **Post-deploy re-trigger (after deploy #1):** drop the 2-arg overload + trim test 26 §A1/§B1 (plan 10→8), so every caller uses the per-type path.
+**Slot engine.** New 3-arg `client_available_slots(p_from, p_to, p_slot_minutes)`: candidate starts every **15 min** (decoupled from the slot length), each slot `p_slot_minutes` long, minus pending/confirmed appointments — so the part-hour after a shorter session is bookable. **Deploy-skew bridge:** the welded 2-arg overload is left untouched (the deployed portal still calls it); `p_slot_minutes` has no default so `{p_from,p_to}` and `{p_from,p_to,p_slot_minutes}` never resolve ambiguously. **Post-deploy cleanup (done 2026-06-15, after deploy #1 green):** the dead 2-arg overload was dropped (`20260615190000`) and test 26 trimmed to 8 — a single per-type slot path remains.
 
 **Booking re-check.** `client_book_appointment` recreated ([`20260615140100`](../../supabase/migrations/20260615140100_client_book_appointment_per_type_recheck.sql)) to re-check via the 3-arg form, passing the booking's own length — the 2-arg welded re-check would reject every non-60-min booking as "slot no longer available". Backward-compatible (a deployed 60-min booking re-checks with `p_slot_minutes = 60`). 3rd recreation this section; re-asserts the P0-1 anon revoke (pgTAP 26 A2 confirms anon held).
 
@@ -274,7 +274,7 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **Tests.** pgTAP [`27_appointment_overlap`](../../supabase/tests/database/27_appointment_overlap.sql) extended to **6/6** (assertion 6: an unavailable-kind block may overlap a confirmed appointment — the exemption). Types regenerated; `tsc` clean; eslint net-zero new errors (the 4 file-level errors are pre-existing react-compiler / react-hooks rules on code that predates them — confirmed against master — and ship in prod).
 
-**P1-6 + P1-7 cluster complete.** Durations seeded + EP-editable; the slot engine offers per-type slots on a 15-min step; unavailable blocks are bookable, rendered staff-only, and managed in Settings. **Post-deploy re-trigger (after deploy #1):** drop the 2-arg `client_available_slots` overload + trim test 26 §A1/§B1 (plan 10→8).
+**P1-6 + P1-7 cluster complete.** Durations seeded + EP-editable; the slot engine offers per-type slots on a 15-min step; unavailable blocks are bookable, rendered staff-only, and managed in Settings. **Post-deploy cleanup (done 2026-06-15):** the dead 2-arg `client_available_slots` overload was dropped (`20260615190000`); test 26 trimmed 10→8.
 
 ### Post-review fixes — 2026-06-15 (:3000 cluster walkthrough)
 
@@ -313,9 +313,35 @@ A **Bookings** tab on [`ClientProfile`](../../src/app/(staff)/clients/[id]/_comp
 
 ---
 
-## 8. Closing commit
+## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)
 
-*(To be written at the end of the pass, for the documentary review — per the section sign-off ritual.)*
+*This is the **P0 + P1 checkpoint** closing commit. P0 and P1 are implemented, verified, and live in production (deploy #1). The 15 P2 items remain; a second closing commit + the formal section-close sign-off follow after the P2 phase. Per §0.1 the section moves in checkpointed stages — this is the first.*
+
+### What changed (by gap)
+
+- **P0-1 — anon-EXECUTE sweep (FM-1).** A live `has_function_privilege` probe confirmed the three booking RPCs **plus a 4th** (`soft_delete_availability_rule`) were anon-executable on live (the auto-grant `REVOKE … FROM PUBLIC` never strips). Migration `20260615120000` revoked anon on all four; authenticated retained. pgTAP `26` is the tripwire. No guardless `_`-helper existed. Discharges the §9 slice of the go-live anon-EXECUTE rider (`go-live-checklist.md` §4).
+- **P0-2 — timezone reconciliation (FM-2).** The staff `/schedule` grid resolves today/now/window-boundaries in `PRACTICE_TIMEZONE` (Q2), independent of the Vercel UTC clock and the browser tz. New `src/lib/dates.ts` helpers (node-verified across AEST/AEDT); `page.tsx` re-plumbed onto practice-tz ISO dates + a practice-tz-bounded appointment query; `WeekView` positions blocks / now-line / bucketing / display / click-to-create in practice tz.
+- **P1-4 — double-booking backstop (FM-5).** `appointments_no_staff_overlap` EXCLUDE constraint (`20260615130000`); cancelled + unavailable-kind rows exempt. `client_book_appointment` catches `23P01`; staff actions surface a clean inline overlap error. pgTAP `27`.
+- **P1-6 — per-type durations + 15-min slots (FM-18).** `session_types.default_duration_minutes` (Initial 60 / Review 45 / Session 45 / Telehealth 30); the 3-arg `client_available_slots` steps every 15 min with slot length = the type's duration (`20260615140000`/`140100`). The welded 2-arg bridge was dropped post-deploy (`20260615190000`). pgTAP `28`.
+- **P1-7 — Unavailable kind (FM-19).** `session_types.kind` + `appointments.kind`; `client_id` nullable + CHECK; the constraint recreated to exempt unavailable-kind; 8 Unavailable sub-types seeded; `seed_organization_defaults` consolidated (`20260615150000`). Composer Unavailable path; grid renders null-client blocks; SessionTypesEditor duration column + kind sub-sections. Clients can't see/book unavailable types (RLS tightened, `20260615160000`).
+- **P1-2 / P1-3 — reminder lifecycle (FM-3, FM-4).** `appointment_manage_reminder` trigger (`20260615170000`) owns the T-lead reminder for every path — enqueue on insert, re-time on reschedule, cancel on leave-the-live-set. Reads `organizations.reminder_lead_hours` (**wires P2-3**). The inline enqueue moved out of `client_book_appointment` to the trigger. Staff confirmation email wired into `createAppointmentAction`. pgTAP `29`.
+- **P1-5 — close-a-date (FM-6).** `availability_rules.is_blocked`; the 3-arg slot RPC subtracts blocked windows (`20260615180000`); `createDateClosureAction` (single date / range, whole-day or partial); OneOffOverrides closures list + "Close a date" form. pgTAP `30`. Closes the non-buildable AVL-1 workaround.
+- **P1-1 — Bookings tab (FM-7).** A Bookings tab on the client profile (upcoming / past + cancel), reusing the already-loaded appointments. Frontend-only.
+- **Review fixes (operator `:3000` walkthrough).** Clients no longer see Unavailable types (RLS + picker filter); overlapping blocks render side-by-side (**P2-8(a) pulled forward** — `computeDayLayout` lanes).
+
+### Acceptance tests + results
+- Scheduling pgTAP green on live: `26` 8/8 · `27` 6/6 · `28` 3/3 · `29` 4/4 · `30` 3/3 (26 assertions).
+- `tsc --noEmit` clean; `next build` clean.
+- Deploy #1 (`fb84ada`) fast-forward-merged to master + live; operator authenticated `:3000` walkthrough passed.
+- Every migration was dry-run-checked, applied to live via `supabase db push` (backward-compatible with the deployed frontend at each step), and types regenerated where signatures/columns changed.
+
+### Deferred — the P2 phase (15 items; not section gaps)
+P2-1 (window edge) · P2-2 (portal booking tz) · P2-3..P2-5 (settings honesty — P2-3's lead-hours already wired) · P2-6 (reminder retry) · P2-7 (template de-dup) · **P2-8 (b)** show/hide-cancellations toggle + **(c)** no-show/complete actions [**(a) lanes done early**] · P2-9 (empty-week copy) · P2-10/11 (multi-staff default + AVL-5 FK) · P2-12 (type validation — largely folded into the P1-6/P1-7 selects) · P2-13 (token sweep) · P2-14 (recurring composer) · P2-15 (Tools: find-next-available + de-identified `.ics`). **Trigger:** the P2 phase of this section, before the formal close. Out-of-scope follow-ups (buffer, owner-on-behalf, AVL-7 import, AVL-8 auto-holidays, SMS activation) stay deferred with their own re-triggers (§5).
+
+### Premortem modes
+- **Mitigated (P0-P1):** FM-1 (anon grants) · FM-2 (tz) · FM-3 (no staff reminder) · FM-4 (stale reminder) · FM-5 (double-booking) · FM-6 (no closure) · FM-7 (no Bookings tab) · FM-18 (welded slot grid) · FM-19 (no in-day non-client time).
+- **Accepted with rationale:** the off-tz cross-day-drag residual (P0-2 — correct for the clinic-tz operator; re-trigger: a routinely off-tz staff device). Client self-service reschedule stays deferred (§2). Instant-confirm (no EP-confirm step) accepted (§2).
+- **Addressed in the P2 phase (not yet):** FM-8 (window edge) · FM-9 (portal tz) · FM-10 (dead settings controls) · FM-11 (reminder retry) · FM-12 (template drift) · FM-13 (lifecycle past confirmed — overlap-render done early) · FM-14 (empty-week copy) · FM-15/16 (multi-staff, type drift) · FM-17 (token drift).
 
 ---
 
