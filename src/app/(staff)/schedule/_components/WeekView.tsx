@@ -1723,8 +1723,7 @@ function EmptyWeekHint() {
       >
         No bookings this week
       </div>
-      New booking dialog lands in the next commit. Hover any 15-minute slot
-      to preview where it lands.
+      Click any time to add one.
     </div>
   )
 }

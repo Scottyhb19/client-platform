@@ -72,14 +72,15 @@ export default async function SchedulePage({
     )
   })
 
-  // Selection — default to the current user.
+  // Selection — default to ALL practitioners in the org (P2-10), so a 2-EP org
+  // sees both columns without toggling. An explicit ?staff= filter overrides.
   const validStaffIds = new Set(staff.map((s) => s.user_id))
   const requestedIds = (params.staff ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0 && validStaffIds.has(s))
   const selectedStaffIds =
-    requestedIds.length > 0 ? requestedIds : [userId]
+    requestedIds.length > 0 ? requestedIds : staff.map((s) => s.user_id)
 
   // Work-week definition — distinct day_of_week values from the current
   // user's weekly availability rules. day_of_week uses 0=Mon…6=Sun (see

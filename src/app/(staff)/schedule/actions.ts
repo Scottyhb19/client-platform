@@ -145,6 +145,27 @@ async function sendStaffBookingConfirmation(
   })
 }
 
+type ServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>
+
+/**
+ * Guard that `type` is a live session type of `kind` in the caller's org
+ * (P2-12 / FM-16). The composer already constrains to a select of live types;
+ * this is the server-side backstop so a stale / renamed / typo'd type can't be
+ * written and mislabel the schedule. RLS scopes session_types to the org.
+ */
+async function isValidAppointmentType(
+  supabase: ServerClient,
+  type: string,
+  kind: 'appointment' | 'unavailable',
+): Promise<boolean> {
+  const { data } = await supabase
+    .from('session_types')
+    .select('name')
+    .eq('kind', kind)
+    .is('deleted_at', null)
+  return (data ?? []).some((s) => s.name === type)
+}
+
 export async function createAppointmentAction(
   input: CreateAppointmentInput,
 ): Promise<{ error: string | null; id: string | null }> {
@@ -167,6 +188,15 @@ export async function createAppointmentAction(
   const end = new Date(start.getTime() + input.durationMinutes * 60 * 1000)
 
   const supabase = await createSupabaseServerClient()
+
+  const type = input.appointmentType || 'Session'
+  if (!(await isValidAppointmentType(supabase, type, kind))) {
+    return {
+      error: 'Unknown appointment type — pick one from the list.',
+      id: null,
+    }
+  }
+
   const { data, error } = await supabase
     .from('appointments')
     .insert({
@@ -175,7 +205,7 @@ export async function createAppointmentAction(
       client_id: kind === 'appointment' ? input.clientId : null,
       start_at: start.toISOString(),
       end_at: end.toISOString(),
-      appointment_type: input.appointmentType || 'Session',
+      appointment_type: type,
       kind,
       location: input.location,
       notes: input.notes,
@@ -271,6 +301,12 @@ export async function createRecurringAppointmentsAction(
   }
 
   const supabase = await createSupabaseServerClient()
+
+  const apptType = input.appointmentType || 'Session'
+  if (!(await isValidAppointmentType(supabase, apptType, kind))) {
+    return fail('Unknown appointment type.')
+  }
+
   let created = 0
   let firstId: string | null = null
   const skipped: string[] = []
@@ -291,7 +327,7 @@ export async function createRecurringAppointmentsAction(
         client_id: kind === 'appointment' ? input.clientId : null,
         start_at: start.toISOString(),
         end_at: end.toISOString(),
-        appointment_type: input.appointmentType || 'Session',
+        appointment_type: apptType,
         kind,
         location: input.location,
         notes: input.notes,

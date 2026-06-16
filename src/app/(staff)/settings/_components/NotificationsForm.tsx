@@ -44,11 +44,14 @@ export function NotificationsForm({
         desc="Appointment confirmations, reminders, program updates"
         defaultChecked={settings.email_notifications_enabled}
       />
+      {/* SMS is stubbed for the beta (CLAUDE.md §12) — honest disabled control
+          rather than a toggle that persists but never sends. P2-4. */}
       <Toggle
         name="sms_notifications_enabled"
         label="SMS notifications"
-        desc="Appointment reminders via text (Twilio costs apply)"
-        defaultChecked={settings.sms_notifications_enabled}
+        desc="Coming soon — SMS reminders aren't active in the beta"
+        defaultChecked={false}
+        disabled
       />
 
       <div>
@@ -80,11 +83,13 @@ function Toggle({
   label,
   desc,
   defaultChecked,
+  disabled,
 }: {
   name: string
   label: string
   desc: string
   defaultChecked?: boolean
+  disabled?: boolean
 }) {
   return (
     <label
@@ -94,7 +99,8 @@ function Toggle({
         justifyContent: 'space-between',
         padding: '10px 0',
         borderBottom: '1px solid #F0EBE5',
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
       }}
     >
       <span>
@@ -122,11 +128,12 @@ function Toggle({
         type="checkbox"
         name={name}
         defaultChecked={defaultChecked}
+        disabled={disabled}
         style={{
           width: 18,
           height: 18,
           accentColor: 'var(--color-accent)',
-          cursor: 'pointer',
+          cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       />
     </label>
