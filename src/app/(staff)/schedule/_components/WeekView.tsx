@@ -39,6 +39,7 @@ import {
   createClientInlineAction,
   createRecurringAppointmentsAction,
   findNextAvailableSlotAction,
+  getClientNextAppointmentAction,
   removeUnavailableBlockAction,
   setAppointmentStatusAction,
   updateAppointmentTimeAction,
@@ -1775,6 +1776,23 @@ function AppointmentPopover({
   const [statusPending, startStatus] = useTransition()
   const busy = cancelling || statusPending
 
+  // The client's next booked session after this one (P2-14). undefined = still
+  // loading. This hook precedes the no-client early return below, so it stays
+  // unconditional (Rules of Hooks); it no-ops for unavailable blocks.
+  const [nextSession, setNextSession] = useState<string | null | undefined>(
+    undefined,
+  )
+  useEffect(() => {
+    if (!c) return
+    let active = true
+    getClientNextAppointmentAction(c.id, appt.start_at).then((res) => {
+      if (active) setNextSession(res.startIso)
+    })
+    return () => {
+      active = false
+    }
+  }, [c, appt.start_at])
+
   function handleCancel() {
     if (
       !confirm(
@@ -2050,6 +2068,22 @@ function AppointmentPopover({
           {' · '}
           <StatusPill status={appt.status} />
         </div>
+        <div
+          style={{
+            fontSize: '.78rem',
+            color: 'var(--color-text-light)',
+            marginTop: 4,
+          }}
+        >
+          Next session ·{' '}
+          {nextSession === undefined
+            ? '…'
+            : nextSession
+              ? `${formatDayDate(new Date(nextSession))} · ${formatTime(
+                  new Date(nextSession),
+                )}`
+              : 'none booked'}
+        </div>
       </div>
 
       {/* Actions */}
@@ -2189,7 +2223,14 @@ function BookingComposer({
   const [repeat, setRepeat] = useState(false)
   const [frequency, setFrequency] = useState<RecurFrequency>('weekly')
   const [endMode, setEndMode] = useState<RecurEndMode>('count')
-  const [occurrenceCount, setOccurrenceCount] = useState(4)
+  // Held as a raw string so the field can be cleared and retyped freely; the
+  // clamp to [1, MAX_OCCURRENCES] happens on blur, not on every keystroke
+  // (clamping live forced an empty field to "1", blocking typing "20").
+  const [countInput, setCountInput] = useState('4')
+  const occurrenceCount = Math.min(
+    MAX_OCCURRENCES,
+    Math.max(1, parseInt(countInput, 10) || 1),
+  )
   const [untilDate, setUntilDate] = useState('')
   // Per-instance result after a series save with clashes — shown instead of
   // silently closing, so the EP sees which dates were skipped.
@@ -2795,18 +2836,9 @@ function BookingComposer({
                         type="number"
                         min={1}
                         max={MAX_OCCURRENCES}
-                        value={occurrenceCount}
-                        onChange={(e) =>
-                          setOccurrenceCount(
-                            Math.max(
-                              1,
-                              Math.min(
-                                MAX_OCCURRENCES,
-                                parseInt(e.target.value, 10) || 1,
-                              ),
-                            ),
-                          )
-                        }
+                        value={countInput}
+                        onChange={(e) => setCountInput(e.target.value)}
+                        onBlur={() => setCountInput(String(occurrenceCount))}
                         style={composerInput}
                       />
                     </ComposerField>
@@ -3231,15 +3263,27 @@ function computeRecurrenceDates(
   const [y, m, d] = startIsoDate.split('-').map(Number)
   if (!y || !m || !d) return []
 
+  // Monthly keeps the same WEEKDAY and ordinal position as the start (e.g.
+  // "3rd Thursday"), not the same day-of-month — booking a session should land
+  // on the same day of the week each month. Daily/weekly/fortnightly are whole-
+  // day steps, so they already preserve the weekday (fortnightly = +14d).
+  const startWeekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=Sun
+  const ordinal = Math.ceil(d / 7) // which occurrence of that weekday: 1..5
+
   const occurrence = (i: number): string => {
     if (frequency === 'monthly') {
       const totalMonth = m - 1 + i
       const ty = y + Math.floor(totalMonth / 12)
       const tm = ((totalMonth % 12) + 12) % 12 // 0–11
-      const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate()
-      return new Date(Date.UTC(ty, tm, Math.min(d, lastDay)))
-        .toISOString()
-        .slice(0, 10)
+      // First date in the target month falling on the start's weekday, then the
+      // ordinal-th occurrence — clamped to the last one when the month has
+      // fewer (a 5th Thursday → the 4th in a month with only four).
+      const firstDow = new Date(Date.UTC(ty, tm, 1)).getUTCDay()
+      const firstDate = 1 + ((startWeekday - firstDow + 7) % 7)
+      const daysInMonth = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate()
+      const count = Math.floor((daysInMonth - firstDate) / 7) + 1
+      const targetDate = firstDate + (Math.min(ordinal, count) - 1) * 7
+      return new Date(Date.UTC(ty, tm, targetDate)).toISOString().slice(0, 10)
     }
     const step = frequency === 'daily' ? 1 : frequency === 'weekly' ? 7 : 14
     return new Date(Date.UTC(y, m - 1, d + i * step)).toISOString().slice(0, 10)

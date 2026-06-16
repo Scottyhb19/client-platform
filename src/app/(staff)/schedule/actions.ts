@@ -465,6 +465,34 @@ export async function updateAppointmentTimeAction(
 }
 
 /**
+ * The given client's next booked session after `afterIso` (P2-14 popover): the
+ * soonest pending/confirmed appointment-kind booking, used to show "Next
+ * session · <date>" when the EP opens an appointment. RLS scopes reads to the
+ * caller's org. Returns null when the client has nothing further booked.
+ */
+export async function getClientNextAppointmentAction(
+  clientId: string,
+  afterIso: string,
+): Promise<{ startIso: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data } = await supabase
+    .from('appointments')
+    .select('start_at')
+    .eq('client_id', clientId)
+    .eq('kind', 'appointment')
+    .in('status', ['pending', 'confirmed'])
+    .is('deleted_at', null)
+    .gt('start_at', afterIso)
+    .order('start_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  return { startIso: data?.start_at ?? null }
+}
+
+/**
  * Find the caller's soonest open slot for a given session length (P2-15,
  * Tools → Find next available). Delegates to the staff_next_available_slot RPC,
  * which scans the caller's availability minus closures and existing bookings

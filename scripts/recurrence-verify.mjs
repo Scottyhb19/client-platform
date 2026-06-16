@@ -24,13 +24,20 @@ function computeRecurrenceDates(startIsoDate, frequency, endMode, count, untilIs
   const [y, m, d] = startIsoDate.split('-').map(Number)
   if (!y || !m || !d) return []
 
+  const startWeekday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0=Sun
+  const ordinal = Math.ceil(d / 7) // which occurrence of that weekday: 1..5
+
   const occurrence = (i) => {
     if (frequency === 'monthly') {
       const totalMonth = m - 1 + i
       const ty = y + Math.floor(totalMonth / 12)
       const tm = ((totalMonth % 12) + 12) % 12
-      const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate()
-      return new Date(Date.UTC(ty, tm, Math.min(d, lastDay))).toISOString().slice(0, 10)
+      const firstDow = new Date(Date.UTC(ty, tm, 1)).getUTCDay()
+      const firstDate = 1 + ((startWeekday - firstDow + 7) % 7)
+      const daysInMonth = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate()
+      const count = Math.floor((daysInMonth - firstDate) / 7) + 1
+      const targetDate = firstDate + (Math.min(ordinal, count) - 1) * 7
+      return new Date(Date.UTC(ty, tm, targetDate)).toISOString().slice(0, 10)
     }
     const step = frequency === 'daily' ? 1 : frequency === 'weekly' ? 7 : 14
     return new Date(Date.UTC(y, m - 1, d + i * step)).toISOString().slice(0, 10)
@@ -86,19 +93,37 @@ eq(
   ['2026-07-13', '2026-07-27', '2026-08-10'],
 )
 
-// 4. Monthly from the 31st — clamps to each month's last day, never rolls over.
+// 4. Monthly keeps the WEEKDAY, not the day-of-month. 2026-06-18 is the 3rd
+//    Thursday → the 3rd Thursday of each following month (all Thursdays), not
+//    the 18th (which drifts across weekdays). This is the operator's scenario.
 eq(
-  'monthly ×4 from Jan 31 (clamp)',
-  computeRecurrenceDates('2026-01-31', 'monthly', 'count', 4, null),
-  ['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30'],
+  'monthly ×4 = 3rd Thursday each month',
+  computeRecurrenceDates('2026-06-18', 'monthly', 'count', 4, null),
+  ['2026-06-18', '2026-07-16', '2026-08-20', '2026-09-17'],
 )
 
-// 5. Monthly across a year boundary.
+// 5. Monthly clamps the ordinal: 2026-06-29 is the 5th Monday; July has only
+//    four Mondays, so it lands on the last (4th) — never spilling into August.
 eq(
-  'monthly ×3 across year end',
-  computeRecurrenceDates('2026-11-15', 'monthly', 'count', 3, null),
-  ['2026-11-15', '2026-12-15', '2027-01-15'],
+  'monthly 5th-Monday clamps to last',
+  computeRecurrenceDates('2026-06-29', 'monthly', 'count', 2, null),
+  ['2026-06-29', '2026-07-27'],
 )
+
+// 5b. Property: weekly, fortnightly AND monthly all keep the start's weekday.
+const weekdayOf = (iso) => {
+  const [yy, mm, dd] = iso.split('-').map(Number)
+  return new Date(Date.UTC(yy, mm - 1, dd)).getUTCDay()
+}
+for (const freq of ['weekly', 'fortnightly', 'monthly']) {
+  const dates = computeRecurrenceDates('2026-06-18', freq, 'count', 6, null)
+  const startDow = weekdayOf(dates[0])
+  eq(
+    `${freq} every occurrence is the same weekday`,
+    dates.every((iso) => weekdayOf(iso) === startDow),
+    true,
+  )
+}
 
 // 6. Until — inclusive of the end date.
 eq(
