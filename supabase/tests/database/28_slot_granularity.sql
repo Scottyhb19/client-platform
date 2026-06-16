@@ -50,6 +50,10 @@ BEGIN
   INSERT INTO clients (id, organization_id, first_name, last_name, email, user_id)
     VALUES (v_client, v_org, 'P16', 'Client', 'p16-client-row@test.local', v_client_uid);
 
+  -- P2-11: the staff member must be an org member for the availability_rules
+  -- same-org guard (enforce_availability_rule_staff_in_org).
+  PERFORM public._test_grant_membership(v_staff, v_org, 'staff');
+
   -- One-off availability 2026-07-06 09:00–12:00 for the staff member.
   INSERT INTO availability_rules
     (organization_id, staff_user_id, recurrence, specific_date, start_time, end_time, slot_duration_minutes, effective_from)
