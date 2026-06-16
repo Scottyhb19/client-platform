@@ -283,6 +283,18 @@ Two issues from the operator's authenticated `:3000` walkthrough:
 - **Clients could select Unavailable types in the booking picker.** The portal read all `session_types` and the client SELECT policy returned every kind. Tightened the client RLS policy to `kind = 'appointment'` (migration [`20260615160000`](../../supabase/migrations/20260615160000_client_session_types_appointment_only.sql) — RLS is the boundary; backward-compatible, the deployed portal only ever showed appointment types) and added an explicit `.eq('kind','appointment')` to the picker query.
 - **Overlapping blocks stacked and hid each other** (a note rendered *under* its session). Pulled **P2-8(a)** forward: `computeDayLayout` assigns side-by-side lanes within each overlap cluster (full width when alone; cancelled + unavailable blocks participate, so a replacement sits beside its cancelled original and a note beside its session). Click still opens the full popover; the cross-day drag translate is scaled by lane count. Layout verified by a standalone check (overlap / adjacent / triple / replacement). **P2-8 (b)** show/hide-cancellations toggle and **(c)** no-show/complete actions remain for the P2 phase.
 
+### P1-2 + P1-3 — Reminder lifecycle trigger (+ wired reminder_lead_hours) — done 2026-06-15
+
+**Trigger.** `appointment_manage_reminder()` on `appointments` (`AFTER INSERT OR UPDATE OF start_at, status`, SECURITY DEFINER; migration [`20260615170000`](../../supabase/migrations/20260615170000_appointment_reminder_lifecycle.sql)) owns the single T-lead email reminder for **every** booking path: enqueues at `start_at − reminder_lead_hours` (default 24h) for a live, future, client (`kind='appointment'`) booking; re-times on reschedule (clearing sent/failed state so the cron re-sends for the new time); cancels the queued reminder when the appointment leaves the live set (cancel / no_show / complete / soft-delete / →unavailable). Unavailable blocks get none. Closes **FM-3** (staff-created bookings — the dominant path — were never reminded) + **FM-4** (reschedule/cancel staleness).
+
+**RPC.** `client_book_appointment` recreated (5th, final) to drop its inline enqueue — the trigger now owns it for all paths. Backward-compatible (the deployed portal still gets a reminder, via the trigger; staff bookings now get one too). Re-asserts the P0-1 anon revoke (pgTAP 26 A2 confirms).
+
+**Confirmation (P1-2).** `createAppointmentAction` emails the client a confirmation (best-effort, appointment-kind only) via the shared `sendBookingConfirmationEmail` + the tz-aware booking formatters — staff bookings get the same confirmation the portal sends.
+
+**reminder_lead_hours (P2-3 wired).** The trigger reads `organizations.reminder_lead_hours` (default 24h), so the settings selector now drives the send. The `reminder_24h_email` enum label is left cosmetic.
+
+**Tests.** New pgTAP [`29_reminder_lifecycle.sql`](../../supabase/tests/database/29_reminder_lifecycle.sql) **4/4 on live**: enqueue at start − 24h · cancel on cancel · re-time on reschedule · none for unavailable. pgTAP 26 still 10/10; `tsc` clean. (Browser booking→reminder loop rides on the operator's `:3000` cluster review.)
+
 ---
 
 ## 8. Closing commit

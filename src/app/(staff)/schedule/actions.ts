@@ -3,6 +3,13 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
+import { EmailConfigError } from '@/lib/email/client'
+import { PRACTICE_TIMEZONE } from '@/lib/constants'
+import {
+  formatBookingDateLine,
+  formatBookingTimeRange,
+} from '@/app/portal/book/new/_lib/format'
 
 export type CreateAppointmentInput = {
   clientId: string | null
@@ -86,6 +93,57 @@ export async function createClientInlineAction(
   }
 }
 
+/**
+ * Email the client a confirmation for a staff-created appointment (P1-2).
+ * Best-effort — the booking is already saved; mirrors the portal's confirmation
+ * send. Skips silently if the client has no email. Reuses the shared, tz-aware
+ * booking formatters and the org's timezone.
+ */
+async function sendStaffBookingConfirmation(
+  appointmentId: string,
+): Promise<void> {
+  const supabase = await createSupabaseServerClient()
+  const { data: appt } = await supabase
+    .from('appointments')
+    .select(
+      `id, start_at, end_at, appointment_type, location, staff_user_id,
+       organization:organizations(name, timezone),
+       client:clients(first_name, email)`,
+    )
+    .eq('id', appointmentId)
+    .maybeSingle()
+
+  if (!appt || !appt.client?.email || !appt.organization) return
+
+  const { data: staffProfile } = await supabase
+    .from('user_profiles')
+    .select('first_name, last_name')
+    .eq('user_id', appt.staff_user_id)
+    .maybeSingle()
+
+  const tz = appt.organization.timezone ?? PRACTICE_TIMEZONE
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
+  const bookingUrl = baseUrl
+    ? `${baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`}/portal/book`
+    : 'https://app.example.com/portal/book'
+  const practitionerName =
+    `${staffProfile?.first_name ?? ''} ${staffProfile?.last_name ?? ''}`.trim() ||
+    'your EP'
+
+  await sendBookingConfirmationEmail({
+    to: appt.client.email,
+    firstName: appt.client.first_name ?? 'there',
+    practiceName: appt.organization.name,
+    practitionerName,
+    appointmentType: appt.appointment_type,
+    dateLine: formatBookingDateLine(appt.start_at, tz),
+    timeLine: formatBookingTimeRange(appt.start_at, appt.end_at, tz),
+    location: appt.location,
+    bookingUrl,
+  })
+}
+
 export async function createAppointmentAction(
   input: CreateAppointmentInput,
 ): Promise<{ error: string | null; id: string | null }> {
@@ -138,6 +196,15 @@ export async function createAppointmentAction(
       }
     }
     return { error: `Failed to create booking: ${error.message}`, id: null }
+  }
+
+  // P1-2: email the client their confirmation (best-effort; the booking is
+  // already saved). Appointment-kind only — unavailable blocks have no client.
+  if (kind === 'appointment') {
+    await sendStaffBookingConfirmation(data.id).catch((e) => {
+      if (e instanceof EmailConfigError) throw e
+      return null
+    })
   }
 
   revalidatePath('/schedule')
