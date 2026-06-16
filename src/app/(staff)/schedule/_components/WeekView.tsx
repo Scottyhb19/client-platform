@@ -583,7 +583,7 @@ export function WeekView({
                 style={{
                   position: 'relative',
                   borderLeft: '1px solid var(--color-border-subtle)',
-                  background: isToday ? 'rgba(30,26,24,.02)' : '#fff',
+                  background: isToday ? 'rgba(30,26,24,.02)' : 'var(--color-card)',
                 }}
               >
                 {/* 15-min cells with hover highlight */}
@@ -1062,7 +1062,7 @@ function paintCenteredNumber(
     const now = cells[newIdx]?.querySelector<HTMLDivElement>(
       '[data-rolodex-number]',
     )
-    if (now) now.style.color = '#fff'
+    if (now) now.style.color = 'var(--color-card)'
   }
 }
 
@@ -1157,7 +1157,7 @@ function QuarterCell({
   const borderTop = isHourStart
     ? '1px solid var(--color-border-subtle)'
     : isHalfHour
-      ? '1px dashed #F0EBE5'
+      ? '1px dashed var(--color-grid-line)'
       : 'none'
   return (
     <div
@@ -3680,7 +3680,7 @@ function ClientSearchInput({
           padding: '0 28px 0 28px',
           border: '1px solid var(--color-border-subtle)',
           borderRadius: 7,
-          background: '#fff',
+          background: 'var(--color-card)',
           fontFamily: 'var(--font-sans)',
           fontSize: '.82rem',
           color: 'var(--color-text)',
@@ -3754,7 +3754,7 @@ function DaysDropdown({
           padding: '0 28px 0 10px',
           border: '1px solid var(--color-border-subtle)',
           borderRadius: 7,
-          background: '#fff',
+          background: 'var(--color-card)',
           fontFamily: 'var(--font-sans)',
           fontSize: '.82rem',
           color: 'var(--color-text)',
@@ -3890,7 +3890,7 @@ function navArrowStyle(side: 'left' | 'right'): React.CSSProperties {
     width: 30,
     height: 30,
     border: '1px solid var(--color-border-subtle)',
-    background: '#fff',
+    background: 'var(--color-card)',
     borderRadius: side === 'left' ? '6px 0 0 6px' : '0 6px 6px 0',
     borderLeftWidth: side === 'right' ? 0 : 1,
     cursor: 'pointer',
@@ -3917,18 +3917,17 @@ function hexToRgba(hex: string, alpha: number): string {
 function toneToColors(tone: AvatarTone): { bg: string; border: string } {
   if (tone === 'r')
     return {
-      bg: 'rgba(214,64,69,.22)',
+      bg: 'var(--color-alert-soft)',
       border: 'var(--color-alert)',
     }
   if (tone === 'a')
     return {
-      bg: 'rgba(232,163,23,.24)',
-      border: '#E8A317',
+      bg: 'var(--color-warning-soft)',
+      border: 'var(--color-warning)',
     }
-  // Default (confirmed/completed) — accent green tint. More saturated
-  // than the previous near-transparent dark fill.
+  // Default (confirmed/completed) — accent green tint (P2-13 token).
   return {
-    bg: 'rgba(45,178,76,0.22)',
+    bg: 'var(--color-accent-soft-strong)',
     border: 'var(--color-accent)',
   }
 }

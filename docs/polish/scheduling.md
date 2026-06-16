@@ -386,6 +386,14 @@ A practitioner can subscribe to their own schedule from Google/Apple/Outlook via
 
 `availability_rules.staff_user_id` had no same-org guard (unlike `appointments.client_id`), so an owner could author a rule for a non-member `staff_user_id` — ghost slots (AVL-5, FM-15). Since `user_profiles` has **no** `organization_id` (membership is in `user_organization_roles`), this is a **bespoke** `BEFORE INSERT/UPDATE` trigger (`enforce_availability_rule_staff_in_org`) asserting the `staff_user_id` is an owner/staff member of `NEW.organization_id`, not the generic `enforce_same_org_fk`. Migration `20260616150000` applied to live; a **pre-push probe confirmed 0 existing violating rows**, so no future UPDATE (e.g. a soft-delete) on existing data can trip it. Zero behaviour change at solo scope (the EP authors rules for themselves). Trigger function (not directly invocable) → no anon concern. pgTAP [`33`](../../supabase/tests/database/33_availability_rule_staff_org.sql) (2/2) is the catalog tripwire. No types regen. **Remaining P2: P2-13 (design-token sweep) — last.**
 
+#### P2-13 — design-token sweep (recurring colours) — done 2026-06-16
+
+Option (a): four tokens added to `globals.css` at the **exact current values** (visually neutral) — `--color-accent-soft-strong` (rgba .22), `--color-warning-soft` (.24), `--color-alert-soft` (.22), `--color-grid-line` (`#f0ebe5`). The **recurring** colour literals now reference them: `toneToColors` (the per-status bubble fill — rendered on every block, the highest-drift surface) is fully tokenised; `#fff → var(--color-card)` across `WeekView`; the grid hairline + the `NotificationsForm` divider → `var(--color-grid-line)`. `tsc` clean; eslint net-zero new; grep confirms zero raw `#fff` / toneToColors rgba remain.
+
+**Surfaced, not invented (per the design-system "don't invent a token" rule) — deferred sub-items:** the one-off colour tints (portal notice chips at per-chip alphas `.08/.4`, `.1/.4`, `.06/.25`; the today-column / now-line / hover / cancelled `.05` tints; the `PractitionerSidebar` selected-staff tint), the modal/popover **elevation shadows** (`0 10px 30px …`, `0 20px 60px …` — shadow values, need shadow tokens), and the availability editor's **off-system `8`/`6` px radii** (no matching token — the system has 7/10/14/999, so rounding is a minor visual change). Each needs an exact-alpha/shadow/radius token or `color-mix()` — a separate visual decision, not a silent value change. **Re-trigger:** a brand palette/radius change, or an operator decision to add those tokens.
+
+**All P2 items complete** — ready for deploy #2 (merge → master, redeploy the reminder Edge Function) and the P2 closing-commit + section-close sign-off ritual.
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)

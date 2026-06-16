@@ -15,6 +15,9 @@
      rgba literal recurs in component rules below; new component code must
      reference this token, never the literal. */
   --color-accent-soft: rgba(45, 178, 76, 0.1);
+  /* Accent at 22% — the stronger fill on appointment bubbles + the confirmed
+     status tone (Section 9). Distinct from --color-accent-soft (10%). */
+  --color-accent-soft-strong: rgba(45, 178, 76, 0.22);
   --color-charcoal: #231f20;
   --color-slate: #35363a;
 
@@ -38,6 +41,12 @@
   /* Semantic */
   --color-warning: #e8a317;
   --color-alert: #d64045;
+  /* Low-alpha status fills for the schedule tone backgrounds (Section 9),
+     and the light hairline for the grid + quiet form dividers. Named tokens
+     so the recurring rgba/hex literals don't drift (P2-13). */
+  --color-warning-soft: rgba(232, 163, 23, 0.24);
+  --color-alert-soft: rgba(214, 64, 69, 0.22);
+  --color-grid-line: #f0ebe5;
 
   /* Typography */
   --font-sans: var(--font-barlow), system-ui, sans-serif;

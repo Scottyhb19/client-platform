@@ -98,7 +98,7 @@ function Toggle({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: '10px 0',
-        borderBottom: '1px solid #F0EBE5',
+        borderBottom: '1px solid var(--color-grid-line)',
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.6 : 1,
       }}
