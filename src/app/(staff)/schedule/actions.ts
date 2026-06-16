@@ -463,3 +463,31 @@ export async function updateAppointmentTimeAction(
   revalidatePath('/schedule')
   return { error: null }
 }
+
+/**
+ * Find the caller's soonest open slot for a given session length (P2-15,
+ * Tools → Find next available). Delegates to the staff_next_available_slot RPC,
+ * which scans the caller's availability minus closures and existing bookings
+ * over a 90-day window and returns the single earliest opening. Read-only.
+ */
+export async function findNextAvailableSlotAction(
+  slotMinutes: number,
+): Promise<{ error: string | null; slotStartIso: string | null }> {
+  const { userId } = await requireRole(['owner', 'staff'])
+
+  if (!Number.isFinite(slotMinutes) || slotMinutes < 5 || slotMinutes > 240) {
+    return { error: 'Invalid session length.', slotStartIso: null }
+  }
+
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await supabase.rpc('staff_next_available_slot', {
+    p_staff_user_id: userId,
+    p_from: new Date().toISOString(),
+    p_slot_minutes: slotMinutes,
+  })
+
+  if (error) return { error: error.message, slotStartIso: null }
+  // RETURNS TABLE (LIMIT 1) → an array of 0 or 1 rows.
+  const row = Array.isArray(data) ? data[0] : null
+  return { error: null, slotStartIso: row?.slot_start ?? null }
+}

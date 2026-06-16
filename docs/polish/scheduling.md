@@ -349,6 +349,12 @@ A **Repeat** toggle in the [`BookingComposer`](../../src/app/(staff)/schedule/_c
 
 **Follow-up fix (modal overflow, operator-reported):** the expanded Repeat section pushed the composer taller than the viewport — the header and the Book button were clipped with no way to scroll. Fixed by capping the modal to `calc(100vh - 32px)` as a flex column: header and footer pinned (`flexShrink: 0`), body scrolls (`flex: 1; minHeight: 0; overflowY: auto`). Same treatment applied to the recurring result card (up to 52 skipped dates).
 
+#### P2-15 (A) — Tools → Find next available — done 2026-06-16
+
+A quiet **Tools** dropdown on the `/schedule` toolbar; its first item is **Find next available**: pick a session type → the server returns the EP's soonest open slot → the grid snaps to that day. The client slot engine is client-scoped (resolves the caller via the `clients` table), so this rides a new staff-scoped sibling RPC [`staff_next_available_slot(staff_user_id, from, slot_minutes)`](../../supabase/migrations/20260616130000_staff_next_available_slot.sql) — same availability/closure/overlap logic, owner/staff + target-in-org guarded, returning the single soonest slot (`LIMIT 1`) within a 90-day window. `findNextAvailableSlotAction` calls it for the caller; the `ToolsMenu` navigates via the existing `navigateTo` (reusing the P0-2 practice-tz day math). "No opening in the next 90 days" when the window is dry.
+
+**Migration** `20260616130000` applied to live (additive, backward-compatible — deployed master never calls it; anon EXECUTE revoked per P0-1). pgTAP `26` → **12/12** (the new RPC's anon-revoked / authenticated-kept tripwire). `tsc` clean; eslint net-zero new. Browser check rides on the operator's `:3000`. **De-identified `.ics` subscribe (P2-15 B) lands next.**
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)

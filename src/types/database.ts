@@ -3685,6 +3685,17 @@ export type Database = {
         }
         Returns: string
       }
+      staff_next_available_slot: {
+        Args: {
+          p_from: string
+          p_slot_minutes: number
+          p_staff_user_id: string
+        }
+        Returns: {
+          slot_end: string
+          slot_start: string
+        }[]
+      }
       swap_program_exercise: {
         Args: { p_new_exercise_id: string; p_pe_id: string }
         Returns: string

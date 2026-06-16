@@ -21,6 +21,7 @@ import {
   FileText,
   Search,
   StickyNote,
+  Wrench,
   X,
 } from 'lucide-react'
 import {
@@ -37,6 +38,7 @@ import {
   createAppointmentAction,
   createClientInlineAction,
   createRecurringAppointmentsAction,
+  findNextAvailableSlotAction,
   removeUnavailableBlockAction,
   setAppointmentStatusAction,
   updateAppointmentTimeAction,
@@ -365,6 +367,11 @@ export function WeekView({
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {/* Tools (P2-15): find next available; .ics subscribe lands next. */}
+          <ToolsMenu
+            sessionTypes={sessionTypes}
+            onFoundSlot={(iso) => navigateTo(new Date(iso))}
+          />
           {/* Show/hide cancelled bookings (P2-8b). Label states the action;
               default is shown, so it first offers to hide. */}
           <button
@@ -2995,6 +3002,142 @@ function RecurResultCard({
           Done
         </button>
       </div>
+    </div>
+  )
+}
+
+/* ====================== Tools menu (P2-15) ====================== */
+
+function ToolsMenu({
+  sessionTypes,
+  onFoundSlot,
+}: {
+  sessionTypes: SessionType[]
+  onFoundSlot: (slotStartIso: string) => void
+}) {
+  const appointmentTypes = useMemo(
+    () => sessionTypes.filter((t) => t.kind !== 'unavailable'),
+    [sessionTypes],
+  )
+  const [open, setOpen] = useState(false)
+  // Default to the first appointment type. Lazy initial state (not an effect) —
+  // session types are loaded server-side and stable for the component's life.
+  const [typeId, setTypeId] = useState(() => appointmentTypes[0]?.id ?? '')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  // Click-outside / ESC closes the menu.
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  function handleFind() {
+    const t = appointmentTypes.find((x) => x.id === typeId)
+    const minutes = t?.default_duration_minutes ?? 60
+    setMsg(null)
+    startTransition(async () => {
+      const res = await findNextAvailableSlotAction(minutes)
+      if (res.error) {
+        setMsg(res.error)
+        return
+      }
+      if (!res.slotStartIso) {
+        setMsg('No opening in the next 90 days.')
+        return
+      }
+      setOpen(false)
+      onFoundSlot(res.slotStartIso)
+    })
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        className="btn outline"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <Wrench size={14} aria-hidden />
+        Tools
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Schedule tools"
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 'calc(100% + 6px)',
+            width: 260,
+            background: 'var(--color-card)',
+            border: '1px solid var(--color-border-subtle)',
+            borderRadius: 10,
+            boxShadow: '0 10px 30px rgba(0,0,0,.15)',
+            zIndex: 1000,
+            padding: 14,
+            display: 'grid',
+            gap: 8,
+          }}
+        >
+          <div
+            style={{
+              fontSize: '.64rem',
+              fontWeight: 700,
+              color: 'var(--color-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '.06em',
+            }}
+          >
+            Find next available
+          </div>
+          <select
+            value={typeId}
+            onChange={(e) => setTypeId(e.target.value)}
+            style={composerInput}
+          >
+            {appointmentTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} · {t.default_duration_minutes} min
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleFind}
+            disabled={pending || appointmentTypes.length === 0}
+            style={{ justifyContent: 'center' }}
+          >
+            {pending ? 'Finding…' : 'Find next opening'}
+          </button>
+          {msg && (
+            <div
+              style={{
+                fontSize: '.78rem',
+                color: 'var(--color-text-light)',
+                lineHeight: 1.4,
+              }}
+            >
+              {msg}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
