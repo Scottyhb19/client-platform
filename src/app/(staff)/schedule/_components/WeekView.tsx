@@ -524,6 +524,7 @@ export function WeekView({
           {visibleDayIdxs.map((dayIdx) => {
             const date = addDays(weekStart, dayIdx)
             const isToday = sameCalendarDay(date, today)
+            const dayLayout = computeDayLayout(appointmentsByDay[dayIdx])
             return (
               <div
                 key={dayIdx}
@@ -561,6 +562,7 @@ export function WeekView({
                   const typeColor =
                     sessionTypeColors.get(a.appointment_type.toLowerCase()) ??
                     null
+                  const lay = dayLayout.get(a.id) ?? { lane: 0, lanes: 1 }
                   return (
                     <AppointmentBlock
                       key={a.id}
@@ -569,6 +571,8 @@ export function WeekView({
                       pxPerQuarter={pxPerQuarter}
                       dimmed={dimmed}
                       typeColor={typeColor}
+                      lane={lay.lane}
+                      lanes={lay.lanes}
                       onOpenPopover={(ev) =>
                         setPopover({
                           appt: a,
@@ -1159,12 +1163,65 @@ function OdysseyMark() {
   )
 }
 
+/**
+ * Side-by-side overlap layout (P2-8). Within each cluster of mutually
+ * overlapping blocks, assign each a lane (column) so they render beside each
+ * other instead of stacking and hiding one another. Returns lane index + total
+ * lanes per block id. Half-open: a block starting exactly when another ends
+ * does not overlap. Cancelled and unavailable-kind blocks participate too, so a
+ * replacement sits beside its cancelled original and a note beside its session.
+ */
+function computeDayLayout(
+  appts: Appointment[],
+): Map<string, { lane: number; lanes: number }> {
+  const result = new Map<string, { lane: number; lanes: number }>()
+  const sorted = [...appts].sort((a, b) => {
+    const sa = new Date(a.start_at).getTime()
+    const sb = new Date(b.start_at).getTime()
+    if (sa !== sb) return sa - sb
+    return new Date(a.end_at).getTime() - new Date(b.end_at).getTime()
+  })
+  let group: Appointment[] = []
+  let groupEnd = 0
+  const flush = () => {
+    if (group.length === 0) return
+    const colEnds: number[] = [] // last end (ms) per column
+    const colOf = new Map<string, number>()
+    for (const a of group) {
+      const s = new Date(a.start_at).getTime()
+      let col = colEnds.findIndex((end) => end <= s)
+      if (col === -1) {
+        col = colEnds.length
+        colEnds.push(0)
+      }
+      colEnds[col] = new Date(a.end_at).getTime()
+      colOf.set(a.id, col)
+    }
+    const lanes = colEnds.length
+    for (const a of group) {
+      result.set(a.id, { lane: colOf.get(a.id) ?? 0, lanes })
+    }
+    group = []
+    groupEnd = 0
+  }
+  for (const a of sorted) {
+    const s = new Date(a.start_at).getTime()
+    if (group.length > 0 && s >= groupEnd) flush()
+    group.push(a)
+    groupEnd = Math.max(groupEnd, new Date(a.end_at).getTime())
+  }
+  flush()
+  return result
+}
+
 function AppointmentBlock({
   appointment,
   gridRef,
   pxPerQuarter,
   dimmed,
   typeColor,
+  lane,
+  lanes,
   onOpenPopover,
   onCommitted,
 }: {
@@ -1173,6 +1230,8 @@ function AppointmentBlock({
   pxPerQuarter: number
   dimmed: boolean
   typeColor: string | null
+  lane: number
+  lanes: number
   onOpenPopover: (ev: React.PointerEvent | React.MouseEvent) => void
   onCommitted: () => void
 }) {
@@ -1328,7 +1387,7 @@ function AppointmentBlock({
   // block so the user sees the preview.
   const transform = drag
     ? drag.mode === 'move'
-      ? `translate(calc(${drag.deltaDays} * 100%), ${
+      ? `translate(calc(${drag.deltaDays * lanes} * 100%), ${
           (drag.deltaMin / 15) * pxPerQuarter
         }px)`
       : undefined
@@ -1373,8 +1432,13 @@ function AppointmentBlock({
       style={{
         position: 'absolute',
         top: baseTop + 1,
-        left: 4,
-        right: 4,
+        // Side-by-side lanes for overlapping blocks (P2-8); full width alone.
+        ...(lanes <= 1
+          ? { left: 4, right: 4 }
+          : {
+              left: `calc(${((lane / lanes) * 100).toFixed(3)}% + 2px)`,
+              width: `calc(${(100 / lanes).toFixed(3)}% - 4px)`,
+            }),
         height: liveHeight,
         background: bg,
         borderLeft: `3px solid ${border}`,

@@ -94,7 +94,10 @@ export default async function PortalBookNewPage({
 
   const { data: sessionTypeRows, error: typeErr } = await supabase
     .from('session_types')
+    // Appointment-kind only — Unavailable types (admin/meeting/note) are
+    // staff-only and never bookable by clients (P1-7). RLS also enforces this.
     .select('id, name, color, sort_order, default_duration_minutes')
+    .eq('kind', 'appointment')
     .is('deleted_at', null)
     .order('sort_order')
 

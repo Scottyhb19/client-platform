@@ -276,6 +276,13 @@ Acceptance tests run at the end of the pass (protocol step 7): the scheduling pg
 
 **P1-6 + P1-7 cluster complete.** Durations seeded + EP-editable; the slot engine offers per-type slots on a 15-min step; unavailable blocks are bookable, rendered staff-only, and managed in Settings. **Post-deploy re-trigger (after deploy #1):** drop the 2-arg `client_available_slots` overload + trim test 26 §A1/§B1 (plan 10→8).
 
+### Post-review fixes — 2026-06-15 (:3000 cluster walkthrough)
+
+Two issues from the operator's authenticated `:3000` walkthrough:
+
+- **Clients could select Unavailable types in the booking picker.** The portal read all `session_types` and the client SELECT policy returned every kind. Tightened the client RLS policy to `kind = 'appointment'` (migration [`20260615160000`](../../supabase/migrations/20260615160000_client_session_types_appointment_only.sql) — RLS is the boundary; backward-compatible, the deployed portal only ever showed appointment types) and added an explicit `.eq('kind','appointment')` to the picker query.
+- **Overlapping blocks stacked and hid each other** (a note rendered *under* its session). Pulled **P2-8(a)** forward: `computeDayLayout` assigns side-by-side lanes within each overlap cluster (full width when alone; cancelled + unavailable blocks participate, so a replacement sits beside its cancelled original and a note beside its session). Click still opens the full popover; the cross-day drag translate is scaled by lane count. Layout verified by a standalone check (overlap / adjacent / triple / replacement). **P2-8 (b)** show/hide-cancellations toggle and **(c)** no-show/complete actions remain for the P2 phase.
+
 ---
 
 ## 8. Closing commit
