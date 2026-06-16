@@ -58,6 +58,7 @@ interface AppointmentContext {
   staff_user_id: string
   practice_name: string
   timezone: string
+  email_notifications_enabled: boolean
   client_first_name: string | null
   client_email: string | null
   staff_first_name: string | null
@@ -65,6 +66,9 @@ interface AppointmentContext {
 }
 
 const BATCH_SIZE = 50
+// Matches the appointment_reminders.retry_count CHECK (0–5): a transient
+// failure is retried on later ticks up to this many times before failing.
+const MAX_RETRIES = 5
 
 // Mirrors src/lib/email/client.ts EmailConfigError. Deno can't import from
 // the Next app's src/lib, so the class name and the thrown message string
@@ -130,17 +134,31 @@ Deno.serve(async (req) => {
 
   let succeeded = 0
   let failed = 0
+  let retried = 0
+  let skipped = 0
 
   for (const row of rows) {
     const ctx = await loadAppointmentContext(supabase, row.appointment_id)
     if (!ctx || !ctx.client_email) {
-      // Record the failure so the row doesn't sit forever as 'scheduled'.
+      // Terminal — there's no address to send to, so don't retry.
       await markFailed(
         supabase,
         row.id,
         ctx ? 'client has no email on file' : 'appointment not found',
       )
       failed += 1
+      continue
+    }
+
+    // P2-5: honour the org's email_notifications_enabled. When the practice has
+    // turned email off, cancel the reminder rather than send it.
+    if (!ctx.email_notifications_enabled) {
+      await markCancelled(
+        supabase,
+        row.id,
+        'email notifications disabled by practice',
+      )
+      skipped += 1
       continue
     }
 
@@ -157,49 +175,67 @@ Deno.serve(async (req) => {
       bookingUrl: appUrl ? `${appUrl}/portal/book` : '#',
     })
 
-    const send = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: ctx.client_email,
-        subject,
-        html,
-        text,
-      }),
-    })
-
-    if (!send.ok) {
-      const body = await send.text().catch(() => '')
-      await markFailed(
-        supabase,
-        row.id,
-        `resend ${send.status}: ${body.slice(0, 400)}`,
-      )
-      failed += 1
-      continue
-    }
-
-    let messageId: string | null = null
+    let ok = false
+    let status = 0
+    let errBody = ''
     try {
-      const json = (await send.json()) as { id?: string }
-      messageId = json.id ?? null
-    } catch {
-      // Resend usually returns JSON; if not, leave messageId null. Sent flag
-      // still flips below.
+      const send = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: ctx.client_email,
+          subject,
+          html,
+          text,
+        }),
+      })
+      status = send.status
+      if (send.ok) {
+        let messageId: string | null = null
+        try {
+          const json = (await send.json()) as { id?: string }
+          messageId = json.id ?? null
+        } catch {
+          // Resend usually returns JSON; if not, leave messageId null.
+        }
+        await markSent(supabase, row.id, messageId)
+        succeeded += 1
+        ok = true
+      } else {
+        errBody = await send.text().catch(() => '')
+      }
+    } catch (e) {
+      // Network error / fetch threw — treat as transient (retryable).
+      status = 0
+      errBody = e instanceof Error ? e.message : String(e)
     }
 
-    await markSent(supabase, row.id, messageId)
-    succeeded += 1
+    if (ok) continue
+
+    // P2-6: retry transient failures (network / 429 / 5xx) on later ticks by
+    // leaving status='scheduled' and bumping retry_count, up to MAX_RETRIES;
+    // then fail terminally. A 4xx is a permanent client error → fail now.
+    const reason = `resend ${status || 'network'}: ${errBody.slice(0, 400)}`
+    const retryable = status === 0 || status === 429 || status >= 500
+    if (retryable && row.retry_count < MAX_RETRIES) {
+      await markRetry(supabase, row.id, row.retry_count + 1, reason)
+      retried += 1
+    } else {
+      await markFailed(supabase, row.id, reason)
+      failed += 1
+    }
   }
 
   return jsonResponse(200, {
     processed: rows.length,
     succeeded,
     failed,
+    retried,
+    skipped,
   })
 })
 
@@ -227,7 +263,7 @@ async function loadAppointmentContext(
     .from('appointments')
     .select(
       `id, start_at, end_at, appointment_type, location, staff_user_id, status,
-       organization:organizations(name, timezone),
+       organization:organizations(name, timezone, email_notifications_enabled),
        client:clients(first_name, email)`,
     )
     .eq('id', appointmentId)
@@ -250,6 +286,10 @@ async function loadAppointmentContext(
     staff_user_id: appt.staff_user_id,
     practice_name: appt.organization?.name ?? 'your practice',
     timezone: appt.organization?.timezone ?? 'Australia/Sydney',
+    // Default true (fail-open to sending) if the column is somehow absent —
+    // email is the active channel; only an explicit false opts out (P2-5).
+    email_notifications_enabled:
+      appt.organization?.email_notifications_enabled ?? true,
     client_first_name: appt.client?.first_name ?? null,
     client_email: appt.client?.email ?? null,
     staff_first_name: staff?.first_name ?? null,
@@ -291,6 +331,42 @@ async function markFailed(
     .eq('status', 'scheduled')
 }
 
+// P2-6: a transient failure leaves status='scheduled' so the next tick retries;
+// only retry_count + the last failure_reason move. The WHERE on
+// status='scheduled' keeps it idempotent against a concurrent invocation.
+async function markRetry(
+  supabase: ReturnType<typeof createClient>,
+  reminderId: string,
+  retryCount: number,
+  reason: string,
+): Promise<void> {
+  await supabase
+    .from('appointment_reminders')
+    .update({
+      retry_count: retryCount,
+      failure_reason: reason.slice(0, 500),
+    })
+    .eq('id', reminderId)
+    .eq('status', 'scheduled')
+}
+
+// P2-5: the practice has email off — the reminder won't fire, so retire it
+// (status='cancelled', mirroring how an appointment cancellation retires it).
+async function markCancelled(
+  supabase: ReturnType<typeof createClient>,
+  reminderId: string,
+  reason: string,
+): Promise<void> {
+  await supabase
+    .from('appointment_reminders')
+    .update({
+      status: 'cancelled',
+      failure_reason: reason.slice(0, 500),
+    })
+    .eq('id', reminderId)
+    .eq('status', 'scheduled')
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -299,10 +375,12 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 // ----------------------------------------------------------------------------
-// Inlined date + email rendering. Deno can't import from the Next app's
-// src/lib so the templates are duplicated here in a slimmer form. If the
-// templates need to evolve, both this file AND src/lib/email/templates/
-// must change together.
+// Date + email rendering for the reminder. Deno can't import from the Next
+// app's src/lib, so this is intentionally inlined and is THE CANONICAL source
+// for the reminder email — it is what actually ships. (P2-7: the former
+// src/lib/email/templates/booking-reminder.ts was a duplicate imported by
+// nothing at runtime; it was removed so there is no second copy to drift from.
+// The confirmation email is unrelated and still lives in src/lib.)
 // ----------------------------------------------------------------------------
 
 const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']

@@ -107,13 +107,17 @@ async function sendBookingConfirmationEmailForAppointment(
     .from('appointments')
     .select(
       `id, start_at, end_at, appointment_type, location, staff_user_id,
-       organization:organizations(name, timezone),
+       organization:organizations(name, timezone, email_notifications_enabled),
        client:clients(first_name, email)`,
     )
     .eq('id', appointmentId)
     .maybeSingle()
 
   if (!appt || !appt.client?.email || !appt.organization) {
+    return
+  }
+  // P2-5: respect the practice's email toggle — skip the confirmation when off.
+  if (!appt.organization.email_notifications_enabled) {
     return
   }
 

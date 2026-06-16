@@ -374,6 +374,14 @@ A practitioner can subscribe to their own schedule from Google/Apple/Outlook via
 
 `tsc` clean; eslint net-zero new. No migration. **Remaining P2:** P2-5 (email-gating), P2-6 (reminder retry), P2-7 (template de-dup) — the Edge Function cluster — then P2-11 (FK trigger, migration) and P2-13 (token sweep, last).
 
+#### P2-5 · P2-6 · P2-7 — reminder Edge Function cluster — done 2026-06-16
+
+- **P2-5 (email gating, FM-10; Q5 = make it real):** every email send now honours `organizations.email_notifications_enabled`. The reminder Edge Function loads the flag with the org and, when off, retires the due reminder (`status='cancelled'`, reason "email notifications disabled by practice") instead of sending; both confirmation paths (`createAppointmentAction`→`sendStaffBookingConfirmation`, `confirmBookingAction`→`sendBookingConfirmationEmailForAppointment`) skip the send when off. Default-true / fail-open if the flag is absent (email is the active channel).
+- **P2-6 (failed-reminder retry, FM-11):** a transient send failure (network / 429 / 5xx) now leaves `status='scheduled'` and bumps `retry_count`, so the next 5-min tick retries up to `MAX_RETRIES = 5` (the column's CHECK bound), then fails terminally; a 4xx is a permanent client error → fail now. New `markRetry` / `markCancelled` join `markSent` / `markFailed`, all `WHERE status='scheduled'` (idempotent). The Resend `fetch` is wrapped so a thrown network error is retryable, not a 500.
+- **P2-7 (template de-dup, FM-12):** `src/lib/email/templates/booking-reminder.ts` was a copy of the EF's inline template **imported by nothing at runtime** — deleted. The EF's inline `renderReminderEmail` is documented as the single canonical reminder template (Deno can't import `src/lib` — an established constraint), so there's no second copy to drift from. The confirmation template is unrelated and stays in `src/lib`.
+
+`tsc` clean (the `src/` confirmation gates); eslint net-zero new. **No migration** (reads existing `email_notifications_enabled` + `retry_count`). The Edge Function is Deno, outside the Next tsconfig, so it isn't typechecked here and **requires `supabase functions deploy send-appointment-reminders` at deploy #2** + a post-deploy reminder-send smoke test to take effect (added to the deploy-#2 steps).
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)
