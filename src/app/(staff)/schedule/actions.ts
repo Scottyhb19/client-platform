@@ -234,6 +234,80 @@ export async function cancelAppointmentAction(
 }
 
 /**
+ * Remove an Unavailable block (admin / meeting / note … kind='unavailable',
+ * P1-7) from the schedule (P2-8 review fix). Unlike a client appointment —
+ * which cancels, keeping the cancelled record + attribution — an unavailable
+ * block is the EP's own time-blocking, so removing it soft-deletes the row: it
+ * disappears from the grid instead of lingering as a cancelled block under the
+ * "Show cancellations" toggle.
+ *
+ * Goes through the SECURITY DEFINER soft_delete_unavailable_block RPC: a direct
+ * UPDATE deleted_at can't set it because the appointments SELECT policy filters
+ * deleted_at IS NULL (the PostgREST re-select 42501 trap). The RPC is scoped to
+ * kind='unavailable', so this can never delete a client appointment.
+ */
+export async function removeUnavailableBlockAction(
+  appointmentId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc('soft_delete_unavailable_block', {
+    p_id: appointmentId,
+  })
+
+  if (error) return { error: `Could not remove block: ${error.message}` }
+  revalidatePath('/schedule')
+  return { error: null }
+}
+
+/**
+ * Move an appointment along its lifecycle from the schedule popover (P2-8c):
+ * mark it completed or a no-show, or reopen a mis-marked one back to confirmed.
+ * Mirrors cancelAppointmentAction; cancellation keeps its own action (it
+ * carries a reason + actor role). This covers the remaining non-terminal
+ * transitions so the lifecycle no longer stalls at 'confirmed' (FM-13).
+ *
+ * The appointment_manage_reminder trigger (P1-2/P1-3) owns the reminder side
+ * effect: it auto-cancels any queued reminder when the status leaves
+ * pending/confirmed (so completed/no_show need no manual reminder handling)
+ * and re-enqueues on reopen if the appointment is still in the future — so we
+ * only set the status + its bookkeeping timestamp here.
+ *
+ * no_show stamps no_show_marked_at (the column exists for exactly this);
+ * 'confirmed' must satisfy appointments_confirmed_fields (confirmed_at NOT
+ * NULL), so reopen (re)stamps confirmed_at and clears the stale no_show marker.
+ */
+export async function setAppointmentStatusAction(
+  appointmentId: string,
+  status: 'completed' | 'no_show' | 'confirmed',
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const nowIso = new Date().toISOString()
+  const patch: {
+    status: 'completed' | 'no_show' | 'confirmed'
+    no_show_marked_at?: string | null
+    confirmed_at?: string
+  } =
+    status === 'no_show'
+      ? { status, no_show_marked_at: nowIso }
+      : status === 'completed'
+        ? { status, no_show_marked_at: null }
+        : { status, confirmed_at: nowIso, no_show_marked_at: null }
+
+  const { error } = await supabase
+    .from('appointments')
+    .update(patch)
+    .eq('id', appointmentId)
+
+  if (error) return { error: `Could not update status: ${error.message}` }
+  revalidatePath('/schedule')
+  return { error: null }
+}
+
+/**
  * Persist a drag-move or drag-resize on an appointment.
  * RLS enforces tenant scope; we just validate start < end and that the
  * new start/end are real dates.

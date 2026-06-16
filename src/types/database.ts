@@ -3387,23 +3387,14 @@ export type Database = {
         Args: { p_client_id: string }
         Returns: undefined
       }
-      client_available_slots:
-        | {
-            Args: { p_from: string; p_to: string }
-            Returns: {
-              slot_end: string
-              slot_start: string
-              staff_user_id: string
-            }[]
-          }
-        | {
-            Args: { p_from: string; p_slot_minutes: number; p_to: string }
-            Returns: {
-              slot_end: string
-              slot_start: string
-              staff_user_id: string
-            }[]
-          }
+      client_available_slots: {
+        Args: { p_from: string; p_slot_minutes: number; p_to: string }
+        Returns: {
+          slot_end: string
+          slot_start: string
+          staff_user_id: string
+        }[]
+      }
       client_book_appointment: {
         Args: {
           p_end_at: string
@@ -3678,6 +3669,10 @@ export type Database = {
       soft_delete_test_battery: { Args: { p_id: string }; Returns: undefined }
       soft_delete_test_result: { Args: { p_id: string }; Returns: undefined }
       soft_delete_test_session: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_unavailable_block: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       staff_create_client_invite: {
         Args: {
           p_category_id?: string

@@ -16,6 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  Eye,
+  EyeOff,
   FileText,
   Search,
   StickyNote,
@@ -34,6 +36,8 @@ import {
   cancelAppointmentAction,
   createAppointmentAction,
   createClientInlineAction,
+  removeUnavailableBlockAction,
+  setAppointmentStatusAction,
   updateAppointmentTimeAction,
 } from '../actions'
 import {
@@ -157,6 +161,12 @@ export function WeekView({
   const [clientFilter, setClientFilter] = useState('')
   const normalisedFilter = clientFilter.trim().toLowerCase()
 
+  // Show/hide cancelled appointments on the grid (P2-8b). Default = show: the
+  // operator values seeing a cancelled row beside its replacement (the lanes
+  // in computeDayLayout sit them side-by-side). Toggling off strips cancelled
+  // blocks AND recomputes lanes, so the survivors reclaim the width.
+  const [showCancellations, setShowCancellations] = useState(true)
+
   // Month / year picker popover — opens under the "April 2026" label.
   const [monthPickerOpen, setMonthPickerOpen] = useState(false)
   const [pickerYear, setPickerYear] = useState(weekStart.getFullYear())
@@ -243,6 +253,15 @@ export function WeekView({
     }
     return map
   }, [appointments, weekStartIso])
+
+  // What actually renders, after the cancellations toggle (P2-8b). Lanes are
+  // computed from this set, so hiding cancellations lets the survivors widen.
+  const visibleByDay = useMemo(() => {
+    if (showCancellations) return appointmentsByDay
+    return appointmentsByDay.map((day) =>
+      day.filter((a) => a.status !== 'cancelled'),
+    )
+  }, [appointmentsByDay, showCancellations])
 
   const monthLabel = formatMonthYear(weekStart)
 
@@ -345,6 +364,25 @@ export function WeekView({
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {/* Show/hide cancelled bookings (P2-8b). Label states the action;
+              default is shown, so it first offers to hide. */}
+          <button
+            type="button"
+            className="btn outline"
+            onClick={() => setShowCancellations((v) => !v)}
+            title={
+              showCancellations
+                ? 'Hide cancelled bookings'
+                : 'Show cancelled bookings'
+            }
+          >
+            {showCancellations ? (
+              <EyeOff size={14} aria-hidden />
+            ) : (
+              <Eye size={14} aria-hidden />
+            )}
+            {showCancellations ? 'Hide cancelled' : 'Show cancelled'}
+          </button>
           <DaysDropdown value={viewMode} onChange={switchView} />
         </div>
       </div>
@@ -524,7 +562,7 @@ export function WeekView({
           {visibleDayIdxs.map((dayIdx) => {
             const date = addDays(weekStart, dayIdx)
             const isToday = sameCalendarDay(date, today)
-            const dayLayout = computeDayLayout(appointmentsByDay[dayIdx])
+            const dayLayout = computeDayLayout(visibleByDay[dayIdx])
             return (
               <div
                 key={dayIdx}
@@ -552,7 +590,7 @@ export function WeekView({
                 )}
 
                 {/* Appointment blocks */}
-                {appointmentsByDay[dayIdx].map((a) => {
+                {visibleByDay[dayIdx].map((a) => {
                   const fullName = a.client
                     ? `${a.client.first_name} ${a.client.last_name}`.toLowerCase()
                     : ''
@@ -602,7 +640,7 @@ export function WeekView({
         <AppointmentPopover
           data={popover}
           onClose={() => setPopover(null)}
-          onCancelled={() => {
+          onChanged={() => {
             setPopover(null)
             router.refresh()
           }}
@@ -1676,20 +1714,58 @@ function EmptyWeekHint() {
 
 /* ====================== Appointment popover card ====================== */
 
+/** A quiet transparent text-button for the popover footer (lifecycle + cancel). */
+function FooterAction({
+  label,
+  color,
+  disabled,
+  onClick,
+}: {
+  label: string
+  color: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        color,
+        fontFamily: 'var(--font-sans)',
+        fontSize: '.8rem',
+        fontWeight: 600,
+        cursor: disabled ? 'wait' : 'pointer',
+        padding: '4px 8px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
 function AppointmentPopover({
   data,
   onClose,
-  onCancelled,
+  onChanged,
 }: {
   data: { appt: Appointment; x: number; y: number }
   onClose: () => void
-  onCancelled: () => void
+  // Fires after any persisted change (cancel or a lifecycle transition) —
+  // the parent closes the popover and refreshes the grid.
+  onChanged: () => void
 }) {
   const { appt, x, y } = data
   const c = appt.client
   const start = new Date(appt.start_at)
   const end = new Date(appt.end_at)
   const [cancelling, startCancel] = useTransition()
+  const [statusPending, startStatus] = useTransition()
+  const busy = cancelling || statusPending
 
   function handleCancel() {
     if (
@@ -1706,7 +1782,35 @@ function AppointmentPopover({
         alert(res.error)
         return
       }
-      onCancelled()
+      onChanged()
+    })
+  }
+
+  // P2-8 review fix — removing an Unavailable block soft-deletes it (it
+  // disappears) rather than cancelling it (which would leave a cancelled
+  // ghost). Client appointments still cancel, above.
+  function handleRemoveBlock() {
+    if (!confirm(`Remove this ${appt.appointment_type} block?`)) return
+    startCancel(async () => {
+      const res = await removeUnavailableBlockAction(appt.id)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      onChanged()
+    })
+  }
+
+  // P2-8c — move the appointment along its lifecycle (complete / no-show /
+  // reopen). The reminder trigger auto-handles the reminder on the status flip.
+  function handleSetStatus(status: 'completed' | 'no_show' | 'confirmed') {
+    startStatus(async () => {
+      const res = await setAppointmentStatusAction(appt.id, status)
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      onChanged()
     })
   }
 
@@ -1813,7 +1917,7 @@ function AppointmentPopover({
           >
             <button
               type="button"
-              onClick={handleCancel}
+              onClick={handleRemoveBlock}
               disabled={cancelling}
               style={{
                 background: 'transparent',
@@ -1990,26 +2094,44 @@ function AppointmentPopover({
             padding: '10px 12px',
             borderTop: '1px solid var(--color-border-subtle)',
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
           }}
         >
-          <button
-            type="button"
+          {/* Lifecycle (P2-8c): complete / no-show from confirmed-or-pending;
+              a mis-marked one reopens to confirmed. */}
+          <div style={{ display: 'flex', gap: 2 }}>
+            {appt.status === 'completed' || appt.status === 'no_show' ? (
+              <FooterAction
+                label="Reopen"
+                color="var(--color-text-light)"
+                disabled={busy}
+                onClick={() => handleSetStatus('confirmed')}
+              />
+            ) : (
+              <>
+                <FooterAction
+                  label="Complete"
+                  color="var(--color-accent)"
+                  disabled={busy}
+                  onClick={() => handleSetStatus('completed')}
+                />
+                <FooterAction
+                  label="No-show"
+                  color="var(--color-warning)"
+                  disabled={busy}
+                  onClick={() => handleSetStatus('no_show')}
+                />
+              </>
+            )}
+          </div>
+          <FooterAction
+            label={cancelling ? 'Cancelling…' : 'Cancel appointment'}
+            color="var(--color-alert)"
+            disabled={busy}
             onClick={handleCancel}
-            disabled={cancelling}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--color-alert)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '.8rem',
-              fontWeight: 600,
-              cursor: cancelling ? 'wait' : 'pointer',
-              padding: '4px 8px',
-            }}
-          >
-            {cancelling ? 'Cancelling…' : 'Cancel appointment'}
-          </button>
+          />
         </div>
       )}
     </div>
