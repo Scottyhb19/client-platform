@@ -428,6 +428,42 @@ P2-1 (window edge) · P2-2 (portal booking tz) · P2-3..P2-5 (settings honesty �
 
 ---
 
+## 8b. Closing commit — P2 (deploy #2, 2026-06-16)
+
+*The P2 phase is implemented, verified, and live in production (deploy #2). This completes the section-9 polish pass; the final section-close sign-off follows.*
+
+### What changed (by gap)
+- **P2-1 / P2-2 (FM-8 / FM-9).** Booking-window far edge → a stable whole-day boundary (`startOfDayInstant(today+28, clinic-tz)`), so the 4-week edge no longer truncates by load time (near edge stays `now()` — far-edge-only fix, operator-approved). `book/new` + `book` document the **intentional** clinic-tz booking-day vs device-tz home-today split (P0-2/Q2) and fall back to `PRACTICE_TIMEZONE`.
+- **P2-3 (FM-10).** `reminder_lead_hours` wired (in the P1-2 trigger).
+- **P2-4 (FM-10).** SMS toggle disabled + "Coming soon" (the §12 stub made honest; column kept).
+- **P2-5 (FM-10).** `email_notifications_enabled` now gates every send — the reminder Edge Function (cancels the due reminder when off) and both confirmation paths.
+- **P2-6 (FM-11).** Failed-reminder retry: network / 429 / 5xx leaves `status='scheduled'` and bumps `retry_count` to the CHECK cap (5), then fails; 4xx is terminal.
+- **P2-7 (FM-12).** Deleted the dead `src/lib/email/templates/booking-reminder.ts` (imported by nothing); the Edge Function's inline template is the single canonical source.
+- **P2-8 (FM-13).** Show/hide-cancellations toggle (default show) + lifecycle actions (Complete / No-show / Reopen) + Unavailable-block **soft-delete** (vs cancel) + side-by-side lanes (shipped early at deploy #1).
+- **P2-9 / P2-10 / P2-12 (FM-14 / FM-15 / FM-16).** Empty-week copy rewrite · staff filter defaults to all practitioners · server-side `appointment_type` validation backstop.
+- **P2-11 (FM-15 / AVL-5).** Same-org guard trigger on `availability_rules.staff_user_id` (bespoke — `user_profiles` has no `organization_id`).
+- **P2-13 (FM-17).** Recurring-colour token sweep — 4 new tokens (`--color-accent-soft-strong`, `--color-warning-soft`, `--color-alert-soft`, `--color-grid-line`); `toneToColors`, `#fff`, and the grid/divider hairlines tokenised. Visually neutral.
+- **P2-14 (new feature).** Recurring appointments — a Repeat composer (daily/weekly/fortnightly/monthly + count or end-date) generating concrete rows; monthly keeps the weekday (Nth-weekday-of-month); clashes skipped-and-reported; each instance auto-reminds via the trigger.
+- **P2-15 (new feature).** Schedule **Tools** menu — Find next available (new staff-scoped `staff_next_available_slot` RPC) + a **de-identified `.ics` subscribe** (token-authenticated anon RPC `calendar_feed_events` returning type/time/location only — never client identity; a public anon route, **not** service-role, so the health-route invariant holds; per-practitioner revocable token).
+- **Operator-reported fixes folded in:** the appointment-popover overflow (cap + scroll) + "Next session" link; the `.ics` URL built from the request host (the prod-pointing `NEXT_PUBLIC_APP_URL` 404); the recurring monthly-weekday + sessions-input + composer-scroll fixes; and the pgTAP 28/30 fixture repair for the P2-11 trigger.
+
+### Acceptance tests + results
+- Scheduling pgTAP **40/40 green on live**: `26` 12 · `27` 6 · `28` 3 · `29` 4 · `30` 3 · `31` 2 · `32` 8 · `33` 2.
+- Node checks: `booking-window-verify` 12/12 (AEST+AEDT, late-evening edge), `recurrence-verify` 12/12 (cadence, weekday-monthly, clamp, until, cap), `ics-verify` 12/12 (well-formed VCALENDAR, no DESCRIPTION/ATTENDEE, escaping).
+- `tsc --noEmit` clean; `next build` clean; eslint **net-zero new** (3 pre-existing file-level errors in `WeekView.tsx` — drag-handler `react-hooks/immutability` + two unescaped JSX quotes — present on master, ship in prod). No debug artifacts in the new code.
+- **Deploy #2 live + verified:** branch fast-forward-merged to master (`9fc0dec`) + pushed; the new `/api/calendar/[token]` route returns `200 text/calendar` on prod (a new-build-only signal); the reminder Edge Function redeployed; every migration applied to live and backward-compatible at each step; operator `:3000` walkthrough of all P2 surfaces passed.
+
+### Deferred — with re-trigger
+- **P2-13 residual literals** (surfaced, not invented): one-off colour tints (notice chips, today/now-line/hover/cancelled), modal elevation shadows, and the availability-editor off-system `8`/`6`px radii — each needs an exact-alpha/shadow/radius token or `color-mix()`. **Re-trigger:** a brand palette/radius change or an operator decision to add those tokens.
+- **Off-tz cross-day-drag residual** (carried from P0-2). **Re-trigger:** a routinely off-tz staff device.
+- **Out-of-scope follow-ups** (buffer, owner-on-behalf, AVL-7 `.ics` import, AVL-8 auto-holidays, SMS activation) stay deferred per §5.
+
+### Premortem modes
+- **Mitigated in P2:** FM-8 · FM-9 (intentional split documented) · FM-10 (all three settings controls honest) · FM-11 · FM-12 (duplicate removed) · FM-13 · FM-14 · FM-15 · FM-16 · FM-17 (recurring colours).
+- **Accepted with rationale:** the P2-13 residual literals (above) and the off-tz drag residual.
+
+---
+
 ## 9. Sign-off
 
 *(Decision returned from the claude.ai project chat — Closed / Closed with deferred items / Returned for revision.)*
