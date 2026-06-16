@@ -464,6 +464,31 @@ P2-1 (window edge) · P2-2 (portal booking tz) · P2-3..P2-5 (settings honesty �
 
 ---
 
+## 8c. Reviewer response + Edge Function verification (2026-06-16)
+
+The claude.ai interim review of §8/§8b raised four items; addressed here.
+
+### 1. Edge Function verification — a real production bug found (the weakest link)
+The reviewer flagged the reminder Edge Function as the only surface with no proof (Deno → outside tsc; not in pgTAP; not in the node scripts) carrying freshly-changed P2-5/P2-6 branching. **Verifying it (a direct authenticated POST to the deployed function) found the reminder system NON-FUNCTIONAL in production** — two pre-existing EF-environment gaps, invisible precisely because the EF is uncovered:
+- **`EMAIL_FROM` was unset** in the EF's Supabase secrets → `EmailConfigError` throw → **HTTP 500 on every invoke** → zero reminders ever processed (deploy #2's redeploy activated the EMAIL_FROM-required, no-fallback hardening). **Fixed** — `supabase secrets set EMAIL_FROM` to the verified-domain sender; the EF now returns 200.
+- **`RESEND_API_KEY` is INVALID** in the EF's Supabase secrets → with EMAIL_FROM fixed, the EF processed 2 due (stale, past-dated) reminders and both failed **`resend 401 validation_error`** — the key the EF holds is unauthorized, almost certainly the pre-rotation key (the 2026-05-17 rotation updated `.env.local`/Vercel but missed the Edge Function's Supabase secret). **NOT fixed by Claude Code** — it is a live credential tied to the rotation process; the operator must `supabase secrets set RESEND_API_KEY=<current key>`, then decide whether the stale key is revoked and whether other consumers were missed.
+- **`NEXT_PUBLIC_APP_URL` was unset** → reminder-email "View booking" links fell back to `'#'`. **Fixed** — set to `https://odysseyhq.com.au`.
+
+This is **FM-3 unmitigated in production** — the headline reminder deliverable has never actually sent. The P2-6 retry classification behaved correctly (the 401s are 4xx → terminal, not retried; `retry_count` stayed 0). **The section CANNOT be marked "Closed" until `RESEND_API_KEY` is corrected on Supabase and a reminder send is verified end-to-end (a reminder row reaching `status='sent'` with a Resend `provider_message_id`).** That is now the gating close item — recorded in [`go-live-checklist.md`](../go-live-checklist.md).
+
+**Automated coverage added:** [`scripts/reminder-logic-verify.mjs`](../../scripts/reminder-logic-verify.mjs) (11/11) mirrors the EF's per-reminder decision and asserts every branch — sent · no-email→fail · email-off→cancel · 5xx→retry-to-cap · 429→retry · network→retry · 4xx→terminal (incl. the 401 the live failures hit). Closes the "branching with zero automated coverage" gap; the live send remains gated on the key fix.
+
+### 2. Test 31 provenance
+`31_client_unavailable_types_hidden.sql` (plan 2) is the **P1-7 RLS confidentiality tripwire** created in commit `f94bc54` during the P0-P1 test-coverage closure (2026-06-16), BEFORE the P2 phase — hence §7's P2 entries reference it in the suite count with no P2 creation entry. Not a miscount: the file is real, green, and part of the 40-assertion total; the missing item was a creation-log line, recorded here.
+
+### 3. NEXT_PUBLIC_APP_URL duplicate — audited
+Audited all consumers of the duplicated var: the only ones are the two **confirmation-email** `bookingUrl` builders (`sendStaffBookingConfirmation`, `sendBookingConfirmationEmailForAppointment`), where a prod link is **correct** (email CTAs should point to prod even in local dev), and `required-env.ts` (a name-only list). The one host-sensitive consumer — the P2-15 `.ics` URL — was already changed to build from the request host. The duplicate is cosmetically untidy but **functionally harmless**; de-duping `.env.local` is tidy-up, not a bug fix.
+
+### 4. P1-4 comment — confirmed corrected
+The misleading `20260510120000:121-122` comment ("the second sees the just-inserted appointment") was corrected by P1-4's migration `20260615130000`, whose header explicitly states that claim "is FALSE for concurrent inserts" under READ COMMITTED and adds the EXCLUDE constraint as the real guard. The original is preserved as applied history (not edited in place) but is refuted in the superseding migration. §7's omission of this was a logging gap, closed here.
+
+---
+
 ## 9. Sign-off
 
 *(Decision returned from the claude.ai project chat — Closed / Closed with deferred items / Returned for revision.)*
