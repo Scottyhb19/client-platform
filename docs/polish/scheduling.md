@@ -305,6 +305,12 @@ Two issues from the operator's authenticated `:3000` walkthrough:
 
 **Tests.** New pgTAP [`30_date_closure.sql`](../../supabase/tests/database/30_date_closure.sql) **3/3 on live**: whole-day closure removes the day · morning closure leaves the afternoon · removes the morning. pgTAP 28 still 3/3; `tsc` clean. The partial unique index deliberately excludes `is_blocked` (a positive one-off + a whole-day closure at the identical window is not realistic). Public-holiday auto-detection (AVL-8) stays deferred — closures are manual.
 
+### P1-1 — §6.1 Bookings tab on the staff client profile — done 2026-06-15
+
+A **Bookings** tab on [`ClientProfile`](../../src/app/(staff)/clients/[id]/_components/ClientProfile.tsx) (between Programs and Reports) rendering this client's already-loaded appointments, split into **Upcoming** (future + pending/confirmed, each with a Cancel affordance via `cancelAppointmentAction`) and **Past** (everything else, incl. cancelled rows dimmed) — each showing the AU-English date line, time range, type and status, all in the practice tz. New [`BookingsTab`](../../src/app/(staff)/clients/[id]/_components/BookingsTab.tsx) component reusing the shared booking formatters. **Frontend-only** — the appointments were already loaded on the profile (they fed only the note picker before); both `VALID_TABS` (page + component) gained `bookings`. Reschedule stays on the `/schedule` grid (drag-to-move); this surface is history + quick-cancel. `tsc` clean. (Browser check rides on the operator's `:3000` cluster review.)
+
+**All of P0 + P1 complete** — ready for the P0+P1 cluster review and the first prod deploy (deploy #1).
+
 ---
 
 ## 8. Closing commit

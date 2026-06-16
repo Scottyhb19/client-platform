@@ -29,7 +29,14 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-const VALID_TABS: Tab[] = ['details', 'notes', 'program', 'reports', 'files']
+const VALID_TABS: Tab[] = [
+  'details',
+  'notes',
+  'program',
+  'bookings',
+  'reports',
+  'files',
+]
 
 function pickTab(value: string | string[] | undefined): Tab {
   if (typeof value !== 'string') return 'details'

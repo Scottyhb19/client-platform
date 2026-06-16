@@ -26,6 +26,7 @@ import { MedicalHistoryPanel } from './MedicalHistory'
 import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
+import { BookingsTab } from './BookingsTab'
 import { ResendInviteButton } from './ResendInviteButton'
 import type {
   BatteryRow,
@@ -194,12 +195,19 @@ export type ProfileCompletion = {
   exercises: ProfileCompletionExercise[]
 }
 
-export type Tab = 'details' | 'notes' | 'program' | 'reports' | 'files'
+export type Tab =
+  | 'details'
+  | 'notes'
+  | 'program'
+  | 'bookings'
+  | 'reports'
+  | 'files'
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'details', label: 'Client details' },
   { key: 'notes', label: 'Session notes' },
   { key: 'program', label: 'Programs' },
+  { key: 'bookings', label: 'Bookings' },
   { key: 'reports', label: 'Reports' },
   { key: 'files', label: 'Files' },
 ]
@@ -233,7 +241,14 @@ interface ClientProfileProps {
   publications: PublicationRow[]
 }
 
-const VALID_TABS: Tab[] = ['details', 'notes', 'program', 'reports', 'files']
+const VALID_TABS: Tab[] = [
+  'details',
+  'notes',
+  'program',
+  'bookings',
+  'reports',
+  'files',
+]
 
 /**
  * URL-driven tab state. Reading the `tab` search param keeps the active
@@ -364,6 +379,7 @@ export function ClientProfile({
             lastUsedBattery={lastUsedBattery}
           />
         )}
+        {tab === 'bookings' && <BookingsTab appointments={appointments} />}
         {tab === 'program' && (
           <ProgramTab
             clientId={client.id}
