@@ -36,6 +36,7 @@ import {
   cancelAppointmentAction,
   createAppointmentAction,
   createClientInlineAction,
+  createRecurringAppointmentsAction,
   removeUnavailableBlockAction,
   setAppointmentStatusAction,
   updateAppointmentTimeAction,
@@ -2176,6 +2177,36 @@ function BookingComposer({
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
+  // Recurrence (P2-14). Off → a single booking (the original path). On →
+  // generate concrete rows on the cadence.
+  const [repeat, setRepeat] = useState(false)
+  const [frequency, setFrequency] = useState<RecurFrequency>('weekly')
+  const [endMode, setEndMode] = useState<RecurEndMode>('count')
+  const [occurrenceCount, setOccurrenceCount] = useState(4)
+  const [untilDate, setUntilDate] = useState('')
+  // Per-instance result after a series save with clashes — shown instead of
+  // silently closing, so the EP sees which dates were skipped.
+  const [result, setResult] = useState<{
+    created: number
+    skipped: string[]
+    error?: string
+  } | null>(null)
+
+  // Concrete occurrence dates (YYYY-MM-DD) the current settings would create.
+  const recurrenceDates = useMemo(
+    () =>
+      repeat
+        ? computeRecurrenceDates(
+            date,
+            frequency,
+            endMode,
+            occurrenceCount,
+            untilDate || null,
+          )
+        : [date],
+    [repeat, date, frequency, endMode, occurrenceCount, untilDate],
+  )
+
   // Inline "new client" sub-form state.
   const [showNewClient, setShowNewClient] = useState(clients.length === 0)
   const [newFirst, setNewFirst] = useState('')
@@ -2210,14 +2241,16 @@ function BookingComposer({
     })
   }
 
-  // ESC closes; backdrop click closes.
+  // ESC closes; backdrop click closes. Once a series result is showing, rows
+  // were already created, so dismissing must refresh the grid (onCreated), not
+  // just close (onClose).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') (result ? onCreated : onClose)()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, onCreated, result])
 
   // P1-7: an "unavailable" session type (admin/meeting/note/…) creates a
   // staff-only block with no client.
@@ -2232,8 +2265,49 @@ function BookingComposer({
       setError('Pick a client.')
       return
     }
-    const startIso = combineDateTime(date, time).toISOString()
     setError(null)
+
+    // Recurring series (P2-14): generate one row per occurrence. Partial
+    // success — clashing instances are skipped and reported, not fatal.
+    if (repeat) {
+      if (recurrenceDates.length === 0) {
+        setError('Set an end date on or after the start date.')
+        return
+      }
+      const startAtIsos = recurrenceDates.map((iso) =>
+        combineDateTime(iso, time).toISOString(),
+      )
+      startTransition(async () => {
+        const res = await createRecurringAppointmentsAction({
+          clientId: isUnavailable ? null : clientId,
+          startAtIsos,
+          durationMinutes: duration,
+          appointmentType: type,
+          location: location.trim() || null,
+          notes: notes.trim() || null,
+          kind: isUnavailable ? 'unavailable' : 'appointment',
+        })
+        // Nothing booked and a hard error → stay on the form with the message.
+        if (res.error && res.created === 0) {
+          setError(res.error)
+          return
+        }
+        // Some booked but skips and/or a mid-series abort → show the summary
+        // (its Done refreshes the grid). Clean full success → just close.
+        if (res.skipped.length > 0 || res.error) {
+          setResult({
+            created: res.created,
+            skipped: res.skipped,
+            error: res.error ?? undefined,
+          })
+          return
+        }
+        onCreated()
+      })
+      return
+    }
+
+    const startIso = combineDateTime(date, time).toISOString()
     startTransition(async () => {
       const res = await createAppointmentAction({
         clientId: isUnavailable ? null : clientId,
@@ -2255,8 +2329,10 @@ function BookingComposer({
   return (
     <div
       onMouseDown={(e) => {
-        // Backdrop click closes; cards inside stop propagation.
-        if ((e.target as HTMLElement).dataset.backdrop === '1') onClose()
+        // Backdrop click closes; cards inside stop propagation. A shown result
+        // means rows exist, so dismissing refreshes (onCreated).
+        if ((e.target as HTMLElement).dataset.backdrop === '1')
+          (result ? onCreated : onClose)()
       }}
       data-backdrop="1"
       style={{
@@ -2268,6 +2344,14 @@ function BookingComposer({
         zIndex: 1100,
       }}
     >
+      {result ? (
+        <RecurResultCard
+          created={result.created}
+          skipped={result.skipped}
+          error={result.error}
+          onDone={onCreated}
+        />
+      ) : (
       <form
         data-composer-card
         onSubmit={handleSubmit}
@@ -2599,6 +2683,149 @@ function BookingComposer({
             </ComposerField>
           </div>
 
+          {/* Repeat (P2-14) — generate a recurring series of concrete rows. */}
+          <div
+            style={{
+              border: '1px solid var(--color-border-subtle)',
+              borderRadius: 8,
+              padding: '12px 14px',
+              display: 'grid',
+              gap: repeat ? 12 : 0,
+            }}
+          >
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 9,
+                cursor: 'pointer',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={repeat}
+                onChange={(e) => setRepeat(e.target.checked)}
+                style={{
+                  width: 16,
+                  height: 16,
+                  accentColor: 'var(--color-accent)',
+                  cursor: 'pointer',
+                }}
+              />
+              <span
+                style={{
+                  fontSize: '.86rem',
+                  fontWeight: 600,
+                  color: 'var(--color-text)',
+                }}
+              >
+                Repeat this booking
+              </span>
+            </label>
+
+            {repeat && (
+              <>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 12,
+                  }}
+                >
+                  <ComposerField label="Frequency">
+                    <select
+                      value={frequency}
+                      onChange={(e) =>
+                        setFrequency(e.target.value as RecurFrequency)
+                      }
+                      style={composerInput}
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="fortnightly">Fortnightly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </ComposerField>
+                  <ComposerField label="Ends">
+                    <select
+                      value={endMode}
+                      onChange={(e) =>
+                        setEndMode(e.target.value as RecurEndMode)
+                      }
+                      style={composerInput}
+                    >
+                      <option value="count">After a number of sessions</option>
+                      <option value="until">On a date</option>
+                    </select>
+                  </ComposerField>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 12,
+                  }}
+                >
+                  {endMode === 'count' ? (
+                    <ComposerField label="Sessions">
+                      <input
+                        type="number"
+                        min={1}
+                        max={MAX_OCCURRENCES}
+                        value={occurrenceCount}
+                        onChange={(e) =>
+                          setOccurrenceCount(
+                            Math.max(
+                              1,
+                              Math.min(
+                                MAX_OCCURRENCES,
+                                parseInt(e.target.value, 10) || 1,
+                              ),
+                            ),
+                          )
+                        }
+                        style={composerInput}
+                      />
+                    </ComposerField>
+                  ) : (
+                    <ComposerField label="Until">
+                      <input
+                        type="date"
+                        value={untilDate}
+                        min={date}
+                        onChange={(e) => setUntilDate(e.target.value)}
+                        style={composerInput}
+                      />
+                    </ComposerField>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontSize: '.8rem',
+                    color:
+                      recurrenceDates.length === 0
+                        ? 'var(--color-alert)'
+                        : 'var(--color-text-light)',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {recurrenceDates.length === 0
+                    ? 'Set an end date on or after the start date.'
+                    : recurrenceDates.length === 1
+                      ? 'Creates 1 session.'
+                      : `Creates ${recurrenceDates.length} sessions · ${formatDayDate(
+                          parseIsoDate(recurrenceDates[0]!),
+                        )} → ${formatDayDate(
+                          parseIsoDate(
+                            recurrenceDates[recurrenceDates.length - 1]!,
+                          ),
+                        )}`}
+                  {recurrenceDates.length === MAX_OCCURRENCES && ' (max)'}
+                </div>
+              </>
+            )}
+          </div>
+
           {/* Notes */}
           <ComposerField label="Notes (optional)">
             <textarea
@@ -2637,12 +2864,107 @@ function BookingComposer({
           <button
             type="submit"
             className="btn primary"
-            disabled={pending || allClients.length === 0 || showNewClient}
+            disabled={
+              pending ||
+              (!isUnavailable && allClients.length === 0) ||
+              showNewClient ||
+              recurrenceDates.length === 0
+            }
           >
-            {pending ? 'Booking…' : 'Book appointment'}
+            {pending
+              ? 'Booking…'
+              : repeat
+                ? `Book ${recurrenceDates.length} session${
+                    recurrenceDates.length === 1 ? '' : 's'
+                  }`
+                : 'Book appointment'}
           </button>
         </div>
       </form>
+      )}
+    </div>
+  )
+}
+
+/** Post-save summary for a recurring series with skipped (clashing) instances. */
+function RecurResultCard({
+  created,
+  skipped,
+  error,
+  onDone,
+}: {
+  created: number
+  skipped: string[]
+  error?: string
+  onDone: () => void
+}) {
+  const total = created + skipped.length
+  return (
+    <div
+      data-composer-card
+      onMouseDown={(e) => e.stopPropagation()}
+      style={{
+        background: 'var(--color-card)',
+        borderRadius: 14,
+        boxShadow: '0 20px 60px rgba(0,0,0,.25)',
+        width: 460,
+        maxWidth: 'calc(100vw - 32px)',
+        overflow: 'hidden',
+      }}
+    >
+      <div style={{ padding: '20px 22px', display: 'grid', gap: 12 }}>
+        <h2
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '1.2rem',
+            margin: 0,
+          }}
+        >
+          {created > 0
+            ? `Booked ${created} of ${total} session${total === 1 ? '' : 's'}`
+            : 'No sessions booked'}
+        </h2>
+        {skipped.length > 0 && (
+          <div
+            style={{
+              fontSize: '.86rem',
+              color: 'var(--color-text)',
+              lineHeight: 1.5,
+            }}
+          >
+            <div
+              style={{
+                color: 'var(--color-warning)',
+                fontWeight: 600,
+                marginBottom: 4,
+              }}
+            >
+              {skipped.length} skipped — already booked at that time:
+            </div>
+            <div style={{ color: 'var(--color-text-light)' }}>
+              {skipped.map((iso) => formatDayDate(new Date(iso))).join(' · ')}
+            </div>
+          </div>
+        )}
+        {error && (
+          <div style={{ fontSize: '.84rem', color: 'var(--color-alert)' }}>
+            {error}
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          padding: '14px 22px',
+          borderTop: '1px solid var(--color-border-subtle)',
+          display: 'flex',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button type="button" className="btn primary" onClick={onDone}>
+          Done
+        </button>
+      </div>
     </div>
   )
 }
@@ -2706,6 +3028,63 @@ function toHhMm(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(
     d.getMinutes(),
   ).padStart(2, '0')}`
+}
+
+/* ====================== Recurrence (P2-14) ====================== */
+
+type RecurFrequency = 'daily' | 'weekly' | 'fortnightly' | 'monthly'
+type RecurEndMode = 'count' | 'until'
+
+const MAX_OCCURRENCES = 52
+
+/**
+ * Concrete occurrence DATES (`YYYY-MM-DD`) for a recurrence, capped at 52.
+ *
+ * Cadence is computed in whole CALENDAR units on the UTC ladder so the
+ * wall-clock time-of-day is preserved across a DST change (adding 24h×N would
+ * drift by an hour over a transition). The dates are labels; the composer
+ * re-attaches the chosen start time to each via combineDateTime. Monthly clamps
+ * to the last day of the target month (31 Jan + 1 month → 28/29 Feb), never
+ * rolling into the next month. `until` is inclusive and compared
+ * lexicographically (valid for YYYY-MM-DD).
+ */
+function computeRecurrenceDates(
+  startIsoDate: string,
+  frequency: RecurFrequency,
+  endMode: RecurEndMode,
+  count: number,
+  untilIsoDate: string | null,
+): string[] {
+  const [y, m, d] = startIsoDate.split('-').map(Number)
+  if (!y || !m || !d) return []
+
+  const occurrence = (i: number): string => {
+    if (frequency === 'monthly') {
+      const totalMonth = m - 1 + i
+      const ty = y + Math.floor(totalMonth / 12)
+      const tm = ((totalMonth % 12) + 12) % 12 // 0–11
+      const lastDay = new Date(Date.UTC(ty, tm + 1, 0)).getUTCDate()
+      return new Date(Date.UTC(ty, tm, Math.min(d, lastDay)))
+        .toISOString()
+        .slice(0, 10)
+    }
+    const step = frequency === 'daily' ? 1 : frequency === 'weekly' ? 7 : 14
+    return new Date(Date.UTC(y, m - 1, d + i * step)).toISOString().slice(0, 10)
+  }
+
+  const out: string[] = []
+  if (endMode === 'count') {
+    const n = Math.max(1, Math.min(MAX_OCCURRENCES, Math.floor(count) || 1))
+    for (let i = 0; i < n; i++) out.push(occurrence(i))
+  } else {
+    if (!untilIsoDate) return []
+    for (let i = 0; i < MAX_OCCURRENCES; i++) {
+      const iso = occurrence(i)
+      if (iso > untilIsoDate) break
+      out.push(iso)
+    }
+  }
+  return out
 }
 
 // MonthYearPicker + MONTH_LABELS lifted into the shared

@@ -335,6 +335,18 @@ The 15 P2 items, worked in the gap-doc §6 build order on `polish/section-9-sche
 
 **Done early / remaining:** P2-8(a) lanes shipped at deploy #1; (b) + (c) + the review fix complete here. **P2-8 closed.**
 
+#### P2-14 — recurring appointments ("Repeat" in the composer) — done 2026-06-16
+
+A **Repeat** toggle in the [`BookingComposer`](../../src/app/(staff)/schedule/_components/WeekView.tsx) (after the type/location row) → **frequency** (daily / weekly / fortnightly / monthly) + an **ends** rule (after N sessions — default; or on a date — both, per the gap doc). A live preview line ("Creates 8 sessions · Sat 21 Jun → Sat 9 Aug") and the submit button reflects the count ("Book 8 sessions").
+
+**Concrete rows, not a rule.** `computeRecurrenceDates` (pure, node-verified) builds the occurrence dates in whole **calendar units** on the UTC ladder — so the wall-clock time-of-day is preserved across a DST change (the composer re-attaches the chosen time to each date) — and monthly **clamps** to the last day of the target month (31 Jan + 1mo → 28 Feb), never rolling forward. Capped at 52. The composer passes the concrete start instants to a new `createRecurringAppointmentsAction` (loop + per-row insert), so each instance is an independently movable/cancellable row.
+
+**Overlap + reminders.** Each insert hits the **P1-4** `appointments_no_staff_overlap` constraint; a clashing instance is **skipped and reported** (23P01 → `skipped[]`), not silently dropped or fatal — a post-save summary card shows e.g. "Booked 6 of 8 — 2 skipped (already booked): …". Each created instance auto-enqueues its own reminder via the **P1-2** trigger (no per-instance code). **No confirmation email** for a series (operator decision — a 12-week series would otherwise send 12; the per-session reminders carry the value). Repeat works for **Unavailable** blocks too (kind flows through; they're constraint-exempt, so never clash).
+
+**Incidental fix (flagged):** the submit-disabled guard was `allClients.length === 0` (which blocked adding an Unavailable block to a client-less org); since I was editing that expression for the recurrence guard, corrected it to `!isUnavailable && allClients.length === 0`.
+
+**Tests + verification.** [`scripts/recurrence-verify.mjs`](../../scripts/recurrence-verify.mjs) **9/9** (cadence, month-clamp, year rollover, until-inclusive, until-before-start → none, 52-cap). `tsc` clean; eslint net-zero new. **No migration** — frontend + a server action over the existing appointments table, the P1-4 constraint, and the P1-2 reminder trigger (pgTAP 27/29 already cover that DB behaviour). Browser check rides on the operator's `:3000`.
+
 ---
 
 ## 8. Closing commit — P0 + P1 (deploy #1, 2026-06-15)

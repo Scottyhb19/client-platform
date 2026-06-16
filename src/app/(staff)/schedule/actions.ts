@@ -211,6 +211,120 @@ export async function createAppointmentAction(
   return { error: null, id: data.id }
 }
 
+export type RecurringAppointmentsInput = {
+  clientId: string | null
+  // Concrete per-occurrence start instants, computed by the composer (calendar-
+  // unit cadence preserving wall-clock). The action stays a dumb loop-inserter.
+  startAtIsos: string[]
+  durationMinutes: number
+  appointmentType: string
+  location: string | null
+  notes: string | null
+  kind?: 'appointment' | 'unavailable'
+}
+
+export type RecurringAppointmentsResult = {
+  error: string | null
+  created: number
+  firstId: string | null
+  // Occurrences skipped because they clashed with an existing booking (23P01).
+  skipped: string[]
+}
+
+/**
+ * Book a recurring series (P2-14). Generates CONCRETE appointment rows — one
+ * per occurrence — so the EP can later cancel/move a single session of the
+ * series (no abstract recurrence rule). Each insert fires the
+ * appointment_manage_reminder trigger, so every future appointment-kind
+ * instance enqueues its own T-lead reminder automatically.
+ *
+ * Partial success is intentional: an instance that clashes with an existing
+ * booking (the P1-4 appointments_no_staff_overlap EXCLUDE constraint → 23P01)
+ * is SKIPPED and reported, not silently dropped and not fatal to the rest. A
+ * non-overlap error aborts and returns what was booked so far.
+ *
+ * No confirmation email is sent for a series (operator decision) — a 12-week
+ * series emailing 12 confirmations is spam; the per-session reminders carry the
+ * value. A single booking (createAppointmentAction) still confirms.
+ */
+export async function createRecurringAppointmentsAction(
+  input: RecurringAppointmentsInput,
+): Promise<RecurringAppointmentsResult> {
+  const { organizationId, userId } = await requireRole(['owner', 'staff'])
+
+  const kind = input.kind === 'unavailable' ? 'unavailable' : 'appointment'
+  const fail = (error: string): RecurringAppointmentsResult => ({
+    error,
+    created: 0,
+    firstId: null,
+    skipped: [],
+  })
+
+  if (kind === 'appointment' && !input.clientId) return fail('Client required.')
+  if (!input.startAtIsos?.length) return fail('No occurrences to book.')
+  if (input.startAtIsos.length > 52) {
+    return fail('Too many occurrences (max 52).')
+  }
+  if (!Number.isFinite(input.durationMinutes) || input.durationMinutes <= 0) {
+    return fail('Duration must be positive.')
+  }
+
+  const supabase = await createSupabaseServerClient()
+  let created = 0
+  let firstId: string | null = null
+  const skipped: string[] = []
+
+  for (const startIso of input.startAtIsos) {
+    const start = new Date(startIso)
+    if (Number.isNaN(start.getTime())) {
+      skipped.push(startIso)
+      continue
+    }
+    const end = new Date(start.getTime() + input.durationMinutes * 60 * 1000)
+
+    const { data, error } = await supabase
+      .from('appointments')
+      .insert({
+        organization_id: organizationId,
+        staff_user_id: userId,
+        client_id: kind === 'appointment' ? input.clientId : null,
+        start_at: start.toISOString(),
+        end_at: end.toISOString(),
+        appointment_type: input.appointmentType || 'Session',
+        kind,
+        location: input.location,
+        notes: input.notes,
+        status: 'confirmed',
+        confirmed_at: new Date().toISOString(),
+        created_by_role: 'staff',
+      })
+      .select('id')
+      .single()
+
+    if (error) {
+      // 23P01 = overlaps an existing booking for this practitioner (P1-4):
+      // skip this instance, keep the series going.
+      if (error.code === '23P01') {
+        skipped.push(startIso)
+        continue
+      }
+      // Anything else aborts — return what we managed so the EP isn't guessing.
+      return {
+        error: `Stopped after ${created} booked: ${error.message}`,
+        created,
+        firstId,
+        skipped,
+      }
+    }
+
+    created++
+    if (!firstId) firstId = data.id
+  }
+
+  revalidatePath('/schedule')
+  return { error: null, created, firstId, skipped }
+}
+
 export async function cancelAppointmentAction(
   appointmentId: string,
   reason: string | null,
