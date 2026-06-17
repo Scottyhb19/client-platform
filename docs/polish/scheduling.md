@@ -491,6 +491,68 @@ The misleading `20260510120000:121-122` comment ("the second sees the just-inser
 
 ---
 
+## 8d. Section-close follow-ups — deferred-item discharge (2026-06-17)
+
+The claude.ai reviewer returned **Closed — with deferred items** (recorded in §9) and gated a *clean* close on three actions plus one question: sweep the seed reminder addresses, land two checklist items (the rotation consumer-sweep and the standing EF send check), and answer the branch-coverage question. All four are discharged here.
+
+### 1. Branch-coverage question — answered (the reviewer's "by proxy" line is correct)
+
+**Q: what actually covers the reminder Edge Function's P2-5/P2-6 branches?** Three tiers of proof, in decreasing directness:
+
+1. **Enqueue** — pgTAP `29`, run against the live `appointment_manage_reminder` trigger. **Direct.**
+2. **Happy-path send** (`scheduled` → Resend → `sent` + `provider_message_id`) — proven **live against the deployed EF** (the 2026-06-16 `delivered@resend.dev` test, §8c). **Direct: it executed the EF's own success branch.**
+3. **The non-happy branches** — P2-5 (email-off → cancel) and P2-6 (retry / fail / network / 429 / 4xx classification) — are **not** executed against the live EF. They are covered by [`scripts/reminder-logic-verify.mjs`](../../scripts/reminder-logic-verify.mjs) (**12/12**), which is a **hand-written re-implementation** of the EF's per-reminder decision tree, **not an import** (a Deno EF can't be imported into a node script). So these branches are proven **by proxy**: the decision *logic* is proven correct, but the proof does **not** run the EF's own code. The only thing binding the mirror to the EF is a "keep in sync" comment plus discipline — not the compiler.
+
+**So the "by proxy" characterisation is accurate and should be kept, not upgraded.** It states the limitation honestly. Two things tighten it:
+
+- **A real (dormant) drift was found and fixed.** Auditing the mirror against the EF line-by-line: the EF treats **any 2xx** as success (it checks `send.ok`), but the mirror matched only `sendStatus === 200`. A 2xx-non-200 (e.g. 202) would have been classed `sent` by the EF and `fail` by the mirror. Dormant (Resend returns 200), but it is exactly the drift "by proxy" cannot prevent — the proxy had *already* diverged on the success boundary. Fixed (`>= 200 && < 300`) + a 202 assertion added → 12/12. This makes the proxy faithful again *and* demonstrates why a shared import would be stronger.
+- **The upgrade path is named, with a re-trigger.** To move past "by proxy", either (a) extract the pure decision into a module that **both** the EF and the script import — then the test exercises the EF's actual code, no drift possible — or (b) drive the live EF down each branch (toggle the org's `email_notifications_enabled` off for the cancel branch; force a 5xx for the retry branch). Both were deferred: (a) requires touching and redeploying the just-verified critical EF, out of proportion to a dormant-only risk; (b) the live cancel test mutates the org's real email setting (§8c). **Re-trigger: the next time the EF's send loop is modified — do the (a) extraction then**, so the change ships with direct coverage.
+
+### 2. Seed-reminder address safety — DISCHARGED (the cron-relevant window was today)
+
+A live probe found **34 `scheduled` reminders**, org email **on**, **4 due today** — and every address is a **real reachable inbox** (the operator's own + three people's Gmail: `imaansedghi1`, `davidbrowning072`, `tonez.saracino`), attached to **fake** walkthrough bookings. The first friend-bound send was due **14:00 AEST today**. Left alone, the now-live cron would have emailed three real people a "you've got a session tomorrow" reminder for a session that doesn't exist.
+
+**Action:** all 34 `scheduled` reminders flipped to `status='cancelled'` with `failure_reason = 'seed-safety-cancel 2026-06-17: …'`. The cron's batch selects only `status='scheduled'`, so it now returns `{processed:0}` — zero spurious sends. **Fully reversible:** any row can be re-armed with `UPDATE appointment_reminders SET status='scheduled' WHERE failure_reason LIKE 'seed-safety-cancel%' AND scheduled_for > now()` (only useful for future-dated rows). Post-state verified: `scheduled` = 0. *(These are seed/fake bookings — a reminder is wrong regardless of recipient. If a real beta tester later books through the portal, the trigger enqueues a fresh, correct reminder; the send path is proven working.)*
+
+### 3. Stale Resend key revocation + 2026-05-17 rotation consumer sweep — sweep DONE; revocation is an operator dashboard action
+
+**Consumer sweep — complete (recorded in [`secrets-rotation-log.md`](../secrets-rotation-log.md) 2026-06-17 entry).** Enumerated every runtime reader of `RESEND_API_KEY`: exactly **two stores** — Vercel/`.env.local` (`src/lib/email/client.ts`, the Next app's one Resend client behind all invite/confirmation paths) and the Supabase EF secret set (the reminder function). `required-env.ts` lists the name only. **No third consumer; both stores now hold the current key.** The 2026-05-17 rotation's blind spot was the EF's separate secret store — that lesson is now folded into [`rotate-a-secret.md`](../runbooks/rotate-a-secret.md) (enumerate the EF secret set; the EF also reads `EMAIL_FROM`/`NEXT_PUBLIC_APP_URL`/`CRON_SHARED_SECRET` there).
+
+**Still open (operator hygiene, not gating):** confirm in the **Resend dashboard** that the stale pre-rotation key is revoked (the EF's `resend 401` is consistent with it already being revoked). Not doable from the build machine — no Resend access. Tracked in `go-live-checklist.md` §2.
+
+### 4. Standing post-deploy EF synthetic send check — ADDED to the runbooks
+
+The enqueue-vs-send blind spot (a 200 from the EF with `failed:N` looks like success) is now a standing check in [`deploy-an-edge-function.md`](../runbooks/deploy-an-edge-function.md#synthetic-send-check-standing--run-after-every-redeploy-of-send-appointment-reminders): set up a due reminder to `delivered@resend.dev`, POST the function, **assert `succeeded ≥ 1` / row `status='sent'` (not just HTTP 200)**, tear down. The setup/teardown SQL was **validated against live 2026-06-17** (created then removed a throwaway client+appointment+reminder, zero leftovers). [`deploy-the-app.md`](../runbooks/deploy-the-app.md) now points at it for any deploy that rides an EF redeploy, and `rotate-a-secret.md`'s `RESEND_API_KEY` verification points at it too.
+
+### 5. Items that remain deferred (unchanged re-triggers — correctly left alone)
+
+- **P2-13 residual literals** (one-off colour tints, modal elevation shadows, off-system `8`/`6`px radii). Closing these means **inventing design-system tokens**, which the design-system rule forbids without a deliberate decision (CLAUDE.md: "Any value needing a *new* token is surfaced, not invented"). No brand/palette change is in flight. **Stays deferred. Re-trigger: a brand palette/radius change or a decision to add those tokens.**
+- **Off-tz cross-day-drag residual (P0-2).** The drag *write-path* keeps browser-local wall-clock on a cross-day drag; read/display/click-to-create are fully practice-tz. Correct for the AU-only operator/collaborator; the fix is non-trivial and the failure needs a routinely off-tz staff device that does not exist at beta scope. **Stays deferred. Re-trigger: a routinely off-tz staff device.**
+- **Out-of-scope follow-ups** (buffer-between-bookings, owner-on-behalf availability, AVL-7 `.ics` *import*, AVL-8 public-holiday auto-detection, SMS activation). Explicitly out of scope per §5, each with its own re-trigger. **Stays deferred.**
+
+**The gating close-out actions are complete** — seed addresses swept, consumer sweep done, synthetic send check added, branch-coverage question answered. The section is cleanly closed; CLAUDE.md can advance to section 10.
+
+---
+
 ## 9. Sign-off
 
-*(Decision returned from the claude.ai project chat — Closed / Closed with deferred items / Returned for revision.)*
+- **Date signed off:** 2026-06-16 (close-out actions discharged 2026-06-17 — §8d)
+- **Reviewer:** claude.ai project chat (section-9 scheduling review)
+- **Decision:** **Closed — with deferred items.**
+
+The section-9 polish pass (2 P0, 7 P1, 15 P2) is implemented and live across deploys #1–#2. The reviewer's headline concern — the reminder Edge Function — surfaced a genuine production breakage (`EMAIL_FROM` unset, `RESEND_API_KEY` stale, `NEXT_PUBLIC_APP_URL` unset), broken silently across both prior "verified" deploys because the harness verified reminder *enqueue*, never *send*. Resolved: all three secrets corrected, a controlled live send to Resend's test address confirmed `processed → sent` with a `provider_message_id`, and `reminder-logic-verify.mjs` (now 12/12) added as the EF's first branch coverage. FM-3 mitigated and proven on the send path.
+
+Close certifies: enqueue (pgTAP `29`), happy-path send proven live against the deployed EF, and the P2-5/P2-6 branches proven **by proxy** (parallel logic check — the Deno EF is not node-importable; live branch proof is happy-path only). The branch-coverage answer (§8d.1) confirms "by proxy" is the correct characterisation; the mirror was tightened to remove a dormant 2xx-success drift.
+
+### Deferred (re-triggered)
+
+- **P2-13 residual literals** (one-off tints, elevation shadows, off-system radii) — re-trigger: a brand palette/radius change or a decision to add those tokens.
+- **Off-tz cross-day-drag residual (P0-2)** — re-trigger: a routinely off-tz staff device.
+- **Stale pre-rotation Resend key revocation** — the consumer sweep is complete (§8d.3); the dashboard revocation remains an operator action, tracked in `go-live-checklist.md` §2.
+- **Out-of-scope follow-ups** (buffer, owner-on-behalf, AVL-7 import, AVL-8 auto-holidays, SMS activation) — per §5.
+
+### Discharged at close-out (§8d, 2026-06-17)
+
+- **Seed-reminder address safety** — 34 scheduled seed reminders cancelled before the next cron window; reversible. Done.
+- **Standing post-deploy EF synthetic send check** — added to the deploy + EF + rotation runbooks (validated against live). Done.
+- **Branch-coverage question** — answered (§8d.1); "by proxy" confirmed correct, mirror tightened to 12/12.

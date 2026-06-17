@@ -42,6 +42,7 @@ Deploy the Next.js app to production and verify the deploy. **Every push to `mas
    node scripts/proxy-poison-cookie-verify.mjs
    ```
    Expect 4/4 and 13/13 against production. The first exercises a real **staff** role branch end-to-end; the second the malformed-cookie matrix. Run both whenever in doubt — they are cheap.
+6. **If this deploy also (re)deployed the reminder Edge Function** (`supabase functions deploy send-appointment-reminders`) — run the **synthetic send check** in [`deploy-an-edge-function.md`](deploy-an-edge-function.md#synthetic-send-check-standing--run-after-every-redeploy-of-send-appointment-reminders). A `200` from the function is **not** proof it sends — the 2026-06-16 reminder outage returned `200` with `failed:N` on every tick. The synthetic check drives a real send to a safe sink and asserts `status='sent'`. The Edge Function carries its own Supabase secret set (separate from Vercel) — a redeploy is exactly when a missing/stale `EMAIL_FROM` / `RESEND_API_KEY` / `NEXT_PUBLIC_APP_URL` bites.
 
 ## Rollback
 

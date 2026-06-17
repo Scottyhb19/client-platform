@@ -19,7 +19,7 @@
 
 1. Resend dashboard → API Keys → create a new key.
 2. Vercel → project → Settings → Environment Variables → update `RESEND_API_KEY` for **Production, Preview, Development**.
-3. Supabase Edge secret: `supabase secrets set RESEND_API_KEY=re_...` (the Edge Function reads this independently of Vercel — `index.ts:19-20`, `:82`).
+3. Supabase Edge secret: `supabase secrets set RESEND_API_KEY=re_...` (the Edge Function reads this independently of Vercel — `index.ts:19-20`, `:96`). **This store is separate from Vercel and nothing else updates it** — the 2026-05-17 rotation skipped it and left reminders sending on a stale key for a month (`secrets-rotation-log.md` 2026-06-16 entry). Confirm with `supabase secrets list` (it shows a digest per name). While here, verify the EF's other reader-secrets are present too: `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`, `CRON_SHARED_SECRET`.
 4. Trigger a Vercel redeploy (or wait for next deploy) so the running app reads the new value.
 5. Verify (below) **before** revoking.
 6. Resend dashboard → revoke the old key.
@@ -27,7 +27,7 @@
 **Verification**
 
 - Vercel: a server action that sends mail (e.g. client invite) succeeds; Resend dashboard shows the message under the new key.
-- Edge: trigger `send-appointment-reminders` (see `check-cron-health.md`) and confirm a reminder sends.
+- Edge: run the **synthetic send check** in [`deploy-an-edge-function.md`](deploy-an-edge-function.md#synthetic-send-check-standing--run-after-every-redeploy-of-send-appointment-reminders) — drive a real send to `delivered@resend.dev` and assert the row reaches `status='sent'`. **Do not settle for "the function returned 200"** — it returns 200 with `failed:N` on an auth failure, which is exactly what a stale key looks like (`resend 401`). Assert on `succeeded` ≥ 1.
 
 **Rollback:** if the new key fails, re-add the old key value in Vercel + Edge secret and redeploy — only possible if the old key is not yet revoked. This is why step 6 is last.
 
