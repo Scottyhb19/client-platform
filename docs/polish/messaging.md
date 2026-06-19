@@ -234,4 +234,12 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 
 ## 6. Sign-off
 
-*(Awaiting the operator's claude.ai project-chat review per the section sign-off ritual. To record here: Date signed off / Reviewer / Decision. If "Closed with deferred items," list the deferred items + re-triggers from §5.)*
+- **Date signed off:** 2026-06-20
+- **Reviewer:** claude.ai project chat (challenger role)
+- **Decision:** Closed with deferred items
+
+**Deferred items (with re-triggers):**
+- **P1-1(c) email send-failure observability** — move to queue+cron with a `succeeded≥1` assertion. *Re-trigger:* any reported missed notification, or before identifiable client health data enters.
+- **P1-1(b) web push** — *Re-trigger:* email + in-app shown insufficient in beta, or operator wants desktop OS notifications.
+- **P1-2 live realtime two-session probe** — run with the first f&f test accounts.
+- **P2-2 thread-restore distinguishability** — *Re-trigger:* a thread-level archive action is added.
