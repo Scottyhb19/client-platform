@@ -171,8 +171,61 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 - **(2) is the Supabase default** for `postgres_changes` when RLS is on (live-confirmed: both tables have RLS *and* are in the `supabase_realtime` publication), and the browser client (`@supabase/ssr`) auto-syncs the authenticated user's JWT to the realtime socket, so a subscription carries the user's claims (an anon socket gets anon RLS = zero message rows, since `messages` has no anon policy).
 - **Residual (verify-gate):** a live two-session E2E probe (subscribe as a foreign session, confirm zero foreign rows on a foreign insert) needs two real client sessions, which don't exist until the first friends-and-family test accounts do. Since (1) is proven and the setup is verified, this only confirms the realtime server applies the (already-proven) policy. **Run with the first test accounts; promote to `go-live-checklist.md` at section close.**
 
-**P1 status: P1-1(a) resolved, P1-1(c) done, P1-2 discharged (+ gate); P1-1(b) spiked → awaiting the operator's defer/build decision. P2 follows.**
+**P1-1(b) — web push: DEFERRED for the friends-and-family beta (operator decision, 2026-06-20).** The spike found it viable but not gap-closing: email (P1-1c) + the in-app badge already close FM-5, and push adds a VAPID secret + a `push_subscriptions` table + client *and* staff service-worker handlers + a permission surface, for partial (iOS-install-gated) extra reach. **Re-trigger:** beta feedback shows email + in-app aren't enough, or the operator wants desktop OS notifications.
+
+**P1 complete:** P1-1(a) resolved (existing nav indicators), P1-1(c) email shipped (lighter approach, operator-approved), P1-1(b) deferred, P1-2 discharged (+ a first-accounts realtime verify-gate).
+
+### P2 — done (2026-06-20)
+
+| Gap | Outcome |
+|---|---|
+| **P2-1** clinical-safety disclosure (Q4=(a)) | A once-dismissed first-open banner at the top of the portal thread ([`ClientThread.tsx`](../../src/app/portal/messages/_components/ClientThread.tsx)) — *"This channel isn't for urgent or clinical concerns. In an emergency call 000; for clinical questions, book an appointment."* — `localStorage`-dismissed, factual/non-alarming, with the persistent 000 composer footer retained. |
+| **P2-2** thread-restore distinguishability | **Accepted for v1** (FM-8): no thread-level archive UI exists, so the unconditional cascade un-archive is harmless. Re-trigger: a thread-level archive action is added. |
+| **P2-3** design-token sweep | **Verified clean** — audit found **no** raw hex/rgba/radii literals in `Inbox.tsx` or `ClientThread.tsx`; both already use `var(--…)` tokens. No change needed. |
+| **P2-4** compose flow + copy | **Compose flow accepted as-is** — the staff client profile already has a working "Message {name}" button (`getOrCreateThreadAction` → thread), and the inbox empty state already directs "Start one from a client profile"; "New message" → `/clients` is the client picker, not a dead-end. **Copy pass:** softened the consumer-y "say hello" empty states to "No messages yet." on both surfaces. ("Reply within business hours" kept — honest expectation-setting that pairs with P2-1.) |
+| **P2-5** RLS documentation | Documented the messaging RLS for the Open-gates external review — `rls-policies.md` §4.27 (`message_threads`) + §4.28 (`messages`), incl. the immutability invariant, the anon-EXECUTE posture, and the pgTAP-34 test map. |
 
 ---
 
-*Protocol status: steps 1–4 complete; gap list **approved** 2026-06-18; **P0 done + verified on live**; **P1 nearly complete** — P1-1(a) resolved (nav indicators suffice; badge stays red, operator-confirmed), P1-1(c) email done, P1-2 realtime discharged + gated; **P1-1(b) web push spiked, awaiting the operator's defer/build call**. P2 follows, then the closing commit + claude.ai sign-off.*
+## 5. Closing commit
+
+**Section:** 10 — Messaging. **Branch:** `polish/section-10-messaging` (P0+P1+P2; not yet merged). Audit → gap list approved 2026-06-18; implemented 2026-06-18..20.
+
+### What changed (by gap)
+
+**P0 — the security/compliance perimeter the owner-approved in-app-messaging deviation rested on. Applied to the live shared DB; backward-compatible.**
+- **P0-1** Anon-EXECUTE sweep (the named §10 go-live rider): migration `20260618120000` revokes anon+authenticated EXECUTE on `client_cascade_thread_archive()` + `message_update_thread_last()`. Live probe: both anon=true before (source≠runtime), false after; trigger-only → zero behavioural change.
+- **P0-2** Message immutability (FM-1): migration `20260618120100` — `message_enforce_immutability()` BEFORE UPDATE freezes every column except `read_at`, making the table's documented immutability real (RLS `WITH CHECK` cannot). Closes the hole where a client could edit/soft-delete the EP's messages or forge `sender_*` via raw PostgREST. Q3 = no user delete → `deleted_at` frozen too.
+- **P0-3** Audit trail (FM-2, brief §7.4): migration `20260618120200` attaches `audit_messages` + `audit_message_threads` and registers both in `audit_resolve_org_id()`; coverage guard + pgTAP 14 pass.
+- **P0-4** RLS regression suite: `34_message_rls.sql` (14 assertions).
+
+**P1 — function.**
+- **P1-1(a)** resolved to the existing bottom-nav badge (client) + TopBar bell (staff); a first-pass portal-home bell was reverted as redundant after the :3000 review. Badge stays red (operator-confirmed).
+- **P1-1(c)** email-to-EP on a new client message (FM-5): best-effort send from the client send path via Next `after()` (post-response), debounced to the first unread per thread, carrying no message body (first name only), to the org owner via the service-role client. **Deviation from the gap-doc's DB-trigger recommendation — operator-approved**; trade-off (no retry) mitigated by the in-app badge; queue+cron upgrade path recorded.
+- **P1-1(b)** web push: **deferred** (operator) — spiked, viable but not gap-closing for the beta.
+- **P1-2** realtime isolation: discharged — `postgres_changes` delivers through the same SELECT RLS proven by pgTAP 34; setup verified (RLS + publication + client JWT). Residual live two-session probe → first-accounts verify-gate.
+
+**P2 — polish.** P2-1 first-open safety disclaimer (portal); P2-2 thread-restore accepted; P2-3 token sweep verified clean; P2-4 compose flow accepted + "say hello" copy softened; P2-5 messaging RLS documented.
+
+### Acceptance tests
+- pgTAP `34_message_rls.sql` — **14/14 on live** (re-run at section close). `14_audit_resolve_org_id_coverage.sql` — green.
+- `type-check` clean; `next build` clean across P0→P2. `gen types` no diff (triggers/functions/grants only; no table-shape change).
+
+### Deferred, with re-trigger
+- **P1-1(b) web push** — beta shows email + in-app insufficient, or operator wants desktop OS notifications.
+- **P1-2 live realtime two-session probe** — run with the first f&f test accounts (promote to `go-live-checklist.md`).
+- **P1-1(c) email → queue+cron upgrade** — if beta shows missed notifications (the best-effort send has no retry).
+- **P2-2 thread-restore** — if a thread-level archive action is added.
+
+### Premortem failure modes — mitigated vs accepted
+- **Mitigated:** FM-1 (tampering → P0-2), FM-2 (no audit → P0-3), FM-3 (anon grants → P0-1), FM-4 (no RLS coverage → P0-4), FM-5 (unseen messages → P1-1c + in-app indicator), FM-6 (realtime RLS → P1-2 via pgTAP 34), FM-7 (urgent-clinical misuse → P2-1 + retained 000 footers), FM-11 (undocumented RLS → P2-5).
+- **Accepted:** FM-8 (thread-restore — harmless today), FM-9 (token drift — none found), FM-10 (compose friction — the profile Message button + picker flow is coherent), and web push (the out-of-app, mobile slice of FM-5) deferred — email + in-app close the core failure mode.
+
+### Carried-in rider discharged
+- The **§10 slice of the platform-wide anon-EXECUTE sweep** (`client_cascade_thread_archive`) — done (P0-1), with `message_update_thread_last` + `message_enforce_immutability` swept alongside and locked by pgTAP 34. `client_accept_invite` (§2) remains the open platform-wide item, indexed in `go-live-checklist.md`.
+
+---
+
+## 6. Sign-off
+
+*(Awaiting the operator's claude.ai project-chat review per the section sign-off ritual. To record here: Date signed off / Reviewer / Decision. If "Closed with deferred items," list the deferred items + re-triggers from §5.)*

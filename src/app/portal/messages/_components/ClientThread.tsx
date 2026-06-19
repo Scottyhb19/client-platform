@@ -2,13 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { Send } from 'lucide-react'
+import { Send, X } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { MESSAGE_BODY_MAX, type MessageRow } from '@/lib/messages/types'
 import {
   markClientThreadReadAction,
   sendClientMessageAction,
 } from '../actions'
+
+const DISCLAIMER_DISMISSED_KEY = 'odyssey-portal-msg-disclaimer-dismissed'
 
 interface ClientThreadProps {
   threadId: string | null
@@ -49,6 +51,26 @@ export function ClientThread(props: ClientThreadProps) {
   const [error, setError] = useState<string | null>(null)
   const [isSending, startTransition] = useTransition()
   const bodyRef = useRef<HTMLDivElement>(null)
+
+  // P2-1: clinical-safety disclosure. Shown once at the top of the thread
+  // until dismissed (localStorage) — factual, non-alarming. The persistent
+  // 000 footer in the composer remains regardless.
+  const [showDisclaimer, setShowDisclaimer] = useState(false)
+  useEffect(() => {
+    try {
+      setShowDisclaimer(localStorage.getItem(DISCLAIMER_DISMISSED_KEY) !== '1')
+    } catch {
+      // localStorage unavailable (e.g. private mode) — skip the disclaimer.
+    }
+  }, [])
+  function dismissDisclaimer() {
+    setShowDisclaimer(false)
+    try {
+      localStorage.setItem(DISCLAIMER_DISMISSED_KEY, '1')
+    } catch {
+      // best-effort; if it can't persist it'll show again next load.
+    }
+  }
 
   useEffect(() => {
     setMessages(initialMessages)
@@ -241,6 +263,43 @@ export function ClientThread(props: ClientThreadProps) {
         </div>
       </div>
 
+      {showDisclaimer && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+            padding: '8px 14px',
+            background: 'var(--color-surface)',
+            borderBottom: '1px solid var(--color-border-subtle)',
+            fontSize: '.72rem',
+            lineHeight: 1.45,
+            color: 'var(--color-text-light)',
+          }}
+        >
+          <span style={{ flex: 1 }}>
+            This channel isn&rsquo;t for urgent or clinical concerns. In an
+            emergency call <strong>000</strong>; for clinical questions, book an
+            appointment.
+          </span>
+          <button
+            type="button"
+            onClick={dismissDisclaimer}
+            aria-label="Dismiss"
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: 2,
+              cursor: 'pointer',
+              color: 'var(--color-muted)',
+              flexShrink: 0,
+            }}
+          >
+            <X size={14} aria-hidden />
+          </button>
+        </div>
+      )}
+
       <div className="portal-thread__body" ref={bodyRef}>
         {grouped.length === 0 ? (
           <div
@@ -250,7 +309,7 @@ export function ClientThread(props: ClientThreadProps) {
               fontSize: '.85rem',
             }}
           >
-            Say hello.
+            No messages yet.
           </div>
         ) : (
           grouped.map((item) =>

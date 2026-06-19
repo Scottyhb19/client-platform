@@ -489,7 +489,7 @@ function ThreadPane({
       }}>
         {grouped.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--color-muted)', fontSize: '.85rem', marginTop: 40 }}>
-            No messages yet — say hello.
+            No messages yet.
           </div>
         ) : (
           grouped.map((item) =>

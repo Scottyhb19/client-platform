@@ -1054,6 +1054,30 @@ This prevents even the service role from writing synthetic audit log entries via
 
 ---
 
+### 4.27 `message_threads`
+
+**Pattern:** Pattern B variant — staff-org CRUD + client SELECT of own thread. One thread per `(organization_id, client_id)`.
+
+**Plain English:** staff/owner see and manage every thread in their org; a client sees only their own thread (the one whose `client_id` is their `clients` row, via `user_id = auth.uid()`). Hard DELETE denied (`USING (false)`) — soft-delete only; the thread's `deleted_at` is kept in lockstep with the parent client by the `client_cascade_thread_archive()` trigger (so archiving a client archives their thread, and restoring un-archives it).
+
+**SQL:** migration `20260425100000_messages.sql` (policies) + `20260426110000` (archive cascade).
+
+**Tests:** `34_message_rls.sql` — cross-tenant thread isolation (test 1), client sees own thread (test 3), within-org client isolation (test 5), staff control (test 10).
+
+---
+
+### 4.28 `messages`
+
+**Pattern:** Pattern B variant — staff-org CRUD + client SELECT/INSERT/UPDATE within own thread — plus a DB-enforced immutability invariant.
+
+**Plain English:** staff/owner send in any thread in their org; a client sends and reads only within their own thread. `sender_role` and `sender_user_id` are captured at INSERT and frozen (staff INSERT requires `sender_role='staff' AND sender_user_id=auth.uid()`; client INSERT the same with `'client'` and a thread that is theirs). **After insert, only `read_at` may change** — the `message_enforce_immutability()` BEFORE UPDATE trigger (§10 P0-2) rejects any change to `body`, `sender_role`, `sender_user_id`, `created_at`, `deleted_at`, `thread_id`, or `organization_id` for **every** API role, so neither party can edit, soft-delete, or re-attribute a sent message (RLS `WITH CHECK` cannot express column-level immutability; the trigger does). Hard DELETE denied; every mutation is audit-logged (`audit_messages` trigger, §10 P0-3); realtime delivery (`postgres_changes`) is gated by the same SELECT policy. anon EXECUTE is revoked on the messaging SECURITY DEFINER trigger functions (`client_cascade_thread_archive`, `message_update_thread_last`, `message_enforce_immutability`).
+
+**SQL:** migrations `20260425100000_messages.sql` (policies) + `20260618120000` (anon-EXECUTE revoke) + `20260618120100` (immutability trigger) + `20260618120200` (audit triggers + resolver registration).
+
+**Tests:** `34_message_rls.sql` (14 assertions) — cross-tenant read isolation (1-2), client self-scope (3-4), within-org client isolation (5-6), immutability (7 client / 9 staff), mark-read backward-compat (8), audit wiring (11), anon-grant tripwires (12-14).
+
+---
+
 ## 5. Direct DELETE vs soft-delete policy
 
 Every table that holds PHI or clinical-adjacent data has its RLS DELETE policy set to `USING (false)`. The path to remove such a row is:
