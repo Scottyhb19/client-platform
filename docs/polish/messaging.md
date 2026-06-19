@@ -147,15 +147,14 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 
 **Next:** P1 — the three-layer notification stack (P1-1: in-app indicator → email fallback → web-push viability spike) and the realtime-RLS-on-live verification (P1-2).
 
-### P1 — in progress (2026-06-18)
+### P1 — in progress
 
-**P1-1(a) — in-app top-right notification indicator: done (frontend; authed visual pending operator :3000 review).**
-- **Staff:** already satisfied — the `TopBar` messages bell is top-right, global (incl. the dashboard), with a live unread count + realtime refresh ([`TopBar.tsx:166`](../../src/app/(staff)/_components/TopBar.tsx)). No change needed.
-- **Client (the actual work):** the portal **home** renders `DayScreen`, not `PortalTop`, and had no top-right indicator. Added `.portal-top-bell` (Lucide `MessageCircle` + a red `--color-alert` count badge matching `.portal-nav-badge`) to the Today header, linking to `/portal/messages`. `unreadCount` is computed in the home server page ([`portal/page.tsx`](../../src/app/portal/page.tsx) — an RLS-scoped head count) and passed to [`DayScreen`](../../src/app/portal/_components/DayScreen.tsx); freshness piggybacks on the existing BottomNav realtime `router.refresh()` (no second subscription).
-- **Verification:** `type-check` + `next build` clean. The authed visual needs a client session → operator :3000 review per the locked cadence (portal home, top-right bell + red count when there's an unread EP message).
+**P1-1(a) — in-app notification indicator: resolved to the existing nav indicators (operator :3000 review, 2026-06-20).**
+- The first pass added a top-right bell to the portal home (`DayScreen`). The operator's :3000 review found it **redundant** with the bottom-nav Messages badge — the same unread signal twice on one screen, the clutter the design system warns against. **Reverted in this commit.** The in-app indicator is therefore the **existing** bottom-nav badge (client, on every portal screen) + the **existing** `TopBar` bell (staff, [`TopBar.tsx:166`](../../src/app/(staff)/_components/TopBar.tsx)) — no new indicator needed. This is the "existing code already satisfies the intent" outcome the polish protocol anticipates.
+- **Notification-count colour — operator asked to switch the red badge to brand green; recommended keeping red (awaiting confirmation).** Reasoning: the design system reserves accent green for success/completion/structural and never for alerts; `--color-alert` red is the attention semantic; and on this very screen green already means "session scheduled / done" (the week-strip dots + the green "Completed" stat), so a green unread badge would collide with that established meaning. Red is also the platform convention for unread badges. *If overridden:* change `.portal-nav-badge` and `.topright .bell .count` together for consistency.
 
-**P1-1(c) email fallback, P1-1(b) web push, P1-2 realtime verify — next.** (c)/(b) touch live infra (a DB-trigger enqueue + Edge Function send; VAPID keys + service-worker push subscriptions), so they will be scoped and decided before landing.
+**P1-1(c) email fallback, P1-1(b) web push (spike-then-decide, per operator), P1-2 realtime verify — next.** (c)/(b) touch live infra (a DB-trigger enqueue + Edge Function send; VAPID keys + a service-worker push handler), so they will be scoped and decided before landing.
 
 ---
 
-*Protocol status: steps 1–4 complete; gap list **approved** 2026-06-18; **P0 done + verified on live**; **P1 in progress** — P1-1(a) in-app indicator done (frontend, pending :3000 visual). P1 remainder + P2 next, then the closing commit and claude.ai sign-off per the section ritual.*
+*Protocol status: steps 1–4 complete; gap list **approved** 2026-06-18; **P0 done + verified on live**; **P1 in progress** — P1-1(a) resolved (existing nav indicators suffice; the added home bell was reverted after the :3000 review; badge-colour decision pending). P1 remainder + P2 next, then the closing commit and claude.ai sign-off per the section ritual.*

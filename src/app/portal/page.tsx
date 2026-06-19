@@ -47,17 +47,6 @@ export default async function PortalTodayPage({
     .maybeSingle()
   if (!client) notFound()
 
-  // Unread staff→client messages for the home-screen notification bell
-  // (Messaging P1-1a). RLS scopes messages to the caller's own thread.
-  // Mirrors the portal layout's BottomNav count; stays fresh via the
-  // BottomNav realtime refresh, which re-runs this server render.
-  const { count: unreadFromStaff } = await supabase
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('sender_role', 'staff')
-    .is('read_at', null)
-    .is('deleted_at', null)
-
   // Resolve "today" in the device/org timezone (section 7 / P0-1) — never
   // from a UTC `new Date()`. Feeds the today-highlight, the card CTA state
   // machine, the greeting, the week anchor, and the week-number.
@@ -247,7 +236,6 @@ export default async function PortalTodayPage({
     <DayScreen
       greeting={greetingFromHour(hourInTimeZone(tz))}
       name={client.first_name}
-      unreadCount={unreadFromStaff ?? 0}
       weekHeading={
         program
           ? weekNumber
