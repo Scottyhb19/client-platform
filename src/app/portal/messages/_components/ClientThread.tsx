@@ -1,6 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import { Send, X } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
@@ -10,7 +17,39 @@ import {
   sendClientMessageAction,
 } from '../actions'
 
+// P2-1: clinical-safety disclosure dismissal, read from localStorage via a
+// tiny external store + useSyncExternalStore rather than a setState-in-effect.
+// The server snapshot returns "dismissed", so the banner never renders on the
+// server — no hydration mismatch — and it appears after hydration for
+// first-time clients. Mirrors the BottomNav session-theme store pattern.
 const DISCLAIMER_DISMISSED_KEY = 'odyssey-portal-msg-disclaimer-dismissed'
+
+const disclaimerListeners = new Set<() => void>()
+
+function readDisclaimerDismissed(): boolean {
+  try {
+    return localStorage.getItem(DISCLAIMER_DISMISSED_KEY) === '1'
+  } catch {
+    // localStorage unavailable (e.g. private mode) — don't nag.
+    return true
+  }
+}
+
+function subscribeDisclaimer(cb: () => void): () => void {
+  disclaimerListeners.add(cb)
+  return () => {
+    disclaimerListeners.delete(cb)
+  }
+}
+
+function dismissDisclaimer(): void {
+  try {
+    localStorage.setItem(DISCLAIMER_DISMISSED_KEY, '1')
+  } catch {
+    // best-effort; if it can't persist it'll show again next load.
+  }
+  disclaimerListeners.forEach((cb) => cb())
+}
 
 interface ClientThreadProps {
   threadId: string | null
@@ -52,25 +91,14 @@ export function ClientThread(props: ClientThreadProps) {
   const [isSending, startTransition] = useTransition()
   const bodyRef = useRef<HTMLDivElement>(null)
 
-  // P2-1: clinical-safety disclosure. Shown once at the top of the thread
-  // until dismissed (localStorage) — factual, non-alarming. The persistent
-  // 000 footer in the composer remains regardless.
-  const [showDisclaimer, setShowDisclaimer] = useState(false)
-  useEffect(() => {
-    try {
-      setShowDisclaimer(localStorage.getItem(DISCLAIMER_DISMISSED_KEY) !== '1')
-    } catch {
-      // localStorage unavailable (e.g. private mode) — skip the disclaimer.
-    }
-  }, [])
-  function dismissDisclaimer() {
-    setShowDisclaimer(false)
-    try {
-      localStorage.setItem(DISCLAIMER_DISMISSED_KEY, '1')
-    } catch {
-      // best-effort; if it can't persist it'll show again next load.
-    }
-  }
+  // P2-1: show the clinical-safety disclosure unless dismissed (client-only
+  // localStorage read). Factual, non-alarming — the persistent 000 footer in
+  // the composer remains regardless.
+  const disclaimerDismissed = useSyncExternalStore(
+    subscribeDisclaimer,
+    readDisclaimerDismissed,
+    () => true, // server snapshot: dismissed → no SSR render, no hydration split.
+  )
 
   useEffect(() => {
     setMessages(initialMessages)
@@ -263,7 +291,7 @@ export function ClientThread(props: ClientThreadProps) {
         </div>
       </div>
 
-      {showDisclaimer && (
+      {!disclaimerDismissed && (
         <div
           style={{
             display: 'flex',

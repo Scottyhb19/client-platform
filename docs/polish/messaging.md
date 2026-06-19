@@ -210,6 +210,8 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 ### Acceptance tests
 - pgTAP `34_message_rls.sql` — **14/14 on live** (re-run at section close). `14_audit_resolve_org_id_coverage.sql` — green.
 - `type-check` clean; `next build` clean across P0→P2. `gen types` no diff (triggers/functions/grants only; no table-shape change).
+- **ESLint — net-zero-new:** the one new `react-hooks/set-state-in-effect` (the P2-1 disclaimer reading `localStorage`) was refactored to `useSyncExternalStore` (SSR-correct, matching the `BottomNav` store pattern). The two remaining hits in the edited files (`Inbox.tsx:151`, `ClientThread.tsx:104`) are **pre-existing** prop-sync effects in master, out of scope. (Project-wide baseline ≈ 4.7k pre-existing issues of this non-gating class; `next build` is the enforced gate.)
+- **Regression canary:** pgTAP `17_cross_tenant_isolation.sql` — 8/8 (the P0-3 audit-resolver change didn't break audit on existing tables). **Hygiene audit:** no `any`/`console`/`TODO`/`debugger` in the touched code; the reverted P1-1(a) bell left **zero** diff vs master; the working tree carries only pre-existing dirty files (none of this section's commits include them).
 
 ### Deferred, with re-trigger
 - **P1-1(b) web push** — beta shows email + in-app insufficient, or operator wants desktop OS notifications.
