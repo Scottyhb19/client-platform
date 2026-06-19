@@ -1,0 +1,32 @@
+-- ============================================================================
+-- 20260618120000_revoke_anon_execute_messaging_functions   (Messaging P0-1)
+-- ============================================================================
+-- Why: the §10 slice of the platform-wide anon-EXECUTE sweep — the named
+-- go-live rider (docs/go-live-checklist.md §4, lines 72 & 74). Two SECURITY
+-- DEFINER functions in the messaging family carry the Supabase default
+-- EXECUTE grant to anon/authenticated:
+--
+--   client_cascade_thread_archive()  — AFTER UPDATE OF deleted_at ON clients;
+--                                       syncs message_threads.deleted_at.
+--   message_update_thread_last()     — AFTER INSERT ON messages; maintains the
+--                                       denormalized message_threads.last_*.
+--
+-- Both are TRIGGER functions (RETURNS trigger, no args, depend on TG_OP /
+-- NEW / OLD): PostgREST never exposes them as RPCs, and a trigger fires as
+-- the table owner regardless of who holds EXECUTE. So this revoke has ZERO
+-- behavioural effect (the triggers keep firing) — it is pure posture hygiene,
+-- mirroring the section-5/6/7/9 sweeps, and is locked by pgTAP 34's grants
+-- assertions so a future CREATE OR REPLACE that re-trips the auto-grant fails
+-- the suite.
+--
+-- REVOKE FROM PUBLIC is NOT sufficient on its own: Supabase default
+-- privileges add a role-specific grant to anon/authenticated that survives a
+-- PUBLIC revoke (confirmed live across sections 5–9). Each role is revoked
+-- explicitly.
+--
+-- Backward-compatible: grants-only, no signature/behaviour change. Safe to
+-- push to the live shared DB ahead of any frontend change.
+-- ============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.client_cascade_thread_archive() FROM PUBLIC, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.message_update_thread_last()    FROM PUBLIC, anon, authenticated;
