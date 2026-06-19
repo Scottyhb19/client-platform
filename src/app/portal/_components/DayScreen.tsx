@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
-import { ChevronLeft, ChevronRight, ClipboardList } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ClipboardList, MessageCircle } from 'lucide-react'
 import { rescheduleAndStartSessionAction } from '../session/[dayId]/actions'
 import {
   type DayState,
@@ -40,6 +40,10 @@ export type DaySession = {
 interface DayScreenProps {
   greeting: string
   name: string
+  // Unread staff→client message count for the home-screen notification bell
+  // (Messaging P1-1a). Top-right on the Today header; taps through to
+  // /portal/messages. Kept fresh by the BottomNav realtime refresh.
+  unreadCount: number
   weekHeading: string // "Sat 18 Apr · Week 3"
   weekDots: WeekDot[] // exactly 7
   session: DaySession | null
@@ -81,6 +85,7 @@ interface DayScreenProps {
 export function DayScreen({
   greeting,
   name,
+  unreadCount,
   weekHeading,
   weekDots,
   session,
@@ -107,23 +112,47 @@ export function DayScreen({
 
   return (
     <>
-      {/* Top greeting */}
-      <div style={{ padding: '18px 20px 16px' }}>
-        <div className="portal-eyebrow">{weekHeading}</div>
-        <h1
-          // Hero h1 keeps its own sizing — not a primitive worth extracting
-          // for one consumer.
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 700,
-            fontSize: '1.5rem',
-            margin: '2px 0 0',
-            letterSpacing: '-.01em',
-            lineHeight: 1.1,
-          }}
+      {/* Top greeting + notification bell (Messaging P1-1a) */}
+      <div
+        style={{
+          padding: '18px 20px 16px',
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div>
+          <div className="portal-eyebrow">{weekHeading}</div>
+          <h1
+            // Hero h1 keeps its own sizing — not a primitive worth extracting
+            // for one consumer.
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '1.5rem',
+              margin: '2px 0 0',
+              letterSpacing: '-.01em',
+              lineHeight: 1.1,
+            }}
+          >
+            {greeting}, {name}.
+          </h1>
+        </div>
+        <Link
+          href="/portal/messages"
+          className="portal-top-bell"
+          aria-label={
+            unreadCount > 0 ? `Messages (${unreadCount} unread)` : 'Messages'
+          }
         >
-          {greeting}, {name}.
-        </h1>
+          <MessageCircle size={18} aria-hidden />
+          {unreadCount > 0 && (
+            <span className="portal-top-bell__count" aria-hidden>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </Link>
       </div>
 
       {/* Week strip nav — month label + prev/next chevrons. */}

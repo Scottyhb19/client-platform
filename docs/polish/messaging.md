@@ -147,6 +147,15 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 
 **Next:** P1 — the three-layer notification stack (P1-1: in-app indicator → email fallback → web-push viability spike) and the realtime-RLS-on-live verification (P1-2).
 
+### P1 — in progress (2026-06-18)
+
+**P1-1(a) — in-app top-right notification indicator: done (frontend; authed visual pending operator :3000 review).**
+- **Staff:** already satisfied — the `TopBar` messages bell is top-right, global (incl. the dashboard), with a live unread count + realtime refresh ([`TopBar.tsx:166`](../../src/app/(staff)/_components/TopBar.tsx)). No change needed.
+- **Client (the actual work):** the portal **home** renders `DayScreen`, not `PortalTop`, and had no top-right indicator. Added `.portal-top-bell` (Lucide `MessageCircle` + a red `--color-alert` count badge matching `.portal-nav-badge`) to the Today header, linking to `/portal/messages`. `unreadCount` is computed in the home server page ([`portal/page.tsx`](../../src/app/portal/page.tsx) — an RLS-scoped head count) and passed to [`DayScreen`](../../src/app/portal/_components/DayScreen.tsx); freshness piggybacks on the existing BottomNav realtime `router.refresh()` (no second subscription).
+- **Verification:** `type-check` + `next build` clean. The authed visual needs a client session → operator :3000 review per the locked cadence (portal home, top-right bell + red count when there's an unread EP message).
+
+**P1-1(c) email fallback, P1-1(b) web push, P1-2 realtime verify — next.** (c)/(b) touch live infra (a DB-trigger enqueue + Edge Function send; VAPID keys + service-worker push subscriptions), so they will be scoped and decided before landing.
+
 ---
 
-*Protocol status: steps 1–4 complete; gap list **approved** 2026-06-18; P0 (architecture/security perimeter) implemented, applied to live, and verified. P1/P2 next, then the closing commit and claude.ai sign-off per the section ritual.*
+*Protocol status: steps 1–4 complete; gap list **approved** 2026-06-18; **P0 done + verified on live**; **P1 in progress** — P1-1(a) in-app indicator done (frontend, pending :3000 visual). P1 remainder + P2 next, then the closing commit and claude.ai sign-off per the section ritual.*
