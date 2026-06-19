@@ -10,13 +10,14 @@ SET search_path TO public, extensions, pg_temp;
 -- messages + message_threads — a brand-new tenant surface carrying health-
 -- adjacent content — had ZERO automated coverage.
 --
--- Covers all four messaging P0s:
+-- Covers all four messaging P0s + the read_at recipient-only review follow-up:
 --   P0-1  anon EXECUTE revoked on the messaging definer functions   (12-14)
 --   P0-2  message immutability enforced at the DB layer             (7, 9)
 --   P0-3  audit trigger fires + resolves org for messages           (11)
 --   P0-4  cross-tenant + within-org client RLS isolation            (1-6, 10)
+--   r/o   read_at writable only by the recipient (forge blocked)    (15-17)
 --
--- Assertions (14), grouped by the session they run under (most-critical
+-- Assertions (17), grouped by the session they run under (most-critical
 -- isolation first), n = execution order:
 --   staff_b (org_b — cross-tenant attacker):
 --     1. read isolation, threads   — staff_b sees ZERO of org_a's thread.
@@ -28,9 +29,12 @@ SET search_path TO public, extensions, pg_temp;
 --     6. within-org isolation, msgs — client_a sees ZERO of client_a2's msgs.
 --     7. LOAD-BEARING (FM-1) — client UPDATE of the EP's message body RAISES.
 --     8. backward-compat     — client mark-read (read_at only) affects 1 row.
+--    15. read_at r/o         — client CANNOT forge read_at on its OWN msg.
 --   staff_a (org_a):
 --     9. immutability (staff) — staff UPDATE of a message body RAISES.
 --    10. control — staff_a CAN see org_a's thread (test 1 zero is isolation).
+--    16. read_at r/o — staff CANNOT forge read_at on its OWN staff msg.
+--    17. read_at r/o — staff (recipient) CAN mark a client msg read.
 --   owner:
 --    11. P0-3 — audit_log captured >=1 messages row for org_a (trigger fired
 --        AND audit_resolve_org_id resolved a non-NULL org; a missing CASE
@@ -50,7 +54,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(17);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -232,6 +236,25 @@ INSERT INTO _tap (n, line) VALUES (8, (
   ) AS l
 ));
 
+-- Test 15 (read_at recipient-only — client forge blocked, review follow-up):
+-- a client cannot stamp read_at on its OWN (client-sender) message to forge a
+-- read receipt. The tightened UPDATE policy (sender_role='staff') hides the
+-- row, so the data-modifying UPDATE affects 0 rows.
+WITH u AS (
+  UPDATE messages SET read_at = now()
+   WHERE id = (SELECT client_msg FROM _ids)
+  RETURNING 1
+)
+INSERT INTO _probe (k, v) SELECT 'forge_client_rows', count(*)::int FROM u;
+
+INSERT INTO _tap (n, line) VALUES (15, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT v FROM _probe WHERE k = 'forge_client_rows'),
+    0,
+    'read_at recipient-only: client CANNOT forge read_at on its own client message (0 rows)'
+  ) AS l
+));
+
 
 -- ============================================================================
 -- Tests 9-10 run under staff_a (org_a).
@@ -262,6 +285,42 @@ INSERT INTO _tap (n, line) VALUES (10, (
     (SELECT count(*)::int FROM message_threads WHERE id = (SELECT thread_a FROM _ids)),
     1,
     'control: staff_a sees org_a''s thread (test 1 zero is isolation, not absent fixture)'
+  ) AS l
+));
+
+-- Test 16 (read_at recipient-only — staff forge blocked): staff cannot stamp
+-- read_at on its OWN (staff-sender) message. The tightened policy
+-- (sender_role='client') hides the row → 0 rows.
+WITH u AS (
+  UPDATE messages SET read_at = now()
+   WHERE id = (SELECT staff_msg FROM _ids)
+  RETURNING 1
+)
+INSERT INTO _probe (k, v) SELECT 'forge_staff_rows', count(*)::int FROM u;
+
+INSERT INTO _tap (n, line) VALUES (16, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT v FROM _probe WHERE k = 'forge_staff_rows'),
+    0,
+    'read_at recipient-only: staff CANNOT forge read_at on its own staff message (0 rows)'
+  ) AS l
+));
+
+-- Test 17 (read_at recipient-only — staff legit mark-read): staff (the
+-- recipient) CAN stamp read_at on a client message → 1 row. Proves the
+-- tightening blocks the forge without breaking legitimate recipient mark-read.
+WITH u AS (
+  UPDATE messages SET read_at = now()
+   WHERE id = (SELECT client_msg FROM _ids)
+  RETURNING 1
+)
+INSERT INTO _probe (k, v) SELECT 'staff_legit_rows', count(*)::int FROM u;
+
+INSERT INTO _tap (n, line) VALUES (17, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT v FROM _probe WHERE k = 'staff_legit_rows'),
+    1,
+    'read_at recipient-only: staff (recipient) CAN mark a client message read (1 row)'
   ) AS l
 ));
 
