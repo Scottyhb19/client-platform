@@ -189,7 +189,7 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 
 ## 5. Closing commit
 
-**Section:** 10 — Messaging. **Branch:** `polish/section-10-messaging` (P0+P1+P2; not yet merged). Audit → gap list approved 2026-06-18; implemented 2026-06-18..20.
+**Section:** 10 — Messaging. **Branch:** `polish/section-10-messaging` — **merged to master + deployed to production 2026-06-20** (fast-forward push `0aecf3b..9033527`; prod `/api/health` 200, `db:ok` / `config:ok`). Audit → gap list approved 2026-06-18; implemented 2026-06-18..20.
 
 ### What changed (by gap)
 
@@ -213,6 +213,7 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 - **ESLint — net-zero-new:** the one new `react-hooks/set-state-in-effect` (the P2-1 disclaimer reading `localStorage`) was refactored to `useSyncExternalStore` (SSR-correct, matching the `BottomNav` store pattern). The two remaining hits in the edited files (`Inbox.tsx:151`, `ClientThread.tsx:104`) are **pre-existing** prop-sync effects in master, out of scope. (Project-wide baseline ≈ 4.7k pre-existing issues of this non-gating class; `next build` is the enforced gate.)
 - **Regression canary:** pgTAP `17_cross_tenant_isolation.sql` — 8/8 (the P0-3 audit-resolver change didn't break audit on existing tables). **Hygiene audit:** no `any`/`console`/`TODO`/`debugger` in the touched code; the reverted P1-1(a) bell left **zero** diff vs master; the working tree carries only pre-existing dirty files (none of this section's commits include them).
 - **Operator-confirmed end-to-end (2026-06-20, witnessed live):** a client message arrives as an email to the EP; the **debounce** holds (a burst sends one email, not one per message); the email carries **no message body**; and the P2-1 disclosure shows once on the portal thread and dismisses. The **only** item not verified live is the **P1-2 cross-tenant *realtime* two-session probe** — it needs a second test account (first-accounts gate); it is low-risk (gated by the same SELECT RLS pgTAP 34 proves).
+- **Production-confirmed end-to-end (2026-06-20, post-deploy):** after the section branch merged to master and deployed (prod health 200, `db:ok` / `config:ok`), the operator confirmed the full messaging flow works **on production** — the portal safety disclosure, the client→EP email (debounced, no message body), and staff↔client send/receive — all end-to-end.
 
 ### Deferred, with re-trigger
 - **P1-1(b) web push** — beta shows email + in-app insufficient, or operator wants desktop OS notifications.
