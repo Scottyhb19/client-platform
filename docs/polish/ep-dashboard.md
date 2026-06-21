@@ -5,7 +5,7 @@
 **Carried-in riders this section OWNS:** **none.** The dashboard introduces no new tables, no new RLS policies, and no new SECURITY DEFINER functions — it is a read-only projection over surfaces other sections already built and tested. The remaining open platform-wide anon-EXECUTE sweep item (`client_accept_invite`, §2) is **not** a dashboard concern; it stays indexed in [`go-live-checklist.md`](../go-live-checklist.md) under its own section. (Stated explicitly because most prior sections carried a rider; this one does not.)
 **Current implementation:** [`dashboard/page.tsx`](../../src/app/(staff)/dashboard/page.tsx) (772 lines — loader + stat cards + attention panel + today's sessions, all server-rendered), [`dashboard/_components/RecentlyCompletedPanel.tsx`](../../src/app/(staff)/dashboard/_components/RecentlyCompletedPanel.tsx) (278 lines — the §6.8.4 surface, client component). Shared: [`clients/_lib/client-helpers.ts`](../../src/app/(staff)/clients/_lib/client-helpers.ts) (`initialsFor`/`toneFor`/`statusFor`), [`_components/SessionExerciseSummary.tsx`](../../src/app/(staff)/_components/SessionExerciseSummary.tsx). Nav/landing: [`(staff)/layout.tsx`](../../src/app/(staff)/layout.tsx) + [`_components/TopBar.tsx`](../../src/app/(staff)/_components/TopBar.tsx) (Dashboard is the first nav item; brand links to `/dashboard`; login default `next=/dashboard`). Data model already present: `client_categories` ([`20260420100500`](../../supabase/migrations/20260420100500_client_categories.sql)), `clients.category_id` ([`20260420100600:28`](../../supabase/migrations/20260420100600_clients.sql)), seeded per-org ([`20260420102400:66-73`](../../supabase/migrations/20260420102400_bootstrap_functions.sql)), configurable in settings ([`settings/page.tsx:212-217`](../../src/app/(staff)/settings/page.tsx)). Distinct from `/analytics` (a separate 12-month range-slicing surface, Phase-4-flavoured — *not* the §6.8 clinical briefing; do not conflate).
 **Audit date:** 2026-06-22
-**Status:** **Implemented, verified, and reviewer-follow-up addressed 2026-06-22 (§7).** Protocol steps 1–7 complete + the claude.ai reviewer's five points resolved (§7): P0-1 proven under `TZ=UTC` across the DST boundary; an Overdue past-end-program bug (reviewer-caught) fixed; both verify-by-reasoning passes performed + recorded; routing-test audit rows purged. **P1-1 (client list) and P2-4 (responsive layout) WITHDRAWN as owner UX decisions (§5).** Gate green: type-check + next build + eslint clean; no migrations. Merging to master; Sign-off pending.
+**Status:** **CLOSED 2026-06-22** (reviewer: claude.ai project chat; Decision: Approved — see §8 Sign-off). Implemented, verified, and reviewer-follow-up addressed (§6/§7); merged to master (`0ee8d15`→`4a03564`) and deployed — prod green. P0-1 confirmed on the live UTC server; the reviewer-caught Overdue past-end bug fixed. **P1-1 (client list) and P2-4 (responsive layout) withdrawn as owner UX decisions (§5).** No migrations.
 
 ---
 
@@ -214,6 +214,12 @@ The claude.ai reviewer raised five points on the §6 closing commit; all address
 
 Acceptance re-run after the Overdue fix: type-check + next build + eslint all clean.
 
-## Sign-off
+## 8. Sign-off
 
-_Pending — operator to paste the §6 closing commit + §7 follow-up into the claude.ai project chat and record Date / Reviewer / Decision here._
+- **Date:** 2026-06-22
+- **Reviewer:** Claude (claude.ai project chat)
+- **Decision:** Approved — Closed.
+
+Section 11 (EP Dashboard) closing commit accepted on branch `polish/section-11-dashboard` (`0ee8d15` → `b9d1007` → `13020a8`), merged to master; prod healthy. The reviewer's four pre-sign-off conditions were resolved by the operator (2026-06-22): (1) P0-1 timezone fix confirmed on the live UTC server — the AU landing page resolves the correct practice-tz "today", the real-environment test localhost could not reproduce; (2) Overdue confirmed to exclude past-end programs, so FM-4's inflation does not reappear in the attention panel; (3) the two verify-by-reasoning passes (no residual server-local time math; each loader org-scoped by RLS) confirmed performed; (4) the shared-component (`SessionExerciseSummary`) change reviewed for revert-isolation risk.
+
+Owner-approved deviations from brief §6.8 recorded, not gaps: §6.8.5 client list (P1-1) and responsive layout (P2-4). Accepted-with-re-trigger: FM-7 (recent-completions nested query at f&f scale), FM-11 (no new pgTAP — read-only over already-tested RLS surfaces).
