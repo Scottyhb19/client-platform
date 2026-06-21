@@ -11,20 +11,25 @@ interface SessionExerciseSummaryProps {
  * Per-exercise + per-set summary surface for a completed session.
  *
  * Consumed by:
- *   - Phase D's CompletionsPanel rows (client profile Program tab right rail)
- *   - Phase L's RecentlyCompletedPanel rows (dashboard bottom slot)
+ *   - the client profile Program-tab completions rail (CompletionsPanel)
+ *   - the dashboard "Recently completed" expander (RecentlyCompletedPanel)
+ *
+ * §11 P2-7 redesign: each exercise's sets sit in a soft tinted block with
+ * content-sized, column-aligned cells (set #, result, RPE) so load/reps/RPE
+ * read *down* the sets at a glance, and the result and its RPE stay close
+ * together instead of being thrown to opposite edges by a stretched column.
+ * Type hierarchy carries the meaning — the weight is the prominent number,
+ * the unit is lighter — so it reads as a summary, not a spreadsheet. RPE is a
+ * neutral pill (never green; green is reserved for completion). Tuned to read
+ * well at both the wide dashboard expander and the narrow profile rail.
  *
  * Rendering rules:
  *   - Exercises ordered by `sort_order` (already sorted by the loader).
- *   - Sequence letters (A, A1, A2, B...) computed inline — mirrors the
- *     portal DayScreen + the staff session-builder convention. Single
- *     exercise per "group" gets a bare letter (A); supersetted exercises
- *     get A1/A2.
- *   - Each set line: "{load} × {reps}" or "{reps} reps" or the optional
- *     metric on its own, then a right-aligned RPE chip when present.
+ *   - Sequence letters (A, A1, A2, B...) computed inline — mirrors the portal
+ *     DayScreen + the staff session-builder convention. Single exercise per
+ *     "group" gets a bare letter (A); supersetted exercises get A1/A2.
  *   - Skip-to-complete sessions (zero exercise_logs) render nothing — the
- *     parent should hide the expander chevron when `set_count === 0`
- *     per the Q-L11 sign-off.
+ *     parent hides the expander chevron when `set_count === 0`.
  *
  * Pure presentation. No state, no fetching, no side effects.
  */
@@ -102,19 +107,21 @@ function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
       <div
         style={{
           display: 'flex',
-          alignItems: 'baseline',
+          alignItems: 'center',
           gap: 8,
-          marginBottom: 4,
+          marginBottom: 7,
         }}
       >
         <span
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
-            fontSize: '.74rem',
-            letterSpacing: '.04em',
-            color: 'var(--color-text-light)',
-            minWidth: 22,
+            fontSize: '.72rem',
+            letterSpacing: '.02em',
+            color: 'var(--color-charcoal)',
+            background: 'var(--color-surface-2)',
+            borderRadius: 'var(--radius-button)',
+            padding: '2px 7px',
           }}
         >
           {exercise.letter}
@@ -133,7 +140,7 @@ function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
       {exercise.sets.length === 0 ? (
         <div
           style={{
-            paddingLeft: 30,
+            marginLeft: 2,
             fontSize: '.76rem',
             color: 'var(--color-muted)',
             fontStyle: 'italic',
@@ -144,14 +151,22 @@ function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
       ) : (
         <div
           style={{
-            paddingLeft: 30,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
+            marginLeft: 2,
+            width: 'fit-content',
+            maxWidth: '100%',
+            display: 'inline-grid',
+            gridTemplateColumns: 'auto auto auto',
+            columnGap: 18,
+            rowGap: 7,
+            alignItems: 'baseline',
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border-hairline)',
+            borderRadius: 'var(--radius-card-dense)',
+            padding: '10px 14px',
           }}
         >
           {exercise.sets.map((s) => (
-            <SetLine key={s.set_number} set={s} />
+            <SetCells key={s.set_number} set={s} />
           ))}
         </div>
       )}
@@ -159,76 +174,119 @@ function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
   )
 }
 
-function SetLine({ set }: { set: ProfileCompletionSet }) {
+/**
+ * Three grid cells for one set: index, result, RPE (or an empty cell so rows
+ * without an RPE still align with rows that have one).
+ */
+function SetCells({ set }: { set: ProfileCompletionSet }) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '54px 1fr auto',
-        gap: 10,
-        alignItems: 'baseline',
-        fontSize: '.78rem',
-        color: 'var(--color-text)',
-        fontVariantNumeric: 'tabular-nums',
-      }}
-    >
+    <>
       <span
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 600,
-          letterSpacing: '.04em',
-          fontSize: '.66rem',
+          fontSize: '.72rem',
           color: 'var(--color-muted)',
-          textTransform: 'uppercase',
+          textAlign: 'right',
+          minWidth: 12,
         }}
       >
-        Set {set.set_number}
+        {set.set_number}
       </span>
-      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>
-        {formatSetDetail(set)}
+      <span style={{ whiteSpace: 'nowrap' }}>
+        <SetResult set={set} />
       </span>
-      {set.rpe !== null && (
+      {set.rpe !== null ? (
         <span
           style={{
-            fontSize: '.7rem',
+            justifySelf: 'start',
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
-            color: 'var(--color-text-light)',
+            fontSize: '.66rem',
             letterSpacing: '.02em',
+            color: 'var(--color-text-light)',
+            background: 'var(--color-surface-2)',
+            borderRadius: 'var(--radius-pill)',
+            padding: '2px 8px',
           }}
         >
           RPE {set.rpe}
         </span>
+      ) : (
+        <span />
       )}
-    </div>
+    </>
   )
 }
 
+const numStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-display)',
+  fontWeight: 700,
+  fontSize: '1rem',
+  color: 'var(--color-charcoal)',
+}
+const unitStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-sans)',
+  fontWeight: 500,
+  fontSize: '.72rem',
+  color: 'var(--color-text-light)',
+}
+const sepStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-display)',
+  fontWeight: 600,
+  fontSize: '.86rem',
+  color: 'var(--color-text-light)',
+  margin: '0 3px',
+}
+
 /**
- * Compose the set's middle column. Rules:
- *   - weight + reps  → "80kg × 5"
- *   - reps only      → "5 reps"
- *   - optional only  → "60s" / "8 e/s" (passed through; the EP types units
- *                       into optional_value at programming time)
- *   - everything missing → "—"
- *
- * Weight metric concatenates without space ("80kg") per the design system's
- * tight-numeric-label convention. The × is U+00D7, not the ASCII letter x.
+ * Render the set's result with type hierarchy:
+ *   weight + reps  → "80kg × 5"  (kg lighter, × the U+00D7 sign)
+ *   reps only      → "5 reps"
+ *   optional only  → "60s" / "8 e/s" (the EP's free-typed optional value)
+ *   everything     → "80kg × 5" then the optional value appended
+ *   nothing logged → "—"
  */
-function formatSetDetail(s: ProfileCompletionSet): string {
-  const bits: string[] = []
-  if (s.weight_value !== null && s.weight_metric) {
-    bits.push(`${s.weight_value}${s.weight_metric}`)
+function SetResult({ set }: { set: ProfileCompletionSet }) {
+  const hasWeight = set.weight_value !== null && !!set.weight_metric
+  const hasReps = set.reps !== null
+  const hasOptional = !!set.optional_value
+
+  if (!hasWeight && !hasReps && !hasOptional) {
+    return <span style={numStyle}>—</span>
   }
-  if (s.reps !== null) {
-    if (bits.length > 0) {
-      bits.push(`× ${s.reps}`)
-    } else {
-      bits.push(`${s.reps} reps`)
-    }
-  }
-  if (s.optional_value) {
-    bits.push(s.optional_value)
-  }
-  return bits.length > 0 ? bits.join(' ') : '—'
+
+  return (
+    <>
+      {hasWeight && (
+        <>
+          <span style={numStyle}>{set.weight_value}</span>
+          <span style={unitStyle}>{set.weight_metric}</span>
+        </>
+      )}
+      {hasReps &&
+        (hasWeight ? (
+          <>
+            <span style={sepStyle}>×</span>
+            <span style={numStyle}>{set.reps}</span>
+          </>
+        ) : (
+          <>
+            <span style={numStyle}>{set.reps}</span>
+            <span style={{ ...unitStyle, marginLeft: 4 }}>reps</span>
+          </>
+        ))}
+      {hasOptional && (
+        <span
+          style={{
+            ...sepStyle,
+            margin: 0,
+            marginLeft: hasWeight || hasReps ? 8 : 0,
+          }}
+        >
+          {set.optional_value}
+        </span>
+      )}
+    </>
+  )
 }

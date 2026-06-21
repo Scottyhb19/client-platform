@@ -2,6 +2,13 @@ import Link from 'next/link'
 import { Calendar as CalendarIcon, UserPlus as UserPlusIcon } from 'lucide-react'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { PRACTICE_TIMEZONE } from '@/lib/constants'
+import {
+  todayIsoInTimeZone,
+  startOfDayInstant,
+  addDaysToIsoDate,
+  hourInTimeZone,
+} from '@/lib/dates'
 import {
   initialsFor,
   type AvatarTone,
@@ -21,53 +28,59 @@ export const dynamic = 'force-dynamic'
  * 01 Dashboard — landing for owners + staff after sign-in.
  *
  * Renders four stat cards, a Needs-attention panel, Today's sessions,
- * and a Recent activity feed. All computed from live data; everything
- * empty-states cleanly.
+ * and a Recently-completed feed. All computed from live data; everything
+ * empty-states cleanly. Per the §11 owner decision, the dashboard is a
+ * "what needs my attention?" briefing only — the §6.8.5 client list was
+ * deliberately not built (the Clientele page serves that role).
  */
 export default async function DashboardPage() {
   const { userId, organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  // Current user's first name for the greeting.
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('first_name')
-    .eq('user_id', userId)
-    .maybeSingle()
+  // Greeting name + org timezone, fetched together. The timezone is
+  // load-bearing: every "today" boundary below is resolved in it (P0-1).
+  const [{ data: profile }, { data: org }] = await Promise.all([
+    supabase
+      .from('user_profiles')
+      .select('first_name')
+      .eq('user_id', userId)
+      .maybeSingle(),
+    supabase
+      .from('organizations')
+      .select('timezone')
+      .eq('id', organizationId)
+      .maybeSingle(),
+  ])
 
-  // Org timezone — future-proofs the "today" window when/if we add
-  // multi-timezone orgs. For v1 we use server local time.
-  await supabase
-    .from('organizations')
-    .select('timezone')
-    .eq('id', organizationId)
-    .maybeSingle()
-
+  // ── Practice-timezone "today" (P0-1) ───────────────────────────────────
+  // The server clock (Vercel) is UTC. Deriving "today" from server-local
+  // time put the greeting, the date header, and the today's-sessions window
+  // up to 11h out for an AU practice — wrong for most of the working day.
+  // Resolve the day boundaries in the org timezone instead, exactly as the
+  // TopBar and the scheduling grid already do (see src/lib/dates.ts).
+  const tz = org?.timezone ?? PRACTICE_TIMEZONE
   const now = new Date()
-  const todayStart = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
+  const todayIso = todayIsoInTimeZone(tz)
+  const todayStart = startOfDayInstant(todayIso, tz)
+  const todayEnd = startOfDayInstant(addDaysToIsoDate(todayIso, 1), tz)
+  const fourteenDaysAgo = startOfDayInstant(
+    addDaysToIsoDate(todayIso, -14),
+    tz,
   )
-  const todayEnd = new Date(todayStart)
-  todayEnd.setDate(todayEnd.getDate() + 1)
-  const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+  const tenDaysAgoIso = addDaysToIsoDate(todayIso, -10)
+  const tenDaysAgo = startOfDayInstant(tenDaysAgoIso, tz)
+  const todayPlus7Iso = addDaysToIsoDate(todayIso, 7)
 
   // Parallel fetches.
-  //
-  // Phase L (2026-05-14) — the old activity feed pulled `recentAppointments`
-  // and `recentNotes` and mixed them into a single timeline. Per Q-L9
-  // sign-off the dashboard's bottom panel was reframed as "recent activity
-  // from the client portal" — i.e. completed training sessions only.
-  // Notes/appointments mix retired. Flagged notes still loaded below for
-  // the AttentionPanel; that surface is untouched.
   const [
     { data: activeClients },
     { data: newClients },
     { data: todaysAppointments },
     { data: recentCompletionRows },
-    { data: activePrograms },
+    { data: allProgramRows },
     { data: flaggedNotes },
+    { data: lastCompletedRows },
+    { data: completedAssessmentRows },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -91,16 +104,15 @@ export default async function DashboardPage() {
       .is('deleted_at', null)
       .neq('status', 'cancelled')
       .order('start_at'),
-    // Phase L — 5 most recent completed sessions across all of this EP's
-    // clients (RLS scopes to own org). Same embed shape as the profile
-    // page's completions loader plus client identity. Fan-out is ≤ 5×~5×
-    // ~5 rows pre-launch; promote to a SECURITY DEFINER RPC if telemetry
-    // later says otherwise (Q-L8 watch-list item).
+    // 5 most recent completed sessions across this EP's clients (RLS scopes
+    // to own org). Fetch 8 then drop archived-client / null rows and slice
+    // to 5 (P2-2), so an archived client's session can't crowd the list.
+    // Same embed shape as the profile completions loader plus client identity.
     supabase
       .from('sessions')
       .select(
         `id, completed_at, session_rpe,
-         client:clients(id, first_name, last_name),
+         client:clients(id, first_name, last_name, archived_at),
          program_day:program_days(day_label, scheduled_date),
          exercise_logs(
            id, program_exercise_id,
@@ -117,26 +129,26 @@ export default async function DashboardPage() {
       .not('completed_at', 'is', null)
       .is('deleted_at', null)
       .order('completed_at', { ascending: false })
-      .limit(5),
+      .limit(8),
+    // All non-deleted programs (any status). Drives the programs-ending
+    // stat + the Ending/Overdue attention triggers (active rows) and the
+    // "has a program at all" gate for the New trigger (any status).
     supabase
       .from('programs')
       .select(
-        `id, name, duration_weeks, start_date,
-         client:clients(id, first_name, last_name)`,
+        `id, status, start_date, duration_weeks, client_id,
+         client:clients(id, first_name, last_name, archived_at)`,
       )
-      .eq('status', 'active')
       .is('deleted_at', null),
     // CN-4 (brief §6.8.2): active flags not reviewed within 14 days.
-    // Previously required is_pinned (an unpinned flag could never reach
-    // the panel) and ignored review age entirely. "Mark reviewed" on the
-    // client profile clears a flag from here for the next 14 days;
-    // resolving clears it for good.
+    // "Mark reviewed" on the client profile clears a flag from here for the
+    // next 14 days; resolving clears it for good.
     supabase
       .from('clinical_notes')
       .select(
         `id, note_type, title, flag_body_region, flag_reviewed_at,
          flag_resolved_at,
-         client:clients(id, first_name, last_name)`,
+         client:clients(id, first_name, last_name, archived_at)`,
       )
       .in('note_type', ['injury_flag', 'contraindication'])
       .is('deleted_at', null)
@@ -144,10 +156,64 @@ export default async function DashboardPage() {
       .or(
         `flag_reviewed_at.is.null,flag_reviewed_at.lt.${fourteenDaysAgo.toISOString()}`,
       )
-      .limit(10),
+      .limit(20),
+    // Per-client most-recent completed session, for the Overdue trigger.
+    // Narrow 2-column projection ordered desc; reduced to one row per client
+    // below. Cheap at f&f scale; promote to a SECURITY DEFINER aggregate RPC
+    // if telemetry later says otherwise (same watch-list as recent sessions).
+    supabase
+      .from('sessions')
+      .select('client_id, completed_at')
+      .not('completed_at', 'is', null)
+      .is('deleted_at', null)
+      .order('completed_at', { ascending: false }),
+    // Clients with a completed assessment, for the New trigger.
+    supabase
+      .from('assessments')
+      .select('client_id')
+      .eq('status', 'completed')
+      .is('deleted_at', null),
   ])
 
-  // Stat: sessions today, excluding cancelled.
+  // ── Derived lookups ────────────────────────────────────────────────────
+  type ProgramRow = {
+    id: string
+    status: string
+    start_date: string | null
+    duration_weeks: number | null
+    client_id: string
+    client: {
+      id: string
+      first_name: string
+      last_name: string
+      archived_at: string | null
+    } | null
+  }
+  const allPrograms = (allProgramRows ?? []) as unknown as ProgramRow[]
+  const activePrograms = allPrograms.filter((p) => p.status === 'active')
+
+  // client_id → latest completed session timestamp (rows are already DESC).
+  const lastCompletedByClient = new Map<string, string>()
+  for (const r of (lastCompletedRows ?? []) as Array<{
+    client_id: string
+    completed_at: string | null
+  }>) {
+    if (r.completed_at && !lastCompletedByClient.has(r.client_id)) {
+      lastCompletedByClient.set(r.client_id, r.completed_at)
+    }
+  }
+
+  const completedAssessmentIds = new Set(
+    ((completedAssessmentRows ?? []) as Array<{ client_id: string }>).map(
+      (a) => a.client_id,
+    ),
+  )
+  const clientsWithAnyProgram = new Set(allPrograms.map((p) => p.client_id))
+  const clientsWithDraftProgram = new Set(
+    allPrograms.filter((p) => p.status === 'draft').map((p) => p.client_id),
+  )
+
+  // ── Stats ──────────────────────────────────────────────────────────────
   const sessionsToday = todaysAppointments?.length ?? 0
   const nextSession = todaysAppointments?.find(
     (a) => new Date(a.start_at).getTime() >= now.getTime(),
@@ -156,36 +222,47 @@ export default async function DashboardPage() {
   const newThisWeek =
     (newClients ?? []).filter(
       (c) =>
-        Date.now() - new Date(c.created_at).getTime() <=
+        now.getTime() - new Date(c.created_at).getTime() <=
         7 * 24 * 60 * 60 * 1000,
     ).length
 
-  // Needs-attention aggregation.
+  // Programs ending: active programs whose computed end date falls inside the
+  // next 7 days and is not already past (P1-3). The old test
+  // (`weeksIn + 1 >= duration_weeks`) stayed true forever once a program
+  // passed its final week, so long-stale programs inflated the count.
+  const programsEndingCount = activePrograms.filter((p) => {
+    const end = programEndIso(p.start_date, p.duration_weeks)
+    return end !== null && end >= todayIso && end <= todayPlus7Iso
+  }).length
+
+  // ── Needs-attention (4 brief triggers, deduped per client) ─────────────
   const attention = buildAttentionList({
-    flaggedNotes: flaggedNotes ?? [],
+    flaggedNotes: (flaggedNotes ?? []) as unknown as FlaggedNote[],
     activeClients: activeClients ?? [],
+    activePrograms,
+    lastCompletedByClient,
+    completedAssessmentIds,
+    clientsWithAnyProgram,
+    clientsWithDraftProgram,
+    nowMs: now.getTime(),
+    tenDaysAgoMs: tenDaysAgo.getTime(),
+    tenDaysAgoIso,
+    todayIso,
+    todayPlus7Iso,
   })
 
-  // Programs ending: active programs where we've reached the final week.
-  const programsEnding = (activePrograms ?? []).filter((p) => {
-    if (!p.start_date || !p.duration_weeks) return false
-    const start = new Date(p.start_date)
-    const weeksIn = Math.floor(
-      (Date.now() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
-    )
-    return weeksIn + 1 >= p.duration_weeks
-  })
-
-  // Phase L — project the recent-completions rows into the dashboard
-  // panel shape. Same single-pass shape as the profile loader: walk
-  // exercise_logs once for set_count + the per-exercise/per-set detail.
-  // Rows with `client === null` are dropped (shouldn't happen for active
-  // completed sessions, but defensive against soft-deleted edges).
+  // Project recent completions into the panel shape, dropping archived-client
+  // and null-client rows, then keeping the 5 most recent (P2-2).
   type RecentCompletionRow = {
     id: string
     completed_at: string
     session_rpe: number | null
-    client: { id: string; first_name: string; last_name: string } | null
+    client: {
+      id: string
+      first_name: string
+      last_name: string
+      archived_at: string | null
+    } | null
     program_day: { day_label: string; scheduled_date: string } | null
     exercise_logs:
       | Array<{
@@ -212,7 +289,8 @@ export default async function DashboardPage() {
   const recentCompletions: DashboardCompletion[] = (
     (recentCompletionRows ?? []) as unknown as RecentCompletionRow[]
   )
-    .filter((row) => row.client !== null)
+    .filter((row) => row.client !== null && !row.client.archived_at)
+    .slice(0, 5)
     .map((row) => {
       let setCount = 0
       const exercises: ProfileCompletionExercise[] = (row.exercise_logs ?? [])
@@ -257,47 +335,42 @@ export default async function DashboardPage() {
       }
     })
 
-  const greeting = `${greetingFor(now)}, ${profile?.first_name ?? 'there'}.`
+  const greeting = `${greetingFor(hourInTimeZone(tz))}, ${profile?.first_name ?? 'there'}.`
 
-  const attentionText =
-    attention.length === 0
-      ? ''
-      : `${attention.length} ${attention.length === 1 ? 'client needs' : 'clients need'} attention.`
-  const subLine =
-    sessionsToday === 0
-      ? attentionText || "You're clear. Take a breath."
-      : `${sessionsToday} ${
-          sessionsToday === 1 ? 'session' : 'sessions'
-        } today${attentionText ? `, ${attentionText.toLowerCase()}` : '.'}`
+  // Factual, quiet sub-line (P2-5): what's on today + who needs follow-up.
+  const sessionsClause =
+    sessionsToday > 0
+      ? `${sessionsToday} ${sessionsToday === 1 ? 'session' : 'sessions'} today`
+      : 'No sessions booked today'
+  const attentionClause =
+    attention.length > 0
+      ? `${attention.length} ${attention.length === 1 ? 'client needs' : 'clients need'} follow-up`
+      : null
+  const subLine = attentionClause
+    ? `${sessionsClause} · ${attentionClause}.`
+    : `${sessionsClause}.`
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <div className="eyebrow">{formatDateLong(now)}</div>
+          <div className="eyebrow">{formatDateLong(now, tz)}</div>
           <h1>{greeting}</h1>
           <div className="sub">{subLine}</div>
         </div>
       </div>
 
       {/* Stat cards */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 16,
-          marginBottom: 28,
-        }}
-      >
+      <div className="dash-stats">
         <StatCard
           value={String(sessionsToday)}
           label="Sessions today"
           detail={
             nextSession
-              ? `Next: ${nextSession.client?.first_name ?? ''} · ${formatTime(new Date(nextSession.start_at))}`
+              ? `Next: ${nextSession.client?.first_name ?? ''} · ${formatTime(new Date(nextSession.start_at), tz)}`
               : sessionsToday === 0
                 ? 'Nothing booked yet'
-                : "All done for today"
+                : 'All done for today'
           }
           tone="primary"
         />
@@ -305,42 +378,31 @@ export default async function DashboardPage() {
           value={String(activeClientCount)}
           label="Active clients"
           detail={
-            newThisWeek > 0
-              ? `${newThisWeek} new this week`
-              : 'Steady state'
+            newThisWeek > 0 ? `${newThisWeek} new this week` : 'Steady state'
           }
         />
         <StatCard
           value={String(attention.length)}
           label="Need attention"
           detail={
-            attention.length === 0
-              ? 'All tracking healthy'
-              : 'Scroll down for details'
+            attention.length === 0 ? 'All clear' : 'See the panel below'
           }
           tone={attention.length > 0 ? 'warning' : 'neutral'}
         />
         <StatCard
-          value={String(programsEnding.length)}
+          value={String(programsEndingCount)}
           label="Programs ending"
           detail={
-            programsEnding.length === 0
+            programsEndingCount === 0
               ? 'None ending this week'
-              : 'Need new training blocks'
+              : 'Plan the next block'
           }
-          tone={programsEnding.length > 0 ? 'danger' : 'neutral'}
+          tone={programsEndingCount > 0 ? 'danger' : 'neutral'}
         />
       </div>
 
       {/* Two-column: Needs attention + Today's sessions */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '2fr 1fr',
-          gap: 22,
-          marginBottom: 28,
-        }}
-      >
+      <div className="dash-cols">
         {activeClientCount === 0 ? (
           <div className="card" style={{ padding: '22px 26px' }}>
             <div
@@ -373,6 +435,7 @@ export default async function DashboardPage() {
         <TodaysSessionsPanel
           items={todaysAppointments ?? []}
           now={now}
+          tz={tz}
         />
       </div>
 
@@ -457,28 +520,63 @@ function StatCard({
 
 /* ====================== Needs-attention panel ====================== */
 
+type AttentionTone = 'flag' | 'overdue' | 'ending' | 'new'
+
 type AttentionItem = {
   clientId: string
   avatar: string
   firstName: string
   lastName: string
-  tone: 'flag' | 'new' | 'overdue'
+  tone: AttentionTone
   tag: string
   reason: string
   action: { label: string; href: string }
+  // Lower = more urgent. Drives dedupe (keep the most urgent per client) +
+  // the panel sort order. Brief §6.8.2 lists: Flag, Overdue, Ending, New.
+  priority: number
+}
+
+type FlaggedNote = {
+  id: string
+  note_type: string | null
+  title: string | null
+  flag_body_region: string | null
+  client: {
+    id: string
+    first_name: string
+    last_name: string
+    archived_at: string | null
+  } | null
+}
+
+type AttentionProgram = {
+  status: string
+  start_date: string | null
+  duration_weeks: number | null
+  client_id: string
+  client: {
+    id: string
+    first_name: string
+    last_name: string
+    archived_at: string | null
+  } | null
 }
 
 function buildAttentionList({
   flaggedNotes,
   activeClients,
+  activePrograms,
+  lastCompletedByClient,
+  completedAssessmentIds,
+  clientsWithAnyProgram,
+  clientsWithDraftProgram,
+  nowMs,
+  tenDaysAgoMs,
+  tenDaysAgoIso,
+  todayIso,
+  todayPlus7Iso,
 }: {
-  flaggedNotes: Array<{
-    id: string
-    note_type: string | null
-    title: string | null
-    flag_body_region: string | null
-    client: { id: string; first_name: string; last_name: string } | null
-  }>
+  flaggedNotes: FlaggedNote[]
   activeClients: Array<{
     id: string
     first_name: string
@@ -487,14 +585,25 @@ function buildAttentionList({
     onboarded_at: string | null
     created_at: string
   }>
+  activePrograms: AttentionProgram[]
+  lastCompletedByClient: Map<string, string>
+  completedAssessmentIds: Set<string>
+  clientsWithAnyProgram: Set<string>
+  clientsWithDraftProgram: Set<string>
+  nowMs: number
+  tenDaysAgoMs: number
+  tenDaysAgoIso: string
+  todayIso: string
+  todayPlus7Iso: string
 }): AttentionItem[] {
-  const items: AttentionItem[] = []
+  const candidates: AttentionItem[] = []
 
+  // Flag (red) — active injury flag / contraindication unreviewed > 14 days.
   for (const n of flaggedNotes) {
-    if (!n.client) continue
+    if (!n.client || n.client.archived_at) continue
     const kind =
       n.note_type === 'contraindication' ? 'contraindication' : 'injury flag'
-    items.push({
+    candidates.push({
       clientId: n.client.id,
       avatar: initialsFor(n.client.first_name, n.client.last_name),
       firstName: n.client.first_name,
@@ -507,13 +616,86 @@ function buildAttentionList({
           ? `Active ${kind} — ${n.flag_body_region}`
           : `Active ${kind}`),
       action: { label: 'Review', href: `/clients/${n.client.id}` },
+      priority: 0,
     })
   }
 
-  // Invited but not onboarded — first session unscheduled.
+  // Active programs feed both Overdue and Ending.
+  for (const p of activePrograms) {
+    if (!p.client || p.client.archived_at) continue
+    const c = p.client
+
+    // Overdue (amber) — no logged session beyond the weekly cadence + grace.
+    // A client who has never logged is measured from start_date + 10 days,
+    // so a brand-new program doesn't flag on day one. (Q1: 10 days.)
+    const last = lastCompletedByClient.get(p.client_id)
+    let overdue = false
+    let overdueReason = ''
+    if (last) {
+      if (new Date(last).getTime() < tenDaysAgoMs) {
+        overdue = true
+        const days = Math.max(
+          1,
+          Math.round((nowMs - new Date(last).getTime()) / 86_400_000),
+        )
+        overdueReason = `Last session ${days} days ago`
+      }
+    } else if (p.start_date && p.start_date <= tenDaysAgoIso) {
+      overdue = true
+      overdueReason = 'No sessions logged yet'
+    }
+    if (overdue) {
+      candidates.push({
+        clientId: c.id,
+        avatar: initialsFor(c.first_name, c.last_name),
+        firstName: c.first_name,
+        lastName: c.last_name,
+        tone: 'overdue',
+        tag: 'Overdue',
+        reason: overdueReason,
+        action: { label: 'Open', href: `/clients/${c.id}` },
+        priority: 1,
+      })
+    }
+
+    // Ending (amber) — program ends within 7 days, no successor drafted yet.
+    const endIso = programEndIso(p.start_date, p.duration_weeks)
+    if (
+      endIso !== null &&
+      endIso >= todayIso &&
+      endIso <= todayPlus7Iso &&
+      !clientsWithDraftProgram.has(p.client_id)
+    ) {
+      candidates.push({
+        clientId: c.id,
+        avatar: initialsFor(c.first_name, c.last_name),
+        firstName: c.first_name,
+        lastName: c.last_name,
+        tone: 'ending',
+        tag: 'Ending',
+        reason: `Program ends ${endRelative(endIso, todayIso)} — no new block yet`,
+        action: { label: 'Plan', href: `/clients/${c.id}/program` },
+        priority: 2,
+      })
+    }
+  }
+
+  // New (green) — needs first program, or invited but not yet onboarded.
   for (const c of activeClients) {
-    if (c.invited_at && !c.onboarded_at) {
-      items.push({
+    if (completedAssessmentIds.has(c.id) && !clientsWithAnyProgram.has(c.id)) {
+      candidates.push({
+        clientId: c.id,
+        avatar: initialsFor(c.first_name, c.last_name),
+        firstName: c.first_name,
+        lastName: c.last_name,
+        tone: 'new',
+        tag: 'New',
+        reason: 'Assessment complete — no program yet',
+        action: { label: 'Build program', href: `/clients/${c.id}/program/new` },
+        priority: 3,
+      })
+    } else if (c.invited_at && !c.onboarded_at) {
+      candidates.push({
         clientId: c.id,
         avatar: initialsFor(c.first_name, c.last_name),
         firstName: c.first_name,
@@ -521,15 +703,28 @@ function buildAttentionList({
         tone: 'new',
         tag: 'New',
         reason: 'Invited — not yet onboarded',
-        action: { label: 'Schedule', href: `/clients/${c.id}` },
+        action: { label: 'Open', href: `/clients/${c.id}` },
+        priority: 3,
       })
     }
   }
 
-  return items.slice(0, 6)
+  // One row per client — keep the most urgent reason — then sort by urgency.
+  const byClient = new Map<string, AttentionItem>()
+  for (const it of candidates) {
+    const existing = byClient.get(it.clientId)
+    if (!existing || it.priority < existing.priority) {
+      byClient.set(it.clientId, it)
+    }
+  }
+  return [...byClient.values()].sort((a, b) => a.priority - b.priority)
 }
 
+const ATTENTION_VISIBLE = 6
+
 function AttentionPanel({ items }: { items: AttentionItem[] }) {
+  const visible = items.slice(0, ATTENTION_VISIBLE)
+  const overflow = items.length - visible.length
   return (
     <div className="card" style={{ padding: '22px 26px' }}>
       <div
@@ -565,75 +760,82 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
             fontSize: '.88rem',
           }}
         >
-          Nothing flagged. Nice.
+          Nothing flagged.
         </div>
       ) : (
-        items.map((it) => {
-          const variant: AvatarTone =
-            it.tone === 'flag' ? 'r' : it.tone === 'new' ? 'n' : 'a'
-          return (
-            <div
-              key={`${it.clientId}-${it.tag}-${it.reason}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 14,
-                padding: '14px 0',
-                borderBottom: '1px solid var(--color-border-subtle)',
-              }}
-            >
-              <span
-                className={`avatar ${variant}`}
-                style={{ width: 40, height: 40, fontSize: 40 * 0.38 }}
+        <>
+          {visible.map((it) => {
+            const variant: AvatarTone =
+              it.tone === 'flag' ? 'r' : it.tone === 'new' ? 'n' : 'a'
+            return (
+              <div
+                key={`${it.clientId}-${it.tag}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '14px 0',
+                  borderBottom: '1px solid var(--color-border-subtle)',
+                }}
               >
-                {it.avatar}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
+                <span
+                  className={`avatar ${variant}`}
+                  style={{ width: 40, height: 40, fontSize: 40 * 0.38 }}
                 >
-                  <Link
-                    href={`/clients/${it.clientId}`}
+                  {it.avatar}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
                     style={{
-                      fontWeight: 600,
-                      color: 'var(--color-charcoal)',
-                      textDecoration: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
                     }}
                   >
-                    {it.firstName} {it.lastName}
-                  </Link>
-                  <span
-                    className={`tag ${
-                      it.tone === 'flag'
-                        ? 'flag'
-                        : it.tone === 'new'
-                          ? 'new'
-                          : 'overdue'
-                    }`}
+                    <Link
+                      href={`/clients/${it.clientId}`}
+                      style={{
+                        fontWeight: 600,
+                        color: 'var(--color-charcoal)',
+                        textDecoration: 'none',
+                      }}
+                    >
+                      {it.firstName} {it.lastName}
+                    </Link>
+                    <span className={`tag ${it.tone}`}>{it.tag}</span>
+                  </div>
+                  <div
+                    style={{
+                      fontSize: '.78rem',
+                      color: 'var(--color-text-light)',
+                      marginTop: 2,
+                    }}
                   >
-                    {it.tag}
-                  </span>
+                    {it.reason}
+                  </div>
                 </div>
-                <div
-                  style={{
-                    fontSize: '.78rem',
-                    color: 'var(--color-text-light)',
-                    marginTop: 2,
-                  }}
-                >
-                  {it.reason}
-                </div>
+                <Link href={it.action.href} className="btn outline">
+                  {it.action.label}
+                </Link>
               </div>
-              <Link href={it.action.href} className="btn outline">
-                {it.action.label}
-              </Link>
-            </div>
-          )
-        })
+            )
+          })}
+          {overflow > 0 && (
+            <Link
+              href="/clients"
+              style={{
+                display: 'block',
+                padding: '12px 0 2px',
+                fontSize: '.78rem',
+                color: 'var(--color-primary)',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              +{overflow} more →
+            </Link>
+          )}
+        </>
       )}
     </div>
   )
@@ -644,6 +846,7 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
 function TodaysSessionsPanel({
   items,
   now,
+  tz,
 }: {
   items: Array<{
     id: string
@@ -654,6 +857,7 @@ function TodaysSessionsPanel({
     client: { id: string; first_name: string; last_name: string } | null
   }>
   now: Date
+  tz: string
 }) {
   return (
     <div className="card" style={{ padding: '22px 26px' }}>
@@ -694,8 +898,10 @@ function TodaysSessionsPanel({
               start.getTime() <= now.getTime() &&
               end.getTime() >= now.getTime()
             const isPast = end.getTime() < now.getTime()
-            const statusTag = isLive ? 'Now' : isPast ? 'Done' : 'Upcoming'
-            const statusKind = isLive ? 'new' : isPast ? 'active' : 'overdue'
+            // Live cue (Q2): "now" while in progress, "done" once past; the
+            // booking status (confirmed/pending) is the right-side pill.
+            const liveLabel = isLive ? 'Now' : isPast ? 'Done' : 'Upcoming'
+            const booking = bookingStatus(s.status)
             return (
               <Link
                 key={s.id}
@@ -717,11 +923,13 @@ function TodaysSessionsPanel({
                     fontWeight: 700,
                     fontSize: '1.05rem',
                     color: isLive
-                      ? 'var(--color-primary)'
-                      : 'var(--color-charcoal)',
+                      ? 'var(--color-accent)'
+                      : isPast
+                        ? 'var(--color-muted)'
+                        : 'var(--color-charcoal)',
                   }}
                 >
-                  {formatTime(start)}
+                  {formatTime(start, tz)}
                 </div>
                 <div>
                   <div style={{ fontWeight: 600 }}>
@@ -734,9 +942,23 @@ function TodaysSessionsPanel({
                     }}
                   >
                     {s.appointment_type}
+                    <span
+                      style={{
+                        color: isLive
+                          ? 'var(--color-accent)'
+                          : 'var(--color-muted)',
+                      }}
+                    >
+                      {' '}
+                      · {liveLabel}
+                    </span>
                   </div>
                 </div>
-                <span className={`tag ${statusKind}`}>{statusTag}</span>
+                {booking ? (
+                  <span className={`tag ${booking.cls}`}>{booking.label}</span>
+                ) : (
+                  <span />
+                )}
               </Link>
             )
           })
@@ -745,28 +967,67 @@ function TodaysSessionsPanel({
   )
 }
 
+/** Map the appointment status to a tag (brief §6.8.3 confirmed/pending). */
+function bookingStatus(
+  status: string,
+): { label: string; cls: string } | null {
+  switch (status) {
+    case 'confirmed':
+      return { label: 'Confirmed', cls: 'active' }
+    case 'pending':
+      return { label: 'Pending', cls: 'overdue' }
+    case 'no_show':
+      return { label: 'No show', cls: 'flag' }
+    case 'completed':
+      return { label: 'Completed', cls: 'ending' }
+    default:
+      return null
+  }
+}
+
 /* ====================== Helpers ====================== */
 
-function greetingFor(d: Date): string {
-  const h = d.getHours()
-  if (h < 12) return 'Good morning'
-  if (h < 17) return 'Good afternoon'
+/** End date (ISO) of a program = start_date + duration_weeks × 7 days. */
+function programEndIso(
+  startDate: string | null,
+  durationWeeks: number | null,
+): string | null {
+  if (!startDate || !durationWeeks) return null
+  return addDaysToIsoDate(startDate, durationWeeks * 7)
+}
+
+/** "today" / "tomorrow" / "in N days" for a near-future ISO date. */
+function endRelative(endIso: string, todayIso: string): string {
+  if (endIso === todayIso) return 'today'
+  const days = Math.round(
+    (Date.parse(`${endIso}T00:00:00Z`) -
+      Date.parse(`${todayIso}T00:00:00Z`)) /
+      86_400_000,
+  )
+  if (days === 1) return 'tomorrow'
+  return `in ${days} days`
+}
+
+function greetingFor(hour: number): string {
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
   return 'Good evening'
 }
 
-function formatDateLong(d: Date): string {
+function formatDateLong(d: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-AU', {
     weekday: 'short',
     day: 'numeric',
     month: 'long',
+    timeZone,
   }).format(d)
 }
 
-function formatTime(d: Date): string {
+function formatTime(d: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-AU', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone,
   }).format(d)
 }
-
