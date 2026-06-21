@@ -639,13 +639,22 @@ function buildAttentionList({
     if (!p.client || p.client.archived_at) continue
     const c = p.client
 
-    // Overdue (amber) — no logged session beyond the weekly cadence + grace.
-    // A client who has never logged is measured from start_date + 10 days,
-    // so a brand-new program doesn't flag on day one. (Q1: 10 days.)
+    // A program past its computed end date is stale, not "active in-window":
+    // exclude it from Overdue so a never-archived past-due program can't
+    // become a permanent attention item (the same inflation P1-3 removed from
+    // the stat card, kept out of the panel too). Open-ended programs (no
+    // duration) have no end date and stay eligible.
+    const endIso = programEndIso(p.start_date, p.duration_weeks)
+    const inWindow = endIso === null || endIso >= todayIso
+
+    // Overdue (amber) — no logged session beyond the weekly cadence + grace,
+    // for an in-window program. A client who has never logged is measured from
+    // start_date + 10 days, so a brand-new program doesn't flag on day one.
+    // (Q1: 10 days.)
     const last = lastCompletedByClient.get(p.client_id)
     let overdue = false
     let overdueReason = ''
-    if (last) {
+    if (inWindow && last) {
       if (new Date(last).getTime() < tenDaysAgoMs) {
         overdue = true
         const days = Math.max(
@@ -654,7 +663,7 @@ function buildAttentionList({
         )
         overdueReason = `Last session ${days} days ago`
       }
-    } else if (p.start_date && p.start_date <= tenDaysAgoIso) {
+    } else if (inWindow && !last && p.start_date && p.start_date <= tenDaysAgoIso) {
       overdue = true
       overdueReason = 'No sessions logged yet'
     }
@@ -673,7 +682,6 @@ function buildAttentionList({
     }
 
     // Ending (amber) — program ends within 7 days, no successor drafted yet.
-    const endIso = programEndIso(p.start_date, p.duration_weeks)
     if (
       endIso !== null &&
       endIso >= todayIso &&
