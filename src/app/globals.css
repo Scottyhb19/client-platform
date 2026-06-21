@@ -419,39 +419,6 @@ body {
   border-color: var(--color-charcoal);
 }
 
-/* --- Dashboard (§11) ---
-   Grid layouts as classes (not inline) so they carry responsive breakpoints:
-   the staff portal is desktop-first but the brief requires it usable down to
-   768px. Stat cards collapse 4 → 2 → 1; the two-column body stacks. */
-.dash-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 28px;
-}
-.dash-cols {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 22px;
-  margin-bottom: 28px;
-  align-items: start;
-}
-@media (max-width: 1000px) {
-  .dash-cols {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 860px) {
-  .dash-stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 520px) {
-  .dash-stats {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* --- Program calendar week --- */
 .wk-strip {
   background: var(--color-card);

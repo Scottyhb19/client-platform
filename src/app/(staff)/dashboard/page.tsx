@@ -361,7 +361,14 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stat cards */}
-      <div className="dash-stats">
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 16,
+          marginBottom: 28,
+        }}
+      >
         <StatCard
           value={String(sessionsToday)}
           label="Sessions today"
@@ -402,7 +409,14 @@ export default async function DashboardPage() {
       </div>
 
       {/* Two-column: Needs attention + Today's sessions */}
-      <div className="dash-cols">
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '2fr 1fr',
+          gap: 22,
+          marginBottom: 28,
+        }}
+      >
         {activeClientCount === 0 ? (
           <div className="card" style={{ padding: '22px 26px' }}>
             <div
