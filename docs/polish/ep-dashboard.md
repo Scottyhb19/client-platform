@@ -5,7 +5,7 @@
 **Carried-in riders this section OWNS:** **none.** The dashboard introduces no new tables, no new RLS policies, and no new SECURITY DEFINER functions — it is a read-only projection over surfaces other sections already built and tested. The remaining open platform-wide anon-EXECUTE sweep item (`client_accept_invite`, §2) is **not** a dashboard concern; it stays indexed in [`go-live-checklist.md`](../go-live-checklist.md) under its own section. (Stated explicitly because most prior sections carried a rider; this one does not.)
 **Current implementation:** [`dashboard/page.tsx`](../../src/app/(staff)/dashboard/page.tsx) (772 lines — loader + stat cards + attention panel + today's sessions, all server-rendered), [`dashboard/_components/RecentlyCompletedPanel.tsx`](../../src/app/(staff)/dashboard/_components/RecentlyCompletedPanel.tsx) (278 lines — the §6.8.4 surface, client component). Shared: [`clients/_lib/client-helpers.ts`](../../src/app/(staff)/clients/_lib/client-helpers.ts) (`initialsFor`/`toneFor`/`statusFor`), [`_components/SessionExerciseSummary.tsx`](../../src/app/(staff)/_components/SessionExerciseSummary.tsx). Nav/landing: [`(staff)/layout.tsx`](../../src/app/(staff)/layout.tsx) + [`_components/TopBar.tsx`](../../src/app/(staff)/_components/TopBar.tsx) (Dashboard is the first nav item; brand links to `/dashboard`; login default `next=/dashboard`). Data model already present: `client_categories` ([`20260420100500`](../../supabase/migrations/20260420100500_client_categories.sql)), `clients.category_id` ([`20260420100600:28`](../../supabase/migrations/20260420100600_clients.sql)), seeded per-org ([`20260420102400:66-73`](../../supabase/migrations/20260420102400_bootstrap_functions.sql)), configurable in settings ([`settings/page.tsx:212-217`](../../src/app/(staff)/settings/page.tsx)). Distinct from `/analytics` (a separate 12-month range-slicing surface, Phase-4-flavoured — *not* the §6.8 clinical briefing; do not conflate).
 **Audit date:** 2026-06-22
-**Status:** **Implemented 2026-06-22 on branch `polish/section-11-dashboard`; page layout reverted to the original per the operator (§5).** Protocol steps 1–6 done. **P1-1 (client list) and P2-4 (responsive layout) are WITHDRAWN as deliberate owner UX/UI decisions (§5) — not implementation misses.** Gate green: type-check + next build + eslint(changed files) all clean; no migrations. Remaining: operator :3000 review → merge (deploy) → closing commit + sign-off (step 7). Code is on the branch only (not merged).
+**Status:** **Implemented + verified 2026-06-22 on branch `polish/section-11-dashboard`; Closing commit written (§6).** Protocol steps 1–7 complete. **P1-1 (client list) and P2-4 (responsive layout) WITHDRAWN as deliberate owner UX/UI decisions (§5) — not implementation misses.** Gate green: type-check + next build + eslint all clean; no migrations. Operator verified at :3000 including per-trigger action routing (via two seeded-then-removed test clients; DB confirmed clean). Remaining: operator merges to master (prod deploy) + pastes §6 into the claude.ai project chat for Sign-off. Code is on the branch only (not merged).
 
 ---
 
@@ -163,4 +163,43 @@ All four §4 questions answered, plus one new scope item (+5). These amend the g
 
 **Revised build order** (dependency order, client list removed): **P0-1 (timezone)** → **P1-2 (attention triggers: Overdue/Ending/New)** → **P1-3 (programs-ending correctness)** → **P2-1, P2-2, P2-7 (expander redesign), P2-3, P2-4, P2-5** (P2-6 folds into P0-1).
 
-**Build gate:** with these resolved, the contract is settled pending (a) the operator's nod on the P2-7 mock and (b) an explicit go-ahead to start. On go-ahead, build on a stacked `polish/section-11-dashboard` branch with continuous localhost:3000 review, per the locked cadence. **No code has been changed yet.**
+**Build gate:** with these resolved, the contract was settled and the build proceeded on `polish/section-11-dashboard`. **Built, verified, and reverted-where-noted — see §6.**
+
+---
+
+## 6. Closing commit (2026-06-22)
+
+Implemented on branch `polish/section-11-dashboard` (commits `0ee8d15` docs → `b9d1007` feat → `13020a8` layout-revert). **No migrations** — the dashboard is a read-only projection over already-RLS-tested tables.
+
+**What changed, by gap:**
+- **P0-1** — Practice-timezone "today". The today-window, greeting, date header, and appointment times now resolve in the org timezone (`src/lib/dates.ts` helpers), consuming the `org.timezone` that was previously fetched and discarded. Folds in **P2-6** (dead query removed). Closes the daily wrong-day on the AU landing page.
+- **P1-1** — *Withdrawn (owner UX decision).* The §6.8.5 client list was deliberately not built; the Clientele page serves that role. Recorded as an owner-approved deviation, not a miss.
+- **P1-2** — Needs-attention completed to all four brief triggers: Flag (kept), Overdue (no completed session in 10 days; never-logged measured from `start_date + 10d`), Ending (active program ending ≤ 7 days with no drafted successor), New (completed assessment + no program, plus invited-not-onboarded as a second reason). Deduped to one row per client by urgency; "+N more" overflow. **Per-trigger action routing:** Flag/Overdue → client details, Ending → the client's program calendar, New(no program) → the new-program builder.
+- **P1-3** — "Programs ending" bounded to the next 7 days; no longer counts long-expired programs.
+- **P2-1** — Today's sessions: confirmed/pending status pill + live now/done cue.
+- **P2-2** — Archived clients excluded from the attention + recently-completed panels.
+- **P2-3** — Token sweep verified clean (every colour/radius tokenised; one chip radius → `var(--radius-button)`).
+- **P2-4** — *Withdrawn (owner UX decision).* Responsive breakpoints + an `align-items` change altered the preferred desktop layout; reverted to the original fixed grids. FM-9 accepted.
+- **P2-5** — Quieter, factual greeting sub-line + empty-state copy.
+- **P2-7** — Recently-completed expander (shared `SessionExerciseSummary`) redesigned to grouped, column-aligned set rows with weight/unit type hierarchy and a neutral RPE pill; improves the client-profile completions rail too. Minor deviation from the mock: kept the app-wide A1/A2 superset-letter convention (no separate "Superset" eyebrow) and a tokenised neutral sequence chip (no deep-green token exists).
+
+**Acceptance tests + results:**
+- `type-check` (tsc --noEmit): clean.
+- `next build`: clean (`/dashboard` compiled).
+- ESLint (page.tsx, RecentlyCompletedPanel.tsx, SessionExerciseSummary.tsx): clean (fixed one `Date.now()`-in-render → `now.getTime()`).
+- No migrations → no new pgTAP gate (read-only projection; FM-11).
+- Operator visual verification at :3000 (branch): all panels + the four trigger types confirmed, **including per-trigger routing** — verified live via two seeded test clients (program-ending → calendar; assessment-done-no-program → new-program builder), then removed (DB confirmed clean: 0 rows remain).
+
+**Deferred (with re-trigger):**
+- P1-1 client list (§6.8.5) — owner decision. Re-trigger: operator wants at-a-glance client browsing on the dashboard, or category filtering with no other home.
+- P2-4 responsive layout — owner decision. Re-trigger: operator wants the dashboard usable on a tablet / narrow window.
+
+**Premortem — mitigated vs accepted:**
+- Mitigated: FM-1 (tz/today), FM-3 (attention triggers), FM-4 (programs-ending), FM-5 (today's status), FM-6 (archived), FM-8 (tokens), FM-10 (voice), FM-12 (expander).
+- Accepted: FM-2 (client list — owner decision), FM-7 (recent-completions stays a direct nested query at f&f scale; re-trigger: load latency / caseload growth), FM-9 (fixed layout — owner decision), FM-11 (no new RLS suite — read-only over already-tested surfaces).
+
+**Next:** operator merges `polish/section-11-dashboard` → master (prod deploy) and pastes this Closing commit into the claude.ai project chat; the Sign-off (Date / Reviewer / Decision) is recorded below.
+
+## Sign-off
+
+_Pending — operator to paste the §6 closing commit into the claude.ai project chat and record Date / Reviewer / Decision here._
