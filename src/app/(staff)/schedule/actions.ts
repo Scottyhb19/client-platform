@@ -6,6 +6,7 @@ import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
 import { EmailConfigError } from '@/lib/email/client'
+import { captureException } from '@/lib/observability/sentry'
 import { PRACTICE_TIMEZONE } from '@/lib/constants'
 import {
   formatBookingDateLine,
@@ -236,6 +237,8 @@ export async function createAppointmentAction(
   if (kind === 'appointment') {
     await sendStaffBookingConfirmation(data.id).catch((e) => {
       if (e instanceof EmailConfigError) throw e
+      // P1-3: surface an unexpected confirmation-send throw (booking is saved).
+      captureException(e, { where: 'booking-confirm:staff' })
       return null
     })
   }

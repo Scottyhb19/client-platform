@@ -63,7 +63,7 @@ export function renderMessageNotificationEmail(
               <div style="font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#A09890; margin-bottom:8px;">
                 ${safePracticeName}
               </div>
-              <h1 style="font-family:Georgia,'Times New Roman',serif; font-weight:700; font-size:24px; line-height:1.2; margin:0 0 14px; color:#231F20; letter-spacing:-.005em;">
+              <h1 style="font-family:'Helvetica Neue',Arial,sans-serif; font-weight:800; font-size:24px; line-height:1.2; margin:0 0 14px; color:#231F20; letter-spacing:-.005em;">
                 New message from ${safeFirstName}.
               </h1>
               <p style="font-size:15px; line-height:1.55; color:#1C1917; margin:0 0 22px;">

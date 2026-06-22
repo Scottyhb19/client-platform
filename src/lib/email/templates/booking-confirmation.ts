@@ -77,11 +77,11 @@ export function renderBookingConfirmationEmail(
               <div style="font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#A09890; margin-bottom:8px;">
                 ${safePracticeName}
               </div>
-              <h1 style="font-family:Georgia,'Times New Roman',serif; font-weight:700; font-size:24px; line-height:1.2; margin:0 0 14px; color:#231F20; letter-spacing:-.005em;">
+              <h1 style="font-family:'Helvetica Neue',Arial,sans-serif; font-weight:800; font-size:24px; line-height:1.2; margin:0 0 14px; color:#231F20; letter-spacing:-.005em;">
                 Your booking is confirmed.
               </h1>
               <p style="font-size:15px; line-height:1.55; color:#1C1917; margin:0 0 22px;">
-                ${safeFirstName}, you&rsquo;re booked in with ${safePractitionerName}. The session is held in our calendar and we&rsquo;ll send a reminder 24 hours before.
+                ${safeFirstName}, you&rsquo;re booked in with ${safePractitionerName}. The session is held in our calendar and we&rsquo;ll remind you beforehand.
               </p>
 
               <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px; border-collapse:separate; border-spacing:0; width:100%;">
@@ -125,7 +125,7 @@ export function renderBookingConfirmationEmail(
           </tr>
           <tr>
             <td style="padding:18px 4px 0; font-size:12px; color:#A09890; line-height:1.55;">
-              You&rsquo;re receiving this because you booked a session with ${safePracticeName}. If this looks unexpected, reply to this email and we&rsquo;ll sort it out.
+              You&rsquo;re receiving this because you booked a session with ${safePracticeName}. If this looks unexpected, open the portal to review or cancel your booking.
             </td>
           </tr>
         </table>

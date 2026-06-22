@@ -1,6 +1,7 @@
 'use server'
 
 import { defaultFromAddress, getResendClient } from './client'
+import { captureException } from '@/lib/observability/sentry'
 import {
   renderClientInviteEmail,
   type ClientInviteEmailInput,
@@ -26,6 +27,7 @@ export async function sendClientInviteEmail(
   try {
     resend = getResendClient()
   } catch (e) {
+    captureException(e, { where: 'email-send:client-invite' })
     return {
       error: e instanceof Error ? e.message : 'Resend client unavailable.',
       messageId: null,
@@ -43,6 +45,12 @@ export async function sendClientInviteEmail(
   })
 
   if (error) {
+    // P1-3: log send failures at source for ops visibility. The invite caller
+    // also surfaces this to the EP's UI (so they can resend), but logging here
+    // means a failure is observable even if no one is watching the screen.
+    captureException(new Error(error.message), {
+      where: 'email-send:client-invite',
+    })
     return { error: error.message, messageId: null }
   }
   return { error: null, messageId: data?.id ?? null }

@@ -41,7 +41,7 @@ export function NotificationsForm({
       <Toggle
         name="email_notifications_enabled"
         label="Email notifications"
-        desc="Appointment confirmations, reminders, program updates"
+        desc="Appointment confirmations and reminders"
         defaultChecked={settings.email_notifications_enabled}
       />
       {/* SMS is stubbed for the beta (CLAUDE.md §12) — honest disabled control

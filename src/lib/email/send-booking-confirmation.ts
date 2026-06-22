@@ -1,6 +1,7 @@
 'use server'
 
 import { defaultFromAddress, getResendClient } from './client'
+import { captureException } from '@/lib/observability/sentry'
 import {
   renderBookingConfirmationEmail,
   type BookingConfirmationEmailInput,
@@ -28,6 +29,7 @@ export async function sendBookingConfirmationEmail(
   try {
     resend = getResendClient()
   } catch (e) {
+    captureException(e, { where: 'email-send:booking-confirmation' })
     return {
       error: e instanceof Error ? e.message : 'Resend client unavailable.',
       messageId: null,
@@ -45,6 +47,12 @@ export async function sendBookingConfirmationEmail(
   })
 
   if (error) {
+    // P1-3: log every send failure at source. The booking actions (portal +
+    // staff) discard this returned {error}, so without this it would vanish
+    // silently — a client never gets a confirmation and the EP never knows.
+    captureException(new Error(error.message), {
+      where: 'email-send:booking-confirmation',
+    })
     return { error: error.message, messageId: null }
   }
   return { error: null, messageId: data?.id ?? null }

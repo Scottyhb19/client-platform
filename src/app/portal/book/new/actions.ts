@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
 import { EmailConfigError } from '@/lib/email/client'
+import { captureException } from '@/lib/observability/sentry'
 import { formatBookingDateLine, formatBookingTimeRange } from './_lib/format'
 
 export interface ConfirmBookingResult {
@@ -85,6 +86,9 @@ export async function confirmBookingAction(
     appointmentId as string,
   ).catch((e) => {
     if (e instanceof EmailConfigError) throw e
+    // P1-3: an unexpected throw (e.g. a network error) mustn't vanish — the
+    // booking is already saved, but the failed confirmation must be observable.
+    captureException(e, { where: 'booking-confirm:portal' })
     return null
   })
 

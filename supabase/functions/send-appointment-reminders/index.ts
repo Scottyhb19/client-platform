@@ -495,7 +495,7 @@ function renderReminderEmail(input: RenderInput): {
 </td></tr>
 <tr><td style="background:#FFFFFF;border:1px solid #E2DDD7;border-radius:14px;padding:32px;">
 <div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#A09890;margin-bottom:8px;">Reminder</div>
-<h1 style="font-family:Georgia,'Times New Roman',serif;font-weight:700;font-size:22px;line-height:1.25;margin:0 0 12px;color:#231F20;letter-spacing:-.005em;">${safeFirstName}, you&rsquo;ve got a session tomorrow.</h1>
+<h1 style="font-family:'Helvetica Neue',Arial,sans-serif;font-weight:800;font-size:22px;line-height:1.25;margin:0 0 12px;color:#231F20;letter-spacing:-.005em;">${safeFirstName}, you&rsquo;ve got a session tomorrow.</h1>
 <p style="font-size:15px;line-height:1.55;color:#1C1917;margin:0 0 22px;">${safeType} with ${safePractitioner}.</p>
 <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px;border-collapse:separate;border-spacing:0;width:100%;">
 <tr><td style="padding:6px 0;font-size:12px;color:#A09890;text-transform:uppercase;letter-spacing:.06em;font-weight:700;width:120px;">Date</td><td style="padding:6px 0;font-size:15px;color:#1C1917;">${safeDate}</td></tr>
