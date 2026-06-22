@@ -59,7 +59,18 @@ The sink is Resend's `delivered@resend.dev` — Resend accepts and processes it 
    SELECT ap.id, 'reminder_24h_email', 'resend', now() - interval '1 minute', 'scheduled' FROM ap
    RETURNING id AS reminder_id, appointment_id;
    ```
-   (The confirmed appointment also auto-enqueues its own *future-dated* reminder via the `appointment_manage_reminder` trigger — harmless; the EF only processes the past-dated one. Teardown removes both.)
+   **⚠️ Re-time the reminder before invoking — the insert's past `scheduled_for` does NOT stick.** The confirmed-appointment insert fires the `appointment_manage_reminder` AFTER-trigger, which runs at statement-end and **upserts** on `(appointment_id, reminder_type)`, overwriting the past `scheduled_for` you just set with the appointment's real lead time (far future). So after the insert there is **one** reminder row, future-dated, and the EF returns `{processed:0}`. Re-time it directly — an `appointment_reminders` UPDATE does **not** fire that trigger, so the past date sticks:
+   ```sql
+   UPDATE appointment_reminders ar
+   SET scheduled_for = now() - interval '1 minute',
+       status = 'scheduled', retry_count = 0,
+       failure_reason = NULL, sent_at = NULL, provider_message_id = NULL
+   FROM appointments a, clients c
+   WHERE ar.appointment_id = a.id AND a.client_id = c.id
+     AND c.email = 'delivered@resend.dev' AND c.last_name = 'Healthcheck (delete me)'
+   RETURNING ar.id, ar.status, ar.scheduled_for;
+   ```
+   (Verified live 2026-06-22 during the §12 EF redeploy: bare insert → trigger re-times to future → `{processed:0}`; the UPDATE re-time → invoke → `{succeeded:1}`, row `sent`. Teardown removes the row regardless of its date.)
 2. **Invoke the function** with the cron bearer (`CRON_SHARED_SECRET`, from your password manager):
    ```powershell
    curl.exe -s -X POST "https://azjllcsffixswiigjqhj.supabase.co/functions/v1/send-appointment-reminders" `
