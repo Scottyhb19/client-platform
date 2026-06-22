@@ -191,11 +191,11 @@ Gate re-confirmed after these edits: `type-check` clean · `eslint` (changed tem
 2. **Vercel build** — the app + the **three Next email templates** (invite, booking confirmation, message notification) + the settings label. Deploy triggered by the push; `/api/health` returns `200 db:ok config:ok`. These changes have no public new-build probe (server-rendered email templates + an auth-gated settings label), so the new build couldn't be self-probed — **confirmed GREEN by the operator at the Vercel dashboard, 2026-06-22.** ✓
 3. **Edge Function reminder template** (the **4th** email) — **deployed + send-verified 2026-06-22** ✓: `supabase functions deploy send-appointment-reminders` (no Docker), then the standing synthetic-send check drove a live send to `delivered@resend.dev` → `{processed:1,succeeded:1,failed:0}`, and the row reached `status='sent'` with `provider_message_id`; synthetic rows torn down (0 remain).
 
-**Close status: FULLY DEPLOYED + CONFIRMED (2026-06-22).** Code merged + pushed (`b500236`); the Edge Function deployed + send-verified; the Vercel new-build confirmed green by the operator at the dashboard. All four email templates + the app + the settings change are live in prod.
+**Close status: FULLY DEPLOYED + CONFIRMED (2026-06-22) — section CLOSED with deferred items** (reviewer sign-off recorded below). Code merged + pushed to master; the Edge Function deployed + send-verified; the Vercel new-build confirmed green by the operator at the dashboard. All four email templates + the app + the settings change are live in prod.
 
 ### What changed (plain language, by gap number)
 
-- **P1-3 — email send failures are now observable instead of silent.** The real bug: both booking-confirmation send paths (portal `confirmBookingAction`, staff `createAppointmentAction`) threw away the `{error}` the send helper returned, so a Resend rejection (bad address, quota, outage) produced no confirmation and no signal — client got nothing, EP never knew. Now `send-booking-confirmation.ts` and `send-client-invite.ts` `captureException` at both failure points (Resend-client-unavailable + send-error), and both booking `.catch` blocks capture an unexpected *thrown* error while keeping the `EmailConfigError` fail-loud re-throw. Message-notification left unchanged — its caller already captures with richer thread context.
+- **P1-3 — email send failures are now observable instead of silent.** The real bug: both booking-confirmation send paths (portal `confirmBookingAction`, staff `createAppointmentAction`) threw away the `{error}` the send helper returned, so a Resend rejection (bad address, quota, outage) produced no confirmation and no signal — client got nothing, EP never knew. Now `send-booking-confirmation.ts` and `send-client-invite.ts` `captureException` at both failure points (Resend-client-unavailable + send-error), and both booking `.catch` blocks capture an unexpected *thrown* error while keeping the `EmailConfigError` fail-loud re-throw. **Honest scope of the mechanism:** `captureException` is currently the `console.error` / Sentry-seam stub (the real Sentry SDK is a standing TODO), so this makes failures **ops/log-observable, not EP-facing in-product** — EP-facing surfacing of a `failed` send is deferred to Part B's Comms tab (see the FM-5 note below). Message-notification left unchanged — its caller already captures with richer thread context.
 - **P2-1 — template tone + branding.** (a) Booking confirmation no longer hard-codes "we'll send a reminder 24 hours before" (the reminder lead is configurable and the template never receives it → a non-default lead would make the email lie) → "we'll remind you beforehand". (b) All four client/EP-facing email headings (invite, booking confirmation, message notification, reminder EF) moved off the Georgia serif onto the logo's own sans (`'Helvetica Neue', Arial, sans-serif`, weight 800) — fixing an off-brand headline that clashed with the sans logo in the same email; operator approved the swap and viewed it rendered. (c) Booking-confirmation footer "reply to this email and we'll sort it out" → "open the portal to review or cancel your booking", because the operator confirmed inbound to the sending address is not received yet. Voice otherwise verified clean.
 - **P2-3 — preference honesty.** The email-notifications toggle claimed it controlled "Appointment confirmations, reminders, program updates", but no program-update email exists and the flag only gates appointment confirmations + reminders → trimmed to "Appointment confirmations and reminders".
 - **P2-2 — SMS honest-stub: verified clean.** The disabled "Coming soon" toggle (from scheduling §9 P2-4) is honest — a disabled control submits nothing, so the action persists `false`; no fake send path, no Twilio dependency/env/code added. No change.
@@ -224,6 +224,19 @@ By the operator's scope decision (2026-06-22), the connected-account email featu
 
 ## Sign-off
 
-- Date signed off:
-- Reviewer (claude.ai project chat):
-- Decision (Closed / Closed with deferred items / Returned for revision):
+- **Date signed off:** 2026-06-22
+- **Reviewer:** claude.ai project chat (section-12 reviewer / challenger role)
+- **Decision:** **Closed with deferred items.**
+
+Reviewer's pre-sign-off conditions, all resolved before this stamp:
+1. FM-6 claimed both ways → P1-3 now "Closes FM-5" only; FM-6 (connected-account send-failure surfacing) maps to P1-1, deferred with Part B (`b500236`).
+2. FM-5 over-claimed "mitigated" → relabelled "partially closed": the silent swallow is fixed (ops/log-observable via the `console.error`/Sentry seam) but **not EP-facing**; EP-facing surfacing deferred to Part B's Comms tab (`b500236`).
+3. FM-14 drift → "Mitigated" → "Partially closed" (`b500236`).
+4. Deploy honesty → EF deployed + send-verified, Vercel labelled pending (`b500236`), then **confirmed green** by the operator (`f389320`).
+5. Doc-sync (this commit): the WHAT-CHANGED P1-3 mechanism wording synced to the `console.error`-stub disclosure (no longer reads as full Sentry capture), and the close-status synced to "confirmed + closed with deferred items".
+
+Reviewer confirmed fine without change: the Part A/B split, the no-new-pgTAP call (migration-free, no SECURITY DEFINER), and the SMS honest-stub "no change" verdict.
+
+**Deferred items** (Part B → go-live pipeline, indexed in [`go-live-checklist.md`](../go-live-checklist.md) §8): the connected-account email compose feature + Comms tab + system-send log-wiring (P0-1/2/3, P1-1, P1-2, P1-4, P2-4, P2-5, §4 Q1–Q5), and within that **the EP-facing in-product surfacing of send failures** (FM-5's second half). **Re-trigger:** the connected-account feature is picked up, or the operator wants a per-client communication history / in-product send-failure visibility before then.
+
+*Section 12 (Email & SMS) — Closed with deferred items. As the final section of the locked polish-pass order, this completes the Phase-1 polish pass.*
