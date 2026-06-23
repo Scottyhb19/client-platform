@@ -1175,9 +1175,10 @@ function SupersetBlock({
           </React.Fragment>
         )
       })}
-      {/* C-5: save the whole group as a reusable circuit. Spans both grid
-          columns so it sits under the spine as a quiet group-level action. */}
-      <div style={{ gridColumn: '1 / -1', marginTop: 6 }}>
+      {/* C-5: save the whole group as a reusable circuit. Card column (2)
+          ONLY — column 1 carries the absolute slate spine, which paints over
+          any text placed there (the clipped-button bug). */}
+      <div style={{ gridColumn: 2, gridRow: members.length * 2, marginTop: 2 }}>
         <SaveAsCircuitButton memberIds={members.map((m) => m.id)} />
       </div>
     </div>
