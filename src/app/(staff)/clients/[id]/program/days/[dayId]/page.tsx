@@ -13,6 +13,7 @@ import {
   type ProgramExercise,
   type SectionTitleOption,
 } from './_components/SessionBuilder'
+import { type CircuitOption } from './_components/CircuitControls'
 import {
   LIBRARY_EXERCISE_COLUMNS,
   toLibraryExercises,
@@ -106,6 +107,7 @@ export default async function SessionBuilderPage({
     { data: patternsRaw },
     { data: tagsRaw },
     { data: metricUnitsRaw },
+    { data: circuitsRaw },
   ] = await Promise.all([
     supabase
       .from('program_exercises')
@@ -217,6 +219,12 @@ export default async function SessionBuilderPage({
       .is('deleted_at', null)
       .eq('is_active', true)
       .order('sort_order'),
+    // C-6: the org's circuits for the builder's "Add circuit" picker. RLS-scoped.
+    supabase
+      .from('circuits')
+      .select('id, name, circuit_type')
+      .is('deleted_at', null)
+      .order('name'),
   ])
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
@@ -343,6 +351,13 @@ export default async function SessionBuilderPage({
   const metricUnits: MetricUnitOption[] = (metricUnitsRaw ?? []).map((u) => ({
     code: u.code,
     display_label: u.display_label,
+  }))
+
+  const circuits: CircuitOption[] = (circuitsRaw ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    // circuit_type is a CHECK-constrained text column; narrow to the union.
+    circuit_type: c.circuit_type as CircuitOption['circuit_type'],
   }))
 
   // Phase J.2 (2026-05-08): notes denormalise to ClinicalNoteSummary —
@@ -516,6 +531,7 @@ export default async function SessionBuilderPage({
         movementPatterns={movementPatterns}
         exerciseTags={exerciseTags}
         metricUnits={metricUnits}
+        circuits={circuits}
       />
     </div>
   )

@@ -55,6 +55,11 @@ import {
   type ProgramExerciseSetPatch,
 } from '../actions'
 import { LibraryPanel } from './LibraryPanel'
+import {
+  AddCircuitPicker,
+  SaveAsCircuitButton,
+  type CircuitOption,
+} from './CircuitControls'
 import type { LibraryExercise } from '@/app/(staff)/library/types'
 import {
   VOLUME_UNIT_OPTIONS,
@@ -194,6 +199,7 @@ interface SessionBuilderProps {
   movementPatterns: MovementPatternOption[]
   exerciseTags: ExerciseTagOption[]
   metricUnits: MetricUnitOption[]
+  circuits: CircuitOption[]
 }
 
 export function SessionBuilder({
@@ -208,6 +214,7 @@ export function SessionBuilder({
   movementPatterns,
   exerciseTags,
   metricUnits,
+  circuits,
 }: SessionBuilderProps) {
   const router = useRouter()
   // §6.5.2: Notes is the default tab — clinical context visible while
@@ -475,19 +482,26 @@ export function SessionBuilder({
         </div>
 
         {tab === 'library' && (
-          <LibraryPanel
-            options={libraryOptions}
-            clientId={clientId}
-            dayId={dayId}
-            insertSlot={insertSlot}
-            setInsertSlot={setInsertSlot}
-            exerciseNameById={exerciseNameById}
-            movementPatterns={movementPatterns}
-            exerciseTags={exerciseTags}
-            swapTarget={swapTarget}
-            setSwapTarget={setSwapTarget}
-            onSwapComplete={() => setTab('notes')}
-          />
+          <>
+            <AddCircuitPicker
+              circuits={circuits}
+              clientId={clientId}
+              dayId={dayId}
+            />
+            <LibraryPanel
+              options={libraryOptions}
+              clientId={clientId}
+              dayId={dayId}
+              insertSlot={insertSlot}
+              setInsertSlot={setInsertSlot}
+              exerciseNameById={exerciseNameById}
+              movementPatterns={movementPatterns}
+              exerciseTags={exerciseTags}
+              swapTarget={swapTarget}
+              setSwapTarget={setSwapTarget}
+              onSwapComplete={() => setTab('notes')}
+            />
+          </>
         )}
         {tab === 'notes' && <NotesPanel notes={clinicalNotes} />}
         {tab === 'reports' && (
@@ -1161,6 +1175,11 @@ function SupersetBlock({
           </React.Fragment>
         )
       })}
+      {/* C-5: save the whole group as a reusable circuit. Spans both grid
+          columns so it sits under the spine as a quiet group-level action. */}
+      <div style={{ gridColumn: '1 / -1', marginTop: 6 }}>
+        <SaveAsCircuitButton memberIds={members.map((m) => m.id)} />
+      </div>
     </div>
   )
 }
