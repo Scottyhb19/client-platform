@@ -872,3 +872,71 @@ export async function addSectionTitleAction(
 
   return { data: inserted, error: null }
 }
+
+/* ====================== Circuits (C-5 save / C-6 add) ====================== */
+
+/**
+ * C-5 — save a superset group as a reusable circuit (save_group_as_circuit RPC,
+ * 20260624110000). Copies the group's program_exercises + their per-set rows
+ * (incl. rep_metric) into a new circuit. Duplicate name (case-insensitive)
+ * returns status='duplicate_name' so the caller can prompt for another.
+ */
+export type SaveCircuitResult =
+  | { status: 'created'; circuitId: string }
+  | { status: 'duplicate_name' }
+  | { error: string }
+
+export async function saveGroupAsCircuitAction(
+  name: string,
+  circuitType: string,
+  programExerciseIds: string[],
+  notes: string | null = null,
+): Promise<SaveCircuitResult> {
+  await requireRole(['owner', 'staff'])
+
+  if (programExerciseIds.length === 0) return { error: 'No exercises to save.' }
+
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await supabase.rpc('save_group_as_circuit', {
+    p_name: name,
+    p_circuit_type: circuitType,
+    p_program_exercise_ids: programExerciseIds,
+    // p_notes has a SQL DEFAULT NULL, so the generated type is string|undefined;
+    // coalesce our null → undefined to omit the arg (lands DEFAULT NULL).
+    p_notes: notes ?? undefined,
+  })
+
+  if (error) return { error: `Couldn't save circuit: ${error.message}` }
+
+  const obj = (data ?? {}) as { status?: string; circuit_id?: string }
+  if (obj.status === 'duplicate_name') return { status: 'duplicate_name' }
+  if (obj.status === 'created' && obj.circuit_id) {
+    revalidatePath('/library')
+    return { status: 'created', circuitId: obj.circuit_id }
+  }
+  return { error: `Unexpected response: ${obj.status ?? 'unknown'}` }
+}
+
+/**
+ * C-6 — add (copy) a circuit's exercises into a program day, appended at the
+ * end under one fresh superset group (insert_circuit_into_day RPC). Copy-on-
+ * apply: editing the source circuit later never touches what landed here.
+ */
+export async function addCircuitToDayAction(
+  clientId: string,
+  dayId: string,
+  circuitId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase.rpc('insert_circuit_into_day', {
+    p_circuit_id: circuitId,
+    p_program_day_id: dayId,
+  })
+
+  if (error) return { error: `Couldn't add circuit: ${error.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}

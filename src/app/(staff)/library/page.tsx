@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { LibraryView } from './_components/LibraryView'
 import { LIBRARY_EXERCISE_COLUMNS, toLibraryExercises } from './_lib/exercise-query'
 import type {
+  CircuitSummary,
   ClientOption,
   Pattern,
   ProgramTemplateSummary,
@@ -24,6 +25,7 @@ export default async function LibraryPage() {
     { data: tags },
     { data: templatesRaw },
     { data: clientsRaw },
+    { data: circuitsRaw },
   ] = await Promise.all([
     // Shared select with the session builder's Library tab (G-7,
     // 2026-06-12) — one query shape, one card mapping, no drift.
@@ -65,6 +67,13 @@ export default async function LibraryPage() {
       .is('deleted_at', null)
       .is('archived_at', null)
       .order('first_name'),
+    // C-4: circuits for the Circuits tab. Pull the exercise children to derive
+    // the count; RLS scopes to the org, soft-deleted children filtered in TS.
+    supabase
+      .from('circuits')
+      .select('id, name, circuit_type, notes, created_at, circuit_exercises(id, deleted_at)')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false }),
   ])
 
   if (exErr) throw new Error(`Load exercises: ${exErr.message}`)
@@ -72,6 +81,7 @@ export default async function LibraryPage() {
   const exercises = toLibraryExercises(exercisesRaw)
   const programTemplates = toProgramTemplateSummaries(templatesRaw)
   const clients = (clientsRaw ?? []) as ClientOption[]
+  const circuits = toCircuitSummaries(circuitsRaw)
 
   return (
     <div className="page">
@@ -80,6 +90,7 @@ export default async function LibraryPage() {
         patterns={(patterns ?? []) as Pattern[]}
         tags={(tags ?? []) as Tag[]}
         programTemplates={programTemplates}
+        circuits={circuits}
         clients={clients}
         total={exercises.length}
         patternCount={(patterns ?? []).length}
@@ -141,4 +152,26 @@ function toProgramTemplateSummaries(rows: unknown): ProgramTemplateSummary[] {
       usedCount,
     }
   })
+}
+
+/** Raw shape of the nested circuits select (count derived in TS). */
+type RawCircuitRow = {
+  id: string
+  name: string
+  circuit_type: CircuitSummary['circuit_type']
+  notes: string | null
+  created_at: string
+  circuit_exercises: Array<{ id: string; deleted_at: string | null }> | null
+}
+
+function toCircuitSummaries(rows: unknown): CircuitSummary[] {
+  const list = (rows ?? []) as RawCircuitRow[]
+  return list.map((c) => ({
+    id: c.id,
+    name: c.name,
+    circuit_type: c.circuit_type,
+    notes: c.notes,
+    created_at: c.created_at,
+    exerciseCount: (c.circuit_exercises ?? []).filter((e) => e.deleted_at === null).length,
+  }))
 }

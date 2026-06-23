@@ -5,7 +5,9 @@ import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ExerciseLibrary } from './ExerciseLibrary'
 import { ProgramsTab } from './ProgramsTab'
+import { CircuitsTab } from './CircuitsTab'
 import type {
+  CircuitSummary,
   ClientOption,
   LibraryExercise,
   Pattern,
@@ -27,6 +29,7 @@ interface LibraryViewProps {
   patterns: Pattern[]
   tags: Tag[]
   programTemplates: ProgramTemplateSummary[]
+  circuits: CircuitSummary[]
   clients: ClientOption[]
   total: number
   patternCount: number
@@ -42,6 +45,7 @@ export function LibraryView({
   patterns,
   tags,
   programTemplates,
+  circuits,
   clients,
   total,
   patternCount,
@@ -107,7 +111,7 @@ export function LibraryView({
           tags={tags}
         />
       )}
-      {section === 'circuits' && <CircuitsPlaceholder />}
+      {section === 'circuits' && <CircuitsTab circuits={circuits} />}
       {section === 'sessions' && <SessionsPlaceholder />}
       {section === 'programs' && (
         <ProgramsTab templates={programTemplates} clients={clients} />
@@ -125,15 +129,15 @@ function HeaderActions({ section }: { section: Section }) {
       </Link>
     )
   }
-  // Programs are saved from a real training block ("Save as template" in the
-  // program calendar), never authored from scratch here — so no create button
-  // (LPT-7). Circuits + Sessions keep their disabled placeholder buttons until
-  // those phases ship.
-  if (section === 'programs') return null
+  // Programs and circuits are saved from real work in the session builder /
+  // program calendar ("Save as template" / "Save as circuit"), never authored
+  // from scratch here — so no create button. Sessions keeps its disabled
+  // placeholder button until that phase ships.
+  if (section === 'programs' || section === 'circuits') return null
   return (
     <button type="button" className="btn primary" disabled>
       <Plus size={14} aria-hidden />
-      {section === 'circuits' ? 'New circuit' : 'Save session'}
+      Save session
     </button>
   )
 }
@@ -163,15 +167,6 @@ function sectionSub(section: Section): string {
     programs:
       'Training block templates — full week-by-week structures to apply to a new client.',
   }[section]
-}
-
-function CircuitsPlaceholder() {
-  return (
-    <PlaceholderCard
-      title="Circuits"
-      body="Reusable groups of exercises — supersets, trisets, finishers. Build a circuit once, drop it into any session by name."
-    />
-  )
 }
 
 function SessionsPlaceholder() {

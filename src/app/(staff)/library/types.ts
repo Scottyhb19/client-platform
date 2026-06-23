@@ -81,3 +81,26 @@ export type ProgramTemplateSummary = {
   exerciseCount: number
   usedCount: number
 }
+
+/** A saved circuit + derived count for the Library Circuits tab. No usage
+ *  count: a circuit is COPIED into a day on insert (copy-on-apply), never
+ *  referenced, so there is nothing to count back. */
+export type CircuitSummary = {
+  id: string
+  name: string
+  circuit_type: CircuitType
+  notes: string | null
+  created_at: string
+  exerciseCount: number
+}
+
+export type CircuitType = 'superset' | 'triset' | 'circuit' | 'finisher' | 'warmup'
+
+/** Sentence-case labels for the circuit_type enum (design-system voice). */
+export const CIRCUIT_TYPE_LABELS: Record<CircuitType, string> = {
+  superset: 'Superset',
+  triset: 'Tri-set',
+  circuit: 'Circuit',
+  finisher: 'Finisher',
+  warmup: 'Warm-up',
+}
