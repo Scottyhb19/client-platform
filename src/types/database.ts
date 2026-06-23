@@ -3744,6 +3744,10 @@ export type Database = {
         Args: { p_organization_id: string; p_role: string; p_user_id: string }
         Returns: undefined
       }
+      apply_session_to_program_day: {
+        Args: { p_program_day_id: string; p_session_id: string }
+        Returns: Json
+      }
       assert_audit_resolver_coverage: { Args: never; Returns: undefined }
       audit_diff_fields: {
         Args: { p_new: Json; p_old: Json }
@@ -3967,6 +3971,15 @@ export type Database = {
         }
         Returns: string
       }
+      insert_session_exercise_at: {
+        Args: {
+          p_after_id?: string
+          p_exercise_id: string
+          p_session_id: string
+          p_slot?: string
+        }
+        Returns: string
+      }
       rate_limit_check_and_record: {
         Args: { p_key: string; p_max: number; p_window: string }
         Returns: Record<string, unknown>
@@ -3982,6 +3995,14 @@ export type Database = {
           p_day_id: string
           p_moved_pe_id: string
           p_ordered_ids: string[]
+        }
+        Returns: undefined
+      }
+      reorder_session_exercises: {
+        Args: {
+          p_moved_id: string
+          p_ordered_ids: string[]
+          p_session_id: string
         }
         Returns: undefined
       }
@@ -4015,6 +4036,10 @@ export type Database = {
       restore_test_result: { Args: { p_id: string }; Returns: undefined }
       restore_test_session: { Args: { p_id: string }; Returns: undefined }
       revoke_calendar_feed_token: { Args: never; Returns: undefined }
+      save_day_as_session: {
+        Args: { p_name: string; p_program_day_id: string }
+        Returns: Json
+      }
       save_group_as_circuit: {
         Args: {
           p_circuit_type: string
@@ -4077,6 +4102,18 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_program_template: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_session_template: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_session_template_exercise: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_session_template_exercise_set: {
         Args: { p_id: string }
         Returns: undefined
       }
