@@ -3958,6 +3958,10 @@ export type Database = {
         Args: { p_source_day_id: string; p_target_date: string }
         Returns: Json
       }
+      duplicate_template_day: {
+        Args: { p_source_day_id: string }
+        Returns: Json
+      }
       insert_circuit_into_day: {
         Args: { p_circuit_id: string; p_program_day_id: string }
         Returns: Json
@@ -3976,6 +3980,15 @@ export type Database = {
           p_after_id?: string
           p_exercise_id: string
           p_session_id: string
+          p_slot?: string
+        }
+        Returns: string
+      }
+      insert_template_exercise_at: {
+        Args: {
+          p_after_id?: string
+          p_day_id: string
+          p_exercise_id: string
           p_slot?: string
         }
         Returns: string
@@ -4004,6 +4017,10 @@ export type Database = {
           p_ordered_ids: string[]
           p_session_id: string
         }
+        Returns: undefined
+      }
+      reorder_template_exercises: {
+        Args: { p_day_id: string; p_moved_id: string; p_ordered_ids: string[] }
         Returns: undefined
       }
       repeat_program: { Args: { p_source_program_id: string }; Returns: Json }
@@ -4114,6 +4131,15 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_session_template_exercise_set: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_template_day: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_template_exercise: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_template_exercise_set: {
         Args: { p_id: string }
         Returns: undefined
       }
