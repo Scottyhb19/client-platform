@@ -101,3 +101,47 @@ Two forks were resolved with the operator before writing this contract (the hand
 ---
 
 *Per the protocol: this is the gap-list contract. No code until the operator approves it (and confirms the §5 remaining items). Approving it is also the conscious decision to extend beyond brief v2.1 for Sessions (§1).*
+
+---
+
+## Closing commit (step 7) — 2026-06-24
+
+Gap list approved ("approved - go") + the two §0 forks resolved (architecture = **hybrid**; Programs = **edit-existing v1**), plus two mid-build operator decisions: **full parity** for the cloned grouping engine (§5), and the **apply-dates** dogfooding follow-up (per-day → then **weekday-per-session, repeats weekly**). All gap items A-1, A-2, S-1…S-7, P-1…P-3 are closed, plus the apply follow-up.
+
+**What changed, by gap number (plain language):**
+
+- **A-1 (shared editor-kit).** Lifted the leaf prescription atoms (set table + autosaving cells/fields, ± set stepper, the two black-slab measure/load dropdowns, the save-status pill, drag scaffolding) out of the circuit editor into `src/app/(staff)/library/_components/editor-kit.tsx`, each parameterised over an `onCommit` callback. `CircuitEditor.tsx` re-pointed at it (~1670 → ~710 LOC). **`SessionBuilder.tsx` untouched** (the protected differentiator keeps its inline copy). [FM-H]
+- **A-2 (reusable `DayContentEditor` + `DayLibraryPanel`).** Cloned the builder's full grouping engine (solo cards + superset spine A1/A2 + section strips + between-card insert bars + group/ungroup + @dnd-kit reorder) into a client-agnostic component that delegates every mutation to an injected `DayEditorActions` object; the slot-aware picker is `DayLibraryPanel`. Dropped from the clone: Notes/Reports panel, last-logged footer, swap-in-place, save-as-circuit.
+- **S-1.** `session_templates → session_template_exercises → session_template_exercise_sets` (3-level, mirroring the program/circuit shape; carries `section_title` + `superset_group_id`, **no type enum** — a session is a named day). Org-scoped RLS Pattern C (deny DELETE), `exercise_id` ON DELETE RESTRICT, `session_template_exercise_enforce_exercise_org` trigger (anon-revoked), **not audited** (template library, schema.md §11.2). Migration `20260624130000`.
+- **S-2/S-3.** Seven SECURITY DEFINER RPCs (migration `20260624140000`), all `REVOKE … FROM anon` at creation: `insert_session_exercise_at` + `reorder_session_exercises` (the builder engine cloned for full parity — slot/group-inherit/fan-out, group re-derivation/section-reconcile/singleton-cleanup), `apply_session_to_program_day` + `save_day_as_session` (copy-on-apply, fresh superset remap, `rep_metric` threaded), and `soft_delete_session_template`/`_exercise`/`_exercise_set` (the `deleted_at` RLS-trap escape). From-scratch create + single-row edits are direct RLS writes.
+- **S-4.** Library **Sessions tab** (`SessionsTab` — New session → editor, list with exercise/superset counts, inline rename, soft-delete); the placeholder **and the lying disabled "Save session" header button** removed.
+- **S-5.** `/library/sessions/[id]` editor (`SessionEditor` = SaveStatus provider + name header wrapping `DayContentEditor`, wired to `session-actions`).
+- **S-6.** Builder **Session Tools**: the disabled "Add session" stub is now live (`SessionAddModal` → `apply_session_to_program_day`), plus a new **"Save day as session"** (`SaveDayAsSessionModal` → `save_day_as_session`). Additive — `SessionBuilder.tsx` not touched (menu + modals only).
+- **S-7.** pgTAP `41_session_templates` — **25/25 on live**.
+- **P-1.** `/library/programs/[id]` is now an **editor** (was a read-only preview): weeks → days, each day expandable into the same `DayContentEditor`, plus day management (rename / reorder / add / remove / **duplicate** within existing weeks). Card menu **Preview → Edit**. Week add/remove is out of scope (v1).
+- **P-2.** Six SECURITY DEFINER RPCs (migration `20260624150000`), anon-revoked, retargeted to `template_*` with the 3-hop org walk: `insert_template_exercise_at` + `reorder_template_exercises` (engine clones), `soft_delete_template_exercise`/`_exercise_set`/`_day`, `duplicate_template_day` (CTE remap). Day-level edits are direct RLS writes.
+- **P-3.** pgTAP `42_program_template_editor` — **19/19 on live**.
+- **Apply-dates follow-up (operator dogfooding).** New RPC `create_program_from_template_on_dates` (migration `20260624160000`, anon-revoked) — instantiates a template with an explicit per-day date map instead of one start date + the stored weekday-offset; validates every day dated + all dates distinct; overlap → `status='overlap'`. The shipped `create_program_from_template` is **untouched** (a sibling, not a rewrite). The **Programs-tab apply modal** now asks *"what days should these sessions fall on?"* — a weekday dropdown per **weekly session** + a start date, repeating each week (a 2-session block = 2 dropdowns regardless of length); dates are computed client-side and fed to the new RPC. pgTAP `43_program_from_template_on_dates` — **9/9 on live**.
+
+**Acceptance tests run + results.** `type-check` clean throughout; `npm run build` green (the new routes `/library/sessions/[id]` + `/library/programs/[id]` build); pgTAP on live — `39` 15/15 + `40` 6/6 (circuits, **confirming A-1 left them unregressed**) + `41` 25/25 + `42` 19/19 + `43` 9/9. Migrations `20260624130000/140000/150000/160000` applied to live (backward-compatible — new tables/RPCs unused by the deployed master), types regenerated. Render-tier — the Sessions tab + editor, the builder Add/Save-session, the Programs editor + day management, and the weekday-apply flow — **operator-confirmed working at `:3000`** across the build, per [`go-live-checklist.md §5b`](../go-live-checklist.md) (not automated browser).
+
+**Premortem mitigated:** FM-A (cross-org — RLS mirror + enforce triggers + cross-org pgTAP on 41/42/43), FM-B (anon-EXECUTE revoked at creation on every new SECURITY DEFINER fn + `has_function_privilege` tripwires), FM-C (apply/save copy-on-apply round-trip + fresh superset remap, pgTAP), FM-D (divergence — copy-on-apply + edit-template-≠-mutate-instantiated-program, pgTAP 41 §D / 42 §E / 43), FM-E (`rep_metric` threaded through every copy + fan-out, pgTAP), FM-F (`exercise_id` ON DELETE RESTRICT; placed = independent copies), FM-H (A-1 re-point — build + pgTAP 39/40 + operator `:3000` circuit pass, confirmed unregressed).
+
+**Accepted (not mitigated), with rationale:**
+- **FM-G** (>60s / scope sprawl) — accepted at F&F; the editors reuse the proven builder card 1:1 + the save-from-builder shortcut; operator dogfood confirmed it's fast.
+- **FM-I** (the cloned `DayContentEditor` drifts from `SessionBuilder` over time) — **consciously accepted**, the hybrid's chosen trade. Re-trigger: painful drift → revisit a full shared-`DayEditor` extraction.
+- **Template enforce-org trigger path.** `enforce_template_exercise_same_org` (pre-existing, `20260420101700`) is **not** SECURITY DEFINER, so under the caller's RLS the foreign exercise is invisible → a cross-org plant fails on the parent-lookup guard (`P0001`) rather than the DEFINER circuit/session triggers' explicit `23000`. **Same security outcome — the plant is rejected either way** (proven, pgTAP 42 A15). Not remediated: making it DEFINER would touch a shipped trigger for zero security gain.
+- **Render-tier** per `go-live-checklist.md §5b` (operator `:3000`, not an automated harness).
+
+**Deferred, with re-triggers** (indexed for the close):
+- **Programs from-scratch authoring + week add/remove/reorder** — the v1 scope decision (§0). Re-trigger: dogfooding shows abstract multi-week template design (not just editing saved blocks) is wanted.
+- **`program/new` "Start from template"** still uses the single-start-date `create_program_from_template` (the per-day/weekday flow is the **Programs-tab apply** only). Re-trigger: the operator applies templates from `program/new` and wants weekday selection there too (the engine RPC already exists — it'd be a UI-only follow-up).
+- **Full `DayEditor` extraction / migrating `SessionBuilder` onto the shared atoms** — see FM-I.
+
+**Migrations:** four — `20260624130000` (session tables), `20260624140000` (session RPCs), `20260624150000` (program-template editor RPCs), `20260624160000` (per-day-dates apply RPC) — all applied to live, backward-compatible, types regenerated. **pgTAP added:** `41`, `42`, `43`.
+
+**Scope / brief framing (recorded as a deviation, not conformance):** **Sessions** is an owner-directed extension beyond brief v2.1 (which is silent on a standalone session library) — precedent: circuits, in-app messaging. **Program templates** are brief §5.2; the in-Library **editor** + the per-day/weekday **apply** are the new bits. Approving this gap list was the conscious scope decision.
+
+---
+
+*Per the section sign-off ritual: Claude Code's work ends at this Closing commit. The section is not closed until the operator pastes it into the claude.ai project chat and records the decision under a Sign-off heading below.*
