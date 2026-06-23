@@ -21,7 +21,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(5);
+SELECT plan(6);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -150,6 +150,18 @@ INSERT INTO _tap (n, line) VALUES (5, (
     (SELECT deleted_at FROM program_templates WHERE id = (SELECT tpl_a FROM _ids))
       IS NOT NULL,
     'A5: deleted_at is stamped — the row is retained, not hard-deleted'
+  )
+));
+
+-- A6: grant posture — anon holds EXECUTE on nothing here (the Supabase
+-- default-grant trap fired on this NEW function; the direct anon grant must be
+-- revoked). Pure catalog check, as the test owner.
+INSERT INTO _tap (n, line) VALUES (6, (
+  SELECT ok(
+    NOT has_function_privilege(
+      'anon', 'public.soft_delete_program_template(uuid)', 'EXECUTE'
+    ),
+    'A6: anon cannot execute soft_delete_program_template'
   )
 ));
 

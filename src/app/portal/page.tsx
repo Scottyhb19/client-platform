@@ -19,6 +19,7 @@ import {
 } from './_lib/portal-helpers'
 import { hourInTimeZone } from '@/lib/dates'
 import { resolvePortalToday } from './_lib/timezone'
+import { formatVolume } from '@/lib/prescription/volume-units'
 
 export const dynamic = 'force-dynamic'
 
@@ -338,6 +339,7 @@ type RawExercise = {
   name: string
   sets: number | null
   reps: string | null
+  rep_metric: string | null
   optional_value: string | null
   rpe: number | null
 }
@@ -398,9 +400,12 @@ function buildExerciseList(
 
 function buildRx(e: RawExercise): string {
   const bits: string[] = []
-  if (e.sets && e.reps) bits.push(`${e.sets} × ${e.reps}`)
+  // Render the volume in its unit (rep_metric) so a hold reads "3 × 30s" and
+  // a carry "3 × 20m", not a bare count (FM-5).
+  const vol = formatVolume(e.reps, e.rep_metric)
+  if (e.sets && vol) bits.push(`${e.sets} × ${vol}`)
   else if (e.sets) bits.push(`${e.sets} sets`)
-  else if (e.reps) bits.push(e.reps)
+  else if (vol) bits.push(vol)
   if (e.optional_value) bits.push(e.optional_value)
   if (e.rpe) bits.push(`RPE ${e.rpe}`)
   return bits.join(' · ') || '—'

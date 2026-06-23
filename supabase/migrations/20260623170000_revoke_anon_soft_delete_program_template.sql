@@ -1,0 +1,21 @@
+-- ============================================================================
+-- 20260623170000_revoke_anon_soft_delete_program_template
+-- ============================================================================
+-- Why: soft_delete_program_template (LPT-1, 20260623130000) is a NEW function,
+-- so the Supabase default-EXECUTE-grant trap granted anon EXECUTE on creation;
+-- that migration's REVOKE … FROM PUBLIC did not remove the DIRECT anon grant
+-- (project memory project_supabase_default_execute_grants). Caught during the
+-- prescription-volume-unit reviewer-follow-up grant sweep
+-- (has_function_privilege('anon', …) = true).
+--
+-- No breach — the function has an in-body owner/staff + org guard (anon →
+-- caller_org NULL → 'Unauthorized') — but the anon-EXECUTE-on-nothing posture
+-- must hold; pgTAP 36 §A6 (added alongside) is the tripwire.
+--
+-- NOTE — pre-existing, NOT fixed here: the same latent anon grant sits on the
+-- rest of the soft_delete_* family (soft_delete_exercise confirmed anon=true,
+-- created 2026-05-05). That belongs to the platform-wide anon-EXECUTE sweep
+-- tracked in docs/go-live-checklist.md, not to this section.
+-- ============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.soft_delete_program_template(uuid) FROM anon;

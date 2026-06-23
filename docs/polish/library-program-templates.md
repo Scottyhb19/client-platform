@@ -157,3 +157,11 @@ Decisions A–D (§4) taken as recommended.
 ---
 
 *Per the section sign-off ritual: Claude Code's work ends at this Closing commit. The section is not closed until the operator records the decision under a Sign-off heading below.*
+
+---
+
+## Follow-up (grant sweep, 2026-06-23)
+
+Surfaced during the prescription-volume-unit reviewer follow-up (which re-ran the grant suites in full). **Correction to LPT-1:** the closing note said `soft_delete_program_template` was "anon-revoked", but that migration only did `REVOKE … FROM PUBLIC`. Because it is a NEW function, the Supabase default-EXECUTE-grant trap had granted `anon` a DIRECT EXECUTE that `REVOKE FROM PUBLIC` does not remove — so anon held EXECUTE (`has_function_privilege` = true). No breach (in-body owner/staff + org guard), but the posture was wrong. Fixed in [`20260623170000`](../../supabase/migrations/20260623170000_revoke_anon_soft_delete_program_template.sql) (`REVOKE … FROM anon`); **LPT-8 / test 36 gained §A6 (anon-EXECUTE tripwire) and is now 6/6** on the live DB. The clone/template RPCs I `CREATE OR REPLACE`d carried no such regression (`CREATE OR REPLACE` of an existing function doesn't re-trip the trap — `insert_program_exercise_at`/`save_program_as_template` anon = false, **test 23 = 32/32**).
+
+**Flagged, not fixed here (pre-existing):** the rest of the `soft_delete_*` family carries the same latent anon grant (`soft_delete_exercise` confirmed anon = true, created 2026-05-05). That belongs to the platform-wide anon-EXECUTE sweep (`docs/go-live-checklist.md`), not this section — spawned as a separate task.

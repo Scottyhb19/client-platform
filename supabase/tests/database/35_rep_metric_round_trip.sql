@@ -30,7 +30,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(5);
+SELECT plan(7);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -154,6 +154,15 @@ CREATE TEMP TABLE _read ON COMMIT DROP AS
     FROM public.client_get_program_day_exercises((SELECT day_1 FROM _ids))
    WHERE program_exercise_id = (SELECT val FROM _rt WHERE label = 'pe');
 
+-- Capture the week-overview preview summary for day_1 (FM-5) under the client
+-- JWT — the surface VU-7 originally missed. day_1 is dated 2026-04-27, so the
+-- week starting 2026-04-27 contains it (the 2026-05-04 clone is the exclusive
+-- end, excluded).
+CREATE TEMP TABLE _week ON COMMIT DROP AS
+  SELECT exercises
+    FROM public.client_get_week_overview(DATE '2026-04-27')
+   WHERE program_day_id = (SELECT day_1 FROM _ids);
+
 INSERT INTO _rt
   SELECT 'session', public.client_start_session((SELECT day_1 FROM _ids));
 
@@ -168,6 +177,22 @@ SELECT public.client_log_set(
   NULL::text, NULL::text,       -- optional_metric, optional_value (load axis)
   NULL::smallint, NULL::text,   -- rpe, notes
   'time_minsec'::text           -- rep_metric (volume unit)
+);
+
+-- Log set 2 as a loaded carry: 20 metres @ 40 kg — the VOLUME (distance) and
+-- the LOAD (weight) on the SAME set. This is the original "with the weight it
+-- can't be recorded" complaint; it evidences acceptance gate 2 at the
+-- persistence layer (the portal logger always renders the Load input, so the
+-- weight field is reachable for a distance-prescribed set).
+SELECT public.client_log_set(
+  (SELECT val FROM _rt WHERE label = 'session'),
+  (SELECT val FROM _rt WHERE label = 'pe'),
+  2::smallint,
+  40::numeric, 'kg'::text,      -- weight_value, weight_metric (the LOAD)
+  20::smallint,                 -- reps_performed (the VOLUME value)
+  NULL::text, NULL::text,       -- optional_metric, optional_value
+  NULL::smallint, NULL::text,   -- rpe, notes
+  'distance_m'::text            -- rep_metric (volume unit = metres)
 );
 
 
@@ -235,6 +260,34 @@ INSERT INTO _tap (n, line) VALUES (5, (
          AND pes.deleted_at IS NULL
     ),
     'A5: save + create_program_from_template preserve rep_metric (gate 4)'
+  )
+));
+
+-- A6: gate 2 — the loaded carry persists BOTH axes on one set_logs row:
+-- the volume unit (rep_metric=distance_m) AND the weight (weight_value/metric).
+INSERT INTO _tap (n, line) VALUES (6, (
+  SELECT ok(
+    EXISTS (
+      SELECT 1
+        FROM set_logs sl
+        JOIN exercise_logs el ON el.id = sl.exercise_log_id
+       WHERE el.program_exercise_id = (SELECT val FROM _rt WHERE label = 'pe')
+         AND sl.set_number    = 2
+         AND sl.rep_metric    = 'distance_m'
+         AND sl.weight_value  = 40
+         AND sl.weight_metric = 'kg'
+    ),
+    'A6: a loaded carry logs distance (rep_metric) AND weight on the same set (gate 2)'
+  )
+));
+
+-- A7: FM-5 — the portal Today-screen preview RPC now carries rep_metric, so
+-- the preview renders the unit ("3 × 30s") instead of a bare count.
+INSERT INTO _tap (n, line) VALUES (7, (
+  SELECT is(
+    (SELECT exercises -> 0 ->> 'rep_metric' FROM _week),
+    'time_minsec',
+    'A7: client_get_week_overview carries rep_metric in its exercise summary (FM-5)'
   )
 ));
 
