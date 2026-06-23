@@ -195,7 +195,7 @@ export default async function ClientProfilePage({
              exercise:exercises(name)
            ),
            set_logs(
-             set_number, reps_performed, weight_value, weight_metric,
+             set_number, reps_performed, rep_metric, weight_value, weight_metric,
              optional_metric, optional_value, rpe
            )
          )`,
@@ -419,6 +419,7 @@ export default async function ClientProfilePage({
           set_logs: Array<{
             set_number: number
             reps_performed: number | null
+            rep_metric: string | null
             // numeric coming through PostgREST can land as string; the
             // mapper coerces with Number() below.
             weight_value: number | string | null
@@ -443,6 +444,7 @@ export default async function ClientProfilePage({
             return {
               set_number: sl.set_number,
               reps: sl.reps_performed,
+              rep_metric: sl.rep_metric,
               weight_value:
                 sl.weight_value !== null ? Number(sl.weight_value) : null,
               weight_metric: sl.weight_metric,

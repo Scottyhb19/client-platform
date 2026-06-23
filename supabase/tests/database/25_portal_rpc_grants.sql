@@ -37,7 +37,8 @@ CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 WITH family(ord, sig) AS (
   VALUES
     (1, 'public.client_start_session(uuid)'),
-    (2, 'public.client_log_set(uuid, uuid, smallint, numeric, text, smallint, text, text, smallint, text)'),
+    -- 11-arg since 2026-06-23 (VU-2): trailing p_rep_metric (volume unit).
+    (2, 'public.client_log_set(uuid, uuid, smallint, numeric, text, smallint, text, text, smallint, text, text)'),
     (3, 'public.client_complete_session(uuid, smallint, text)'),
     (4, 'public.client_get_week_overview(date)'),
     (5, 'public.client_get_program_day_exercises(uuid)'),
@@ -60,7 +61,7 @@ FROM family;
 WITH family(ord, sig) AS (
   VALUES
     (10, 'public.client_start_session(uuid)'),
-    (11, 'public.client_log_set(uuid, uuid, smallint, numeric, text, smallint, text, text, smallint, text)'),
+    (11, 'public.client_log_set(uuid, uuid, smallint, numeric, text, smallint, text, text, smallint, text, text)'),
     (12, 'public.client_complete_session(uuid, smallint, text)'),
     (13, 'public.client_get_week_overview(date)'),
     (14, 'public.client_get_program_day_exercises(uuid)'),

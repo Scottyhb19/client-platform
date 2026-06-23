@@ -5,6 +5,7 @@ import { Play } from 'lucide-react'
 import type { LibraryExercise } from '../types'
 import { CardMenu } from './CardMenu'
 import { formatDefaultLoad } from './format'
+import { formatVolume } from '@/lib/prescription/volume-units'
 import { getYoutubeThumbnailUrl } from './youtube'
 
 interface ExerciseCardProps {
@@ -27,6 +28,7 @@ export function ExerciseCard({ exercise: e, onPick, dense = false }: ExerciseCar
   const hasVideo = !!e.video_url
   const thumbnailUrl = getYoutubeThumbnailUrl(e.video_url)
   const loadLabel = formatDefaultLoad(e.default_metric_value, e.default_metric)
+  const volumeLabel = formatVolume(e.default_reps, e.default_rep_metric)
 
   const media = (
     <div
@@ -124,7 +126,7 @@ export function ExerciseCard({ exercise: e, onPick, dense = false }: ExerciseCar
         {!dense && e.usage_count > 0 && ` · used ${e.usage_count}×`}
       </div>
 
-      {(e.default_sets || e.default_reps || loadLabel) && (
+      {(e.default_sets || volumeLabel || loadLabel) && (
         <div
           style={{
             display: 'flex',
@@ -138,14 +140,14 @@ export function ExerciseCard({ exercise: e, onPick, dense = false }: ExerciseCar
             flexWrap: 'wrap',
           }}
         >
-          {e.default_sets && e.default_reps && (
+          {e.default_sets && volumeLabel && (
             <span>
-              {e.default_sets} × {e.default_reps}
+              {e.default_sets} × {volumeLabel}
             </span>
           )}
           {loadLabel && (
             <>
-              {e.default_sets && e.default_reps && (
+              {e.default_sets && volumeLabel && (
                 <span style={{ color: 'var(--color-text-faint)' }}>·</span>
               )}
               <span>{loadLabel}</span>
@@ -220,11 +222,21 @@ export function ExerciseCard({ exercise: e, onPick, dense = false }: ExerciseCar
   // tab when one exists; the body routes to the edit page; CardMenu floats
   // top-right above both.
   return (
+    // Flex column + flex:1 on the inner grid so the media strip fills the
+    // full card height. The outer library grid stretches every card in a row
+    // to the tallest card; without this, a short card (no tags) next to a
+    // tag-heavy one leaves the media strip short with white space below it.
     <article
       className="card card-link"
-      style={{ position: 'relative', padding: 0, overflow: 'visible' }}
+      style={{
+        position: 'relative',
+        padding: 0,
+        overflow: 'visible',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
     >
-      <div style={gridStyle}>
+      <div style={{ ...gridStyle, flex: 1 }}>
         {hasVideo ? (
           <a
             href={e.video_url!}

@@ -10,6 +10,10 @@ import {
   type Pattern,
   type Tag,
 } from '../types'
+import {
+  VOLUME_UNIT_OPTIONS,
+  volumeUnitLabel,
+} from '@/lib/prescription/volume-units'
 
 type Mode = 'create' | 'edit'
 
@@ -53,6 +57,9 @@ export function ExerciseForm({
     instructions: echo?.instructions ?? v?.instructions ?? '',
     default_sets: echo?.default_sets ?? v?.default_sets?.toString() ?? '',
     default_reps: echo?.default_reps ?? v?.default_reps ?? '',
+    default_rep_metric: echo
+      ? echo.default_rep_metric
+      : (v?.default_rep_metric ?? ''),
     default_metric: echo ? echo.default_metric : (v?.default_metric ?? ''),
     default_metric_value:
       echo?.default_metric_value ?? v?.default_metric_value ?? '',
@@ -176,6 +183,37 @@ export function ExerciseForm({
             defaultValue={d.default_reps}
           />
           <div>
+            <FieldLabel>Measure</FieldLabel>
+            <select
+              name="default_rep_metric"
+              defaultValue={d.default_rep_metric}
+              style={inputStyle}
+            >
+              {VOLUME_UNIT_OPTIONS.map((u) => (
+                <option key={u.value || 'reps'} value={u.value}>
+                  {u.label}
+                </option>
+              ))}
+              {/* Preserve a saved unit not surfaced in the dropdown (e.g.
+                  km/miles) so an untouched save doesn't reset it to reps. */}
+              {d.default_rep_metric &&
+                !VOLUME_UNIT_OPTIONS.some(
+                  (u) => u.value === d.default_rep_metric,
+                ) && (
+                  <option value={d.default_rep_metric}>
+                    {volumeUnitLabel(d.default_rep_metric)}
+                  </option>
+                )}
+            </select>
+          </div>
+          <Field
+            name="default_rest_seconds"
+            label="Rest (sec)"
+            type="number"
+            placeholder="90"
+            defaultValue={d.default_rest_seconds}
+          />
+          <div>
             <FieldLabel>Unit</FieldLabel>
             <select
               name="default_metric"
@@ -212,13 +250,6 @@ export function ExerciseForm({
             label="Load"
             placeholder="e.g. 60"
             defaultValue={d.default_metric_value}
-          />
-          <Field
-            name="default_rest_seconds"
-            label="Rest (sec)"
-            type="number"
-            placeholder="90"
-            defaultValue={d.default_rest_seconds}
           />
         </div>
       </section>

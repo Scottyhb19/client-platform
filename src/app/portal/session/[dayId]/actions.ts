@@ -102,6 +102,9 @@ export type LogSetInput = {
   programExerciseId: string
   setNumber: number
   reps: number | null
+  // Volume unit for `reps` (NULL = reps; else a time/distance code) — what
+  // the logged number MEANS, so a 30s hold / 20m carry records in its unit.
+  repMetric: string | null
   weightValue: number | null
   weightMetric: string | null
   optionalValue: string | null
@@ -129,6 +132,7 @@ export async function logSetAction(
       p_optional_value: input.optionalValue,
       p_rpe: input.rpe,
       p_notes: null,
+      p_rep_metric: input.repMetric,
     } as never,
   )
 

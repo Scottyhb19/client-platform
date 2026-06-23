@@ -4,7 +4,14 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ExerciseLibrary } from './ExerciseLibrary'
-import type { LibraryExercise, Pattern, Tag } from '../types'
+import { ProgramsTab } from './ProgramsTab'
+import type {
+  ClientOption,
+  LibraryExercise,
+  Pattern,
+  ProgramTemplateSummary,
+  Tag,
+} from '../types'
 
 type Section = 'exercises' | 'circuits' | 'sessions' | 'programs'
 
@@ -19,6 +26,8 @@ interface LibraryViewProps {
   exercises: LibraryExercise[]
   patterns: Pattern[]
   tags: Tag[]
+  programTemplates: ProgramTemplateSummary[]
+  clients: ClientOption[]
   total: number
   patternCount: number
 }
@@ -32,6 +41,8 @@ export function LibraryView({
   exercises,
   patterns,
   tags,
+  programTemplates,
+  clients,
   total,
   patternCount,
 }: LibraryViewProps) {
@@ -98,7 +109,9 @@ export function LibraryView({
       )}
       {section === 'circuits' && <CircuitsPlaceholder />}
       {section === 'sessions' && <SessionsPlaceholder />}
-      {section === 'programs' && <ProgramsPlaceholder />}
+      {section === 'programs' && (
+        <ProgramsTab templates={programTemplates} clients={clients} />
+      )}
     </>
   )
 }
@@ -112,14 +125,15 @@ function HeaderActions({ section }: { section: Section }) {
       </Link>
     )
   }
+  // Programs are saved from a real training block ("Save as template" in the
+  // program calendar), never authored from scratch here — so no create button
+  // (LPT-7). Circuits + Sessions keep their disabled placeholder buttons until
+  // those phases ship.
+  if (section === 'programs') return null
   return (
     <button type="button" className="btn primary" disabled>
       <Plus size={14} aria-hidden />
-      {section === 'circuits'
-        ? 'New circuit'
-        : section === 'sessions'
-          ? 'Save session'
-          : 'New program'}
+      {section === 'circuits' ? 'New circuit' : 'Save session'}
     </button>
   )
 }
@@ -165,15 +179,6 @@ function SessionsPlaceholder() {
     <PlaceholderCard
       title="Sessions"
       body="Saved session layouts — 'Day A — Lower', 'Return-to-sport assessment'. Apply to a new program day and the prescription pre-fills."
-    />
-  )
-}
-
-function ProgramsPlaceholder() {
-  return (
-    <PlaceholderCard
-      title="Programs"
-      body="Training block templates — '4-week strength base', '12-week ACL return-to-sport'. Apply to a new client with a start date and the calendar scaffolds end-to-end."
     />
   )
 }

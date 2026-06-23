@@ -6,7 +6,7 @@ import type { LibraryExercise } from '../types'
  * (G-7 of the program-engine polish pass, 2026-06-12) — one query shape
  * so the card content can never drift between the two surfaces.
  */
-export const LIBRARY_EXERCISE_COLUMNS = `id, name, default_sets, default_reps, default_metric,
+export const LIBRARY_EXERCISE_COLUMNS = `id, name, default_sets, default_reps, default_rep_metric, default_metric,
          default_metric_value, usage_count, video_url,
          movement_pattern_id,
          movement_pattern:movement_patterns(name),
@@ -18,6 +18,7 @@ type RawLibraryExerciseRow = {
   name: string
   default_sets: number | null
   default_reps: string | null
+  default_rep_metric: string | null
   default_metric: string | null
   default_metric_value: string | null
   usage_count: number | null
@@ -50,6 +51,7 @@ export function toLibraryExercises(
       movement_pattern_name: e.movement_pattern?.name ?? null,
       default_sets: e.default_sets,
       default_reps: e.default_reps,
+      default_rep_metric: e.default_rep_metric,
       default_metric: e.default_metric,
       default_metric_value: e.default_metric_value,
       usage_count: e.usage_count ?? 0,

@@ -159,6 +159,9 @@ export type ProfileProgramSummary = {
 export type ProfileCompletionSet = {
   set_number: number
   reps: number | null
+  // Volume unit for `reps` (NULL = reps; else a time/distance code) so a
+  // logged hold renders "30s" and a carry "20m", not "30 reps".
+  rep_metric: string | null
   // numeric coerced through Number() in the loader (PostgREST can return
   // numeric as string depending on driver settings).
   weight_value: number | null

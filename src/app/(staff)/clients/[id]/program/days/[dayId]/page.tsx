@@ -115,7 +115,7 @@ export default async function SessionBuilderPage({
          exercise_id,
          exercise:exercises(name, video_url),
          prescription_sets:program_exercise_sets(
-           id, set_number, reps, optional_metric, optional_value, deleted_at
+           id, set_number, reps, rep_metric, optional_metric, optional_value, deleted_at
          )`,
       )
       .eq('program_day_id', dayId)
@@ -258,7 +258,7 @@ export default async function SessionBuilderPage({
          sessions!inner(client_id),
          set_logs(
            set_number, weight_value, weight_metric,
-           reps_performed, deleted_at
+           reps_performed, rep_metric, deleted_at
          )`,
       )
       .eq('sessions.client_id', id)
@@ -288,6 +288,7 @@ export default async function SessionBuilderPage({
           weightValue: s.weight_value === null ? null : Number(s.weight_value),
           weightMetric: s.weight_metric,
           repsPerformed: s.reps_performed,
+          repMetric: s.rep_metric,
         })),
       })
     }
@@ -316,6 +317,7 @@ export default async function SessionBuilderPage({
           id: s.id,
           set_number: s.set_number,
           reps: s.reps,
+          rep_metric: s.rep_metric,
           optional_metric: s.optional_metric,
           optional_value: s.optional_value,
         })),

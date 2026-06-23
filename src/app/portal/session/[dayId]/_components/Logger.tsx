@@ -8,10 +8,14 @@ import {
   logExerciseNoteAction,
   logSetAction,
 } from '../actions'
+import { formatVolume, volumeUnitLabel } from '@/lib/prescription/volume-units'
 
 export type PrescribedSet = {
   setNumber: number
   reps: string | null
+  // Volume unit (NULL = reps; else a time/distance code). Drives the input
+  // label (Reps / Seconds / Metres) and the unit logged with the value.
+  repMetric: string | null
   optionalMetric: string | null
   optionalValue: string | null
 }
@@ -40,6 +44,7 @@ export type LoggedSet = {
   programExerciseId: string
   setNumber: number
   reps: number | null
+  repMetric: string | null
   weightValue: number | null
   weightMetric: string | null
   optionalValue: string | null
@@ -133,11 +138,12 @@ export function Logger({
     const key = setKey(exerciseId, setNumber)
     const src = draftsOverride ?? drafts
     const d = src.get(key) ?? { reps: '', load: '', rpe: '' }
+    const repMetric = prescribedRepMetric(exercises, exerciseId, setNumber)
 
     const repsNum = d.reps.trim() === '' ? null : parseInt(d.reps, 10)
     const rpeNum = d.rpe.trim() === '' ? null : parseInt(d.rpe, 10)
     if (repsNum !== null && (!Number.isFinite(repsNum) || repsNum < 0)) {
-      return { error: 'Reps must be a whole number.' }
+      return { error: `${volumeUnitLabel(repMetric)} must be a whole number.` }
     }
     if (rpeNum !== null && (!Number.isFinite(rpeNum) || rpeNum < 1 || rpeNum > 10)) {
       return { error: 'RPE is 1–10.' }
@@ -149,6 +155,7 @@ export function Logger({
       programExerciseId: exerciseId,
       setNumber,
       reps: repsNum,
+      repMetric,
       weightValue: parsedLoad.weightValue,
       weightMetric: parsedLoad.weightMetric,
       optionalValue: parsedLoad.optionalValue,
@@ -160,6 +167,7 @@ export function Logger({
       programExerciseId: exerciseId,
       setNumber,
       reps: repsNum,
+      repMetric,
       weightValue: parsedLoad.weightValue,
       weightMetric: parsedLoad.weightMetric,
       optionalValue: parsedLoad.optionalValue,
@@ -289,6 +297,7 @@ export function Logger({
                   <SetRow
                     key={sn}
                     setNumber={sn}
+                    repMetric={prescribed.repMetric}
                     draft={drafts.get(key) ?? { reps: '', load: '', rpe: '' }}
                     logged={logsByKey.get(key)}
                     onChange={(field, value) =>
@@ -708,12 +717,14 @@ function ExerciseBlock({
 // the parent's draft map so carry-forward / log-all update live.
 function SetRow({
   setNumber,
+  repMetric,
   draft,
   logged,
   onChange,
   onSave,
 }: {
   setNumber: number
+  repMetric: string | null
   draft: Draft
   logged: LoggedSet | undefined
   onChange: (field: keyof Draft, value: string) => void
@@ -843,7 +854,7 @@ function SetRow({
         }}
       >
         <LogInput
-          label="Reps"
+          label={volumeUnitLabel(repMetric)}
           value={draft.reps}
           onChange={(v) => onChange('reps', v)}
           inputMode="numeric"
@@ -1118,6 +1129,19 @@ function setKey(programExerciseId: string, setNumber: number): string {
   return `${programExerciseId}#${setNumber}`
 }
 
+// The prescribed volume unit for a set (NULL = reps). Drives the input
+// label and the unit persisted alongside the logged value.
+function prescribedRepMetric(
+  exercises: LoggerExercise[],
+  exerciseId: string,
+  setNumber: number,
+): string | null {
+  const ex = exercises.find((e) => e.programExerciseId === exerciseId)
+  return (
+    ex?.prescribedSets.find((s) => s.setNumber === setNumber)?.repMetric ?? null
+  )
+}
+
 function mapFromLogs(logs: LoggedSet[]): Map<string, LoggedSet> {
   const m = new Map<string, LoggedSet>()
   for (const l of logs) m.set(setKey(l.programExerciseId, l.setNumber), l)
@@ -1231,13 +1255,15 @@ function buildRxLabel(e: LoggerExercise): string {
   const allSame = sets.every(
     (s) =>
       s.reps === first.reps &&
+      s.repMetric === first.repMetric &&
       s.optionalMetric === first.optionalMetric &&
       s.optionalValue === first.optionalValue,
   )
   if (!allSame) return ''
 
   const bits: string[] = []
-  if (first.reps) bits.push(`${sets.length} × ${first.reps}`)
+  const vol = formatVolume(first.reps, first.repMetric)
+  if (vol) bits.push(`${sets.length} × ${vol}`)
   else bits.push(`${sets.length} sets`)
   if (first.optionalValue) {
     bits.push(

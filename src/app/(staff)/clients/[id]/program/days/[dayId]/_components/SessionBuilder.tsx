@@ -47,6 +47,7 @@ import {
   ungroupFromSupersetAction,
   updateProgramExerciseAction,
   updateProgramExerciseMetricAction,
+  updateProgramExerciseRepMetricAction,
   updateProgramExerciseSetAction,
   updateSectionTitleAction,
   type InsertSlot,
@@ -55,6 +56,11 @@ import {
 } from '../actions'
 import { LibraryPanel } from './LibraryPanel'
 import type { LibraryExercise } from '@/app/(staff)/library/types'
+import {
+  VOLUME_UNIT_OPTIONS,
+  volumeUnitLabel,
+  volumeUnitSuffix,
+} from '@/lib/prescription/volume-units'
 import {
   NotesPanel,
   type ClinicalNoteSummary,
@@ -112,6 +118,7 @@ export type PrescriptionSet = {
   id: string
   set_number: number
   reps: string | null
+  rep_metric: string | null
   optional_metric: string | null
   optional_value: string | null
 }
@@ -127,6 +134,7 @@ export type LastLoggedSet = {
   weightValue: number | null
   weightMetric: string | null
   repsPerformed: number | null
+  repMetric: string | null
 }
 
 export type LastLogged = {
@@ -1501,6 +1509,9 @@ function SetTable({
   // does a bulk UPDATE. addExerciseToDayAction / swap_program_exercise /
   // addProgramExerciseSetAction all seed the same metric across rows.
   const columnMetric = pe.prescriptionSets[0]?.optional_metric ?? ''
+  // Column-level volume unit, read from the first live set (kept in sync by
+  // the bulk updateProgramExerciseRepMetricAction, same as the load metric).
+  const columnRepMetric = pe.prescriptionSets[0]?.rep_metric ?? ''
 
   return (
     <div
@@ -1512,7 +1523,12 @@ function SetTable({
       }}
     >
       <ColHeader narrow>Set</ColHeader>
-      <ColHeader>Reps</ColHeader>
+      <VolumeColumnDropdown
+        peId={pe.id}
+        clientId={clientId}
+        dayId={dayId}
+        repMetric={columnRepMetric}
+      />
       <MetricColumnDropdown
         peId={pe.id}
         clientId={clientId}
@@ -1790,6 +1806,111 @@ function MetricColumnDropdown({
             {u.display_label}
           </option>
         ))}
+      </select>
+      <ChevronDown
+        size={12}
+        aria-hidden
+        style={{
+          position: 'absolute',
+          right: 7,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          color: '#fff',
+          pointerEvents: 'none',
+        }}
+      />
+    </div>
+  )
+}
+
+/**
+ * The Reps column HEADER is the volume-unit picker (Reps / Seconds / Metres) —
+ * the volume-axis sibling of MetricColumnDropdown. Picking a unit writes
+ * rep_metric to every set via the column-wide updateProgramExerciseRepMetricAction,
+ * so a timed hold / distance carry logs in its own unit and the Load column
+ * stays free for weight. Closed state shows the unit (default "Reps"). Same
+ * black-slab styling as the load-metric header so the columns read
+ * symmetrically. VOLUME_UNIT_OPTIONS is the single source (shared with the
+ * library form + portal logger).
+ */
+function VolumeColumnDropdown({
+  peId,
+  clientId,
+  dayId,
+  repMetric,
+}: {
+  peId: string
+  clientId: string
+  dayId: string
+  repMetric: string
+}) {
+  const [pending, startTransition] = useTransition()
+  const router = useRouter()
+  // Legacy-value fallback (mirrors MetricColumnDropdown): a saved unit not in
+  // the surfaced options (e.g. km/mi) stays selectable so the closed state
+  // doesn't silently drop to a different unit.
+  const repMetricInOptions = VOLUME_UNIT_OPTIONS.some(
+    (u) => u.value === repMetric,
+  )
+
+  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const next = e.target.value === '' ? null : e.target.value
+    startTransition(async () => {
+      const res = await updateProgramExerciseRepMetricAction(
+        clientId,
+        dayId,
+        peId,
+        next,
+      )
+      if (res.error) {
+        alert(res.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  return (
+    <div style={{ position: 'relative', height: 26 }}>
+      <select
+        value={repMetric}
+        onChange={handleChange}
+        disabled={pending}
+        aria-label="Measure — reps, seconds, or metres"
+        style={{
+          background: INK,
+          color: '#fff',
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 11,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          height: '100%',
+          width: '100%',
+          padding: '0 22px 0 12px',
+          border: 'none',
+          borderRadius: 8,
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          MozAppearance: 'none',
+          cursor: pending ? 'wait' : 'pointer',
+          boxSizing: 'border-box',
+          textAlign: 'center',
+          textAlignLast: 'center',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+        }}
+      >
+        {VOLUME_UNIT_OPTIONS.map((u) => (
+          <option key={u.value || 'reps'} value={u.value}>
+            {u.label}
+          </option>
+        ))}
+        {!repMetricInOptions && repMetric !== '' && (
+          <option value={repMetric}>{volumeUnitLabel(repMetric)}</option>
+        )}
       </select>
       <ChevronDown
         size={12}
@@ -2090,13 +2211,16 @@ function formatLastLoggedSummary(ll: LastLogged): string | null {
   if (N === 0) return null
 
   // Reps: collapse to single value if uniform, otherwise low-high range.
+  // Append the volume-unit suffix so a timed/distance set reads "3 × 30s" /
+  // "3 × 20m" rather than a bare count.
   const reps: number[] = []
   for (const s of sets) if (s.repsPerformed !== null) reps.push(s.repsPerformed)
   let countLabel: string
   if (reps.length > 0) {
     const min = Math.min(...reps)
     const max = Math.max(...reps)
-    countLabel = `${N} × ${min === max ? min : `${min}-${max}`}`
+    const suffix = volumeUnitSuffix(sets[0]?.repMetric ?? null)
+    countLabel = `${N} × ${min === max ? min : `${min}-${max}`}${suffix}`
   } else {
     // No reps logged on any set — fall back to bare set count.
     countLabel = `${N} ${N === 1 ? 'set' : 'sets'}`

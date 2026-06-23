@@ -1337,6 +1337,7 @@ export type Database = {
           created_by_user_id: string | null
           default_metric: string | null
           default_metric_value: string | null
+          default_rep_metric: string | null
           default_reps: string | null
           default_rest_seconds: number | null
           default_sets: number | null
@@ -1356,6 +1357,7 @@ export type Database = {
           created_by_user_id?: string | null
           default_metric?: string | null
           default_metric_value?: string | null
+          default_rep_metric?: string | null
           default_reps?: string | null
           default_rest_seconds?: number | null
           default_sets?: number | null
@@ -1375,6 +1377,7 @@ export type Database = {
           created_by_user_id?: string | null
           default_metric?: string | null
           default_metric_value?: string | null
+          default_rep_metric?: string | null
           default_reps?: string | null
           default_rest_seconds?: number | null
           default_sets?: number | null
@@ -2074,6 +2077,7 @@ export type Database = {
           optional_metric: string | null
           optional_value: string | null
           program_exercise_id: string
+          rep_metric: string | null
           reps: string | null
           set_number: number
           updated_at: string
@@ -2085,6 +2089,7 @@ export type Database = {
           optional_metric?: string | null
           optional_value?: string | null
           program_exercise_id: string
+          rep_metric?: string | null
           reps?: string | null
           set_number: number
           updated_at?: string
@@ -2096,6 +2101,7 @@ export type Database = {
           optional_metric?: string | null
           optional_value?: string | null
           program_exercise_id?: string
+          rep_metric?: string | null
           reps?: string | null
           set_number?: number
           updated_at?: string
@@ -2674,6 +2680,7 @@ export type Database = {
           notes: string | null
           optional_metric: string | null
           optional_value: string | null
+          rep_metric: string | null
           reps_performed: number | null
           rpe: number | null
           set_number: number
@@ -2689,6 +2696,7 @@ export type Database = {
           notes?: string | null
           optional_metric?: string | null
           optional_value?: string | null
+          rep_metric?: string | null
           reps_performed?: number | null
           rpe?: number | null
           set_number: number
@@ -2704,6 +2712,7 @@ export type Database = {
           notes?: string | null
           optional_metric?: string | null
           optional_value?: string | null
+          rep_metric?: string | null
           reps_performed?: number | null
           rpe?: number | null
           set_number?: number
@@ -2765,6 +2774,7 @@ export type Database = {
           id: string
           optional_metric: string | null
           optional_value: string | null
+          rep_metric: string | null
           reps: string | null
           set_number: number
           template_exercise_id: string
@@ -2776,6 +2786,7 @@ export type Database = {
           id?: string
           optional_metric?: string | null
           optional_value?: string | null
+          rep_metric?: string | null
           reps?: string | null
           set_number: number
           template_exercise_id: string
@@ -2787,6 +2798,7 @@ export type Database = {
           id?: string
           optional_metric?: string | null
           optional_value?: string | null
+          rep_metric?: string | null
           reps?: string | null
           set_number?: number
           template_exercise_id?: string
@@ -3516,6 +3528,7 @@ export type Database = {
           p_optional_metric: string
           p_optional_value: string
           p_program_exercise_id: string
+          p_rep_metric?: string
           p_reps_performed: number
           p_rpe: number
           p_session_id: string
@@ -3701,6 +3714,10 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_program_exercise_set: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_program_template: {
         Args: { p_id: string }
         Returns: undefined
       }

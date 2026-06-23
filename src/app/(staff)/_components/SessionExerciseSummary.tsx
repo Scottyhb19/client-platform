@@ -2,6 +2,7 @@ import type {
   ProfileCompletionExercise,
   ProfileCompletionSet,
 } from '../clients/[id]/_components/ClientProfile'
+import { formatVolume } from '@/lib/prescription/volume-units'
 
 interface SessionExerciseSummaryProps {
   exercises: ProfileCompletionExercise[]
@@ -251,6 +252,9 @@ function SetResult({ set }: { set: ProfileCompletionSet }) {
   const hasWeight = set.weight_value !== null && !!set.weight_metric
   const hasReps = set.reps !== null
   const hasOptional = !!set.optional_value
+  // Volume rendered in its unit: "5" (reps), "30s" (time), "20m" (distance).
+  const volume =
+    set.reps !== null ? formatVolume(String(set.reps), set.rep_metric) : null
 
   if (!hasWeight && !hasReps && !hasOptional) {
     return <span style={numStyle}>—</span>
@@ -264,15 +268,19 @@ function SetResult({ set }: { set: ProfileCompletionSet }) {
           <span style={unitStyle}>{set.weight_metric}</span>
         </>
       )}
-      {hasReps &&
+      {volume &&
         (hasWeight ? (
           <>
             <span style={sepStyle}>×</span>
-            <span style={numStyle}>{set.reps}</span>
+            <span style={numStyle}>{volume}</span>
           </>
+        ) : set.rep_metric ? (
+          // Timed/distance: the unit is already in the value ("30s", "20m"),
+          // so no "reps" suffix.
+          <span style={numStyle}>{volume}</span>
         ) : (
           <>
-            <span style={numStyle}>{set.reps}</span>
+            <span style={numStyle}>{volume}</span>
             <span style={{ ...unitStyle, marginLeft: 4 }}>reps</span>
           </>
         ))}

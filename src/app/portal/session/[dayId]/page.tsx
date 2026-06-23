@@ -118,6 +118,7 @@ export default async function PortalSessionPage({
       ? (e.prescription_sets as Array<{
           set_number: number
           reps: string | null
+          rep_metric: string | null
           optional_metric: string | null
           optional_value: string | null
         }>)
@@ -131,6 +132,7 @@ export default async function PortalSessionPage({
       prescribedSets: rawSets.map((s) => ({
         setNumber: s.set_number,
         reps: s.reps,
+        repMetric: s.rep_metric,
         optionalMetric: s.optional_metric,
         optionalValue: s.optional_value,
       })),
@@ -173,7 +175,7 @@ export default async function PortalSessionPage({
     .select(
       `id, program_exercise_id, notes,
        sets:set_logs(
-         set_number, reps_performed, weight_value, weight_metric,
+         set_number, reps_performed, rep_metric, weight_value, weight_metric,
          optional_value, rpe
        )`,
     )
@@ -190,6 +192,7 @@ export default async function PortalSessionPage({
         programExerciseId: el.program_exercise_id,
         setNumber: s.set_number,
         reps: s.reps_performed,
+        repMetric: s.rep_metric,
         weightValue:
           s.weight_value !== null ? Number(s.weight_value) : null,
         weightMetric: s.weight_metric,

@@ -619,7 +619,7 @@ export async function addProgramExerciseSetAction(
 
   const { data: lastSet, error: lookupErr } = await supabase
     .from('program_exercise_sets')
-    .select('set_number, reps, optional_metric, optional_value')
+    .select('set_number, reps, rep_metric, optional_metric, optional_value')
     .eq('program_exercise_id', programExerciseId)
     .is('deleted_at', null)
     .order('set_number', { ascending: false })
@@ -636,6 +636,7 @@ export async function addProgramExerciseSetAction(
       program_exercise_id: programExerciseId,
       set_number: nextSetNumber,
       reps: lastSet?.reps ?? null,
+      rep_metric: lastSet?.rep_metric ?? null,
       optional_metric: lastSet?.optional_metric ?? null,
       optional_value: lastSet?.optional_value ?? null,
     })
@@ -674,6 +675,35 @@ export async function updateProgramExerciseMetricAction(
     .is('deleted_at', null)
 
   if (error) return { error: `Set metric failed: ${error.message}` }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
+ * Set the VOLUME unit (rep_metric) for every live set on a program_exercise
+ * in one bulk UPDATE — the column-level Measure picker (Reps / Seconds /
+ * Metres). Mirrors updateProgramExerciseMetricAction (the load-metric writer):
+ * storage stays per-set so the portal RPC + Logger read it unchanged, and a
+ * direct UPDATE is safe because we touch rep_metric, not deleted_at. NULL =
+ * a plain rep count (the volume axis, kept separate from the load axis).
+ */
+export async function updateProgramExerciseRepMetricAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+  repMetric: string | null,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase
+    .from('program_exercise_sets')
+    .update({ rep_metric: repMetric })
+    .eq('program_exercise_id', programExerciseId)
+    .is('deleted_at', null)
+
+  if (error) return { error: `Set measure failed: ${error.message}` }
 
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
   return { error: null }

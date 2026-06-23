@@ -121,7 +121,7 @@ export default async function DashboardPage() {
              exercise:exercises(name)
            ),
            set_logs(
-             set_number, reps_performed, weight_value, weight_metric,
+             set_number, reps_performed, rep_metric, weight_value, weight_metric,
              optional_metric, optional_value, rpe
            )
          )`,
@@ -277,6 +277,7 @@ export default async function DashboardPage() {
           set_logs: Array<{
             set_number: number
             reps_performed: number | null
+            rep_metric: string | null
             weight_value: number | string | null
             weight_metric: string | null
             optional_metric: string | null
@@ -301,6 +302,7 @@ export default async function DashboardPage() {
               return {
                 set_number: sl.set_number,
                 reps: sl.reps_performed,
+                rep_metric: sl.rep_metric,
                 weight_value:
                   sl.weight_value !== null ? Number(sl.weight_value) : null,
                 weight_metric: sl.weight_metric,

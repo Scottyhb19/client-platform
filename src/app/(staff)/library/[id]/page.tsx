@@ -26,7 +26,7 @@ export default async function EditExercisePage({
       .from('exercises')
       .select(
         `id, name, movement_pattern_id, video_url, description, instructions,
-         default_sets, default_reps, default_metric, default_metric_value,
+         default_sets, default_reps, default_rep_metric, default_metric, default_metric_value,
          default_rest_seconds,
          exercise_tag_assignments(tag_id)`,
       )
@@ -62,6 +62,7 @@ export default async function EditExercisePage({
     instructions: exercise.instructions,
     default_sets: exercise.default_sets,
     default_reps: exercise.default_reps,
+    default_rep_metric: exercise.default_rep_metric,
     default_metric: exercise.default_metric,
     default_metric_value: exercise.default_metric_value,
     default_rest_seconds: exercise.default_rest_seconds,

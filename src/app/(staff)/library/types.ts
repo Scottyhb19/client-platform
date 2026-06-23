@@ -16,6 +16,7 @@ export type ExerciseFormEcho = {
   instructions: string
   default_sets: string
   default_reps: string
+  default_rep_metric: string
   default_metric: string
   default_metric_value: string
   default_rest_seconds: string
@@ -38,6 +39,7 @@ export type LibraryExercise = {
   movement_pattern_name: string | null
   default_sets: number | null
   default_reps: string | null
+  default_rep_metric: string | null
   default_metric: string | null
   default_metric_value: string | null
   usage_count: number
@@ -53,9 +55,29 @@ export type ExerciseFormValues = {
   description: string | null
   default_sets: number | null
   default_reps: string | null
+  default_rep_metric: string | null
   default_metric: string | null
   default_metric_value: string | null
   default_rest_seconds: number | null
   instructions: string | null
   tag_ids: string[]
+}
+
+/** A client option for the Programs-tab apply-to-client picker (LPT-4). */
+export type ClientOption = {
+  id: string
+  first_name: string
+  last_name: string
+}
+
+/** A saved program template + derived counts for the Library Programs tab. */
+export type ProgramTemplateSummary = {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+  weekCount: number
+  dayCount: number
+  exerciseCount: number
+  usedCount: number
 }

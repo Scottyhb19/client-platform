@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { isVolumeMetric } from '@/lib/prescription/volume-units'
 import type { ExerciseFormEcho, ExerciseFormState } from './types'
 
 /**
@@ -37,6 +38,7 @@ export async function createExerciseAction(
       movement_pattern_id: parsed.values.movement_pattern_id,
       default_sets: parsed.values.default_sets,
       default_reps: parsed.values.default_reps,
+      default_rep_metric: parsed.values.default_rep_metric,
       default_metric: parsed.values.default_metric,
       default_metric_value: parsed.values.default_metric_value,
       default_rest_seconds: parsed.values.default_rest_seconds,
@@ -109,6 +111,7 @@ export async function updateExerciseAction(
       movement_pattern_id: parsed.values.movement_pattern_id,
       default_sets: parsed.values.default_sets,
       default_reps: parsed.values.default_reps,
+      default_rep_metric: parsed.values.default_rep_metric,
       default_metric: parsed.values.default_metric,
       default_metric_value: parsed.values.default_metric_value,
       default_rest_seconds: parsed.values.default_rest_seconds,
@@ -276,6 +279,20 @@ function parseFormFields(
     }
   }
 
+  // Volume unit (reps / time / distance) — NULL = a plain rep count. The
+  // dropdown is curated, so a value outside the known set can only arrive
+  // from a tampered request; reject rather than write garbage.
+  const default_rep_metric = nullable(formData.get('default_rep_metric'))
+  if (default_rep_metric !== null && !isVolumeMetric(default_rep_metric)) {
+    return {
+      error: {
+        error: 'Invalid rep unit.',
+        fieldErrors: {},
+        values: echoFields(formData),
+      },
+    }
+  }
+
   return {
     error: null,
     values: {
@@ -286,6 +303,7 @@ function parseFormFields(
       instructions: nullable(formData.get('instructions')),
       default_sets: toIntOrNull(formData.get('default_sets')),
       default_reps: nullable(formData.get('default_reps')),
+      default_rep_metric,
       default_metric,
       default_metric_value,
       default_rest_seconds: toIntOrNull(formData.get('default_rest_seconds')),
@@ -302,6 +320,7 @@ type ParsedExerciseFields = {
   instructions: string | null
   default_sets: number | null
   default_reps: string | null
+  default_rep_metric: string | null
   default_metric: string | null
   default_metric_value: string | null
   default_rest_seconds: number | null
@@ -323,6 +342,7 @@ function echoFields(formData: FormData): ExerciseFormEcho {
     instructions: raw('instructions'),
     default_sets: raw('default_sets'),
     default_reps: raw('default_reps'),
+    default_rep_metric: raw('default_rep_metric'),
     default_metric: raw('default_metric'),
     default_metric_value: raw('default_metric_value'),
     default_rest_seconds: raw('default_rest_seconds'),
