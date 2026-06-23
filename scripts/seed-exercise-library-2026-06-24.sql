@@ -2,9 +2,9 @@
 -- scripts/seed-exercise-library-2026-06-24.sql
 -- ============================================================================
 -- One-off, idempotent seed of the operator's exercise library, transcribed
--- from the operator-provided "Odyssey — Exercise Library Seed" markdown
--- (exercise_library_seed.md, provided 2026-06-24). 236 entries across the
--- eight movement patterns.
+-- from the operator-provided "Odyssey — Exercise Library Seed" markdown,
+-- committed alongside this script at scripts/exercise_library_seed.md
+-- (provided 2026-06-24). 236 entries across the eight movement patterns.
 --
 -- NOT a migration. This is "The Odyssey. Platform" org's personal library
 -- content, not a default every new org should inherit, so it is deliberately
