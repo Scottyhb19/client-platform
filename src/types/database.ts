@@ -2713,6 +2713,176 @@ export type Database = {
           },
         ]
       }
+      session_template_exercise_sets: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          id: string
+          optional_metric: string | null
+          optional_value: string | null
+          rep_metric: string | null
+          reps: string | null
+          session_template_exercise_id: string
+          set_number: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          rep_metric?: string | null
+          reps?: string | null
+          session_template_exercise_id: string
+          set_number: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          rep_metric?: string | null
+          reps?: string | null
+          session_template_exercise_id?: string
+          set_number?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_template_exercise_set_session_template_exercise_id_fkey"
+            columns: ["session_template_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "session_template_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_template_exercises: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          exercise_id: string
+          id: string
+          instructions: string | null
+          optional_metric: string | null
+          optional_value: string | null
+          reps: string | null
+          rest_seconds: number | null
+          rpe: number | null
+          section_title: string | null
+          session_template_id: string
+          sets: number | null
+          sort_order: number
+          superset_group_id: string | null
+          tempo: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          exercise_id: string
+          id?: string
+          instructions?: string | null
+          optional_metric?: string | null
+          optional_value?: string | null
+          reps?: string | null
+          rest_seconds?: number | null
+          rpe?: number | null
+          section_title?: string | null
+          session_template_id: string
+          sets?: number | null
+          sort_order?: number
+          superset_group_id?: string | null
+          tempo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          exercise_id?: string
+          id?: string
+          instructions?: string | null
+          optional_metric?: string | null
+          optional_value?: string | null
+          reps?: string | null
+          rest_seconds?: number | null
+          rpe?: number | null
+          section_title?: string | null
+          session_template_id?: string
+          sets?: number | null
+          sort_order?: number
+          superset_group_id?: string | null
+          tempo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_template_exercises_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "session_template_exercises_session_template_id_fkey"
+            columns: ["session_template_id"]
+            isOneToOne: false
+            referencedRelation: "session_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_templates: {
+        Row: {
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "session_templates_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "session_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       session_types: {
         Row: {
           color: string
