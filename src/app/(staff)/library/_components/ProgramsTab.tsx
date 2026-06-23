@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, MoreVertical, X } from 'lucide-react'
-import type { ClientOption, ProgramTemplateSummary } from '../types'
+import type { ClientOption, ProgramTemplateSummary, TemplateDayLite } from '../types'
 import {
   applyProgramTemplateAction,
   deleteProgramTemplateAction,
@@ -53,36 +53,55 @@ function TemplateCard({
   const [renaming, setRenaming] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyClient, setApplyClient] = useState('')
-  const [anchorDate, setAnchorDate] = useState('')
-  const [dayDates, setDayDates] = useState<Record<string, string>>({})
+  const [startDate, setStartDate] = useState('')
+  const [slotWeekdays, setSlotWeekdays] = useState<number[]>([])
   const [name, setName] = useState(t.name)
   const [error, setError] = useState<string | null>(null)
 
-  // Picking the start date pre-fills each day from its (week-1)*7 + sort_order
-  // offset (the legacy auto-placement) — the EP then adjusts any day's date.
-  function setAnchor(date: string) {
-    setAnchorDate(date)
-    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      const next: Record<string, string> = {}
-      for (const d of t.days) {
-        next[d.id] = addDays(date, (d.weekNumber - 1) * 7 + d.sortOrder)
-      }
-      setDayDates(next)
-    }
+  // Weekly session slots = the first week's days, in order — the repeating
+  // weekly pattern. The EP picks a weekday per slot; it repeats every week.
+  const daysByWeek = new Map<number, TemplateDayLite[]>()
+  for (const d of t.days) {
+    const arr = daysByWeek.get(d.weekNumber) ?? []
+    arr.push(d)
+    daysByWeek.set(d.weekNumber, arr)
   }
+  const weekNumbers = [...daysByWeek.keys()].sort((a, b) => a - b)
+  const slots = [...(daysByWeek.get(weekNumbers[0] ?? 0) ?? [])].sort(
+    (a, b) => a.sortOrder - b.sortOrder,
+  )
+  const weekCount = weekNumbers.length
 
   function handleApply() {
     if (!applyClient) {
       setError('Pick a client.')
       return
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      setError('Pick a start date.')
+      return
+    }
     if (t.days.length === 0) {
       setError('This template has no days to schedule.')
       return
     }
-    if (t.days.some((d) => !dayDates[d.id])) {
-      setError('Pick a date for every day.')
+    // Two sessions in the same week can't share a weekday (→ same date).
+    if (new Set(slotWeekdays.slice(0, slots.length)).size < slots.length) {
+      setError('Each session needs a different weekday.')
       return
+    }
+    // Compute each day's real date: the slot's chosen weekday, in that day's
+    // week, off the Monday of the start week. The pattern repeats each week.
+    const monday = mondayOf(startDate)
+    const dayDates: Record<string, string> = {}
+    for (const wk of weekNumbers) {
+      const wkDays = [...(daysByWeek.get(wk) ?? [])].sort(
+        (a, b) => a.sortOrder - b.sortOrder,
+      )
+      wkDays.forEach((d, p) => {
+        const wd = slotWeekdays[p] ?? d.sortOrder % 7
+        dayDates[d.id] = addDays(monday, (d.weekNumber - 1) * 7 + wd)
+      })
     }
     setError(null)
     startTransition(async () => {
@@ -93,7 +112,7 @@ function TemplateCard({
       }
       if (res.status === 'overlap') {
         setError(
-          'This client already has an active block covering these dates. Pick later dates.',
+          'This client already has an active block covering these dates. Pick a later start date.',
         )
         return
       }
@@ -310,44 +329,68 @@ function TemplateCard({
                     marginBottom: 4,
                   }}
                 >
-                  Start date — pre-fills each day; adjust any below
+                  Block starts the week of
                 </label>
                 <input
                   type="date"
-                  value={anchorDate}
-                  onChange={(e) => setAnchor(e.target.value)}
-                  aria-label="Start date (pre-fills each day)"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  aria-label="Start date"
                   style={fieldStyle}
                 />
               </div>
-              {t.days.length > 0 && (
-                <div style={{ display: 'grid', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
-                  {t.days.map((d) => (
-                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span
-                        style={{
-                          flex: 1,
-                          minWidth: 0,
-                          fontSize: '.78rem',
-                          color: 'var(--color-text-light)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        W{d.weekNumber} · {d.dayLabel}
-                      </span>
-                      <input
-                        type="date"
-                        value={dayDates[d.id] ?? ''}
-                        onChange={(e) =>
-                          setDayDates((prev) => ({ ...prev, [d.id]: e.target.value }))
-                        }
-                        aria-label={`Date for week ${d.weekNumber} ${d.dayLabel}`}
-                        style={{ ...fieldStyle, width: 160, height: 32 }}
-                      />
-                    </div>
-                  ))}
+              {slots.length > 0 && (
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ fontSize: '.72rem', color: 'var(--color-muted)' }}>
+                    What days should these sessions fall on?
+                    {weekCount > 1 && ` (repeats each week × ${weekCount})`}
+                  </div>
+                  {slots.map((s, i) => {
+                    const wd = slotWeekdays[i] ?? s.sortOrder % 7
+                    const preview = /^\d{4}-\d{2}-\d{2}$/.test(startDate)
+                      ? addDays(mondayOf(startDate), wd)
+                      : null
+                    return (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            fontSize: '.8rem',
+                            color: 'var(--color-text)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {s.dayLabel}
+                        </span>
+                        {preview && (
+                          <span style={{ fontSize: '.72rem', color: 'var(--color-muted)' }}>
+                            {preview}
+                          </span>
+                        )}
+                        <select
+                          value={wd}
+                          onChange={(e) =>
+                            setSlotWeekdays((prev) => {
+                              const next = slots.map((sl, j) => prev[j] ?? sl.sortOrder % 7)
+                              next[i] = Number(e.target.value)
+                              return next
+                            })
+                          }
+                          aria-label={`Weekday for ${s.dayLabel}`}
+                          style={{ ...fieldStyle, width: 120, height: 32 }}
+                        >
+                          {WEEKDAYS.map((wkLabel, idx) => (
+                            <option key={idx} value={idx}>
+                              {wkLabel}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8 }}>
@@ -379,8 +422,8 @@ function TemplateCard({
               onClick={() => {
                 setError(null)
                 setApplyClient('')
-                setAnchorDate('')
-                setDayDates({})
+                setStartDate('')
+                setSlotWeekdays(slots.map((s) => s.sortOrder % 7))
                 setApplying(true)
               }}
               style={{ width: '100%' }}
@@ -413,6 +456,19 @@ function addDays(iso: string, days: number): string {
   const parts = iso.split('-').map(Number)
   const dt = new Date(parts[0]!, parts[1]! - 1, parts[2]!)
   dt.setDate(dt.getDate() + days)
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${dt.getFullYear()}-${mm}-${dd}`
+}
+
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
+/** Monday (Mon=0 basis) of the ISO week containing the given YYYY-MM-DD. */
+function mondayOf(iso: string): string {
+  const parts = iso.split('-').map(Number)
+  const dt = new Date(parts[0]!, parts[1]! - 1, parts[2]!)
+  const dowMon = (dt.getDay() + 6) % 7
+  dt.setDate(dt.getDate() - dowMon)
   const mm = String(dt.getMonth() + 1).padStart(2, '0')
   const dd = String(dt.getDate()).padStart(2, '0')
   return `${dt.getFullYear()}-${mm}-${dd}`
