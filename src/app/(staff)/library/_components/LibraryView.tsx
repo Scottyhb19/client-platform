@@ -6,12 +6,14 @@ import { Plus } from 'lucide-react'
 import { ExerciseLibrary } from './ExerciseLibrary'
 import { ProgramsTab } from './ProgramsTab'
 import { CircuitsTab } from './CircuitsTab'
+import { SessionsTab } from './SessionsTab'
 import type {
   CircuitSummary,
   ClientOption,
   LibraryExercise,
   Pattern,
   ProgramTemplateSummary,
+  SessionTemplateSummary,
   Tag,
 } from '../types'
 
@@ -30,6 +32,7 @@ interface LibraryViewProps {
   tags: Tag[]
   programTemplates: ProgramTemplateSummary[]
   circuits: CircuitSummary[]
+  sessions: SessionTemplateSummary[]
   clients: ClientOption[]
   total: number
   patternCount: number
@@ -46,6 +49,7 @@ export function LibraryView({
   tags,
   programTemplates,
   circuits,
+  sessions,
   clients,
   total,
   patternCount,
@@ -112,7 +116,7 @@ export function LibraryView({
         />
       )}
       {section === 'circuits' && <CircuitsTab circuits={circuits} />}
-      {section === 'sessions' && <SessionsPlaceholder />}
+      {section === 'sessions' && <SessionsTab sessions={sessions} />}
       {section === 'programs' && (
         <ProgramsTab templates={programTemplates} clients={clients} />
       )}
@@ -129,17 +133,10 @@ function HeaderActions({ section }: { section: Section }) {
       </Link>
     )
   }
-  // Programs and circuits are saved from real work in the session builder /
-  // program calendar ("Save as template" / "Save as circuit"), never authored
-  // from scratch here — so no create button. Sessions keeps its disabled
-  // placeholder button until that phase ships.
-  if (section === 'programs' || section === 'circuits') return null
-  return (
-    <button type="button" className="btn primary" disabled>
-      <Plus size={14} aria-hidden />
-      Save session
-    </button>
-  )
+  // Circuits, sessions, and programs are authored from their own tabs ("New
+  // circuit" / "New session") or saved from real work ("Save as template" /
+  // "Save as circuit" / "Save as session"), never via a header button here.
+  return null
 }
 
 function sectionEyebrow(
@@ -169,46 +166,3 @@ function sectionSub(section: Section): string {
   }[section]
 }
 
-function SessionsPlaceholder() {
-  return (
-    <PlaceholderCard
-      title="Sessions"
-      body="Saved session layouts — 'Day A — Lower', 'Return-to-sport assessment'. Apply to a new program day and the prescription pre-fills."
-    />
-  )
-}
-
-function PlaceholderCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div
-      className="card"
-      style={{
-        padding: '44px 28px',
-        textAlign: 'center',
-        color: 'var(--color-text-light)',
-      }}
-    >
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 800,
-          fontSize: '1.2rem',
-          color: 'var(--color-charcoal)',
-          marginBottom: 6,
-        }}
-      >
-        {title}
-      </div>
-      <p
-        style={{
-          fontSize: '.92rem',
-          margin: '0 auto',
-          lineHeight: 1.6,
-          maxWidth: 520,
-        }}
-      >
-        {body}
-      </p>
-    </div>
-  )
-}

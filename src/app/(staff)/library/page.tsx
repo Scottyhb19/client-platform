@@ -6,6 +6,7 @@ import type {
   ClientOption,
   Pattern,
   ProgramTemplateSummary,
+  SessionTemplateSummary,
   Tag,
 } from './types'
 
@@ -26,6 +27,7 @@ export default async function LibraryPage() {
     { data: templatesRaw },
     { data: clientsRaw },
     { data: circuitsRaw },
+    { data: sessionsRaw },
   ] = await Promise.all([
     // Shared select with the session builder's Library tab (G-7,
     // 2026-06-12) — one query shape, one card mapping, no drift.
@@ -74,6 +76,14 @@ export default async function LibraryPage() {
       .select('id, name, circuit_type, notes, created_at, circuit_exercises(id, deleted_at)')
       .is('deleted_at', null)
       .order('created_at', { ascending: false }),
+    // S-4: session templates for the Sessions tab. Pull the exercise children
+    // to derive the exercise count + distinct superset-group count; RLS scopes
+    // to the org, soft-deleted children filtered in TS.
+    supabase
+      .from('session_templates')
+      .select('id, name, created_at, session_template_exercises(id, superset_group_id, deleted_at)')
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false }),
   ])
 
   if (exErr) throw new Error(`Load exercises: ${exErr.message}`)
@@ -82,6 +92,7 @@ export default async function LibraryPage() {
   const programTemplates = toProgramTemplateSummaries(templatesRaw)
   const clients = (clientsRaw ?? []) as ClientOption[]
   const circuits = toCircuitSummaries(circuitsRaw)
+  const sessions = toSessionSummaries(sessionsRaw)
 
   return (
     <div className="page">
@@ -91,6 +102,7 @@ export default async function LibraryPage() {
         tags={(tags ?? []) as Tag[]}
         programTemplates={programTemplates}
         circuits={circuits}
+        sessions={sessions}
         clients={clients}
         total={exercises.length}
         patternCount={(patterns ?? []).length}
@@ -174,4 +186,33 @@ function toCircuitSummaries(rows: unknown): CircuitSummary[] {
     created_at: c.created_at,
     exerciseCount: (c.circuit_exercises ?? []).filter((e) => e.deleted_at === null).length,
   }))
+}
+
+/** Raw shape of the nested session_templates select (counts derived in TS). */
+type RawSessionRow = {
+  id: string
+  name: string
+  created_at: string
+  session_template_exercises:
+    | Array<{ id: string; superset_group_id: string | null; deleted_at: string | null }>
+    | null
+}
+
+function toSessionSummaries(rows: unknown): SessionTemplateSummary[] {
+  const list = (rows ?? []) as RawSessionRow[]
+  return list.map((s) => {
+    const live = (s.session_template_exercises ?? []).filter((e) => e.deleted_at === null)
+    const groups = new Set(
+      live
+        .map((e) => e.superset_group_id)
+        .filter((g): g is string => g !== null),
+    )
+    return {
+      id: s.id,
+      name: s.name,
+      created_at: s.created_at,
+      exerciseCount: live.length,
+      supersetCount: groups.size,
+    }
+  })
 }

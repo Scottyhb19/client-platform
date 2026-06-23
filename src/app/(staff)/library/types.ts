@@ -94,6 +94,17 @@ export type CircuitSummary = {
   exerciseCount: number
 }
 
+/** A saved session template + derived counts for the Library Sessions tab.
+ *  Like CircuitSummary, no usage count — a session is COPIED into a day on
+ *  apply (copy-on-apply), never referenced. */
+export type SessionTemplateSummary = {
+  id: string
+  name: string
+  created_at: string
+  exerciseCount: number
+  supersetCount: number
+}
+
 export type CircuitType = 'superset' | 'triset' | 'circuit' | 'finisher' | 'warmup'
 
 /** Sentence-case labels for the circuit_type enum (design-system voice). */
