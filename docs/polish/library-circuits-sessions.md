@@ -148,3 +148,17 @@ Operator dogfooding at `:3000` surfaced that the original shape was wrong: I bui
 **Acceptance:** `type-check` + `next build` green (route `/library/circuits/[id]` present); pgTAP **39 15/15** + **40 6/6** on live. Render-tier (the editor's add/remove/prescription paint, the menu, the modals) is **operator `:3000`** per `go-live-checklist.md §5b`.
 
 **Sessions + Programs:** the editor pattern now exists for circuits; the same in-Library workbench clones to **Sessions** and **Programs** next (operator: "I'll want the same"). Still deferred per Q-1 — dogfood the circuit workbench first. The gap doc's S-1…S-6 plan stands; a parallel "author/edit a program/session in the Library" editor reuses this pattern.
+
+### NEXT (focused pass) — visual parity: carbon-copy the builder card into the editor
+
+Operator verified the workbench works end-to-end (2026-06-24), but the editor's cards must **look exactly like the session builder's**, minus the Notes/Reports tabs. **Decision (operator): CARBON-COPY the builder's card UI into the circuit editor — do NOT refactor/touch `SessionBuilder.tsx`** ("too risky to the differentiator"; accept the duplication, update both surfaces over time). Functional editor works in the meantime, so nothing is blocked.
+
+**What to copy** (all from `clients/[id]/program/days/[dayId]/_components/SessionBuilder.tsx`, into `library/circuits/[id]/_components/CircuitEditor.tsx`):
+- Styling aliases (`INK`/`CREAM`/`CREAM_DEEP`/`BORDER`/`MUTED`/`FAINT`/`GREEN`, SessionBuilder.tsx:86-92).
+- `ExerciseBody`'s two-column card (left: name + up/down/delete + Instructions `EditableTextarea` + 96×60 video tile; right: `SetTable` + `SetStepper` + `ExtrasRow`).
+- `SetTable` (grid `48px 1fr 1.4fr`): `ColHeader` "Set" + **`VolumeColumnDropdown`** (REPS header = measure dropdown) + **`MetricColumnDropdown`** (LOAD header = load-unit dropdown); `SetRow` → `SetCell` (autosave with idle/saving/error + saved tick).
+- `SetStepper` (− N sets +) and `ExtrasRow` (rest / tempo).
+- The slate-spine grouped block with A1/A2 letters — render the circuit's exercises as ONE group (a circuit *is* a group).
+- The right-hand `LibraryPanel` (search + movement-pattern + tag chips) as the ONLY right-panel content (no Notes/Reports tabs).
+
+**Rewire** program→circuit: data (`ProgramExercise`→circuit exercise, `pe.prescriptionSets`→circuit sets); actions (`updateProgramExerciseSetAction`→`updateCircuitExerciseSetAction`, `updateProgramExerciseMetricAction`→`updateCircuitExerciseMetricAction`, `updateProgramExerciseRepMetricAction`→`updateCircuitExerciseRepMetricAction`, `addProgramExerciseSetAction`→`addCircuitExerciseSetAction`, `removeProgramExerciseSetAction`→`removeCircuitExerciseSetAction`, `removeProgramExerciseAction`→`removeCircuitExerciseAction`, `addExerciseToDayAction`→`addExerciseToCircuitAction`); `clientId`/`dayId`→`circuitId`. **All circuit actions already exist** in `circuit-actions.ts` — no new backend. **Drop:** last-logged footer, swap-in-place, ungroup, Notes/Reports. ~500-line rewire; render-tier → operator `:3000`.
