@@ -2,10 +2,15 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronDown, Copy, Layers, Plus } from 'lucide-react'
+import { ChevronDown, Copy, Layers, Plus, Save } from 'lucide-react'
 import { duplicateProgramDayAction } from '../../../day-actions'
 import { SingleDatePicker } from '../../../_components/SingleDatePicker'
 import { CircuitAddModal, type CircuitOption } from './CircuitControls'
+import {
+  SaveDayAsSessionModal,
+  SessionAddModal,
+  type SessionOption,
+} from './SessionControls'
 
 /**
  * #4 — the "Session Tools" dropdown on the session-builder header, replacing the
@@ -20,17 +25,21 @@ export function SessionToolsMenu({
   sourceDate,
   duplicateDisabled,
   circuits,
+  sessions,
 }: {
   clientId: string
   dayId: string
   sourceDate: string | null
   duplicateDisabled: boolean
   circuits: CircuitOption[]
+  sessions: SessionOption[]
 }) {
   const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [dupOpen, setDupOpen] = useState(false)
   const [circuitOpen, setCircuitOpen] = useState(false)
+  const [addSessionOpen, setAddSessionOpen] = useState(false)
+  const [saveSessionOpen, setSaveSessionOpen] = useState(false)
   const [dupError, setDupError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -105,8 +114,23 @@ export function SessionToolsMenu({
             >
               Add circuit…
             </ToolMenuItem>
-            <ToolMenuItem icon={<Layers size={15} aria-hidden />} disabled hint="Soon">
-              Add session
+            <ToolMenuItem
+              icon={<Layers size={15} aria-hidden />}
+              onClick={() => {
+                setMenuOpen(false)
+                setAddSessionOpen(true)
+              }}
+            >
+              Add session…
+            </ToolMenuItem>
+            <ToolMenuItem
+              icon={<Save size={15} aria-hidden />}
+              onClick={() => {
+                setMenuOpen(false)
+                setSaveSessionOpen(true)
+              }}
+            >
+              Save day as session…
             </ToolMenuItem>
           </div>
         </>
@@ -140,6 +164,19 @@ export function SessionToolsMenu({
           dayId={dayId}
           onClose={() => setCircuitOpen(false)}
         />
+      )}
+
+      {addSessionOpen && (
+        <SessionAddModal
+          sessions={sessions}
+          clientId={clientId}
+          dayId={dayId}
+          onClose={() => setAddSessionOpen(false)}
+        />
+      )}
+
+      {saveSessionOpen && (
+        <SaveDayAsSessionModal dayId={dayId} onClose={() => setSaveSessionOpen(false)} />
       )}
     </div>
   )

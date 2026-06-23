@@ -163,6 +163,37 @@ export async function applySessionToDayAction(
   return { error: null }
 }
 
+export type SaveDayAsSessionResult =
+  | { status: 'created'; sessionId: string }
+  | { status: 'duplicate_name' }
+  | { error: string }
+
+/** Save a real program_day as a new session template (S-6 save-from-builder).
+ * Copy-on-apply via save_day_as_session; duplicate name surfaced for a retry. */
+export async function saveDayAsSessionAction(
+  programDayId: string,
+  rawName: string,
+): Promise<SaveDayAsSessionResult> {
+  await requireRole(['owner', 'staff'])
+  const name = rawName.trim()
+  if (name.length < 1 || name.length > 80) {
+    return { error: 'Session name must be 1–80 characters.' }
+  }
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await supabase.rpc('save_day_as_session', {
+    p_program_day_id: programDayId,
+    p_name: name,
+  })
+  if (error) return { error: `Couldn't save session: ${error.message}` }
+  const obj = (data ?? {}) as { status?: string; session_id?: string }
+  if (obj.status === 'duplicate_name') return { status: 'duplicate_name' }
+  if (obj.status === 'created' && obj.session_id) {
+    revalidatePath('/library')
+    return { status: 'created', sessionId: obj.session_id }
+  }
+  return { error: `Unexpected response: ${obj.status ?? 'unknown'}` }
+}
+
 /* ====================== Editor — structural (RPC-backed) ====================== */
 
 export async function addSessionExerciseAction(

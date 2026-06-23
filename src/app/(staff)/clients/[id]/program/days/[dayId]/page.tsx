@@ -14,6 +14,7 @@ import {
   type SectionTitleOption,
 } from './_components/SessionBuilder'
 import { type CircuitOption } from './_components/CircuitControls'
+import { type SessionOption } from './_components/SessionControls'
 import {
   LIBRARY_EXERCISE_COLUMNS,
   toLibraryExercises,
@@ -108,6 +109,7 @@ export default async function SessionBuilderPage({
     { data: tagsRaw },
     { data: metricUnitsRaw },
     { data: circuitsRaw },
+    { data: sessionsRaw },
   ] = await Promise.all([
     supabase
       .from('program_exercises')
@@ -223,6 +225,12 @@ export default async function SessionBuilderPage({
     supabase
       .from('circuits')
       .select('id, name, circuit_type')
+      .is('deleted_at', null)
+      .order('name'),
+    // S-6: the org's session templates for the builder's "Add session" picker.
+    supabase
+      .from('session_templates')
+      .select('id, name, session_template_exercises(id, deleted_at)')
       .is('deleted_at', null)
       .order('name'),
   ])
@@ -358,6 +366,20 @@ export default async function SessionBuilderPage({
     name: c.name,
     // circuit_type is a CHECK-constrained text column; narrow to the union.
     circuit_type: c.circuit_type as CircuitOption['circuit_type'],
+  }))
+
+  const sessions: SessionOption[] = (
+    (sessionsRaw ?? []) as Array<{
+      id: string
+      name: string
+      session_template_exercises: Array<{ id: string; deleted_at: string | null }> | null
+    }>
+  ).map((s) => ({
+    id: s.id,
+    name: s.name,
+    exerciseCount: (s.session_template_exercises ?? []).filter(
+      (e) => e.deleted_at === null,
+    ).length,
   }))
 
   // Phase J.2 (2026-05-08): notes denormalise to ClinicalNoteSummary —
@@ -509,6 +531,7 @@ export default async function SessionBuilderPage({
             sourceDate={day.scheduled_date}
             duplicateDisabled={programExercises.length === 0}
             circuits={circuits}
+            sessions={sessions}
           />
           <AssignButton
             clientId={id}
