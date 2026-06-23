@@ -28,7 +28,7 @@ import {
 import { type SessionReport } from '../../../_components/ReportsPanel'
 import { AssignButton } from './_components/AssignButton'
 import { DayLabelEditor } from './_components/DayLabelEditor'
-import { DuplicateButton } from './_components/DuplicateButton'
+import { SessionToolsMenu } from './_components/SessionToolsMenu'
 
 export const dynamic = 'force-dynamic'
 
@@ -503,11 +503,12 @@ export default async function SessionBuilderPage({
               has at least one exercise to copy. An empty day's duplicate
               would land an empty day on the new date — pointless, so
               keep it disabled. */}
-          <DuplicateButton
+          <SessionToolsMenu
             clientId={id}
-            sourceDayId={dayId}
+            dayId={dayId}
             sourceDate={day.scheduled_date}
-            disabled={programExercises.length === 0}
+            duplicateDisabled={programExercises.length === 0}
+            circuits={circuits}
           />
           <AssignButton
             clientId={id}
@@ -531,7 +532,6 @@ export default async function SessionBuilderPage({
         movementPatterns={movementPatterns}
         exerciseTags={exerciseTags}
         metricUnits={metricUnits}
-        circuits={circuits}
       />
     </div>
   )
