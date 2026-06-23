@@ -193,7 +193,22 @@ The reviewer asked whether the count includes archived/soft-deleted programs or 
 
 - **Soft-deleted: excluded.** The mapper filters `p.deleted_at === null` ([page.tsx:130-132](../../src/app/(staff)/library/page.tsx)). ✔
 - **Archived (`status='archived'`, `deleted_at` null): INCLUDED — deliberately.** The label is *"Started by N clients"* — a historical statement, and an archived program **was** genuinely started by that client. Excluding it would *understate* the footprint and make "Started by N" undercount real starts (the worse error). The reassurance it precedes — "their programs are unaffected" — is equally true for an archived program. **Decision: count = non-soft-deleted instantiations (active + archived).** If the EP later wants "active only", it is a one-line `status !== 'archived'` filter — but the current wording matches the current semantics, so no change.
-- **Not a per-staff liability.** The SELECT policies on `programs` and `program_templates` are **org-scoped, not per-staff** (quoted above). Every staffer in an org sees the same instantiations, so the count is org-*complete* and identical for all org staff — the multi-staff failure the reviewer feared cannot arise under org-scoped RLS. (Cross-org rows are excluded by the same policy, and those are not instantiations of this org's template anyway.)
+- **Not a per-staff liability — `programs` SELECT policy quoted, not assumed (reviewer round 2).** The whole conclusion rested on `programs` RLS being org-scoped rather than per-assigned-EP; here is the actual staff branch, not an assertion of it:
+  ```sql
+  CREATE POLICY "select programs in own org"
+    ON programs FOR SELECT TO authenticated
+    USING (
+      organization_id = public.user_organization_id()
+      AND deleted_at IS NULL
+      AND (
+        public.user_role() IN ('owner','staff')          -- any owner/staff → ALL org programs
+        OR (public.user_role() = 'client'                -- client → only their own
+            AND status IN ('active','archived')
+            AND client_id IN (SELECT id FROM clients WHERE user_id = auth.uid() AND deleted_at IS NULL))
+      )
+    );
+  ```
+  The owner/staff branch is **purely org-scoped — no per-EP narrowing**; every owner/staff sees every non-deleted org program, so `usedCount` is identical for all org staff and the multi-staff failure cannot arise. The per-client narrowing applies only to the `client` role, who never sees the Programs tab. (And the policy's own `deleted_at IS NULL` excludes soft-deleted programs at the RLS layer *before* the TS mapper's `p.deleted_at === null` filter runs — double-enforced.) Cross-org rows are excluded by the same `organization_id` predicate and are not instantiations of this org's template anyway.
 
 **Verification matrix — the honest reading of the narrowed closing-commit line:**
 

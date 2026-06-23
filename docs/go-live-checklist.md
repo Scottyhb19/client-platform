@@ -91,6 +91,14 @@ All pgTAP, including the Track C recovery-ticket tests, runs only against the li
 
 **Gate:** stand up a non-prod target before identifiable client health data enters the project.
 
+## 5b. Render-tier verification (standing decision)
+
+There is no authenticated-staff `:3000` smoke harness, so the **render tier** — does the UI actually paint the computed state (an overlap message appears, a 404 page renders, a list row shows) — is browser-unverified for every polish section, and will be for every future one (Sessions, Circuits, …). The tiers *below* render are machine-gated: logic / security / data-integrity by pgTAP on live, types by `tsc`, compile by `next build`. What is not machine-verified is the final pixel paint, because every staff surface sits behind `requireRole(['owner','staff'])` and the preview browser holds no authenticated session.
+
+**Decision (operator, 2026-06-23):** for the friends-and-family beta, render-tier is **formally accepted as verified by `type-check` + `next build` + pgTAP (data layer) + code-read**, not by automated browser. Rationale: solo today → the operator *is* the smoke test (render bugs surface in daily dogfooding); a Playwright authed-staff harness is real upfront + ongoing cost (auth automation, seeded accounts, selector upkeep), over-investment for a pre-beta solo tool. **This is decided once — do not re-litigate per section; cite this entry at each close** ("render-tier accepted at F&F per go-live-checklist §5b").
+
+**Re-trigger — stand up the authed `:3000` smoke harness at the FIRST of:** (a) a second staff account exists (the operator can no longer dogfood every staffer's view), (b) a paying client onboards (Tier 2 — render bugs gain real consequence), or (c) any render-tier bug actually reaches a user. At that point build a Playwright authed-staff harness (seeded staff login, drives the UI, asserts the render-tier claims — overlap message paints, 404 renders, etc.); it then becomes reusable for every section thereafter.
+
 ## 6. Cross-tenant isolation regression test (execution gate)
 
 R-4 is closed. The automated pgTAP test `supabase/tests/database/17_cross_tenant_isolation.sql` landed 2026-06-07 and passed 8/8 against the live project — read isolation on `clients`/`clinical_notes`/`programs`, write isolation on `clients` (UPDATE affects 0 rows; foreign-org INSERT raises 42501), plus anti-trivial controls. The manual procedure at `runbooks/verify-cross-tenant-isolation.md` was also run for the first time the same day (all checks pass, recorded in its run log) and is downgraded to a quarterly broader-surface check (it covers all eight core tenant tables; the automated test covers the regression-prone core).
