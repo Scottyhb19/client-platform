@@ -457,6 +457,173 @@ export type Database = {
           },
         ]
       }
+      circuit_exercise_sets: {
+        Row: {
+          circuit_exercise_id: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          optional_metric: string | null
+          optional_value: string | null
+          rep_metric: string | null
+          reps: string | null
+          set_number: number
+          updated_at: string
+        }
+        Insert: {
+          circuit_exercise_id: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          rep_metric?: string | null
+          reps?: string | null
+          set_number: number
+          updated_at?: string
+        }
+        Update: {
+          circuit_exercise_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          optional_metric?: string | null
+          optional_value?: string | null
+          rep_metric?: string | null
+          reps?: string | null
+          set_number?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "circuit_exercise_sets_circuit_exercise_id_fkey"
+            columns: ["circuit_exercise_id"]
+            isOneToOne: false
+            referencedRelation: "circuit_exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      circuit_exercises: {
+        Row: {
+          circuit_id: string
+          created_at: string
+          deleted_at: string | null
+          exercise_id: string
+          id: string
+          instructions: string | null
+          optional_metric: string | null
+          optional_value: string | null
+          reps: string | null
+          rest_seconds: number | null
+          rpe: number | null
+          sets: number | null
+          sort_order: number
+          tempo: string | null
+          updated_at: string
+        }
+        Insert: {
+          circuit_id: string
+          created_at?: string
+          deleted_at?: string | null
+          exercise_id: string
+          id?: string
+          instructions?: string | null
+          optional_metric?: string | null
+          optional_value?: string | null
+          reps?: string | null
+          rest_seconds?: number | null
+          rpe?: number | null
+          sets?: number | null
+          sort_order?: number
+          tempo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          circuit_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          exercise_id?: string
+          id?: string
+          instructions?: string | null
+          optional_metric?: string | null
+          optional_value?: string | null
+          reps?: string | null
+          rest_seconds?: number | null
+          rpe?: number | null
+          sets?: number | null
+          sort_order?: number
+          tempo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "circuit_exercises_circuit_id_fkey"
+            columns: ["circuit_id"]
+            isOneToOne: false
+            referencedRelation: "circuits"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "circuit_exercises_exercise_id_fkey"
+            columns: ["exercise_id"]
+            isOneToOne: false
+            referencedRelation: "exercises"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      circuits: {
+        Row: {
+          circuit_type: string
+          created_at: string
+          created_by_user_id: string | null
+          deleted_at: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          circuit_type?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          circuit_type?: string
+          created_at?: string
+          created_by_user_id?: string | null
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "circuits_created_by_user_id_fkey"
+            columns: ["created_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "circuits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_categories: {
         Row: {
           created_at: string
@@ -3617,6 +3784,10 @@ export type Database = {
         Args: { p_source_day_id: string; p_target_date: string }
         Returns: Json
       }
+      insert_circuit_into_day: {
+        Args: { p_circuit_id: string; p_program_day_id: string }
+        Returns: Json
+      }
       insert_program_exercise_at: {
         Args: {
           p_after_pe_id?: string
@@ -3674,6 +3845,15 @@ export type Database = {
       restore_test_result: { Args: { p_id: string }; Returns: undefined }
       restore_test_session: { Args: { p_id: string }; Returns: undefined }
       revoke_calendar_feed_token: { Args: never; Returns: undefined }
+      save_group_as_circuit: {
+        Args: {
+          p_circuit_type: string
+          p_name: string
+          p_notes?: string
+          p_program_exercise_ids: string[]
+        }
+        Returns: Json
+      }
       save_program_as_template: {
         Args: { p_name?: string; p_program_id: string }
         Returns: Json
@@ -3688,6 +3868,7 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
+      soft_delete_circuit: { Args: { p_id: string }; Returns: undefined }
       soft_delete_client: { Args: { p_id: string }; Returns: undefined }
       soft_delete_client_medical_history: {
         Args: { p_id: string }
