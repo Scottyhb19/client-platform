@@ -104,3 +104,32 @@ Nothing exists, so the gap is the whole stack for each. Reuse anchors are called
 ---
 
 *Per the protocol: this is the gap-list contract. No code until the operator approves it (and resolves Q-1…Q-5). Approving it is also the conscious decision to extend beyond brief v2.1's explicit scope (§1).*
+
+---
+
+## Closing commit (Circuits) — 2026-06-24
+
+Gap list approved + Q-1…Q-5 resolved as recommended (operator: "run all recommendations", 2026-06-23/24): build **Circuits first, ship, dogfood, then decide on Sessions** (Q-1); **save-from-builder** create path (Q-2); circuits store **exercises + per-set prescriptions** (Q-3); **dedicated tables** for Sessions when built (Q-4); **fixed type enum** (Q-5). Approving the doc is the recorded decision to extend beyond brief v2.1 (§1).
+
+**What changed, by gap number — all of Circuits (C-1…C-7) closed:**
+- **C-1** `circuits` → `circuit_exercises` → `circuit_exercise_sets` (migration `20260624100000`), mirroring the `program_exercises` 3-level shape (scalar + per-set, so a pyramid/timed set doesn't collapse — the G-1 lesson); org-scoped RLS (program_templates pattern); `circuit_exercise_enforce_exercise_org` trigger; **not audited** (schema.md §11.2, same as program_templates).
+- **C-2** `save_group_as_circuit` / `insert_circuit_into_day` (copy-on-apply) / `soft_delete_circuit` (migration `20260624110000`), all org/role-guarded, **anon EXECUTE revoked at creation**, rep_metric threaded through both copy paths.
+- **C-3** anon-revoke + pgTAP tripwire (in `39`).
+- **C-4** Library **Circuits tab** (`CircuitsTab` — type chip + exercise count, inline rename, soft-delete; no Library create button; empty state points at the builder).
+- **C-5** **"Save as circuit"** on the `SupersetBlock` footer (`SaveAsCircuitButton` → `saveGroupAsCircuitAction`; type inferred from member count; duplicate-name surfaced).
+- **C-6** **"Add circuit"** picker above `LibraryPanel` in the builder's right-panel Library tab (`AddCircuitPicker` → `addCircuitToDayAction`, appends as one fresh superset group).
+- **C-7** pgTAP `39`.
+
+All builder UI is **additive** — `CircuitControls.tsx` holds the two new components; the sequence-lettering / grouping engine and `LibraryPanel` are untouched.
+
+**Acceptance tests run + results.** pgTAP **`39` 15/15 on the live DB** — grants (FM-B), save + insert copy with rep_metric end-to-end (FM-C/E), divergence (FM-D), cross-org on all four vectors (RLS hide / save reject / insert reject / enforce trigger, FM-A). `type-check` clean; `npm run build` green. **Render-tier (Save-as/Add-circuit paint, tab render) is browser-unverified — operator `:3000` pass per `go-live-checklist.md §5b`** (staff-auth-gated; the loop to verify: group two exercises → Save as circuit → see it in Library → Add circuit to a day → confirm it lands as one group with prescriptions, incl. a timed set).
+
+**Premortem mitigated:** FM-A (cross-org — RLS mirror + enforce trigger + pgTAP), FM-B (anon revoke at creation + tripwire), FM-C/E (copy-on-apply round-trip + rep_metric, pgTAP), FM-D (copy-on-apply divergence, pgTAP), FM-F (exercise_id ON DELETE RESTRICT; placed = copies). **Accepted at F&F scope:** FM-G (the `prompt()` name entry for Save-as-circuit matches the builder's existing `confirm()/alert()` modals — an inline rename is a logged refinement, not a blocker); render-tier per §5b.
+
+**Deferred with re-trigger — Sessions (S-1…S-6).** Per Q-1, Sessions is **not built**: dogfood Circuits first and let real use confirm Sessions is still wanted (vs. program-template + copy/repeat covering the need) before building the dedicated `session_templates` tables + apply RPC. Re-trigger: the operator hits the "drop one saved day onto an existing client's calendar, cross-client" friction in real use. The Sessions placeholder tab stays.
+
+**Migrations:** two — `20260624100000` (tables) + `20260624110000` (RPCs), both applied to live, backward-compatible (new tables, unused by current master), types regenerated.
+
+---
+
+*Per the section sign-off ritual: Claude Code's work ends at this Closing commit. The section is not closed until the operator pastes it into the claude.ai project chat and records the decision under a Sign-off heading below.*
