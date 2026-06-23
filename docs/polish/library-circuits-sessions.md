@@ -133,3 +133,18 @@ All builder UI is **additive** — `CircuitControls.tsx` holds the two new compo
 ---
 
 *Per the section sign-off ritual: Claude Code's work ends at this Closing commit. The section is not closed until the operator pastes it into the claude.ai project chat and records the decision under a Sign-off heading below.*
+
+---
+
+## Workbench follow-up (2026-06-24) — the create-model reframe
+
+Operator dogfooding at `:3000` surfaced that the original shape was wrong: I built circuits as **save-from-builder + a manager-only tab**, but the intent is a **workbench** — author and *edit* circuits (later sessions/programs) **in the Library**, from scratch, as reusable templates. Q-2's "save-from-builder first" recommendation aimed at the narrow thing; corrected here. **Create path is now: author-in-Library (primary) + save-from-builder (shortcut).** Four items, all shipped on `feat/library-circuits`:
+
+- **#1 (bug) — un-clipped the Save-as-circuit footer.** It sat in the SupersetBlock's grid column 1, whose absolute slate spine painted over the text; moved to the card column (2).
+- **#2 (papercut) — in-app modal.** The `prompt()` for naming a saved circuit is now a design-token modal (name + type, no backdrop blur).
+- **#4 (restructure) — Session Tools menu.** The standalone Duplicate button is now a **"Session Tools"** dropdown (Duplicate + Add circuit + an "Add session" placeholder). "Add circuit" moved *out* of the right-panel Library tab into this menu (`CircuitAddModal`); `DuplicateButton` deleted; the Library side tab is exercises-only again.
+- **#3 (the workbench core) — dedicated in-Library circuit editor.** Decided "dedicated editor" over reusing the full session builder (Q-A). "New circuit" (create modal → editor) and clicking a circuit open `/library/circuits/[id]`: rename + retype, **add/remove exercises** (default fan-out), **per-set prescriptions** (reps · load · measure/`rep_metric`), add/remove sets — autosave. Backend: migration `20260624120000` (two SECURITY DEFINER soft-delete RPCs `soft_delete_circuit_exercise` / `_set`, anon-revoked at creation) + the editor server actions (create / update / add-exercise / per-set edit / add-set / removes / measure + load-metric); **pgTAP 40 (6/6 on live)** locks the grant + cross-org + soft-delete posture.
+
+**Acceptance:** `type-check` + `next build` green (route `/library/circuits/[id]` present); pgTAP **39 15/15** + **40 6/6** on live. Render-tier (the editor's add/remove/prescription paint, the menu, the modals) is **operator `:3000`** per `go-live-checklist.md §5b`.
+
+**Sessions + Programs:** the editor pattern now exists for circuits; the same in-Library workbench clones to **Sessions** and **Programs** next (operator: "I'll want the same"). Still deferred per Q-1 — dogfood the circuit workbench first. The gap doc's S-1…S-6 plan stands; a parallel "author/edit a program/session in the Library" editor reuses this pattern.
