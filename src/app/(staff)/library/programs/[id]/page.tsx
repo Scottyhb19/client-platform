@@ -1,19 +1,31 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
-import { formatVolume } from '@/lib/prescription/volume-units'
+import {
+  ProgramEditor,
+  type EditorTemplate,
+} from './_components/ProgramEditor'
+import type {
+  DayEditorExercise,
+  MetricUnitOption,
+  SectionTitleOption,
+} from '@/app/(staff)/library/_components/DayContentEditor'
+import {
+  LIBRARY_EXERCISE_COLUMNS,
+  toLibraryExercises,
+} from '@/app/(staff)/library/_lib/exercise-query'
 
 export const dynamic = 'force-dynamic'
 
 /**
- * LPT-3 — read-only template preview. Server-rendered, RLS-scoped: the EP can
- * inspect a template's full structure (weeks → days → exercises + per-set
- * prescription) before applying it. No edit here — templates are edited by
- * re-saving from a real program (Q-D).
+ * P-1 — the in-Library program-template editor (edit-existing v1). Replaces the
+ * old read-only preview: weeks → days, each day expandable into the shared
+ * DayContentEditor for in-place editing, plus day management (rename / reorder /
+ * add / remove / duplicate). Week add/remove is out of scope (v1). Same loader
+ * shape as the session editor + the week/day tree; server-rendered + RLS-scoped
+ * (cross-org id → null → notFound()).
  */
-export default async function ProgramTemplatePreviewPage({
+export default async function ProgramTemplateEditorPage({
   params,
 }: {
   params: Promise<{ id: string }>
@@ -22,179 +34,132 @@ export default async function ProgramTemplatePreviewPage({
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const { data: tpl } = await supabase
-    .from('program_templates')
-    .select(
-      `id, name, description,
-       template_weeks(id, week_number, deleted_at,
-         template_days(id, day_label, sort_order, deleted_at,
-           template_exercises(id, sort_order, section_title, deleted_at,
-             exercise:exercises(name),
-             template_exercise_sets(set_number, reps, rep_metric,
-               optional_metric, optional_value, deleted_at))))`,
-    )
-    .eq('id', id)
-    .is('deleted_at', null)
-    .maybeSingle()
+  const [
+    { data: tplRaw },
+    { data: libraryRaw },
+    { data: patternsRaw },
+    { data: tagsRaw },
+    { data: metricUnitsRaw },
+    { data: sectionTitlesRaw },
+  ] = await Promise.all([
+    supabase
+      .from('program_templates')
+      .select(
+        `id, name,
+         template_weeks(id, week_number, deleted_at,
+           template_days(id, day_label, sort_order, deleted_at,
+             template_exercises(id, sort_order, exercise_id, section_title,
+               superset_group_id, rest_seconds, tempo, instructions, deleted_at,
+               exercise:exercises(name, video_url),
+               template_exercise_sets(id, set_number, reps, rep_metric,
+                 optional_metric, optional_value, deleted_at))))`,
+      )
+      .eq('id', id)
+      .is('deleted_at', null)
+      .maybeSingle(),
+    supabase
+      .from('exercises')
+      .select(LIBRARY_EXERCISE_COLUMNS)
+      .is('deleted_at', null)
+      .order('name'),
+    supabase
+      .from('movement_patterns')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('exercise_tags')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('exercise_metric_units')
+      .select('code, display_label')
+      .is('deleted_at', null)
+      .eq('is_active', true)
+      .order('sort_order'),
+    supabase
+      .from('section_titles')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+  ])
 
-  if (!tpl) notFound()
+  if (!tplRaw) notFound()
 
-  const t = tpl as unknown as RawTemplateDetail
+  const t = tplRaw as unknown as RawTemplate
   const weeks = (t.template_weeks ?? [])
     .filter((w) => w.deleted_at === null)
     .sort((a, b) => a.week_number - b.week_number)
+    .map((w) => ({
+      id: w.id,
+      week_number: w.week_number,
+      days: (w.template_days ?? [])
+        .filter((d) => d.deleted_at === null)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((d) => ({
+          id: d.id,
+          day_label: d.day_label,
+          exercises: (d.template_exercises ?? [])
+            .filter((e) => e.deleted_at === null)
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map(
+              (e): DayEditorExercise => ({
+                id: e.id,
+                exercise_id: e.exercise_id,
+                exercise_name: e.exercise?.name ?? 'Unknown exercise',
+                exercise_video_url: e.exercise?.video_url ?? null,
+                section_title: e.section_title,
+                superset_group_id: e.superset_group_id,
+                rest_seconds: e.rest_seconds,
+                tempo: e.tempo,
+                instructions: e.instructions,
+                sets: (e.template_exercise_sets ?? [])
+                  .filter((x) => x.deleted_at === null)
+                  .sort((a, b) => a.set_number - b.set_number)
+                  .map((x) => ({
+                    id: x.id,
+                    set_number: x.set_number,
+                    reps: x.reps,
+                    rep_metric: x.rep_metric,
+                    optional_metric: x.optional_metric,
+                    optional_value: x.optional_value,
+                  })),
+              }),
+            ),
+        })),
+    }))
+
+  const template: EditorTemplate = { id: t.id, name: t.name, weeks }
+  const library = toLibraryExercises(libraryRaw)
+  const movementPatterns = (patternsRaw ?? []).map((p) => ({ id: p.id, name: p.name }))
+  const exerciseTags = (tagsRaw ?? []).map((tg) => ({ id: tg.id, name: tg.name }))
+  const metricUnits: MetricUnitOption[] = (metricUnitsRaw ?? []).map((u) => ({
+    code: u.code,
+    display_label: u.display_label,
+  }))
+  const sectionTitles: SectionTitleOption[] = (sectionTitlesRaw ?? []).map((st) => ({
+    id: st.id,
+    name: st.name,
+  }))
 
   return (
-    <div className="page" style={{ maxWidth: 820 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
-        <Link
-          href="/library"
-          aria-label="Back to library"
-          style={{ color: 'var(--color-text-light)', padding: 6, display: 'grid', placeItems: 'center' }}
-        >
-          <ArrowLeft size={18} aria-hidden />
-        </Link>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 0 }}>
-            Program template · preview
-          </div>
-          <h1
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontWeight: 700,
-              fontSize: '2rem',
-              margin: 0,
-              letterSpacing: '-.01em',
-              color: 'var(--color-charcoal)',
-            }}
-          >
-            {t.name}
-          </h1>
-        </div>
-      </div>
-
-      {t.description && (
-        <p
-          style={{
-            fontSize: '.9rem',
-            color: 'var(--color-text-light)',
-            maxWidth: 560,
-            marginTop: 12,
-            marginBottom: 8,
-            lineHeight: 1.55,
-          }}
-        >
-          {t.description}
-        </p>
-      )}
-
-      <div style={{ display: 'grid', gap: 18, marginTop: 18 }}>
-        {weeks.map((w) => {
-          const days = (w.template_days ?? [])
-            .filter((d) => d.deleted_at === null)
-            .sort((a, b) => a.sort_order - b.sort_order)
-          return (
-            <section key={w.id}>
-              <div
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontWeight: 700,
-                  fontSize: '.7rem',
-                  letterSpacing: '.06em',
-                  textTransform: 'uppercase',
-                  color: 'var(--color-muted)',
-                  marginBottom: 8,
-                }}
-              >
-                Week {w.week_number}
-              </div>
-              <div style={{ display: 'grid', gap: 10 }}>
-                {days.map((d) => {
-                  const exercises = (d.template_exercises ?? [])
-                    .filter((e) => e.deleted_at === null)
-                    .sort((a, b) => a.sort_order - b.sort_order)
-                  return (
-                    <div className="card" key={d.id} style={{ padding: '14px 18px' }}>
-                      <div
-                        style={{
-                          fontFamily: 'var(--font-display)',
-                          fontWeight: 700,
-                          fontSize: '1rem',
-                          color: 'var(--color-charcoal)',
-                          marginBottom: exercises.length > 0 ? 10 : 0,
-                        }}
-                      >
-                        {d.day_label}
-                      </div>
-                      {exercises.length === 0 ? (
-                        <div style={{ fontSize: '.82rem', color: 'var(--color-muted)', fontStyle: 'italic' }}>
-                          No exercises
-                        </div>
-                      ) : (
-                        <div style={{ display: 'grid', gap: 6 }}>
-                          {exercises.map((e) => (
-                            <div
-                              key={e.id}
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                gap: 12,
-                                alignItems: 'baseline',
-                              }}
-                            >
-                              <span style={{ fontSize: '.9rem', color: 'var(--color-text)', overflowWrap: 'anywhere' }}>
-                                {e.exercise?.name ?? 'Unknown exercise'}
-                              </span>
-                              <span
-                                style={{
-                                  fontFamily: 'var(--font-display)',
-                                  fontWeight: 700,
-                                  fontSize: '.82rem',
-                                  color: 'var(--color-primary)',
-                                  whiteSpace: 'nowrap',
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {rxSummary(e.template_exercise_sets ?? [])}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-                {days.length === 0 && (
-                  <div style={{ fontSize: '.82rem', color: 'var(--color-muted)', fontStyle: 'italic' }}>
-                    No days
-                  </div>
-                )}
-              </div>
-            </section>
-          )
-        })}
-        {weeks.length === 0 && (
-          <div className="card" style={{ padding: '24px', textAlign: 'center', color: 'var(--color-text-light)' }}>
-            This template has no weeks.
-          </div>
-        )}
-      </div>
+    <div className="page" style={{ maxWidth: 1320 }}>
+      <ProgramEditor
+        template={template}
+        library={library}
+        movementPatterns={movementPatterns}
+        exerciseTags={exerciseTags}
+        metricUnits={metricUnits}
+        sectionTitles={sectionTitles}
+      />
     </div>
   )
 }
 
-type RawSet = {
-  set_number: number
-  reps: string | null
-  rep_metric: string | null
-  optional_metric: string | null
-  optional_value: string | null
-  deleted_at: string | null
-}
-type RawTemplateDetail = {
+type RawTemplate = {
   id: string
   name: string
-  description: string | null
   template_weeks:
     | Array<{
         id: string
@@ -210,44 +175,29 @@ type RawTemplateDetail = {
                 | Array<{
                     id: string
                     sort_order: number
+                    exercise_id: string
                     section_title: string | null
+                    superset_group_id: string | null
+                    rest_seconds: number | null
+                    tempo: string | null
+                    instructions: string | null
                     deleted_at: string | null
-                    exercise: { name: string } | null
-                    template_exercise_sets: RawSet[] | null
+                    exercise: { name: string; video_url: string | null } | null
+                    template_exercise_sets:
+                      | Array<{
+                          id: string
+                          set_number: number
+                          reps: string | null
+                          rep_metric: string | null
+                          optional_metric: string | null
+                          optional_value: string | null
+                          deleted_at: string | null
+                        }>
+                      | null
                   }>
                 | null
             }>
           | null
       }>
     | null
-}
-
-/** Compact prescription summary from a template exercise's per-set rows. */
-function rxSummary(rawSets: RawSet[]): string {
-  const sets = rawSets
-    .filter((s) => s.deleted_at === null)
-    .sort((a, b) => a.set_number - b.set_number)
-  if (sets.length === 0) return ''
-
-  const first = sets[0]!
-  const allSame = sets.every(
-    (s) =>
-      s.reps === first.reps &&
-      s.rep_metric === first.rep_metric &&
-      s.optional_metric === first.optional_metric &&
-      s.optional_value === first.optional_value,
-  )
-
-  const parts: string[] = []
-  const vol = formatVolume(first.reps, first.rep_metric)
-  if (allSame && vol) parts.push(`${sets.length} × ${vol}`)
-  else parts.push(`${sets.length} ${sets.length === 1 ? 'set' : 'sets'}`)
-  if (first.optional_value) {
-    parts.push(
-      first.optional_metric === 'rpe'
-        ? `RPE ${first.optional_value}`
-        : first.optional_value,
-    )
-  }
-  return parts.join(' · ')
 }

@@ -233,7 +233,7 @@ function TemplateCard({
                       router.push(`/library/programs/${t.id}`)
                     }}
                   >
-                    Preview
+                    Edit
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
