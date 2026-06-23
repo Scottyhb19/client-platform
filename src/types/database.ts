@@ -3869,6 +3869,14 @@ export type Database = {
         Returns: undefined
       }
       soft_delete_circuit: { Args: { p_id: string }; Returns: undefined }
+      soft_delete_circuit_exercise: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_circuit_exercise_set: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       soft_delete_client: { Args: { p_id: string }; Returns: undefined }
       soft_delete_client_medical_history: {
         Args: { p_id: string }
