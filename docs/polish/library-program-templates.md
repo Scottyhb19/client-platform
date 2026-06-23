@@ -130,7 +130,7 @@ Gap list approved (operator: "begin item 3"; decisions A–D as recommended). Bu
 
 - **LPT-3 (P1) — closed.** Read-only preview route [`library/programs/[id]/page.tsx`](../../src/app/(staff)/library/programs/[id]/page.tsx) — server-rendered, RLS-scoped: weeks → days → exercises with names + a per-set rx summary (via `formatVolume`, so a timed/distance prescription reads "3 × 30s"). Reached from each card's **Preview** menu item. No edit (Q-D).
 
-**All eight gaps (LPT-1…LPT-8) closed.** `type-check` + `npm run build` green; pgTAP `36` 5/5 on the live DB.
+**All eight gaps (LPT-1…LPT-8) closed.** `type-check` + `npm run build` green; pgTAP `36` 5/5 on the live DB at close (now **7/7** — anon-EXECUTE deny + cross-org SELECT invisibility added at the follow-ups below).
 
 ---
 
@@ -138,7 +138,7 @@ Gap list approved (operator: "begin item 3"; decisions A–D as recommended). Bu
 
 **What changed, by gap number.** All eight gaps (§3) are closed. The Library **Programs tab** — a disabled placeholder — is now a working management + apply surface over the existing template engine.
 
-- **LPT-1 / LPT-8 (P0).** `soft_delete_program_template` SECURITY DEFINER RPC (migration `20260623130000`), mirroring the library soft-delete trio; pgTAP `36` (cross-org deny, client deny, happy-path invisibility, double-delete, soft-delete retention) — **5/5 green on the live DB**. Children left intact; `programs.template_id` (ON DELETE SET NULL) keeps pointing at the soft-deleted row.
+- **LPT-1 / LPT-8 (P0).** `soft_delete_program_template` SECURITY DEFINER RPC (migration `20260623130000`), mirroring the library soft-delete trio; pgTAP `36` (cross-org deny, client deny, happy-path invisibility, double-delete, soft-delete retention) — **5/5 green on the live DB at close; now 7/7** (anon-EXECUTE deny + cross-org SELECT invisibility added at the follow-ups below). Children left intact; `programs.template_id` (ON DELETE SET NULL) keeps pointing at the soft-deleted row.
 - **LPT-2 (P1).** The tab lists the org's templates ([`ProgramsTab.tsx`](../../src/app/(staff)/library/_components/ProgramsTab.tsx)) with a structure summary (N weeks · M days · K exercises) + "used N×", counts derived in the loader from the RLS-scoped template tree + reverse-embedded programs.
 - **LPT-3 (P1).** A read-only preview route (`library/programs/[id]`) — weeks → days → exercises with names + per-set rx summary (`formatVolume`).
 - **LPT-4 (P1, Q-A inline picker).** **Use template** → inline client + start-date picker → `applyProgramTemplateAction` → `create_program_from_template`, routing to the new block's calendar on success and naming the colliding window on overlap.
@@ -148,7 +148,7 @@ Gap list approved (operator: "begin item 3"; decisions A–D as recommended). Bu
 
 Decisions A–D (§4) taken as recommended.
 
-**Acceptance tests run and results.** `type-check` clean; `npm run build` green (the new route + client component compile); pgTAP `36` 5/5 on the live DB. §5 acceptance gates met: the tab lists every template with accurate counts; preview is read-only and RLS-scoped; apply creates a program for a chosen client + date and names overlaps; rename de-dupes; delete soft-deletes and the template vanishes from the tab + the `program/new` picker while instantiated programs are unaffected; no lying button.
+**Acceptance tests run and results.** `type-check` clean; `npm run build` green (the new route + client component compile); pgTAP `36` **7/7** on the live DB (the LPT-1/LPT-8 RPC surface — cross-org SELECT invisibility, cross-org delete deny, client deny, happy-path invisibility, double-delete, soft-delete retention, anon-EXECUTE deny). **Verification honesty — this claim was narrowed at the reviewer follow-up (see below).** What is *proven*: the data-integrity P0 (LPT-1) and the FM-6 cross-org mechanism on the live DB (pgTAP `36`); the apply-overlap return at the data layer (pgTAP `21` §D1 → `status='overlap'`), surfaced by `handleApply` (`setError`, no swallow — ProgramsTab.tsx:76-81). What is *not* browser-verified: the behavioral **render** of gates 2–5 (overlap message painting, the 404 page, list/rename/delete UI) — it rests on `type-check`/`build` + the proven data layer, accepted at friends-and-family scope per the premortem's UX weighting, **not** asserted as production-grade UX verification. Full matrix + the `usedCount` semantics decision are in **Reviewer follow-up** below.
 
 **Deferred, with triggers.** None — all eight gaps closed. Out of scope (per §5, unchanged): the Sessions tab + the Circuits tab (separate phases with their own audits); from-scratch template authoring (Q-B); in-Library template content editing (Q-D). The item-1 `rep_metric` column already flows through `create_program_from_template` (verified by test 35's A5), so applied/previewed templates carry the volume unit for free.
 
@@ -162,6 +162,48 @@ Decisions A–D (§4) taken as recommended.
 
 ## Follow-up (grant sweep, 2026-06-23)
 
-Surfaced during the prescription-volume-unit reviewer follow-up (which re-ran the grant suites in full). **Correction to LPT-1:** the closing note said `soft_delete_program_template` was "anon-revoked", but that migration only did `REVOKE … FROM PUBLIC`. Because it is a NEW function, the Supabase default-EXECUTE-grant trap had granted `anon` a DIRECT EXECUTE that `REVOKE FROM PUBLIC` does not remove — so anon held EXECUTE (`has_function_privilege` = true). No breach (in-body owner/staff + org guard), but the posture was wrong. Fixed in [`20260623170000`](../../supabase/migrations/20260623170000_revoke_anon_soft_delete_program_template.sql) (`REVOKE … FROM anon`); **LPT-8 / test 36 gained §A6 (anon-EXECUTE tripwire) and is now 6/6** on the live DB. The clone/template RPCs I `CREATE OR REPLACE`d carried no such regression (`CREATE OR REPLACE` of an existing function doesn't re-trip the trap — `insert_program_exercise_at`/`save_program_as_template` anon = false, **test 23 = 32/32**).
+Surfaced during the prescription-volume-unit reviewer follow-up (which re-ran the grant suites in full). **Correction to LPT-1:** the closing note said `soft_delete_program_template` was "anon-revoked", but that migration only did `REVOKE … FROM PUBLIC`. Because it is a NEW function, the Supabase default-EXECUTE-grant trap had granted `anon` a DIRECT EXECUTE that `REVOKE FROM PUBLIC` does not remove — so anon held EXECUTE (`has_function_privilege` = true). No breach (in-body owner/staff + org guard), but the posture was wrong. Fixed in [`20260623170000`](../../supabase/migrations/20260623170000_revoke_anon_soft_delete_program_template.sql) (`REVOKE … FROM anon`); **LPT-8 / test 36 gained an anon-EXECUTE tripwire** (then renumbered to §A7 when the reviewer follow-up added the §A1 cross-org SELECT check — **test 36 is now 7/7** on the live DB). The clone/template RPCs I `CREATE OR REPLACE`d carried no such regression (`CREATE OR REPLACE` of an existing function doesn't re-trip the trap — `insert_program_exercise_at`/`save_program_as_template` anon = false, **test 23 = 32/32**).
 
 **Flagged, not fixed here (pre-existing):** the rest of the `soft_delete_*` family carries the same latent anon grant (`soft_delete_exercise` confirmed anon = true, created 2026-05-05). That belongs to the platform-wide anon-EXECUTE sweep (`docs/go-live-checklist.md`), not this section — spawned as a separate task.
+
+---
+
+## Reviewer follow-up (2026-06-23)
+
+Reviewer (claude.ai project chat) returned the close **"Not yet"** with one valid structural catch: this is a UI-dominant phase, but the closing commit claimed "§5 acceptance gates met" on the strength of `type-check`/`build` + a pgTAP covering only the RPC. The catch is fair — the claim is now narrowed (Closing-commit "Acceptance tests" paragraph, above) to separate what is *proven* from what is *compile-plus-accepted*. The three specific points, each addressed:
+
+**1. FM-6 — preview cross-org leak (LPT-3). Now evidenced; was asserted.**
+The `/library/programs/[id]` route reads `program_templates` through the **RLS-scoped** server client (`createSupabaseServerClient`, *not* service-role) and `notFound()`s on a null row ([page.tsx:25-40](../../src/app/(staff)/library/programs/[id]/page.tsx)). The SELECT policy is org-scoped:
+
+```sql
+CREATE POLICY "staff select program_templates in own org"
+  ON program_templates FOR SELECT TO authenticated
+  USING (organization_id = public.user_organization_id()
+         AND deleted_at IS NULL
+         AND public.user_role() IN ('owner','staff'));
+```
+
+So another org's id is invisible → `null` → 404. **New pgTAP `36` §A1 proves the mechanism on the live DB:** staff in org B get **0 rows** for org A's live template (`ok 1`). The sole browser-only residue is the 404 *page render* — standard Next `notFound()`, unverified only because the preview browser carries no authenticated staff session (every path here is behind `requireRole(['owner','staff'])`). **No leak.**
+
+**2. FM-2 — apply swallows overlap (LPT-4). Now evidenced; was asserted.**
+`applyProgramTemplateAction` calls the same engine `program/new` uses (`create_program_from_template`) and maps `status='overlap'` → `{status:'overlap'}` ([program-template-actions.ts:32-46](../../src/app/(staff)/library/program-template-actions.ts)). `handleApply` then **sets a visible error** ("This client already has an active block covering these dates. Pick a later start date.") and returns *before* any `router.push` ([ProgramsTab.tsx:71-84](../../src/app/(staff)/library/_components/ProgramsTab.tsx)) — it does **not** swallow. The RPC's overlap return is pgTAP-proven by **`21` §D1** (`D1: instantiating into an occupied date range returns status=overlap`). Browser-only residue: the literal paint of the error string (code-confirmed, not pixel-confirmed).
+
+**3. `usedCount` semantics — decided, and not a multi-staff liability.**
+The reviewer asked whether the count includes archived/soft-deleted programs or is RLS-partial across staff. Findings + decision:
+
+- **Soft-deleted: excluded.** The mapper filters `p.deleted_at === null` ([page.tsx:130-132](../../src/app/(staff)/library/page.tsx)). ✔
+- **Archived (`status='archived'`, `deleted_at` null): INCLUDED — deliberately.** The label is *"Started by N clients"* — a historical statement, and an archived program **was** genuinely started by that client. Excluding it would *understate* the footprint and make "Started by N" undercount real starts (the worse error). The reassurance it precedes — "their programs are unaffected" — is equally true for an archived program. **Decision: count = non-soft-deleted instantiations (active + archived).** If the EP later wants "active only", it is a one-line `status !== 'archived'` filter — but the current wording matches the current semantics, so no change.
+- **Not a per-staff liability.** The SELECT policies on `programs` and `program_templates` are **org-scoped, not per-staff** (quoted above). Every staffer in an org sees the same instantiations, so the count is org-*complete* and identical for all org staff — the multi-staff failure the reviewer feared cannot arise under org-scoped RLS. (Cross-org rows are excluded by the same policy, and those are not instantiations of this org's template anyway.)
+
+**Verification matrix — the honest reading of the narrowed closing-commit line:**
+
+| Gate | Claim | Verified by |
+|---|---|---|
+| 1 — list / counts | accurate, soft-deleted excluded | code (page.tsx:130-132) + org-scoped RLS; render browser-unverified |
+| 2 — preview RLS | cross-org invisible → 404 | **pgTAP 36 §A1 (live)** + policy + route code; 404 page browser-unverified |
+| 3 — apply overlap | surfaced, not swallowed | **pgTAP 21 §D1 (live)** + `handleApply` code; message paint browser-unverified |
+| 4 — rename / delete | de-dupe + soft-delete + programs unaffected | **pgTAP 36 (live, 7/7)** for delete; rename code + zero-row honesty; UI browser-unverified |
+| 5 — no lying button | placeholder removed | code |
+| P0 — data integrity | soft-delete RPC + grant posture | **pgTAP 36 7/7 (live)** |
+
+**Net:** every security- and data-integrity-weighted claim is now pgTAP-proven on the live DB (`36` 7/7, `21` §D1); the remaining residue is purely behavioral *render*, accepted at friends-and-family scope per the premortem's stated UX weighting — and the closing-commit claim is narrowed to say exactly that. The literal two-click browser passes (apply-to-colliding-date renders the overlap line; `/library/programs/<no-access-id>` renders the 404) remain available to run against an authenticated `:3000` session if the reviewer wants pixel confirmation on top of the data-layer proof.

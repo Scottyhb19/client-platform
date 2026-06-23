@@ -8,20 +8,29 @@ SET search_path TO public, extensions, pg_temp;
 -- Why: LPT-8 of the Library Programs-tab pass
 -- (docs/polish/library-program-templates.md). Locks soft_delete_program_template
 -- (20260623130000) — the SECURITY DEFINER RPC behind the Programs tab's
--- delete. Mirrors the library soft-delete coverage (test 20).
+-- delete. Mirrors the library soft-delete coverage (test 20). The reviewer
+-- follow-up added A1 + A7 (see below).
 --
---   A1 cross-org staff deny (P0002 not-in-your-org)
---   A2 client-role deny (42501)
---   A3 happy path → invisible through the staff SELECT policy
---   A4 double-delete raises (already deleted)
---   A5 deleted_at stamped (row retained, not hard-deleted)
+--   A1 cross-org SELECT invisibility — staff in org B cannot SEE org A's
+--      template (RLS SELECT policy is org-scoped). This is the data-layer
+--      MECHANISM the read-only preview route (/library/programs/[id]) relies
+--      on to 404 a cross-org id (FM-6): the route reads through the RLS
+--      client and notFound()s on a null row. pgTAP can't drive a route, but
+--      it can prove the row is invisible cross-org, which is what makes the
+--      404 inevitable.
+--   A2 cross-org staff delete deny (P0002 not-in-your-org)
+--   A3 client-role deny (42501)
+--   A4 happy path → invisible through the staff SELECT policy
+--   A5 double-delete raises (already deleted)
+--   A6 deleted_at stamped (row retained, not hard-deleted)
+--   A7 anon cannot execute the RPC (grant posture / Supabase default-grant trap)
 --
--- Test count: 5
+-- Test count: 7
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(6);
+SELECT plan(7);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -70,7 +79,10 @@ END $$;
 
 
 -- ----------------------------------------------------------------------------
--- §A1. Cross-org staff cannot delete another org's template.
+-- §A1. Cross-org SELECT invisibility (FM-6 mechanism). Staff_b (org B) cannot
+-- SELECT org A's LIVE template — the org-scoped SELECT policy hides it, so the
+-- preview route reads null and 404s. Checked here, before any delete, so the
+-- 0-count proves cross-org invisibility (not deletion).
 -- ----------------------------------------------------------------------------
 SELECT public._test_set_jwt(
   (SELECT staff_b FROM _ids), (SELECT org_b FROM _ids), 'staff'
@@ -78,6 +90,17 @@ SELECT public._test_set_jwt(
 SET LOCAL ROLE authenticated;
 
 INSERT INTO _tap (n, line) VALUES (1, (
+  SELECT is(
+    (SELECT count(*)::int FROM program_templates WHERE id = (SELECT tpl_a FROM _ids)),
+    0,
+    'A1: cross-org staff cannot SELECT another org''s template (RLS hides it → preview route 404s)'
+  )
+));
+
+-- ----------------------------------------------------------------------------
+-- §A2. Cross-org staff cannot delete another org's template.
+-- ----------------------------------------------------------------------------
+INSERT INTO _tap (n, line) VALUES (2, (
   SELECT throws_ok(
     format(
       'SELECT public.soft_delete_program_template(%L::uuid)',
@@ -85,18 +108,18 @@ INSERT INTO _tap (n, line) VALUES (1, (
     ),
     'P0002',
     NULL,
-    'A1: cross-org staff cannot soft-delete another org''s template'
+    'A2: cross-org staff cannot soft-delete another org''s template'
   )
 ));
 
 -- ----------------------------------------------------------------------------
--- §A2. Client role cannot delete (42501 before any write).
+-- §A3. Client role cannot delete (42501 before any write).
 -- ----------------------------------------------------------------------------
 SELECT public._test_set_jwt(
   (SELECT client_user FROM _ids), (SELECT org_a FROM _ids), 'client'
 );
 
-INSERT INTO _tap (n, line) VALUES (2, (
+INSERT INTO _tap (n, line) VALUES (3, (
   SELECT throws_ok(
     format(
       'SELECT public.soft_delete_program_template(%L::uuid)',
@@ -104,31 +127,31 @@ INSERT INTO _tap (n, line) VALUES (2, (
     ),
     '42501',
     'Unauthorized',
-    'A2: client role cannot soft-delete a template'
+    'A3: client role cannot soft-delete a template'
   )
 ));
 
 -- ----------------------------------------------------------------------------
--- §A3. Happy path — staff A deletes; the row disappears from their view.
+-- §A4. Happy path — staff A deletes; the row disappears from their view.
 -- ----------------------------------------------------------------------------
 SELECT public._test_set_jwt(
   (SELECT staff_a FROM _ids), (SELECT org_a FROM _ids), 'staff'
 );
 SELECT public.soft_delete_program_template((SELECT tpl_a FROM _ids));
 
-INSERT INTO _tap (n, line) VALUES (3, (
+INSERT INTO _tap (n, line) VALUES (4, (
   SELECT ok(
     NOT EXISTS (
       SELECT 1 FROM program_templates WHERE id = (SELECT tpl_a FROM _ids)
     ),
-    'A3: after soft-delete the template is invisible through the staff SELECT policy'
+    'A4: after soft-delete the template is invisible through the staff SELECT policy'
   )
 ));
 
 -- ----------------------------------------------------------------------------
--- §A4. Double-delete raises (already deleted → NOT FOUND).
+-- §A5. Double-delete raises (already deleted → NOT FOUND).
 -- ----------------------------------------------------------------------------
-INSERT INTO _tap (n, line) VALUES (4, (
+INSERT INTO _tap (n, line) VALUES (5, (
   SELECT throws_ok(
     format(
       'SELECT public.soft_delete_program_template(%L::uuid)',
@@ -136,32 +159,32 @@ INSERT INTO _tap (n, line) VALUES (4, (
     ),
     'P0002',
     NULL,
-    'A4: re-deleting an already-deleted template raises'
+    'A5: re-deleting an already-deleted template raises'
   )
 ));
 
 -- ----------------------------------------------------------------------------
--- §A5. The row is soft-deleted (retained), not hard-deleted — owner view.
+-- §A6. The row is soft-deleted (retained), not hard-deleted — owner view.
 -- ----------------------------------------------------------------------------
 RESET ROLE;
 
-INSERT INTO _tap (n, line) VALUES (5, (
+INSERT INTO _tap (n, line) VALUES (6, (
   SELECT ok(
     (SELECT deleted_at FROM program_templates WHERE id = (SELECT tpl_a FROM _ids))
       IS NOT NULL,
-    'A5: deleted_at is stamped — the row is retained, not hard-deleted'
+    'A6: deleted_at is stamped — the row is retained, not hard-deleted'
   )
 ));
 
--- A6: grant posture — anon holds EXECUTE on nothing here (the Supabase
+-- §A7: grant posture — anon holds EXECUTE on nothing here (the Supabase
 -- default-grant trap fired on this NEW function; the direct anon grant must be
 -- revoked). Pure catalog check, as the test owner.
-INSERT INTO _tap (n, line) VALUES (6, (
+INSERT INTO _tap (n, line) VALUES (7, (
   SELECT ok(
     NOT has_function_privilege(
       'anon', 'public.soft_delete_program_template(uuid)', 'EXECUTE'
     ),
-    'A6: anon cannot execute soft_delete_program_template'
+    'A7: anon cannot execute soft_delete_program_template'
   )
 ));
 
