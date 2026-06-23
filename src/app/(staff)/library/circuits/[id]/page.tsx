@@ -4,17 +4,25 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   CircuitEditor,
   type EditorCircuit,
-  type EditorExerciseOption,
+  type EditorMetricUnit,
 } from './_components/CircuitEditor'
+import {
+  LIBRARY_EXERCISE_COLUMNS,
+  toLibraryExercises,
+} from '@/app/(staff)/library/_lib/exercise-query'
 import type { CircuitType } from '../../types'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * #3 — the in-Library circuit editor (workbench). Author/edit a circuit: name +
- * type, add/remove exercises, set per-set prescriptions. Server-rendered +
- * RLS-scoped; a cross-org id is invisible → null → notFound() (FM-6, mirrors the
- * program preview route). Reached from the Circuits tab (New / click-to-edit).
+ * type, add/remove exercises, set per-set prescriptions, instructions, rest,
+ * tempo, and reorder. The card UI is carbon-copied from the session builder
+ * ("NEXT focused pass" 2026-06-24), so the loader pulls the same shape: the
+ * full LibraryExercise card columns (for the right-panel picker + its chips),
+ * the scalar parent fields on circuit_exercises, and the exercise demo video.
+ * Server-rendered + RLS-scoped; a cross-org id is invisible → null → notFound()
+ * (FM-6, mirrors the program preview route).
  */
 export default async function CircuitEditorPage({
   params,
@@ -25,13 +33,20 @@ export default async function CircuitEditorPage({
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const [{ data: circuitRaw }, { data: libraryRaw }] = await Promise.all([
+  const [
+    { data: circuitRaw },
+    { data: libraryRaw },
+    { data: patternsRaw },
+    { data: tagsRaw },
+    { data: metricUnitsRaw },
+  ] = await Promise.all([
     supabase
       .from('circuits')
       .select(
         `id, name, circuit_type, notes,
-         circuit_exercises(id, sort_order, exercise_id, deleted_at,
-           exercise:exercises(name),
+         circuit_exercises(id, sort_order, exercise_id, rest_seconds, tempo,
+           instructions, deleted_at,
+           exercise:exercises(name, video_url),
            circuit_exercise_sets(
              id, set_number, reps, rep_metric, optional_metric, optional_value, deleted_at
            ))`,
@@ -39,7 +54,33 @@ export default async function CircuitEditorPage({
       .eq('id', id)
       .is('deleted_at', null)
       .maybeSingle(),
-    supabase.from('exercises').select('id, name').is('deleted_at', null).order('name'),
+    // Full LibraryExercise card shape — the right-panel picker composes the
+    // standalone library's atoms (same select both surfaces, via the shared
+    // exercise-query module). Carries movement_pattern_id + flat tag_ids so the
+    // chip filters run client-side.
+    supabase
+      .from('exercises')
+      .select(LIBRARY_EXERCISE_COLUMNS)
+      .is('deleted_at', null)
+      .order('name'),
+    supabase
+      .from('movement_patterns')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    supabase
+      .from('exercise_tags')
+      .select('id, name')
+      .is('deleted_at', null)
+      .order('sort_order'),
+    // Load-metric dropdown options — same source as the builder + the
+    // new-exercise form (active, ordered).
+    supabase
+      .from('exercise_metric_units')
+      .select('code, display_label')
+      .is('deleted_at', null)
+      .eq('is_active', true)
+      .order('sort_order'),
   ])
 
   if (!circuitRaw) notFound()
@@ -52,6 +93,10 @@ export default async function CircuitEditorPage({
       id: e.id,
       exercise_id: e.exercise_id,
       exercise_name: e.exercise?.name ?? 'Unknown exercise',
+      exercise_video_url: e.exercise?.video_url ?? null,
+      rest_seconds: e.rest_seconds,
+      tempo: e.tempo,
+      instructions: e.instructions,
       sets: (e.circuit_exercise_sets ?? [])
         .filter((s) => s.deleted_at === null)
         .sort((a, b) => a.set_number - b.set_number)
@@ -73,14 +118,26 @@ export default async function CircuitEditorPage({
     exercises,
   }
 
-  const library: EditorExerciseOption[] = (libraryRaw ?? []).map((e) => ({
-    id: e.id,
-    name: e.name,
+  const library = toLibraryExercises(libraryRaw)
+  const movementPatterns = (patternsRaw ?? []).map((p) => ({
+    id: p.id,
+    name: p.name,
+  }))
+  const exerciseTags = (tagsRaw ?? []).map((t) => ({ id: t.id, name: t.name }))
+  const metricUnits: EditorMetricUnit[] = (metricUnitsRaw ?? []).map((u) => ({
+    code: u.code,
+    display_label: u.display_label,
   }))
 
   return (
-    <div className="page" style={{ maxWidth: 880 }}>
-      <CircuitEditor circuit={circuit} library={library} />
+    <div className="page" style={{ maxWidth: 1320 }}>
+      <CircuitEditor
+        circuit={circuit}
+        library={library}
+        movementPatterns={movementPatterns}
+        exerciseTags={exerciseTags}
+        metricUnits={metricUnits}
+      />
     </div>
   )
 }
@@ -95,8 +152,11 @@ type RawCircuit = {
         id: string
         sort_order: number
         exercise_id: string
+        rest_seconds: number | null
+        tempo: string | null
+        instructions: string | null
         deleted_at: string | null
-        exercise: { name: string } | null
+        exercise: { name: string; video_url: string | null } | null
         circuit_exercise_sets:
           | Array<{
               id: string

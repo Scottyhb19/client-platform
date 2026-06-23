@@ -357,3 +357,153 @@ export async function updateCircuitExerciseMetricAction(
   revalidatePath(`/library/circuits/${circuitId}`)
   return { error: null }
 }
+
+/* ============== Card-parity additions (NEXT pass, 2026-06-24) ==============
+ * The in-Library editor carbon-copies the session builder's card, which edits
+ * the scalar parent fields (instructions / rest / tempo) and reorders rows.
+ * These two actions back that left column — they mirror updateProgramExerciseAction
+ * and moveProgramExerciseAction on the circuit tables. No migration: the columns
+ * (instructions, rest_seconds, tempo, sort_order) already exist on circuit_exercises
+ * (20260624100000). RLS staff-UPDATE via parent; no soft-delete trap (we never
+ * touch deleted_at), so a direct UPDATE is correct.
+ */
+
+/**
+ * Patch a circuit_exercise's scalar parent fields (single-field autosave).
+ * Allowlisted so the client can't poke at circuit_id, exercise_id, sort_order,
+ * timestamps, or deleted_at. Mirrors updateProgramExerciseAction; circuits have
+ * no section_title (a circuit is one group), so it's omitted from the allowlist.
+ */
+export type CircuitExercisePatch = {
+  rest_seconds?: number | null
+  tempo?: string | null
+  instructions?: string | null
+}
+
+const EDITABLE_CIRCUIT_EXERCISE_FIELDS = new Set<keyof CircuitExercisePatch>([
+  'rest_seconds',
+  'tempo',
+  'instructions',
+])
+
+export async function updateCircuitExerciseAction(
+  circuitId: string,
+  circuitExerciseId: string,
+  patch: CircuitExercisePatch,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  const clean: CircuitExercisePatch = {}
+  for (const key of Object.keys(patch) as Array<keyof CircuitExercisePatch>) {
+    if (EDITABLE_CIRCUIT_EXERCISE_FIELDS.has(key)) {
+      // @ts-expect-error — narrowing is exhaustive via the allowlist above
+      clean[key] = patch[key]
+    }
+  }
+  if (Object.keys(clean).length === 0) return { error: null }
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase
+    .from('circuit_exercises')
+    .update(clean)
+    .eq('id', circuitExerciseId)
+    .is('deleted_at', null)
+
+  if (error) return { error: `Update failed: ${error.message}` }
+  revalidatePath(`/library/circuits/${circuitId}`)
+  return { error: null }
+}
+
+/**
+ * Move a circuit exercise up or down one position (the ↑/↓ arrow buttons).
+ * Swaps the two adjacent rows' sort_order values — circuits have no superset
+ * regrouping to re-derive (the whole circuit IS one group), so this is the
+ * simple value-swap, not the builder's reorder RPC. Distinct sort_orders are
+ * an invariant of the writers (addExerciseToCircuit appends MAX+1;
+ * save_group_as_circuit copies sequential orders), so the two values never
+ * collide. There is no unique index on (circuit_id, sort_order), so the two
+ * UPDATEs need no transient-collision dance.
+ */
+export async function moveCircuitExerciseAction(
+  circuitId: string,
+  circuitExerciseId: string,
+  direction: 'up' | 'down',
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data: rows, error: readErr } = await supabase
+    .from('circuit_exercises')
+    .select('id, sort_order')
+    .eq('circuit_id', circuitId)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true })
+
+  if (readErr) return { error: `Read failed: ${readErr.message}` }
+  if (!rows || rows.length === 0) return { error: 'Circuit has no exercises.' }
+
+  const index = rows.findIndex((r) => r.id === circuitExerciseId)
+  if (index === -1) return { error: 'Exercise not found in this circuit.' }
+
+  const neighbourIndex = direction === 'up' ? index - 1 : index + 1
+  if (neighbourIndex < 0 || neighbourIndex >= rows.length) {
+    // Already at the edge — silent no-op so the arrow's disabled state is a
+    // soft guarantee, not the only safeguard.
+    return { error: null }
+  }
+
+  const target = rows[index]!
+  const neighbour = rows[neighbourIndex]!
+
+  const { error: e1 } = await supabase
+    .from('circuit_exercises')
+    .update({ sort_order: neighbour.sort_order })
+    .eq('id', target.id)
+    .is('deleted_at', null)
+  if (e1) return { error: `Move failed: ${e1.message}` }
+
+  const { error: e2 } = await supabase
+    .from('circuit_exercises')
+    .update({ sort_order: target.sort_order })
+    .eq('id', neighbour.id)
+    .is('deleted_at', null)
+  if (e2) return { error: `Move failed: ${e2.message}` }
+
+  revalidatePath(`/library/circuits/${circuitId}`)
+  return { error: null }
+}
+
+/**
+ * Reorder a circuit's exercises to an explicit new order (drag-and-drop, which
+ * yields the full permutation, not a one-step move). Assigns sort_order = index
+ * for each id. No superset re-derivation (a circuit IS one group) and no
+ * (circuit_id, sort_order) unique index, so there's no collision dance — unlike
+ * the builder's reorder_program_exercises RPC. Plain RLS staff-writes (no new
+ * RPC/migration); each UPDATE is scoped to this circuit by the circuit_id filter
+ * so a foreign id can't be reordered in. Non-atomic (N writes, run in parallel)
+ * but template data at F&F scope — a partial failure just needs another drag.
+ */
+export async function reorderCircuitExercisesAction(
+  circuitId: string,
+  orderedIds: string[],
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  if (orderedIds.length === 0) return { error: null }
+  const supabase = await createSupabaseServerClient()
+
+  const results = await Promise.all(
+    orderedIds.map((id, i) =>
+      supabase
+        .from('circuit_exercises')
+        .update({ sort_order: i })
+        .eq('id', id)
+        .eq('circuit_id', circuitId)
+        .is('deleted_at', null),
+    ),
+  )
+  const failed = results.find((r) => r.error)
+  if (failed?.error) return { error: `Reorder failed: ${failed.error.message}` }
+
+  revalidatePath(`/library/circuits/${circuitId}`)
+  return { error: null }
+}
