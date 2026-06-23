@@ -1,25 +1,9 @@
 'use client'
 
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  useTransition,
-} from 'react'
+import React, { useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Check,
-  ChevronDown,
-  GripVertical,
-  Play,
-  Trash2,
-} from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowUp, Play, Trash2 } from 'lucide-react'
 import {
   DndContext,
   DragOverlay,
@@ -36,10 +20,8 @@ import {
   SortableContext,
   arrayMove,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import {
   addCircuitExerciseSetAction,
   moveCircuitExerciseAction,
@@ -51,36 +33,45 @@ import {
   updateCircuitExerciseMetricAction,
   updateCircuitExerciseRepMetricAction,
   updateCircuitExerciseSetAction,
-  type CircuitExercisePatch,
 } from '../../../circuit-actions'
 import { CIRCUIT_TYPE_LABELS, type CircuitType } from '../../../types'
-import {
-  VOLUME_UNIT_OPTIONS,
-  volumeUnitLabel,
-} from '@/lib/prescription/volume-units'
 import type { LibraryExercise } from '@/app/(staff)/library/types'
+import {
+  DragHandle,
+  DraggedCardGhost,
+  EditableTextarea,
+  ExtrasRow,
+  IconButton,
+  SaveStatusContext,
+  SaveStatusPill,
+  SetStepper,
+  SetTable,
+  SortableCardShell,
+  SpineLetter,
+  useSaveRun,
+  useSaveStatus,
+  BORDER,
+  FAINT,
+  INK,
+  MUTED,
+} from '@/app/(staff)/library/_components/editor-kit'
 import { CircuitLibraryPanel } from './CircuitLibraryPanel'
 
 /*
  * Circuit editor (#3 workbench) — card UI carbon-copied from the session
- * builder (clients/[id]/program/days/[dayId]/_components/SessionBuilder.tsx,
- * "NEXT focused pass" 2026-06-24) so an EP edits a circuit on the exact same
- * card as a session, minus the Notes/Reports tabs, the last-logged footer,
- * swap-in-place, superset grouping, and section title. A circuit IS one group,
- * so its exercises render under a single continuous slate spine (A1, A2…), and
- * drag-to-reorder (the 6-dot grip) reorders within that one group.
+ * builder so an EP edits a circuit on the exact same card as a session, minus
+ * the Notes/Reports tabs, the last-logged footer, swap-in-place, superset
+ * grouping, and section title. A circuit IS one group, so its exercises render
+ * under a single continuous slate spine (A1, A2…), and drag-to-reorder (the
+ * 6-dot grip) reorders within that one group.
  *
- * The styling constants below are aliases for design-system tokens (globals.css),
- * not raw hex — copied verbatim from SessionBuilder.tsx:86-92 to keep the two
- * surfaces pixel-identical.
+ * The card atoms (set table, steppers, autosave fields, drag scaffolding,
+ * save-status pill) now live in the shared editor-kit (A-1 of
+ * docs/polish/library-sessions-programs.md) — this editor keeps only its own
+ * orchestration (the one-group block + card body) and wires the kit atoms to
+ * the circuit server actions via onCommit callbacks. SessionBuilder.tsx is
+ * untouched.
  */
-const INK = 'var(--color-primary)'
-const CREAM = 'var(--color-surface)'
-const CREAM_DEEP = 'var(--color-surface-2)'
-const BORDER = 'var(--color-border-hairline)'
-const MUTED = 'var(--color-muted)'
-const FAINT = 'var(--color-text-faint)'
-const GREEN = 'var(--color-accent)'
 
 export type EditorSet = {
   id: string
@@ -139,89 +130,6 @@ const labelStyle: React.CSSProperties = {
   marginBottom: 5,
 }
 
-/* ====================== Save-status reporter ======================
- * Autosave is silent except for the per-field green tick, which left the EP
- * unsure their work had persisted before leaving the page. A shared counter
- * tracks every in-flight save (text edits, dropdowns, stepper, structural
- * actions); the header pill reads "Saving…" while any is pending and
- * "All changes saved" when the queue is empty. Every mutating call routes
- * through `run()` so the indicator can never silently fall out of sync.
- */
-type SaveResult = { error: string | null }
-type SaveRun = (p: Promise<SaveResult>) => Promise<SaveResult>
-type SaveStatusValue = {
-  pending: number
-  error: boolean
-  // false until the first save fires, so the pill stays hidden on a freshly
-  // loaded page (nothing has been saved yet — showing "All changes saved"
-  // there reads as a lie). Once true it stays true for the page's lifetime.
-  touched: boolean
-  run: SaveRun
-}
-
-const SaveStatusContext = createContext<SaveStatusValue | null>(null)
-
-const passthroughRun: SaveRun = (p) => p
-
-function useSaveRun(): SaveRun {
-  return useContext(SaveStatusContext)?.run ?? passthroughRun
-}
-
-function SaveStatusPill() {
-  const ctx = useContext(SaveStatusContext)
-  if (!ctx) return null
-  // Nothing to reassure about until the EP has actually changed something.
-  if (!ctx.touched) return null
-
-  let label: string
-  let color: string
-  let dot: React.ReactNode = null
-  if (ctx.pending > 0) {
-    label = 'Saving…'
-    color = MUTED
-  } else if (ctx.error) {
-    label = 'Save failed — retry the highlighted field'
-    color = 'var(--color-alert)'
-  } else {
-    label = 'All changes saved'
-    color = GREEN
-    dot = <Check size={13} strokeWidth={2.5} aria-hidden />
-  }
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
-        fontFamily: 'var(--font-sans)',
-        fontSize: '.78rem',
-        fontWeight: 500,
-        color,
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {dot}
-      {label}
-    </div>
-  )
-}
-
-/* ====================== Drag-handle bridge ======================
- * The 6-dot grip lives inside ExerciseBody, several layers below the card div
- * that owns the useSortable lifecycle. SortableCardShell publishes the handle
- * props via context; <DragHandle/> consumes them — same bridge the builder uses,
- * avoiding prop-drilling through the card body.
- */
-type DragHandleApi = {
-  attributes: ReturnType<typeof useSortable>['attributes']
-  listeners: ReturnType<typeof useSortable>['listeners']
-  setActivatorNodeRef: ReturnType<typeof useSortable>['setActivatorNodeRef']
-}
-const DragHandleContext = createContext<DragHandleApi | null>(null)
-
 export function CircuitEditor({
   circuit,
   library,
@@ -240,30 +148,10 @@ export function CircuitEditor({
   const [type, setType] = useState<CircuitType>(circuit.circuit_type)
   const [nameError, setNameError] = useState<string | null>(null)
 
-  // Shared save-status state (see SaveStatusPill). run() brackets every save
-  // with a pending++/pending-- pair, marks the page touched, and records the
-  // last outcome.
-  const [savePending, setSavePending] = useState(0)
-  const [saveError, setSaveError] = useState(false)
-  const [touched, setTouched] = useState(false)
-  const run = useCallback<SaveRun>((p) => {
-    setTouched(true)
-    setSavePending((n) => n + 1)
-    return p
-      .then((res) => {
-        setSaveError(Boolean(res.error))
-        return res
-      })
-      .catch((e) => {
-        setSaveError(true)
-        throw e
-      })
-      .finally(() => setSavePending((n) => Math.max(0, n - 1)))
-  }, [])
-  const saveValue = useMemo<SaveStatusValue>(
-    () => ({ pending: savePending, error: saveError, touched, run }),
-    [savePending, saveError, touched, run],
-  )
+  // Shared save-status state (see editor-kit SaveStatusPill). run() brackets
+  // every save with a pending++/pending-- pair, marks the page touched, and
+  // records the last outcome; here it also covers the top-level name/type saves.
+  const { value: saveValue, run } = useSaveStatus()
 
   function saveName(value: string) {
     const name = value.trim()
@@ -560,7 +448,7 @@ function CircuitGroupBlock({
                 <SpineLetter>{`A${idx + 1}`}</SpineLetter>
               </div>
               <SortableCardShell
-                exerciseId={ex.id}
+                id={ex.id}
                 layoutStyle={{
                   gridColumn: 2,
                   gridRow: idx + 1,
@@ -584,132 +472,6 @@ function CircuitGroupBlock({
         {activeEx ? <DraggedCardGhost name={activeEx.exercise_name} /> : null}
       </DragOverlay>
     </DndContext>
-  )
-}
-
-function SpineLetter({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontFamily: 'var(--font-display)',
-        fontWeight: 800,
-        fontSize: 12,
-        color: GREEN,
-      }}
-    >
-      {children}
-    </span>
-  )
-}
-
-/**
- * Wraps the white card div with @dnd-kit's useSortable and publishes the
- * drag-handle props via context. Carbon-copied from the builder's
- * SortableCardShell, keyed by the circuit_exercise id.
- */
-function SortableCardShell({
-  exerciseId,
-  layoutStyle,
-  children,
-}: {
-  exerciseId: string
-  layoutStyle?: React.CSSProperties
-  children: React.ReactNode
-}) {
-  const {
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-    attributes,
-    listeners,
-    setActivatorNodeRef,
-  } = useSortable({ id: exerciseId })
-
-  const handle = useMemo<DragHandleApi>(
-    () => ({ attributes, listeners, setActivatorNodeRef }),
-    [attributes, listeners, setActivatorNodeRef],
-  )
-
-  return (
-    <DragHandleContext.Provider value={handle}>
-      <div
-        ref={setNodeRef}
-        style={{
-          background: 'var(--color-card)',
-          borderRadius: 'var(--radius-card-dense)',
-          border: `1px solid ${BORDER}`,
-          display: 'flex',
-          transform: CSS.Transform.toString(transform),
-          transition,
-          opacity: isDragging ? 0.35 : 1,
-          ...layoutStyle,
-        }}
-      >
-        {children}
-      </div>
-    </DragHandleContext.Provider>
-  )
-}
-
-/**
- * The 6-dot grip — an active drag activator (keyboard- + SR-friendly button),
- * reading useSortable's props from context. touchAction:'none' is load-bearing
- * on touch devices so the TouchSensor wins over native scroll.
- */
-function DragHandle() {
-  const ctx = useContext(DragHandleContext)
-  return (
-    <button
-      ref={ctx?.setActivatorNodeRef}
-      type="button"
-      aria-label="Drag to reorder"
-      title="Drag to reorder"
-      {...(ctx?.attributes ?? {})}
-      {...(ctx?.listeners ?? {})}
-      style={{
-        background: 'transparent',
-        border: 'none',
-        color: FAINT,
-        cursor: 'grab',
-        padding: 4,
-        marginLeft: 2,
-        display: 'grid',
-        placeItems: 'center',
-        borderRadius: 4,
-        touchAction: 'none',
-      }}
-    >
-      <GripVertical size={14} aria-hidden />
-    </button>
-  )
-}
-
-/** Translucent card that follows the cursor while dragging — name only. */
-function DraggedCardGhost({ name }: { name: string }) {
-  return (
-    <div
-      style={{
-        background: 'var(--color-card)',
-        border: `1px solid ${BORDER}`,
-        borderRadius: 'var(--radius-card-dense)',
-        padding: '10px 14px',
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-        cursor: 'grabbing',
-        minWidth: 240,
-      }}
-    >
-      <div
-        style={{
-          fontFamily: 'var(--font-sans)',
-          fontWeight: 600,
-          fontSize: 14,
-          color: INK,
-        }}
-      >
-        {name}
-      </div>
-    </div>
   )
 }
 
@@ -832,10 +594,13 @@ function ExerciseBody({
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <EditableTextarea
-              circuitId={circuitId}
-              circuitExerciseId={exercise.id}
               initialValue={exercise.instructions ?? ''}
               placeholder="Add a coaching cue…"
+              onCommit={(next) =>
+                updateCircuitExerciseAction(circuitId, exercise.id, {
+                  instructions: next,
+                })
+              }
             />
           </div>
           {exercise.exercise_video_url ? (
@@ -900,773 +665,49 @@ function ExerciseBody({
         </div>
       </div>
 
-      {/* RIGHT: set table + stepper + extras */}
+      {/* RIGHT: set table + stepper + extras — kit atoms wired to circuit actions */}
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <SetTable circuitId={circuitId} exercise={exercise} metricUnits={metricUnits} />
-        <SetStepper circuitId={circuitId} exercise={exercise} />
-        <ExtrasRow circuitId={circuitId} exercise={exercise} />
-      </div>
-    </div>
-  )
-}
-
-/* ====================== Set table ====================== */
-
-function ColHeader({
-  children,
-  narrow,
-}: {
-  children: React.ReactNode
-  narrow?: boolean
-}) {
-  return (
-    <div
-      style={{
-        background: INK,
-        color: '#fff',
-        fontFamily: 'var(--font-display)',
-        fontWeight: 700,
-        fontSize: 11,
-        letterSpacing: '.08em',
-        textTransform: 'uppercase',
-        height: 26,
-        display: 'grid',
-        placeItems: 'center',
-        borderRadius: 8,
-        padding: narrow ? '0 6px' : '0 12px',
-      }}
-    >
-      {children}
-    </div>
-  )
-}
-
-function SetTable({
-  circuitId,
-  exercise,
-  metricUnits,
-}: {
-  circuitId: string
-  exercise: EditorExercise
-  metricUnits: EditorMetricUnit[]
-}) {
-  // Column-level metrics read from the first live set — kept in sync across
-  // rows by the bulk rep-metric / load-metric writers (same as the builder).
-  const columnMetric = exercise.sets[0]?.optional_metric ?? ''
-  const columnRepMetric = exercise.sets[0]?.rep_metric ?? ''
-
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '48px 1fr 1.4fr',
-        columnGap: 6,
-        rowGap: 6,
-      }}
-    >
-      <ColHeader narrow>Set</ColHeader>
-      <VolumeColumnDropdown
-        circuitId={circuitId}
-        circuitExerciseId={exercise.id}
-        repMetric={columnRepMetric}
-      />
-      <MetricColumnDropdown
-        circuitId={circuitId}
-        circuitExerciseId={exercise.id}
-        metric={columnMetric}
-        metricUnits={metricUnits}
-      />
-
-      {exercise.sets.map((set) => (
-        <SetRow key={set.id} circuitId={circuitId} set={set} />
-      ))}
-    </div>
-  )
-}
-
-function SetRow({ circuitId, set }: { circuitId: string; set: EditorSet }) {
-  return (
-    <>
-      <div
-        style={{
-          height: 26,
-          display: 'grid',
-          placeItems: 'center',
-          fontFamily: 'var(--font-sans)',
-          fontSize: 13,
-          fontWeight: 600,
-          color: INK,
-          background: CREAM_DEEP,
-          borderRadius: 8,
-        }}
-      >
-        {set.set_number}
-      </div>
-      <SetCell
-        circuitId={circuitId}
-        setId={set.id}
-        field="reps"
-        initialValue={set.reps ?? ''}
-        placeholder="—"
-      />
-      <SetCell
-        circuitId={circuitId}
-        setId={set.id}
-        field="optional_value"
-        initialValue={set.optional_value ?? ''}
-        placeholder="—"
-      />
-    </>
-  )
-}
-
-function SetCell({
-  circuitId,
-  setId,
-  field,
-  initialValue,
-  placeholder,
-}: {
-  circuitId: string
-  setId: string
-  field: 'reps' | 'optional_value'
-  initialValue: string
-  placeholder?: string
-}) {
-  const [value, setValue] = useState(initialValue)
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
-  const [savedAt, setSavedAt] = useState(0)
-  const [, startTransition] = useTransition()
-  const run = useSaveRun()
-  const empty = value.trim() === ''
-
-  function handleBlur() {
-    if (value === initialValue) return
-    const trimmed = value.trim()
-    const next = trimmed === '' ? null : trimmed
-    // Explicit per-field patch — a computed-key object would widen to an index
-    // signature that doesn't match the action's typed patch.
-    const patch: { reps?: string | null; optional_value?: string | null } =
-      field === 'reps' ? { reps: next } : { optional_value: next }
-    setStatus('saving')
-    startTransition(async () => {
-      const res = await run(updateCircuitExerciseSetAction(circuitId, setId, patch))
-      if (res.error) {
-        // Never leave a local value the database doesn't hold — revert to the
-        // last-known server value and flag the cell.
-        setValue(initialValue)
-        setStatus('error')
-      } else {
-        setStatus('idle')
-        setSavedAt((n) => n + 1)
-      }
-    })
-  }
-
-  return (
-    <div style={{ position: 'relative', width: '100%' }}>
-      <input
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        title={
-          status === 'error'
-            ? 'Save failed — value reverted. Edit to try again.'
-            : undefined
-        }
-        onChange={(e) => {
-          setValue(e.target.value)
-          if (status === 'error') setStatus('idle')
-        }}
-        onBlur={handleBlur}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-        }}
-        style={{
-          background: CREAM,
-          borderRadius: 8,
-          height: 26,
-          textAlign: 'center',
-          fontFamily: 'var(--font-sans)',
-          fontSize: 13,
-          fontWeight: 500,
-          color: empty ? FAINT : INK,
-          border:
-            status === 'error'
-              ? '1px solid var(--color-alert)'
-              : '1px solid transparent',
-          outline: 'none',
-          padding: '0 10px',
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
-      />
-      <SaveTick savedAt={savedAt} placement="inline" />
-    </div>
-  )
-}
-
-/**
- * Per-field autosave success indicator. Renders nothing on first mount
- * (savedAt === 0); on each save the parent bumps savedAt, this remounts
- * (key={savedAt}) and the `save-tick` keyframe runs once.
- */
-function SaveTick({
-  savedAt,
-  placement,
-}: {
-  savedAt: number
-  placement: 'inline' | 'corner'
-}) {
-  if (savedAt === 0) return null
-  const positionStyle =
-    placement === 'inline'
-      ? { top: '50%', right: 6, transform: 'translateY(-50%)' }
-      : { top: 8, right: 8 }
-  return (
-    <span
-      key={savedAt}
-      aria-hidden
-      style={{
-        position: 'absolute',
-        ...positionStyle,
-        display: 'grid',
-        placeItems: 'center',
-        pointerEvents: 'none',
-        color: GREEN,
-        animation: 'save-tick 1200ms cubic-bezier(0.4, 0, 0.2, 1) forwards',
-      }}
-    >
-      <Check size={12} strokeWidth={2.5} aria-hidden />
-    </span>
-  )
-}
-
-/**
- * The Reps column HEADER is the volume-unit picker (Reps / Seconds / Metres),
- * writing rep_metric to every set via the bulk action. Same black-slab styling
- * as the load-metric header so the columns read symmetrically.
- */
-function VolumeColumnDropdown({
-  circuitId,
-  circuitExerciseId,
-  repMetric,
-}: {
-  circuitId: string
-  circuitExerciseId: string
-  repMetric: string
-}) {
-  const [pending, startTransition] = useTransition()
-  const router = useRouter()
-  const run = useSaveRun()
-  const repMetricInOptions = VOLUME_UNIT_OPTIONS.some((u) => u.value === repMetric)
-
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const next = e.target.value === '' ? null : e.target.value
-    startTransition(async () => {
-      const res = await run(
-        updateCircuitExerciseRepMetricAction(circuitId, circuitExerciseId, next),
-      )
-      if (res.error) {
-        alert(res.error)
-        return
-      }
-      router.refresh()
-    })
-  }
-
-  return (
-    <div style={{ position: 'relative', height: 26 }}>
-      <select
-        value={repMetric}
-        onChange={handleChange}
-        disabled={pending}
-        aria-label="Measure — reps, seconds, or metres"
-        style={selectSlabStyle(pending)}
-      >
-        {VOLUME_UNIT_OPTIONS.map((u) => (
-          <option key={u.value || 'reps'} value={u.value}>
-            {u.label}
-          </option>
-        ))}
-        {!repMetricInOptions && repMetric !== '' && (
-          <option value={repMetric}>{volumeUnitLabel(repMetric)}</option>
-        )}
-      </select>
-      <SlabChevron />
-    </div>
-  )
-}
-
-/**
- * The Load column HEADER is the load-unit picker (kg / lb / % / RPE / …),
- * writing optional_metric to every set via the bulk action. A saved unit not
- * in the org's current list stays selectable (legacy-value fallback).
- */
-function MetricColumnDropdown({
-  circuitId,
-  circuitExerciseId,
-  metric,
-  metricUnits,
-}: {
-  circuitId: string
-  circuitExerciseId: string
-  metric: string
-  metricUnits: EditorMetricUnit[]
-}) {
-  const [pending, startTransition] = useTransition()
-  const router = useRouter()
-  const run = useSaveRun()
-  const metricInOptions =
-    metric !== '' && metricUnits.some((u) => u.code === metric)
-
-  function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const next = e.target.value === '' ? null : e.target.value
-    startTransition(async () => {
-      const res = await run(
-        updateCircuitExerciseMetricAction(circuitId, circuitExerciseId, next),
-      )
-      if (res.error) {
-        alert(res.error)
-        return
-      }
-      router.refresh()
-    })
-  }
-
-  return (
-    <div style={{ position: 'relative', height: 26 }}>
-      <select
-        value={metric}
-        onChange={handleChange}
-        disabled={pending}
-        aria-label="Load / Notes metric"
-        style={selectSlabStyle(pending)}
-      >
-        <option value="">Load / Notes</option>
-        {!metricInOptions && metric !== '' && (
-          <option value={metric}>{metric}</option>
-        )}
-        {metricUnits.map((u) => (
-          <option key={u.code} value={u.code}>
-            {u.display_label}
-          </option>
-        ))}
-      </select>
-      <SlabChevron />
-    </div>
-  )
-}
-
-/** Shared black-slab <select> styling for the two column-header dropdowns. */
-function selectSlabStyle(pending: boolean): React.CSSProperties {
-  return {
-    background: INK,
-    color: '#fff',
-    fontFamily: 'var(--font-display)',
-    fontWeight: 700,
-    fontSize: 11,
-    letterSpacing: '.08em',
-    textTransform: 'uppercase',
-    height: '100%',
-    width: '100%',
-    padding: '0 22px 0 12px',
-    border: 'none',
-    borderRadius: 8,
-    outline: 'none',
-    appearance: 'none',
-    WebkitAppearance: 'none',
-    MozAppearance: 'none',
-    cursor: pending ? 'wait' : 'pointer',
-    boxSizing: 'border-box',
-    textAlign: 'center',
-    textAlignLast: 'center',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-  }
-}
-
-function SlabChevron() {
-  return (
-    <ChevronDown
-      size={12}
-      aria-hidden
-      style={{
-        position: 'absolute',
-        right: 7,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        color: '#fff',
-        pointerEvents: 'none',
-      }}
-    />
-  )
-}
-
-function SetStepper({
-  circuitId,
-  exercise,
-}: {
-  circuitId: string
-  exercise: EditorExercise
-}) {
-  const [pending, startTransition] = useTransition()
-  const router = useRouter()
-  const run = useSaveRun()
-  const current = exercise.sets.length
-
-  function handleAdd() {
-    startTransition(async () => {
-      const res = await run(addCircuitExerciseSetAction(circuitId, exercise.id))
-      if (res.error) {
-        alert(res.error)
-        return
-      }
-      router.refresh()
-    })
-  }
-
-  function handleRemove() {
-    if (current <= 1) return
-    const last = exercise.sets[exercise.sets.length - 1]
-    if (!last) return
-    startTransition(async () => {
-      const res = await run(removeCircuitExerciseSetAction(circuitId, last.id))
-      if (res.error) {
-        alert(res.error)
-        return
-      }
-      router.refresh()
-    })
-  }
-
-  return (
-    <div
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        marginTop: 8,
-        alignSelf: 'flex-end',
-        opacity: pending ? 0.5 : 1,
-      }}
-    >
-      <button
-        type="button"
-        onClick={handleRemove}
-        disabled={current <= 1 || pending}
-        aria-label="Remove set"
-        style={{
-          width: 22,
-          height: 22,
-          border: 'none',
-          background: 'transparent',
-          color: MUTED,
-          cursor: current <= 1 ? 'not-allowed' : 'pointer',
-          fontSize: 16,
-          lineHeight: 1,
-        }}
-      >
-        −
-      </button>
-      <span style={{ fontSize: 12, color: MUTED, fontWeight: 500 }}>
-        {current} {current === 1 ? 'set' : 'sets'}
-      </span>
-      <button
-        type="button"
-        onClick={handleAdd}
-        disabled={pending}
-        aria-label="Add set"
-        style={{
-          width: 22,
-          height: 22,
-          border: 'none',
-          background: 'transparent',
-          color: MUTED,
-          cursor: 'pointer',
-          fontSize: 16,
-          lineHeight: 1,
-        }}
-      >
-        +
-      </button>
-    </div>
-  )
-}
-
-/* ====================== Extras row (Rest / Tempo) ====================== */
-
-function ExtrasRow({
-  circuitId,
-  exercise,
-}: {
-  circuitId: string
-  exercise: EditorExercise
-}) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
-        gap: 6,
-        marginTop: 8,
-      }}
-    >
-      <SmallField
-        circuitId={circuitId}
-        circuitExerciseId={exercise.id}
-        field="rest_seconds"
-        label="Rest (s)"
-        kind="number"
-        initialValue={exercise.rest_seconds?.toString() ?? ''}
-      />
-      <SmallField
-        circuitId={circuitId}
-        circuitExerciseId={exercise.id}
-        field="tempo"
-        label="Tempo"
-        kind="text"
-        initialValue={exercise.tempo ?? ''}
-      />
-    </div>
-  )
-}
-
-function SmallField({
-  circuitId,
-  circuitExerciseId,
-  field,
-  label,
-  kind,
-  initialValue,
-}: {
-  circuitId: string
-  circuitExerciseId: string
-  field: 'rest_seconds' | 'tempo'
-  label: string
-  kind: 'number' | 'text'
-  initialValue: string
-}) {
-  const [value, setValue] = useState(initialValue)
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
-  const [savedAt, setSavedAt] = useState(0)
-  const [, startTransition] = useTransition()
-  const run = useSaveRun()
-  const empty = value.trim() === ''
-
-  function handleBlur() {
-    if (value === initialValue) return
-    const patch = buildPatch(field, value, kind)
-    if (patch === null) {
-      setStatus('error')
-      return
-    }
-    setStatus('saving')
-    startTransition(async () => {
-      const res = await run(
-        updateCircuitExerciseAction(circuitId, circuitExerciseId, patch),
-      )
-      if (res.error) {
-        setValue(initialValue)
-        setStatus('error')
-      } else {
-        setStatus('idle')
-        setSavedAt((n) => n + 1)
-      }
-    })
-  }
-
-  return (
-    <label style={{ display: 'block' }}>
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 700,
-          fontSize: 9,
-          letterSpacing: '.08em',
-          textTransform: 'uppercase',
-          color: FAINT,
-          marginBottom: 3,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ position: 'relative' }}>
-        <input
-          type={kind === 'number' ? 'number' : 'text'}
-          inputMode={kind === 'number' ? 'numeric' : undefined}
-          value={value}
-          placeholder="—"
-          title={
-            status === 'error'
-              ? 'Save failed — value reverted. Edit to try again.'
-              : undefined
+        <SetTable
+          sets={exercise.sets}
+          metricUnits={metricUnits}
+          onRepsCommit={(setId, next) =>
+            updateCircuitExerciseSetAction(circuitId, setId, { reps: next })
           }
-          onChange={(e) => {
-            setValue(e.target.value)
-            if (status === 'error') setStatus('idle')
-          }}
-          onBlur={handleBlur}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          }}
-          style={{
-            width: '100%',
-            height: 28,
-            padding: '0 8px',
-            background: CREAM,
-            border:
-              status === 'error'
-                ? '1px solid var(--color-alert)'
-                : '1px solid transparent',
-            borderRadius: 6,
-            fontFamily: 'var(--font-sans)',
-            fontSize: 12,
-            fontWeight: 500,
-            color: empty ? FAINT : INK,
-            textAlign: 'center',
-            outline: 'none',
-            boxSizing: 'border-box',
+          onValueCommit={(setId, next) =>
+            updateCircuitExerciseSetAction(circuitId, setId, {
+              optional_value: next,
+            })
+          }
+          onRepMetricCommit={(next) =>
+            updateCircuitExerciseRepMetricAction(circuitId, exercise.id, next)
+          }
+          onMetricCommit={(next) =>
+            updateCircuitExerciseMetricAction(circuitId, exercise.id, next)
+          }
+        />
+        <SetStepper
+          count={exercise.sets.length}
+          onAdd={() => addCircuitExerciseSetAction(circuitId, exercise.id)}
+          onRemove={() => {
+            const last = exercise.sets[exercise.sets.length - 1]
+            return last
+              ? removeCircuitExerciseSetAction(circuitId, last.id)
+              : Promise.resolve({ error: null })
           }}
         />
-        <SaveTick savedAt={savedAt} placement="inline" />
+        <ExtrasRow
+          restSeconds={exercise.rest_seconds}
+          tempo={exercise.tempo}
+          onRestCommit={(next) =>
+            updateCircuitExerciseAction(circuitId, exercise.id, {
+              rest_seconds: next,
+            })
+          }
+          onTempoCommit={(next) =>
+            updateCircuitExerciseAction(circuitId, exercise.id, { tempo: next })
+          }
+        />
       </div>
-    </label>
-  )
-}
-
-/* ====================== Editable instructions ====================== */
-
-function EditableTextarea({
-  circuitId,
-  circuitExerciseId,
-  initialValue,
-  placeholder,
-}: {
-  circuitId: string
-  circuitExerciseId: string
-  initialValue: string
-  placeholder?: string
-}) {
-  const [value, setValue] = useState(initialValue)
-  const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
-  const [savedAt, setSavedAt] = useState(0)
-  const [, startTransition] = useTransition()
-  const run = useSaveRun()
-
-  function handleBlur() {
-    if (value === initialValue) return
-    const patch: CircuitExercisePatch = {
-      instructions: value.trim() === '' ? null : value,
-    }
-    setStatus('saving')
-    startTransition(async () => {
-      const res = await run(
-        updateCircuitExerciseAction(circuitId, circuitExerciseId, patch),
-      )
-      if (res.error) {
-        setValue(initialValue)
-        setStatus('error')
-      } else {
-        setStatus('idle')
-        setSavedAt((n) => n + 1)
-      }
-    })
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <textarea
-        value={value}
-        placeholder={placeholder}
-        title={
-          status === 'error'
-            ? 'Save failed — text reverted. Edit to try again.'
-            : undefined
-        }
-        onChange={(e) => {
-          setValue(e.target.value)
-          if (status === 'error') setStatus('idle')
-        }}
-        onBlur={handleBlur}
-        rows={3}
-        style={{
-          background: CREAM,
-          border:
-            status === 'error'
-              ? '1px solid var(--color-alert)'
-              : '1px solid transparent',
-          borderRadius: 8,
-          padding: '10px 12px',
-          fontFamily: 'var(--font-sans)',
-          fontSize: 13,
-          lineHeight: 1.5,
-          color: value ? INK : FAINT,
-          fontWeight: 400,
-          width: '100%',
-          minHeight: 60,
-          resize: 'vertical',
-          outline: 'none',
-          boxSizing: 'border-box',
-          display: 'block',
-        }}
-      />
-      <SaveTick savedAt={savedAt} placement="corner" />
     </div>
   )
-}
-
-function IconButton({
-  children,
-  label,
-  onClick,
-  disabled,
-}: {
-  children: React.ReactNode
-  label: string
-  onClick: () => void
-  disabled?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      style={{
-        background: 'transparent',
-        border: 'none',
-        color: disabled ? 'var(--color-border-subtle)' : MUTED,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        padding: 4,
-        display: 'grid',
-        placeItems: 'center',
-        borderRadius: 4,
-        transition: 'color 120ms',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-function buildPatch(
-  field: 'rest_seconds' | 'tempo',
-  raw: string,
-  kind: 'number' | 'text',
-): CircuitExercisePatch | null {
-  const trimmed = raw.trim()
-  // Computed-key objects widen to an index signature; cast to the typed patch
-  // (the allowlist in updateCircuitExerciseAction is the real guard).
-  if (trimmed === '') {
-    return { [field]: null } as CircuitExercisePatch
-  }
-  if (kind === 'number') {
-    const n = parseInt(trimmed, 10)
-    if (!Number.isFinite(n) || n < 0) return null
-    return { [field]: n } as CircuitExercisePatch
-  }
-  return { [field]: trimmed } as CircuitExercisePatch
 }
