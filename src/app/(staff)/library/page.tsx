@@ -7,6 +7,7 @@ import type {
   Pattern,
   ProgramTemplateSummary,
   SessionTemplateSummary,
+  TemplateDayLite,
   Tag,
 } from './types'
 
@@ -54,8 +55,8 @@ export default async function LibraryPage() {
       .from('program_templates')
       .select(
         `id, name, description, created_at,
-         template_weeks(id, deleted_at,
-           template_days(id, deleted_at,
+         template_weeks(id, week_number, deleted_at,
+           template_days(id, day_label, sort_order, deleted_at,
              template_exercises(id, deleted_at))),
          programs(id, deleted_at)`,
       )
@@ -120,10 +121,13 @@ type RawTemplateRow = {
   template_weeks:
     | Array<{
         id: string
+        week_number: number
         deleted_at: string | null
         template_days:
           | Array<{
               id: string
+              day_label: string
+              sort_order: number
               deleted_at: string | null
               template_exercises:
                 | Array<{ id: string; deleted_at: string | null }>
@@ -141,15 +145,23 @@ function toProgramTemplateSummaries(rows: unknown): ProgramTemplateSummary[] {
     const weeks = (t.template_weeks ?? []).filter((w) => w.deleted_at === null)
     let dayCount = 0
     let exerciseCount = 0
+    const days: TemplateDayLite[] = []
     for (const w of weeks) {
-      const days = (w.template_days ?? []).filter((d) => d.deleted_at === null)
-      dayCount += days.length
-      for (const d of days) {
+      const wd = (w.template_days ?? []).filter((d) => d.deleted_at === null)
+      dayCount += wd.length
+      for (const d of wd) {
         exerciseCount += (d.template_exercises ?? []).filter(
           (e) => e.deleted_at === null,
         ).length
+        days.push({
+          id: d.id,
+          weekNumber: w.week_number,
+          dayLabel: d.day_label,
+          sortOrder: d.sort_order,
+        })
       }
     }
+    days.sort((a, b) => a.weekNumber - b.weekNumber || a.sortOrder - b.sortOrder)
     const usedCount = (t.programs ?? []).filter(
       (p) => p.deleted_at === null,
     ).length
@@ -162,6 +174,7 @@ function toProgramTemplateSummaries(rows: unknown): ProgramTemplateSummary[] {
       dayCount,
       exerciseCount,
       usedCount,
+      days,
     }
   })
 }

@@ -10,29 +10,31 @@ export type ApplyTemplateResult =
   | { error: string }
 
 /**
- * LPT-4 — instantiate a template as a new active program for a client, from
- * the Library. Wraps create_program_from_template (the same engine the
- * program/new "Start from template" flow uses), surfacing the same
- * overlap/created outcomes so the caller can route or explain. Date-range
- * collisions with an existing active block return status='overlap'.
+ * LPT-4 + per-day-dates (2026-06-24) — instantiate a template as a new active
+ * program for a client, with an EXPLICIT date per day (dayDates: template_day_id
+ * → 'YYYY-MM-DD'). Wraps create_program_from_template_on_dates so the EP picks
+ * each day's real date rather than one start date + auto weekday-offset.
+ * Date-range collisions with an existing active block return status='overlap'.
  */
 export async function applyProgramTemplateAction(
   templateId: string,
   clientId: string,
-  startDate: string,
+  dayDates: Record<string, string>,
 ): Promise<ApplyTemplateResult> {
   await requireRole(['owner', 'staff'])
 
   if (!clientId) return { error: 'Pick a client.' }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-    return { error: 'Pick a start date.' }
+  const entries = Object.entries(dayDates)
+  if (entries.length === 0) return { error: 'Pick a date for every day.' }
+  for (const [, d] of entries) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'Pick a date for every day.' }
   }
 
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase.rpc('create_program_from_template', {
+  const { data, error } = await supabase.rpc('create_program_from_template_on_dates', {
     p_template_id: templateId,
     p_client_id: clientId,
-    p_start_date: startDate,
+    p_day_dates: dayDates,
   })
 
   if (error) return { error: `Couldn't apply the template: ${error.message}` }

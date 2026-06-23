@@ -70,6 +70,14 @@ export type ClientOption = {
   last_name: string
 }
 
+/** A template day, lightweight — for the apply modal's per-day date pickers. */
+export type TemplateDayLite = {
+  id: string
+  weekNumber: number
+  dayLabel: string
+  sortOrder: number
+}
+
 /** A saved program template + derived counts for the Library Programs tab. */
 export type ProgramTemplateSummary = {
   id: string
@@ -80,6 +88,8 @@ export type ProgramTemplateSummary = {
   dayCount: number
   exerciseCount: number
   usedCount: number
+  /** Live days (sorted week → sort_order) for the per-day apply date pickers. */
+  days: TemplateDayLite[]
 }
 
 /** A saved circuit + derived count for the Library Circuits tab. No usage

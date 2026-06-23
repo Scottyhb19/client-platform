@@ -53,29 +53,47 @@ function TemplateCard({
   const [renaming, setRenaming] = useState(false)
   const [applying, setApplying] = useState(false)
   const [applyClient, setApplyClient] = useState('')
-  const [applyDate, setApplyDate] = useState('')
+  const [anchorDate, setAnchorDate] = useState('')
+  const [dayDates, setDayDates] = useState<Record<string, string>>({})
   const [name, setName] = useState(t.name)
   const [error, setError] = useState<string | null>(null)
+
+  // Picking the start date pre-fills each day from its (week-1)*7 + sort_order
+  // offset (the legacy auto-placement) — the EP then adjusts any day's date.
+  function setAnchor(date: string) {
+    setAnchorDate(date)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const next: Record<string, string> = {}
+      for (const d of t.days) {
+        next[d.id] = addDays(date, (d.weekNumber - 1) * 7 + d.sortOrder)
+      }
+      setDayDates(next)
+    }
+  }
 
   function handleApply() {
     if (!applyClient) {
       setError('Pick a client.')
       return
     }
-    if (!applyDate) {
-      setError('Pick a start date.')
+    if (t.days.length === 0) {
+      setError('This template has no days to schedule.')
+      return
+    }
+    if (t.days.some((d) => !dayDates[d.id])) {
+      setError('Pick a date for every day.')
       return
     }
     setError(null)
     startTransition(async () => {
-      const res = await applyProgramTemplateAction(t.id, applyClient, applyDate)
+      const res = await applyProgramTemplateAction(t.id, applyClient, dayDates)
       if ('error' in res) {
         setError(res.error)
         return
       }
       if (res.status === 'overlap') {
         setError(
-          'This client already has an active block covering these dates. Pick a later start date.',
+          'This client already has an active block covering these dates. Pick later dates.',
         )
         return
       }
@@ -283,13 +301,55 @@ function TemplateCard({
                   </option>
                 ))}
               </select>
-              <input
-                type="date"
-                value={applyDate}
-                onChange={(e) => setApplyDate(e.target.value)}
-                aria-label="Start date"
-                style={fieldStyle}
-              />
+              <div>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '.72rem',
+                    color: 'var(--color-muted)',
+                    marginBottom: 4,
+                  }}
+                >
+                  Start date — pre-fills each day; adjust any below
+                </label>
+                <input
+                  type="date"
+                  value={anchorDate}
+                  onChange={(e) => setAnchor(e.target.value)}
+                  aria-label="Start date (pre-fills each day)"
+                  style={fieldStyle}
+                />
+              </div>
+              {t.days.length > 0 && (
+                <div style={{ display: 'grid', gap: 6, maxHeight: 240, overflowY: 'auto' }}>
+                  {t.days.map((d) => (
+                    <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          fontSize: '.78rem',
+                          color: 'var(--color-text-light)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        W{d.weekNumber} · {d.dayLabel}
+                      </span>
+                      <input
+                        type="date"
+                        value={dayDates[d.id] ?? ''}
+                        onChange={(e) =>
+                          setDayDates((prev) => ({ ...prev, [d.id]: e.target.value }))
+                        }
+                        aria-label={`Date for week ${d.weekNumber} ${d.dayLabel}`}
+                        style={{ ...fieldStyle, width: 160, height: 32 }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   type="button"
@@ -318,6 +378,9 @@ function TemplateCard({
               className="btn primary"
               onClick={() => {
                 setError(null)
+                setApplyClient('')
+                setAnchorDate('')
+                setDayDates({})
                 setApplying(true)
               }}
               style={{ width: '100%' }}
@@ -342,6 +405,17 @@ function TemplateCard({
       )}
     </article>
   )
+}
+
+/** Add days to a YYYY-MM-DD string in LOCAL time (avoids the UTC-parse day
+ * shift of new Date('YYYY-MM-DD')). Caller guarantees a valid ISO date. */
+function addDays(iso: string, days: number): string {
+  const parts = iso.split('-').map(Number)
+  const dt = new Date(parts[0]!, parts[1]! - 1, parts[2]!)
+  dt.setDate(dt.getDate() + days)
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${dt.getFullYear()}-${mm}-${dd}`
 }
 
 const fieldStyle: React.CSSProperties = {
