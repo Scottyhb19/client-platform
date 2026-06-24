@@ -3,7 +3,8 @@
 -- ============================================================================
 -- Second library seed: the foundation / rehab & mobility tier, transcribed
 -- from the operator-provided "Odyssey — Exercise Library Seed (Foundation /
--- Rehab & Mobility)" markdown (exercise_library_rehab_seed.md, 2026-06-24).
+-- Rehab & Mobility)" markdown, committed alongside this script at
+-- scripts/exercise_library_rehab_seed.md (provided 2026-06-24).
 --
 -- NOT a migration (org-specific personal content). Org-scoped to
 -- "The Odyssey. Platform" (33d23c20). Idempotent: skips any exercise whose
