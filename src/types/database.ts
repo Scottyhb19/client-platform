@@ -3942,11 +3942,12 @@ export type Database = {
         }
         Returns: Json
       }
-      create_program_from_template_on_dates: {
+      create_program_from_template_on_weekdays: {
         Args: {
           p_client_id: string
-          p_day_dates: Json
+          p_day_weekdays: Json
           p_name?: string
+          p_start_date: string
           p_template_id: string
         }
         Returns: Json

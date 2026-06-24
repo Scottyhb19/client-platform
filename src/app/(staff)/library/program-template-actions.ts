@@ -10,31 +10,37 @@ export type ApplyTemplateResult =
   | { error: string }
 
 /**
- * LPT-4 + per-day-dates (2026-06-24) — instantiate a template as a new active
- * program for a client, with an EXPLICIT date per day (dayDates: template_day_id
- * → 'YYYY-MM-DD'). Wraps create_program_from_template_on_dates so the EP picks
- * each day's real date rather than one start date + auto weekday-offset.
+ * LPT-4 + weekday apply (2026-06-24) — instantiate a template as a new active
+ * program for a client, scheduling each session on a chosen WEEKDAY
+ * (dayWeekdays: template_day_id → 0..6, Mon..Sun) off the start week, repeating
+ * weekly. The authoritative dates are computed in SQL
+ * (create_program_from_template_on_weekdays) — TZ-immune, no client date math.
  * Date-range collisions with an existing active block return status='overlap'.
  */
 export async function applyProgramTemplateAction(
   templateId: string,
   clientId: string,
-  dayDates: Record<string, string>,
+  startDate: string,
+  dayWeekdays: Record<string, number>,
 ): Promise<ApplyTemplateResult> {
   await requireRole(['owner', 'staff'])
 
   if (!clientId) return { error: 'Pick a client.' }
-  const entries = Object.entries(dayDates)
-  if (entries.length === 0) return { error: 'Pick a date for every day.' }
-  for (const [, d] of entries) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return { error: 'Pick a date for every day.' }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return { error: 'Pick a start date.' }
+  const entries = Object.entries(dayWeekdays)
+  if (entries.length === 0) return { error: 'Pick a weekday for every session.' }
+  for (const [, wd] of entries) {
+    if (!Number.isInteger(wd) || wd < 0 || wd > 6) {
+      return { error: 'Pick a weekday for every session.' }
+    }
   }
 
   const supabase = await createSupabaseServerClient()
-  const { data, error } = await supabase.rpc('create_program_from_template_on_dates', {
+  const { data, error } = await supabase.rpc('create_program_from_template_on_weekdays', {
     p_template_id: templateId,
     p_client_id: clientId,
-    p_day_dates: dayDates,
+    p_start_date: startDate,
+    p_day_weekdays: dayWeekdays,
   })
 
   if (error) return { error: `Couldn't apply the template: ${error.message}` }

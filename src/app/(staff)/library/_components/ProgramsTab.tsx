@@ -90,22 +90,22 @@ function TemplateCard({
       setError('Each session needs a different weekday.')
       return
     }
-    // Compute each day's real date: the slot's chosen weekday, in that day's
-    // week, off the Monday of the start week. The pattern repeats each week.
-    const monday = mondayOf(startDate)
-    const dayDates: Record<string, string> = {}
+    // The slot's chosen weekday per session (template_day_id → 0..6); the
+    // authoritative dates are computed in SQL (TZ-immune). Same slot weekday in
+    // every week ⇒ the pattern repeats. The inline preview below is the only
+    // client-side date math, and it's display-only.
+    const dayWeekdays: Record<string, number> = {}
     for (const wk of weekNumbers) {
       const wkDays = [...(daysByWeek.get(wk) ?? [])].sort(
         (a, b) => a.sortOrder - b.sortOrder,
       )
       wkDays.forEach((d, p) => {
-        const wd = slotWeekdays[p] ?? d.sortOrder % 7
-        dayDates[d.id] = addDays(monday, (d.weekNumber - 1) * 7 + wd)
+        dayWeekdays[d.id] = slotWeekdays[p] ?? d.sortOrder % 7
       })
     }
     setError(null)
     startTransition(async () => {
-      const res = await applyProgramTemplateAction(t.id, applyClient, dayDates)
+      const res = await applyProgramTemplateAction(t.id, applyClient, startDate, dayWeekdays)
       if ('error' in res) {
         setError(res.error)
         return
