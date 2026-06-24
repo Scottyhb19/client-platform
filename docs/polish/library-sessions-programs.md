@@ -168,4 +168,10 @@ Unchanged + sound per the reviewer (not reopened): cross-org RLS + triggers + pg
 
 ---
 
-*Awaiting the reviewer's re-review of this follow-up. On a clean pass, the operator records the Sign-off below.*
+## Sign-off
+
+- **Date signed off:** 2026-06-24
+- **Reviewer:** claude.ai project chat (challenger role) — re-review of the follow-up on `f5c9304`
+- **Decision:** Closed (feature deferrals recorded in [`go-live-checklist.md §8`](../go-live-checklist.md))
+
+Reviewer (claude.ai) re-review passed on `f5c9304`. All four follow-ups verified: DST surface closed by moving date computation into SQL (`create_program_from_template_on_weekdays`, pgTAP `43` 10/10 with A4 asserting a post-fall-back week-2 session); overlap surfaced in `handleApply` (visible error, returns before navigate, pgTAP A9); FM-H reworded so the `:3000` circuit dogfood is named as the mitigation and 39/40 confirm only the data layer; deferrals recorded in `go-live-checklist.md §8`. Deploy-skew incident captured as a memory lesson with the expand/contract invariant (add → deploy frontend → confirm live → drop in a later push). Operator confirmed the live template-apply from the Programs tab succeeds post-deploy. **Section closed.**
