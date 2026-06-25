@@ -72,6 +72,7 @@ import {
 } from '../../../../_components/ReportsPanel'
 import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import { timeAgo } from '../../../../_components/reports/helpers'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /*
  * Session Builder — light/cream skeleton.
@@ -1198,19 +1199,25 @@ function ExerciseBody({
   const isSwapping = swapTarget === pe.id
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  // On-system confirm (CN-13 pattern, shared ConfirmDialog) in place of the
+  // browser-native confirm()/alert(). A delete failure surfaces inside the
+  // open dialog so the EP can retry or cancel — no transient alert().
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   // Server actions invalidate the route cache via revalidatePath; the
   // client component still needs router.refresh() to actually re-fetch
   // and re-render the page with the new data.
 
-  function handleRemove() {
-    if (!confirm(`Remove ${pe.exercise_name} from this session?`)) return
+  function doRemove() {
+    setRemoveError(null)
     startTransition(async () => {
       const res = await removeProgramExerciseAction(clientId, dayId, pe.id)
       if (res.error) {
-        alert(res.error)
+        setRemoveError(res.error)
         return
       }
+      setConfirmRemove(false)
       router.refresh()
     })
   }
@@ -1333,7 +1340,10 @@ function ExerciseBody({
           )}
           <IconButton
             disabled={pending}
-            onClick={handleRemove}
+            onClick={() => {
+              setRemoveError(null)
+              setConfirmRemove(true)
+            }}
             label="Remove exercise"
           >
             <Trash2 size={14} aria-hidden />
@@ -1449,6 +1459,27 @@ function ExerciseBody({
         <ExtrasRow pe={pe} />
         <LastLoggedFooter pe={pe} />
       </div>
+
+      {confirmRemove && (
+        <ConfirmDialog
+          title="Remove exercise?"
+          body={
+            <>
+              <strong>{pe.exercise_name}</strong> will be removed from this
+              session, along with its sets.
+            </>
+          }
+          confirmLabel="Remove"
+          busy={pending}
+          error={removeError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmRemove(false)
+            setRemoveError(null)
+          }}
+          onConfirm={doRemove}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Info } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
 import { todayIsoInPracticeTz } from '@/lib/dates'
@@ -75,7 +75,7 @@ export default async function ClientProgramPage({
   const { data: programsRaw, error: progErr } = await supabase
     .from('programs')
     .select(
-      `id, name, status, duration_weeks, start_date, notes, created_at`,
+      `id, name, status, duration_weeks, start_date, notes, created_at, is_loose`,
     )
     .eq('client_id', id)
     .eq('status', 'active')
@@ -84,10 +84,14 @@ export default async function ClientProgramPage({
 
   if (progErr) throw new Error(`Load programs: ${progErr.message}`)
 
+  // Dated blocks only — these drive the calendar's block surfaces
+  // (covering-program lookup, current-block resolution, the "Active" tag).
+  // The loose one-off container (is_loose, null dates — item 3) is excluded
+  // here so it never reads as a block.
   const programs: ProgramSummary[] = (programsRaw ?? [])
     .filter(
       (p): p is typeof p & { start_date: string; duration_weeks: number } =>
-        p.start_date !== null && p.duration_weeks !== null,
+        !p.is_loose && p.start_date !== null && p.duration_weeks !== null,
     )
     .map((p) => ({
       id: p.id,
@@ -96,17 +100,21 @@ export default async function ClientProgramPage({
       duration_weeks: p.duration_weeks,
     }))
 
+  // Days load for ALL active programs — dated blocks AND the loose container
+  // — so one-off sessions render on the grid even on dates no block covers.
+  const allActiveProgramIds = (programsRaw ?? []).map((p) => p.id)
+
   let days: ProgramDayWithExercises[] = []
 
-  if (programs.length > 0) {
-    const programIds = programs.map((p) => p.id)
+  if (allActiveProgramIds.length > 0) {
+    const programIds = allActiveProgramIds
 
     // Days across every active program. Each carries scheduled_date
     // directly post-D-PROG-001; no week walk required.
     const { data: daysRaw, error: daysErr } = await supabase
       .from('program_days')
       .select(
-        `id, program_id, scheduled_date, day_label, sort_order`,
+        `id, program_id, scheduled_date, day_label, sort_order, published_at`,
       )
       .in('program_id', programIds)
       .is('deleted_at', null)
@@ -161,6 +169,7 @@ export default async function ClientProgramPage({
       scheduled_date: d.scheduled_date,
       day_label: d.day_label,
       sort_order: d.sort_order,
+      published_at: d.published_at,
       exercises: exercisesByDayId.get(d.id) ?? [],
     }))
   }
@@ -419,17 +428,21 @@ export default async function ClientProgramPage({
           alignItems: panelOpen ? 'start' : undefined,
         }}
       >
-        {programs.length === 0 ? (
-          <EmptyProgram clientId={client.id} />
-        ) : (
+        <div>
+          {/* Item 3: the calendar is always reachable — no block required.
+              A quiet hint (not the old full-screen wall) when there's no
+              dated block yet, pointing at both paths: click a date to add a
+              session, or start a structured block from the toolbar. */}
+          {programs.length === 0 && <NoBlockHint />}
           <MonthCalendar
             clientId={client.id}
+            clientFirstName={client.first_name}
             programs={programs}
             days={days}
             todayIso={todayIso}
             compactPopover={panelOpen}
           />
-        )}
+        </div>
         {panelOpen && (
           <CalendarSidePanel
             notes={clinicalNotes}
@@ -446,46 +459,39 @@ export default async function ClientProgramPage({
 // src/lib/programs/current-block.ts — shared with the client-profile
 // Program tab since the P1-5 maybeSingle fix (program-calendar pass).
 
-function EmptyProgram({ clientId }: { clientId: string }) {
+// Item 3 — replaces the old full-screen "No active program" wall. The
+// calendar now renders even with no block, so this is a slim, quiet hint
+// (not a gate) pointing at both ways forward.
+function NoBlockHint() {
   return (
     <div
-      className="card"
       style={{
-        padding: '44px 28px',
-        textAlign: 'center',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 14px',
+        marginBottom: 12,
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border-subtle)',
+        borderRadius: 10,
+        fontSize: '.86rem',
         color: 'var(--color-text-light)',
+        lineHeight: 1.5,
       }}
     >
-      <div
-        style={{
-          fontFamily: 'var(--font-display)',
-          fontWeight: 800,
-          fontSize: '1.25rem',
-          color: 'var(--color-charcoal)',
-          marginBottom: 6,
-        }}
-      >
-        No active program
-      </div>
-      <p
-        style={{
-          fontSize: '.92rem',
-          margin: '0 auto 20px',
-          lineHeight: 1.6,
-          maxWidth: 460,
-        }}
-      >
-        Start a training block for this client — 4–8 weeks with a
-        repeating day split (A/B, A/B/C, etc). The Session Builder then lets
-        you fill in exercises day by day.
-      </p>
-      <Link
-        href={`/clients/${clientId}/program/new`}
-        className="btn primary"
-      >
-        <Plus size={14} aria-hidden />
-        Start first training block
-      </Link>
+      <Info
+        size={16}
+        aria-hidden
+        style={{ flexShrink: 0, color: 'var(--color-muted)' }}
+      />
+      <span>
+        No training block yet. Click any date to add a session, or start a
+        structured block with{' '}
+        <strong style={{ color: 'var(--color-charcoal)', fontWeight: 600 }}>
+          New training block
+        </strong>{' '}
+        above.
+      </span>
     </div>
   )
 }

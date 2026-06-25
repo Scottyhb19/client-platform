@@ -31,7 +31,7 @@ import {
   updateClinicalFlagAction,
   type ClinicalFlagType,
 } from '../notes-actions'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 import { formatShortDate } from '@/lib/format-date'
 
 export type ClientFlag = {

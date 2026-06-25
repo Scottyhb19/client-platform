@@ -2456,6 +2456,7 @@ export type Database = {
           deleted_at: string | null
           duration_weeks: number | null
           id: string
+          is_loose: boolean
           name: string
           notes: string | null
           organization_id: string
@@ -2473,6 +2474,7 @@ export type Database = {
           deleted_at?: string | null
           duration_weeks?: number | null
           id?: string
+          is_loose?: boolean
           name: string
           notes?: string | null
           organization_id: string
@@ -2490,6 +2492,7 @@ export type Database = {
           deleted_at?: string | null
           duration_weeks?: number | null
           id?: string
+          is_loose?: boolean
           name?: string
           notes?: string | null
           organization_id?: string

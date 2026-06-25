@@ -51,6 +51,7 @@ import {
   INK,
   MUTED,
 } from './editor-kit'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /*
  * DayContentEditor — the reusable, client-agnostic "edit a day of exercises"
@@ -771,15 +772,20 @@ function DayExerciseBody({
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   const run = useSaveRun()
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); a delete failure shows inside the dialog so the EP can retry.
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
-  function handleRemove() {
-    if (!confirm(`Remove ${exercise.exercise_name} from this day?`)) return
+  function doRemove() {
+    setRemoveError(null)
     startTransition(async () => {
       const res = await run(actions.removeExercise(exercise.id))
       if (res.error) {
-        alert(res.error)
+        setRemoveError(res.error)
         return
       }
+      setConfirmRemove(false)
       router.refresh()
     })
   }
@@ -866,7 +872,10 @@ function DayExerciseBody({
           )}
           <IconButton
             disabled={pending}
-            onClick={handleRemove}
+            onClick={() => {
+              setRemoveError(null)
+              setConfirmRemove(true)
+            }}
             label="Remove exercise"
           >
             <Trash2 size={14} aria-hidden />
@@ -1004,6 +1013,27 @@ function DayExerciseBody({
           }
         />
       </div>
+
+      {confirmRemove && (
+        <ConfirmDialog
+          title="Remove exercise?"
+          body={
+            <>
+              <strong>{exercise.exercise_name}</strong> will be removed from
+              this day, along with its sets.
+            </>
+          }
+          confirmLabel="Remove"
+          busy={pending}
+          error={removeError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmRemove(false)
+            setRemoveError(null)
+          }}
+          onConfirm={doRemove}
+        />
+      )}
     </div>
   )
 }

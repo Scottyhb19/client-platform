@@ -12,12 +12,14 @@ import {
 } from 'react'
 import {
   AlertCircle,
+  Check,
   ChevronLeft,
   ChevronRight,
   Copy,
   ExternalLink,
   Plus,
   Repeat,
+  Send,
   Trash2,
   X,
 } from 'lucide-react'
@@ -30,11 +32,14 @@ import {
   copyDayAction,
   copyWeekAction,
   createProgramDayAction,
+  publishAllProgramDaysAction,
   removeProgramDayAction,
   repeatDayWeeklyAction,
   repeatWeekAction,
   type ConflictEntry,
 } from '../day-actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { publishProgramDayAction } from '../days/[dayId]/actions'
 
 // ============================================================================
 // Types
@@ -69,11 +74,16 @@ export interface ProgramDayWithExercises {
   scheduled_date: string   // ISO date 'YYYY-MM-DD'
   day_label: string
   sort_order: number
+  // Assigned (published) state — NULL until the EP assigns the day to the
+  // client's portal. Drives the per-tile "Assigned" marker and the
+  // "Assign all" header count.
+  published_at: string | null
   exercises: ProgramExerciseWithMeta[]
 }
 
 interface MonthCalendarProps {
   clientId: string
+  clientFirstName: string
   programs: ProgramSummary[]
   days: ProgramDayWithExercises[]
   todayIso: string
@@ -162,6 +172,7 @@ type CalendarMode =
 
 export function MonthCalendar({
   clientId,
+  clientFirstName,
   programs,
   days,
   todayIso,
@@ -204,6 +215,62 @@ export function MonthCalendar({
   >(null)
   const [mode, setMode] = useState<CalendarMode>({ kind: 'idle' })
   const [busy, setBusy] = useState(false)
+
+  // "Assign all" (item 1) — bulk-publish every unassigned day that has at
+  // least one exercise, across all of the client's active blocks. The count
+  // drives the header button's visibility + label; empty days are excluded
+  // because they can't be published (same rule as the single-day path).
+  const [assignAllOpen, setAssignAllOpen] = useState(false)
+  const [assignAllBusy, setAssignAllBusy] = useState(false)
+  const [assignAllError, setAssignAllError] = useState<string | null>(null)
+  const unassignedCount = useMemo(
+    () =>
+      days.filter((d) => d.published_at === null && d.exercises.length > 0)
+        .length,
+    [days],
+  )
+
+  const runAssignAll = useCallback(async () => {
+    setAssignAllBusy(true)
+    setAssignAllError(null)
+    try {
+      const res = await publishAllProgramDaysAction(clientId)
+      if ('error' in res) {
+        setAssignAllError(res.error)
+        return
+      }
+      setAssignAllOpen(false)
+      startTransition(() => router.refresh())
+    } finally {
+      setAssignAllBusy(false)
+    }
+  }, [clientId, router])
+
+  // Single-day assign from a tile's top-right paper-plane (item 3 — assign
+  // without opening the day, mirroring the preview affordance). Publishes
+  // immediately, matching the in-builder AssignButton (no confirm; Unassign
+  // is the undo).
+  const [assigningId, setAssigningId] = useState<string | null>(null)
+  const runAssignOne = useCallback(
+    async (dayId: string) => {
+      setAssigningId(dayId)
+      try {
+        const res = await publishProgramDayAction(clientId, dayId)
+        if (res.error) {
+          setMode({
+            kind: 'error-toast',
+            title: 'Assign failed',
+            message: res.error,
+          })
+          return
+        }
+        startTransition(() => router.refresh())
+      } finally {
+        setAssigningId(null)
+      }
+    },
+    [clientId, router],
+  )
 
   // Esc cancels any non-idle mode.
   useEffect(() => {
@@ -702,6 +769,29 @@ export function MonthCalendar({
             gap: 10,
           }}
         >
+          {/* "Assign all" (item 1) — only when there's an unassigned backlog
+              with exercises. Mirrors the single-day AssignButton's primary +
+              Send treatment so the assign vocabulary is consistent. */}
+          {unassignedCount > 0 && mode.kind === 'idle' && (
+            <button
+              type="button"
+              onClick={() => {
+                setAssignAllError(null)
+                setAssignAllOpen(true)
+              }}
+              className="btn primary"
+              style={{
+                padding: '6px 14px',
+                fontSize: '.82rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Send size={13} aria-hidden />
+              Assign all · {unassignedCount}
+            </button>
+          )}
           {!isViewingThisMonth && (
             <button
               type="button"
@@ -755,6 +845,8 @@ export function MonthCalendar({
           setOpenCell(null)
           setMode({ kind: 'week-repeat-pick', sourceWeekStart: weekStart })
         }}
+        onAssignDay={runAssignOne}
+        assigningDayId={assigningId}
       />
 
       {/* ─── Repeat mini-calendar picker (anchored, full-screen) ─── */}
@@ -883,6 +975,34 @@ export function MonthCalendar({
           busy={false}
         />
       )}
+
+      {/* ─── "Assign all" confirm (item 1) — tone='primary' because
+          publishing is recoverable (each day can be unassigned), not
+          destructive. The count is the publishable backlog; empty days are
+          already excluded from it. A failure surfaces inside the dialog. ─── */}
+      {assignAllOpen && (
+        <ConfirmDialog
+          title="Assign all sessions?"
+          body={
+            <>
+              {unassignedCount}{' '}
+              {unassignedCount === 1 ? 'session' : 'sessions'} will be assigned
+              to {clientFirstName} and appear in their portal. Days with no
+              exercises are skipped.
+            </>
+          }
+          confirmLabel={`Assign ${unassignedCount}`}
+          tone="primary"
+          busy={assignAllBusy}
+          error={assignAllError}
+          onCancel={() => {
+            if (assignAllBusy) return
+            setAssignAllOpen(false)
+            setAssignAllError(null)
+          }}
+          onConfirm={runAssignAll}
+        />
+      )}
     </div>
   )
 }
@@ -918,6 +1038,8 @@ interface MonthGridProps {
   onCreateDay: (targetDate: string) => void
   onCopyWeek: (weekStartIso: string) => void
   onRepeatWeek: (weekStartIso: string) => void
+  onAssignDay: (dayId: string) => void
+  assigningDayId: string | null
   compactPopover: boolean
 }
 
@@ -941,6 +1063,8 @@ function MonthGrid({
   onCreateDay,
   onCopyWeek,
   onRepeatWeek,
+  onAssignDay,
+  assigningDayId,
   compactPopover,
 }: MonthGridProps) {
   const cells = useMemo(() => buildMonthCells(year, month), [year, month])
@@ -1265,6 +1389,8 @@ function MonthGrid({
                         day && onDeleteDay(day.id, day.day_label, day.scheduled_date)
                       }
                       onCreate={() => onCreateDay(c.iso)}
+                      onAssign={() => day && onAssignDay(day.id)}
+                      assigning={assigningDayId === day?.id}
                       busy={busy}
                       anchorRight={i >= 4}
                       compactPopover={compactPopover}
@@ -1309,6 +1435,10 @@ interface DateCellProps {
   onRepeat: () => void
   onDelete: () => void
   onCreate: () => void
+  // Item 3 — assign this day directly from its tile corner (no need to open).
+  onAssign: () => void
+  // True while THIS day's single-tile assign is in flight.
+  assigning: boolean
   busy: boolean
   anchorRight: boolean
   compactPopover: boolean
@@ -1332,6 +1462,8 @@ function DateCell({
   onRepeat,
   onDelete,
   onCreate,
+  onAssign,
+  assigning,
   busy,
   anchorRight,
   compactPopover,
@@ -1441,6 +1573,73 @@ function DateCell({
           </div>
         )}
       </button>
+
+      {/* Top-right corner (items 2 & 3) — absolutely positioned so it never
+          changes the tile's height. Assigned → a quiet green check; not yet
+          assigned but has exercises → a paper-plane that assigns the day in
+          one click (no need to open it). Hidden during a copy-pick so it can't
+          be mistaken for a paste target. */}
+      {!inCopyPick && (day.published_at !== null || day.exercises.length > 0) && (
+        <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 3 }}>
+          {day.published_at !== null ? (
+            <span
+              aria-label="Assigned"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 7px',
+                borderRadius: 999,
+                background: 'var(--color-accent-soft)',
+                color: 'var(--color-text-light)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.62rem',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Check
+                size={11}
+                aria-hidden
+                style={{ color: 'var(--color-accent)' }}
+              />
+              Assigned
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                onAssign()
+              }}
+              disabled={assigning}
+              title="Assign to client"
+              aria-label="Assign session"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 7px',
+                borderRadius: 999,
+                border: '1px solid var(--color-border-subtle)',
+                background: 'var(--color-card)',
+                color: 'var(--color-primary)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.62rem',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                cursor: assigning ? 'wait' : 'pointer',
+                opacity: assigning ? 0.5 : 1,
+                transition: 'background 150ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <Send size={11} aria-hidden />
+              {assigning ? 'Assigning…' : 'Assign'}
+            </button>
+          )}
+        </div>
+      )}
 
       {isDayOpen && !inCopyPick && (
         <DaySummaryPopover
@@ -1845,15 +2044,27 @@ function EmptyCellPopover({
           </button>
         </>
       ) : (
-        <div
+        // Item 3 — no covering block: still offer plain "Add session". The
+        // create RPC attaches it to the client's loose container behind the
+        // scenes, so a date with no block doesn't need one first.
+        <button
+          type="button"
+          onClick={onCreate}
+          disabled={busy}
+          className="btn primary"
           style={{
-            fontSize: '.74rem',
-            color: 'var(--color-muted)',
-            lineHeight: 1.45,
+            padding: '6px 12px',
+            fontSize: '.78rem',
+            width: '100%',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
           }}
         >
-          No active training block covers this date.
-        </div>
+          <Plus size={12} aria-hidden />
+          {busy ? 'Working…' : 'Add session'}
+        </button>
       )}
     </div>
   )

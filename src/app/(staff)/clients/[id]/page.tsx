@@ -117,7 +117,7 @@ export default async function ClientProfilePage({
     supabase
       .from('programs')
       .select(
-        `id, name, duration_weeks, start_date,
+        `id, name, duration_weeks, start_date, is_loose,
          program_weeks(id, program_days(id))`,
       )
       .eq('client_id', id)
@@ -286,7 +286,10 @@ export default async function ClientProfilePage({
   )
   const activeProgram =
     resolveCurrentBlock(datedPrograms, todayIsoInPracticeTz()) ??
-    (activeProgramRows ?? [])[0] ??
+    // Never fall back to the loose one-off container (item 3) — the Programs
+    // tab is about training BLOCKS, so a loose-only client shows the no-block
+    // empty state, not the hidden "One-off sessions" container as a program.
+    (activeProgramRows ?? []).find((p) => !p.is_loose) ??
     null
 
   // Build program summary for the Program tab: current week (by calendar)

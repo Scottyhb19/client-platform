@@ -39,6 +39,10 @@ export type RemoveDayActionResult =
   | { error: string }
   | { status: 'removed' }
 
+export type PublishAllActionResult =
+  | { error: string }
+  | { status: 'done'; assigned: number; skippedEmpty: number }
+
 export type CreateDayActionResult =
   | { error: string }
   | { status: 'created'; newDayId: string }
@@ -316,6 +320,84 @@ export async function repeatWeekAction(
     default:
       return { error: `Unknown status: ${obj.status}` }
   }
+}
+
+
+/**
+ * "Assign all" (program-calendar polish) — publish every unassigned
+ * program_day that has at least one exercise, across the client's active
+ * blocks, in one pass. Empty days (no live program_exercises) are skipped
+ * and counted, mirroring the single-day AssignButton guard that disables
+ * publishing a day with zero exercises.
+ *
+ * Runs as the authenticated EP (no SECURITY DEFINER): RLS scopes every
+ * read and the UPDATE to the caller's organization, so a stray clientId
+ * from another org resolves to zero rows rather than leaking. A single
+ * published_at timestamp is stamped across the batch so "assigned together"
+ * stays legible in the data.
+ */
+export async function publishAllProgramDaysAction(
+  clientId: string,
+): Promise<PublishAllActionResult> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  // Active blocks for this client (RLS-scoped to the caller's org).
+  const { data: progs, error: pErr } = await supabase
+    .from('programs')
+    .select('id')
+    .eq('client_id', clientId)
+    .eq('status', 'active')
+    .is('deleted_at', null)
+  if (pErr) return { error: pErr.message }
+
+  const programIds = (progs ?? []).map((p) => p.id)
+  if (programIds.length === 0) {
+    return { status: 'done', assigned: 0, skippedEmpty: 0 }
+  }
+
+  // Unassigned (published_at NULL), live days across those blocks.
+  const { data: daysRaw, error: dErr } = await supabase
+    .from('program_days')
+    .select('id')
+    .in('program_id', programIds)
+    .is('published_at', null)
+    .is('deleted_at', null)
+  if (dErr) return { error: dErr.message }
+
+  const dayIds = (daysRaw ?? []).map((d) => d.id)
+  if (dayIds.length === 0) {
+    return { status: 'done', assigned: 0, skippedEmpty: 0 }
+  }
+
+  // Which of those days carry at least one live exercise? Empty days can't
+  // be published (same rule as the single-day path).
+  const { data: exRaw, error: eErr } = await supabase
+    .from('program_exercises')
+    .select('program_day_id')
+    .in('program_day_id', dayIds)
+    .is('deleted_at', null)
+  if (eErr) return { error: eErr.message }
+
+  const daysWithExercises = new Set(
+    (exRaw ?? []).map((e) => e.program_day_id),
+  )
+  const toPublish = dayIds.filter((id) => daysWithExercises.has(id))
+  const skippedEmpty = dayIds.length - toPublish.length
+
+  if (toPublish.length === 0) {
+    return { status: 'done', assigned: 0, skippedEmpty }
+  }
+
+  const { error: uErr } = await supabase
+    .from('program_days')
+    .update({ published_at: new Date().toISOString() })
+    .in('id', toPublish)
+    .is('published_at', null)
+  if (uErr) return { error: uErr.message }
+
+  revalidatePath(`/clients/${clientId}/program`)
+  return { status: 'done', assigned: toPublish.length, skippedEmpty }
 }
 
 

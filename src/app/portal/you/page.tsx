@@ -15,7 +15,7 @@ export default async function PortalYouPage() {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const [{ data: client }, { data: program }] = await Promise.all([
+  const [{ data: client }, { data: activePrograms }] = await Promise.all([
     supabase
       .from('clients')
       .select(
@@ -25,12 +25,15 @@ export default async function PortalYouPage() {
       .eq('user_id', user?.id ?? '')
       .is('deleted_at', null)
       .maybeSingle(),
+    // FM-1 (item 3): never .maybeSingle() — it throws once a loose one-off
+    // container coexists with a dated block. Fetch all active; resolve below.
     supabase
       .from('programs')
-      .select('name, start_date')
+      .select('name, is_loose, start_date')
       .eq('status', 'active')
       .is('deleted_at', null)
-      .maybeSingle(),
+      .order('is_loose', { ascending: true })
+      .order('start_date', { ascending: true, nullsFirst: false }),
   ])
 
   if (!client) {
@@ -50,8 +53,17 @@ export default async function PortalYouPage() {
     )
   }
 
+  // Earliest dated block's name; if the client only has one-off sessions,
+  // "Your sessions" (Q-B — never the internal container name); else none.
+  const datedBlock = (activePrograms ?? []).find((p) => !p.is_loose)
+  const activeProgramName = datedBlock
+    ? datedBlock.name
+    : (activePrograms ?? []).some((p) => p.is_loose)
+      ? 'Your sessions'
+      : null
+
   const rows: Array<[string, string]> = [
-    ['Active program', program?.name ?? 'None yet'],
+    ['Active program', activeProgramName ?? 'None yet'],
     ['Practice', client.organization?.name ?? '—'],
     ['Email', client.email],
     ['Phone', client.phone ?? '—'],

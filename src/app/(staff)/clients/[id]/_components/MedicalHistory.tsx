@@ -24,7 +24,7 @@ import {
   setMedicalConditionActiveAction,
   updateMedicalConditionAction,
 } from '../medical-actions'
-import { ConfirmDialog } from './ConfirmDialog'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 import { formatShortDate } from '@/lib/format-date'
 import type { ProfileCondition } from './ClientProfile'
 

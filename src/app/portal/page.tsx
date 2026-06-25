@@ -54,14 +54,41 @@ export default async function PortalTodayPage({
   const { tz, todayIso } = await resolvePortalToday(supabase)
   const todayDate = parseIso(todayIso)
 
-  // Active program (lightweight — for header / week-number context).
-  const { data: program } = await supabase
+  // Active programs (lightweight — for header / week-number context).
+  // FM-1 fix (item 3): never .maybeSingle() here — it throws on ≥2 active
+  // rows, and a loose one-off container can now coexist with a dated block
+  // (back-to-back blocks already could, D-PROG-002). Fetch all, then resolve
+  // the header program: the dated block covering today, else the first dated
+  // block, else the loose container. The week's session data is independent
+  // of this choice — it comes from the client-scoped week-overview RPC below.
+  const { data: activePrograms } = await supabase
     .from('programs')
-    .select(`id, name, duration_weeks, start_date`)
+    .select(`id, name, duration_weeks, start_date, is_loose`)
     .eq('client_id', client.id)
     .eq('status', 'active')
     .is('deleted_at', null)
-    .maybeSingle()
+    .order('is_loose', { ascending: true })
+    .order('start_date', { ascending: true, nullsFirst: false })
+
+  const datedBlocks = (activePrograms ?? []).filter(
+    (p) => !p.is_loose && p.start_date !== null && p.duration_weeks !== null,
+  )
+  const coveringBlock = datedBlocks.find((p) => {
+    const endIso = isoFromDate(
+      addDays(parseIso(p.start_date as string), (p.duration_weeks as number) * 7),
+    )
+    return todayIso >= (p.start_date as string) && todayIso < endIso
+  })
+  const program =
+    coveringBlock ?? datedBlocks[0] ?? (activePrograms ?? [])[0] ?? null
+
+  // Q-B: a loose-only client's header reads "Your sessions", not the
+  // internal "One-off sessions" container name.
+  const programDisplayName = program
+    ? program.is_loose
+      ? 'Your sessions'
+      : program.name
+    : ''
 
   // C-9: first-run detection. Only queried when there's no active
   // program — a programmed client can never see the welcome card, so the
@@ -213,10 +240,10 @@ export default async function PortalTodayPage({
     ? {
         dayId: selectedDay.program_day_id,
         dayLabel: composeDayLabel(selectedDate, todayIso, selectedDay.day_label),
-        dayTitle: formatDayTitle(selectedDay.day_label, program?.name ?? ''),
+        dayTitle: formatDayTitle(selectedDay.day_label, programDisplayName),
         metaLine: composeMetaLine(
           selectedDay.exercises.length,
-          program?.name ?? '',
+          programDisplayName,
           weekNumberFor(program, selectedDayIso),
           program?.duration_weeks ?? null,
         ),
