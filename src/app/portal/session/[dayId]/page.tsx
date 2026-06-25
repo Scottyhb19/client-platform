@@ -176,7 +176,7 @@ export default async function PortalSessionPage({
       `id, program_exercise_id, notes,
        sets:set_logs(
          set_number, reps_performed, rep_metric, weight_value, weight_metric,
-         optional_value, rpe
+         optional_value
        )`,
     )
     .eq('session_id', sessionId)
@@ -197,7 +197,6 @@ export default async function PortalSessionPage({
           s.weight_value !== null ? Number(s.weight_value) : null,
         weightMetric: s.weight_metric,
         optionalValue: s.optional_value,
-        rpe: s.rpe,
       })
     }
   }

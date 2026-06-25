@@ -48,12 +48,13 @@ export type LoggedSet = {
   weightValue: number | null
   weightMetric: string | null
   optionalValue: string | null
-  rpe: number | null
 }
 
-// Editable strings for one set's three inputs (lifted to the Logger so
-// carry-forward + "log all" can update rows; see saveSet/saveAll).
-type Draft = { reps: string; load: string; rpe: string }
+// Editable strings for one set's two inputs (lifted to the Logger so
+// carry-forward + "log all" can update rows; see saveSet/saveAll). Client-
+// logged RPE was removed from the in-session flow (2026-06-26 dogfooding
+// deviation); the post-session Session RPE on the wrap-up screen is unaffected.
+type Draft = { reps: string; load: string }
 
 interface LoggerProps {
   sessionId: string
@@ -119,7 +120,7 @@ export function Logger({
     const key = setKey(exerciseId, setNumber)
     setDrafts((prev) => {
       const next = new Map(prev)
-      const cur = next.get(key) ?? { reps: '', load: '', rpe: '' }
+      const cur = next.get(key) ?? { reps: '', load: '' }
       next.set(key, { ...cur, [field]: value })
       return next
     })
@@ -137,16 +138,12 @@ export function Logger({
   ): Promise<{ error: string | null }> {
     const key = setKey(exerciseId, setNumber)
     const src = draftsOverride ?? drafts
-    const d = src.get(key) ?? { reps: '', load: '', rpe: '' }
+    const d = src.get(key) ?? { reps: '', load: '' }
     const repMetric = prescribedRepMetric(exercises, exerciseId, setNumber)
 
     const repsNum = d.reps.trim() === '' ? null : parseInt(d.reps, 10)
-    const rpeNum = d.rpe.trim() === '' ? null : parseInt(d.rpe, 10)
     if (repsNum !== null && (!Number.isFinite(repsNum) || repsNum < 0)) {
       return { error: `${volumeUnitLabel(repMetric)} must be a whole number.` }
-    }
-    if (rpeNum !== null && (!Number.isFinite(rpeNum) || rpeNum < 1 || rpeNum > 10)) {
-      return { error: 'RPE is 1–10.' }
     }
     const parsedLoad = parseLoad(d.load)
 
@@ -159,7 +156,7 @@ export function Logger({
       weightValue: parsedLoad.weightValue,
       weightMetric: parsedLoad.weightMetric,
       optionalValue: parsedLoad.optionalValue,
-      rpe: rpeNum,
+      rpe: null,
     })
     if (res.error) return { error: res.error }
 
@@ -171,7 +168,6 @@ export function Logger({
       weightValue: parsedLoad.weightValue,
       weightMetric: parsedLoad.weightMetric,
       optionalValue: parsedLoad.optionalValue,
-      rpe: rpeNum,
     }
     setLogsByKey((prev) => new Map(prev).set(key, log))
 
@@ -216,7 +212,7 @@ export function Logger({
         if (lg) carry = loggedToDraft(lg)
         continue
       }
-      const own = working.get(key) ?? { reps: '', load: '', rpe: '' }
+      const own = working.get(key) ?? { reps: '', load: '' }
       const use = autofill && !touched.has(key) && carry ? carry : own
       working.set(key, use)
       // Stop on the first validation error so that set keeps its value for
@@ -298,7 +294,7 @@ export function Logger({
                     key={sn}
                     setNumber={sn}
                     repMetric={prescribed.repMetric}
-                    draft={drafts.get(key) ?? { reps: '', load: '', rpe: '' }}
+                    draft={drafts.get(key) ?? { reps: '', load: '' }}
                     logged={logsByKey.get(key)}
                     onChange={(field, value) =>
                       updateDraft(gex.programExerciseId, sn, field, value)
@@ -849,7 +845,7 @@ function SetRow({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
+          gridTemplateColumns: '1fr 1fr',
           gap: 8,
         }}
       >
@@ -863,12 +859,6 @@ function SetRow({
           label="Load"
           value={draft.load}
           onChange={(v) => onChange('load', v)}
-        />
-        <LogInput
-          label="RPE"
-          value={draft.rpe}
-          onChange={(v) => onChange('rpe', v)}
-          inputMode="numeric"
         />
       </div>
     </div>
@@ -1194,16 +1184,15 @@ function loggedToDraft(l: LoggedSet): Draft {
   return {
     reps: l.reps !== null ? String(l.reps) : '',
     load,
-    rpe: l.rpe !== null ? String(l.rpe) : '',
   }
 }
 
-/** Draft seeded from the EP's prescription (reps numeric; load/rpe by metric). */
+/** Draft seeded from the EP's prescription (reps numeric; load by metric). RPE
+ *  is a prescription-side target, never a logged input, so it never seeds. */
 function draftFromPrescription(p: PrescribedSet): Draft {
   return {
     reps: p.reps && /^\d+$/.test(p.reps.trim()) ? p.reps.trim() : '',
     load: p.optionalMetric === 'rpe' ? '' : (p.optionalValue ?? ''),
-    rpe: p.optionalMetric === 'rpe' ? (p.optionalValue ?? '') : '',
   }
 }
 
@@ -1211,8 +1200,7 @@ function draftEqualsLogged(d: Draft, l: LoggedSet): boolean {
   const x = loggedToDraft(l)
   return (
     d.reps.trim() === x.reps.trim() &&
-    d.load.trim() === x.load.trim() &&
-    d.rpe.trim() === x.rpe.trim()
+    d.load.trim() === x.load.trim()
   )
 }
 
@@ -1240,7 +1228,7 @@ function buildInitialDrafts(
       } else if (autofill) {
         drafts.set(key, lastActuals ? { ...lastActuals } : draftFromPrescription(p))
       } else {
-        drafts.set(key, { reps: '', load: '', rpe: '' })
+        drafts.set(key, { reps: '', load: '' })
       }
     }
   }

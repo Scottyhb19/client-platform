@@ -22,11 +22,11 @@ export default async function PortalSessionCompletePage({
   const { data: session } = await supabase
     .from('sessions')
     .select(
-      `id, started_at, completed_at,
+      `id, started_at, completed_at, session_rpe,
        exercise_logs(
          id,
          sets:set_logs(
-           reps_performed, weight_value, rpe
+           reps_performed, weight_value
          )
        )`,
     )
@@ -54,8 +54,6 @@ export default async function PortalSessionCompletePage({
   let totalSets = 0
   let totalReps = 0
   let totalVolumeKg = 0
-  let rpeSum = 0
-  let rpeCount = 0
 
   for (const el of session.exercise_logs ?? []) {
     for (const s of el.sets ?? []) {
@@ -63,10 +61,6 @@ export default async function PortalSessionCompletePage({
       if (s.reps_performed !== null) totalReps += s.reps_performed
       if (s.weight_value !== null && s.reps_performed !== null) {
         totalVolumeKg += Number(s.weight_value) * s.reps_performed
-      }
-      if (s.rpe !== null) {
-        rpeSum += s.rpe
-        rpeCount += 1
       }
     }
   }
@@ -82,10 +76,14 @@ export default async function PortalSessionCompletePage({
           ),
         )
       : null
-  const avgRpe = rpeCount > 0 ? rpeSum / rpeCount : null
+  // Session RPE is the single value the client gave on the wrap-up screen
+  // (sessions.session_rpe) — closure on this session, NOT the removed per-set
+  // aggregate. NULL when the client skipped the rating (a clean "Not rated"
+  // tile, never a dash — 2026-06-26 dogfooding deviation).
+  const sessionRpe = session.session_rpe
   // P2-3: exercises count (distinct exercise_logs for the session) — the
-  // brief's §6.3.1 stat set names "exercises". Kept alongside Volume / Avg
-  // RPE / Duration per the operator's call, so the panel is four tiles.
+  // brief's §6.3.1 stat set names "exercises". Kept alongside Volume / Session
+  // RPE / Duration, so the panel is four tiles.
   const exerciseCount = session.exercise_logs?.length ?? 0
 
   return (
@@ -158,8 +156,9 @@ export default async function PortalSessionCompletePage({
           }
         />
         <StatTile
-          label="Avg RPE"
-          value={avgRpe !== null ? avgRpe.toFixed(1) : '—'}
+          label="Session RPE"
+          value={sessionRpe !== null ? String(sessionRpe) : 'Not rated'}
+          muted={sessionRpe === null}
         />
         <StatTile
           label="Duration"
@@ -187,7 +186,18 @@ export default async function PortalSessionCompletePage({
  * (--radius-chip / 10px) so the three tiles read as a tight panel rather
  * than full content cards.
  */
-function StatTile({ label, value }: { label: string; value: string }) {
+function StatTile({
+  label,
+  value,
+  // `muted` softens the value (lighter colour, smaller size) for a clean
+  // non-numeric state — e.g. "Not rated" when the client skipped Session RPE.
+  // Reads as an intentional absence, never a missing-data dash.
+  muted = false,
+}: {
+  label: string
+  value: string
+  muted?: boolean
+}) {
   return (
     <div
       style={{
@@ -214,9 +224,9 @@ function StatTile({ label, value }: { label: string; value: string }) {
         style={{
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
-          fontSize: '1.15rem',
-          color: 'var(--session-text)',
-          marginTop: 2,
+          fontSize: muted ? '0.92rem' : '1.15rem',
+          color: muted ? 'var(--session-text-muted)' : 'var(--session-text)',
+          marginTop: muted ? 4 : 2,
         }}
       >
         {value}

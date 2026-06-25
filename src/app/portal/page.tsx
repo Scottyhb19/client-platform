@@ -175,16 +175,10 @@ export default async function PortalTodayPage({
   // program_day_ids.
   const completedDayIds = new Set<string>()
   const inProgressDayIds = new Set<string>()
-  // P2-2: accumulate this week's session RPE so the "Avg" stat on the
-  // This Week panel shows real data instead of a permanent "—". session_rpe
-  // is optional (a client can finish without rating), so we average only the
-  // non-null values from completed sessions.
-  let rpeSum = 0
-  let rpeCount = 0
   if (weekDays.length > 0) {
     const { data: sessionRows } = await supabase
       .from('sessions')
-      .select('program_day_id, started_at, completed_at, session_rpe')
+      .select('program_day_id, started_at, completed_at')
       .in(
         'program_day_id',
         weekDays.map((d) => d.program_day_id),
@@ -194,10 +188,6 @@ export default async function PortalTodayPage({
       if (!s.program_day_id) continue
       if (s.completed_at !== null) {
         completedDayIds.add(s.program_day_id)
-        if (s.session_rpe !== null) {
-          rpeSum += s.session_rpe
-          rpeCount += 1
-        }
       } else if (s.started_at !== null) {
         inProgressDayIds.add(s.program_day_id)
       }
@@ -276,7 +266,6 @@ export default async function PortalTodayPage({
       weekStats={{
         completed: completedDayIds.size,
         remaining: weekDays.length - completedDayIds.size,
-        avgRpe: rpeCount > 0 ? rpeSum / rpeCount : null,
       }}
       monthLabel={monthLabel}
       prevWeekHref={`/portal?w=${prevWeekIso}`}

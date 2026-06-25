@@ -46,7 +46,6 @@ interface DayScreenProps {
   weekStats: {
     completed: number
     remaining: number
-    avgRpe: number | null
   }
   // Week navigation chrome.
   monthLabel: string // "April 2026"
@@ -256,14 +255,6 @@ export function DayScreen({
           <div className="portal-stat">
             <span className="portal-stat__big">{weekStats.remaining}</span>
             <span className="portal-stat__label">Remaining</span>
-          </div>
-          <div className="portal-stat" data-tone="accent">
-            <span className="portal-stat__big">
-              {weekStats.avgRpe !== null
-                ? `RPE ${weekStats.avgRpe.toFixed(1)}`
-                : '—'}
-            </span>
-            <span className="portal-stat__label">Avg</span>
           </div>
         </div>
       </div>

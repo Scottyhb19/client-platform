@@ -377,3 +377,21 @@ These survive the section close and fire on their own conditions:
 - **Platform-wide anon-EXECUTE sweep (still open)** — `client_accept_invite` (§2 — **verify pre-auth use before any revoke**), the §9 booking RPCs (`client_available_slots` / `client_book_appointment` / `client_cancel_appointment`), and `client_cascade_thread_archive` (§10) remain anon-reachable, protected by their in-body auth guards until revoked. Recorded in [`docs/go-live-checklist.md`](../go-live-checklist.md) §4.
 
 **Section 7 — Client portal PWA — is Closed.** Per the locked polish-pass order, section 8 (Testing and reports module) is already complete, so the next active section is **section 9 — Scheduling**, which inherits the booking slot-range UTC bug (FM-6) and the §9 booking-RPC slice of the anon-EXECUTE sweep.
+
+---
+
+## 10. Post-closure changes (Phase 1.5 dogfooding loop)
+
+Section 7 is **Closed** (§9). The entries below are within-surface changes made under the dogfooding four-bucket loop (CLAUDE.md), **not** a re-opening of the section. Each is UI-level within the signed-off surface — no schema change, no new security surface, so no new pgTAP gate.
+
+### 10.1 — Client-logged RPE removed from in-session logging (owner-approved deviation, 2026-06-26)
+
+**Change.** The per-set RPE input is removed from the in-session set rows (each row now logs volume + load only), and the weekly **"Avg RPE"** stat is removed from the portal-home "This week" block — now a clean two-up (Completed · Remaining), no empty slot. The post-session **Session RPE** capture on the wrap-up screen is **kept**, still storing to `sessions.session_rpe` (EP-visible on the client profile). The completion summary's previously-dead "Avg RPE" tile (it averaged the per-set RPE that is now gone — flagged "permanently-dead Avg stat" in §0) is repointed to **this session's** Session RPE — closure, not an aggregate — and renders a quiet muted "Not rated" when the client skipped the rating (never a dash).
+
+**Deviation recorded.** Brief §6.3.1 / `client-portal.html` specify RPE capture *in* the in-session flow (a per-group slider in the prototype; the production build had diverged to per-set numeric RPE — see §0, §1, §8.4). This change removes client-logged per-exercise/per-set RPE **entirely**, keeping only session-level RPE. It **supersedes the §8.4 conscious acceptance** ("per-set RPE richness vs the skip-allowed open form"): the operator's dogfooding call is that per-set RPE logging is friction the client should not carry, while the session-level RPE remains the signal the EP consumes. The §8.4 per-set-completeness re-trigger is therefore **retired** (no per-set RPE to be incomplete). **Owner-approved.**
+
+**Implementation.** UI-level only. `set_logs.rpe` and `exercise_logs.rpe` columns are **retained** (nullable, dormant — they keep historical values and stay available if per-set RPE ever returns); `client_log_set` keeps its `p_rpe` parameter (the portal now passes `NULL`). No migration. Prescribed-RPE **display** stays conditional — the day-card row and the in-session prescription line show "RPE n" only when `optional_metric='rpe'` is prescribed (verified, unchanged).
+
+**Tests.** `test_scenarios_template.md` → CP-RPE-1…CP-RPE-5. (Note: that file did not previously exist; created with this change — see its provenance note.)
+
+**Files.** `session/[dayId]/_components/Logger.tsx`, `session/[dayId]/page.tsx` (existing-logs read), `session/[dayId]/complete/page.tsx` (Session-RPE tile), `page.tsx` (weekly stat), `_components/DayScreen.tsx` (two-up).
