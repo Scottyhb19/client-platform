@@ -1,6 +1,6 @@
 # Polish doc — dashboard: cancelled on the board, recent-activity colour, overdue follow-up
 
-**Status: IMPLEMENTED 2026-06-25 — awaiting operator review.** Three dashboard
+**Status: IMPLEMENTED 2026-06-25; acceptance verified 2026-06-26 (operator render-pass + pgTAP `46` + threshold proof) — awaiting reviewer sign-off stamp.** Three dashboard
 dogfooding captures, batched. Items 1–2 are contained fixes inside the
 already-signed-off dashboard surface; item 3 touches the schema (one nullable
 column) so it re-enters the polish protocol per CLAUDE.md "Current operating
@@ -77,40 +77,58 @@ Clarifications (asked + answered 2026-06-25):
   first (the client-name link still opens the profile).
 
 ## Pass criteria (Maintenance rule)
+All boxes verified 2026-06-26 (render = operator pass on the live `:3000`
+dashboard; pgTAP 46 = green on prod; threshold = date-math proof; code = diff
+inspection).
+
 **#1 — cancelled on the board**
-- [ ] An appointment with `status='cancelled'` dated today **appears** on Today's
+- [x] An appointment with `status='cancelled'` dated today **appears** on Today's
       sessions: struck-through + muted, grey "Cancelled" pill, **no**
-      Now/Done/Upcoming cue.
-- [ ] The "Sessions today" stat and the "Next: …" cue **exclude** that cancelled
-      slot.
-- [ ] A non-cancelled appointment is unchanged (pill + live cue as before).
+      Now/Done/Upcoming cue. — render (Imaan Sedghi 2:00pm)
+- [x] The "Sessions today" stat and the "Next: …" cue **exclude** that cancelled
+      slot. — render ("3 sessions today" omitted the cancelled 2pm)
+- [x] A non-cancelled appointment is unchanged (pill + live cue as before). — render
 
 **#2 — recent-activity colour**
-- [ ] Each completed row shows a green completion check beside the timestamp.
-- [ ] A completion with `session_rpe >= 8` shows an amber "RPE n" pill; `< 8`
-      stays neutral text; no RPE → no badge.
-- [ ] No new shadows/gradients; restraint holds (visual).
+- [x] Each completed row shows a green completion check beside the timestamp. — render
+- [x] A completion with `session_rpe >= 8` shows an amber "RPE n" pill; `< 8`
+      stays neutral text; no RPE → no badge. — render
+- [x] No new shadows/gradients; restraint holds (visual). — code (only a Lucide
+      check + reused `.tag.overdue`) + render
 
 **#3 — overdue follow-up**
-- [ ] An Overdue client shows an "Open" link (→ program calendar) **and** the
+- [x] An Overdue client shows an "Open" link (→ program calendar) **and** the
       "Program checked & message sent" button; the name still links to the
-      profile.
-- [ ] Clicking it removes the client from Needs-attention on the next render.
-- [ ] The same client does **not** re-appear as Overdue for ~10 days, then
+      profile. — render (Antonio)
+- [x] Clicking it removes the client from Needs-attention on the next render. — render (clicked Antonio, dropped off)
+- [x] The same client does **not** re-appear as Overdue for ~10 days, then
       **does** re-appear (with the real "Last session N days ago") if still
-      silent.
-- [ ] Logging a session in the meantime clears it the normal way (unaffected).
-- [ ] A client/portal token cannot write `overdue_followed_up_at` (RLS) — backed by pgTAP `46_clients_update_role_anon_denial`.
+      silent. — threshold proof (suppressed through ack-date+10, re-fires from +11;
+      `>=` midnight practice-tz boundary) + render (ack -9d off, -11d re-appears)
+- [x] Logging a session in the meantime clears it the normal way (unaffected). —
+      unchanged base Overdue path (a recent last-completed fails the `< tenDaysAgo`
+      test, independent of the ack gate)
+- [x] A client/portal token cannot write `overdue_followed_up_at` (RLS) — backed by pgTAP `46_clients_update_role_anon_denial`. — green on prod
 
-## Acceptance / verification run (2026-06-25)
+## Acceptance / verification run (2026-06-25; pgTAP + threshold + render-pass 2026-06-26)
 - `npm run type-check` — **pass** (clean).
 - `npm run build` — **pass** (exit 0; `/dashboard` compiles; server/client action
   boundary for `OverdueFollowUpButton` → `acknowledgeOverdueFollowupAction` OK).
 - Migration `20260625140000` applied to the linked DB (`supabase db push`); types
   regenerated (`npm run supabase:types`); `overdue_followed_up_at` present in
   `src/types/database.ts`.
-- **Live visual verification is operator-side** — the dashboard is auth-gated, so
-  the preview cannot reach the rendered states without the EP session.
+- **pgTAP `46_clients_update_role_anon_denial`** — green on prod via BEGIN/ROLLBACK
+  (client-role UPDATE 0 rows, anon UPDATE 0 rows, staff control 1 row).
+- **Suppression firing threshold — 10 days, proven.** Ran the real `dates.ts` math
+  against the predicate: an ack on practice-tz date D suppresses Overdue through
+  D+10 and re-fires from D+11 (boundary `overdue_followed_up_at >= midnight(today-10,
+  practice tz)`, inclusive). Same cadence as the base trigger, so a fresh ack resets
+  one full window.
+- **Operator render-pass (live `:3000`, 2026-06-26) — all green.** #1 cancelled row
+  (struck-through, grey pill, excluded from the count); #2 green completion check +
+  amber RPE pill; #3 Open+button, click-removes (Antonio dropped off), and the
+  re-fire boundary exercised against the real dashboard (ack -9 days suppressed,
+  -11 days re-appears).
 
 ---
 
