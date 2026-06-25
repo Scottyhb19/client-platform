@@ -22,6 +22,9 @@ export type PrescribedSet = {
 
 export type LoggerExercise = {
   programExerciseId: string
+  // Stable exercise-library id (survives prescription changes) — the key for
+  // the cross-session "last logged" lookup (Change 3).
+  exerciseId: string
   name: string
   sectionTitle: string | null
   instructions: string | null
@@ -50,6 +53,22 @@ export type LoggedSet = {
   optionalValue: string | null
 }
 
+// One set from the client's most recent COMPLETED session for an exercise — the
+// source for the "last: 80kg × 6" reference line and the no-prescribed-load
+// prefill fallback (Change 3). Grouped per exercise in LastLoggedExercise.
+export type LastLoggedSet = {
+  setNumber: number
+  weightValue: number | null
+  weightMetric: string | null
+  reps: number | null
+  repMetric: string | null
+}
+export type LastLoggedExercise = {
+  // Pre-formatted in the device/org timezone server-side (no hydration risk).
+  dateLabel: string
+  sets: LastLoggedSet[]
+}
+
 // Editable strings for one set's two inputs (lifted to the Logger so
 // carry-forward + "log all" can update rows; see saveSet/saveAll). Client-
 // logged RPE was removed from the in-session flow (2026-06-26 dogfooding
@@ -70,6 +89,10 @@ interface LoggerProps {
   // set from your previous set / the prescription and carry your entries
   // forward on save. OFF: blank boxes.
   autofill: boolean
+  // The client's most recent COMPLETED log per exercise (keyed by exercise_id),
+  // for the reference line + no-prescribed-load prefill fallback (Change 3).
+  // Empty {} when the client has no prior history for this day's exercises.
+  lastLogged: Record<string, LastLoggedExercise>
 }
 
 export function Logger({
@@ -81,6 +104,7 @@ export function Logger({
   existingLogs,
   exerciseNotes,
   autofill,
+  lastLogged,
 }: LoggerProps) {
   const initialLogs = useMemo(() => mapFromLogs(existingLogs), [existingLogs])
 
@@ -94,9 +118,15 @@ export function Logger({
   // Open form: every set is editable in any order. Drafts lifted here so
   // carry-forward / "log all" / group nav don't lose input.
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() =>
-    buildInitialDrafts(exercises, initialLogs, autofill),
+    buildInitialDrafts(exercises, initialLogs, autofill, lastLogged),
   )
   const [touched, setTouched] = useState<Set<string>>(() => new Set())
+  // Per-FIELD touched (`key#field`) — drives ghost styling: a prefill reads
+  // translucent until the client edits THAT field. Separate from `touched`
+  // (per-set), which the carry-forward logic uses to skip hand-edited sets.
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(
+    () => new Set(),
+  )
   // Per-group notes, lifted here so the text survives Back/Next (the field
   // unmounts on nav; the server prop doesn't carry in-session edits).
   const [noteText, setNoteText] = useState<Map<string, string>>(
@@ -125,6 +155,10 @@ export function Logger({
       return next
     })
     setTouched((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+    const fieldKey = `${key}#${field}`
+    setTouchedFields((prev) =>
+      prev.has(fieldKey) ? prev : new Set(prev).add(fieldKey),
+    )
   }
 
   // Persist one set from its current draft. Returns an error string (no
@@ -294,6 +328,10 @@ export function Logger({
               {gex.prescribedSets.map((prescribed) => {
                 const sn = prescribed.setNumber
                 const key = setKey(gex.programExerciseId, sn)
+                // Match last-logged by set number; an unmatched set (today has
+                // more sets than last time) gets no reference line at all.
+                const exLast = lastLogged[gex.exerciseId]
+                const setLast = exLast?.sets.find((s) => s.setNumber === sn)
                 return (
                   <SetRow
                     key={sn}
@@ -301,6 +339,13 @@ export function Logger({
                     prescribed={prescribed}
                     draft={drafts.get(key) ?? { reps: '', load: '' }}
                     logged={logsByKey.get(key)}
+                    volumeTouched={touchedFields.has(`${key}#reps`)}
+                    loadTouched={touchedFields.has(`${key}#load`)}
+                    lastLogged={
+                      exLast && setLast
+                        ? { set: setLast, dateLabel: exLast.dateLabel }
+                        : undefined
+                    }
                     onChange={(field, value) =>
                       updateDraft(gex.programExerciseId, sn, field, value)
                     }
@@ -721,6 +766,9 @@ function SetRow({
   prescribed,
   draft,
   logged,
+  volumeTouched,
+  loadTouched,
+  lastLogged,
   onChange,
   onSave,
 }: {
@@ -728,6 +776,13 @@ function SetRow({
   prescribed: PrescribedSet
   draft: Draft
   logged: LoggedSet | undefined
+  // Whether the client has edited THIS set's volume / load field — a prefill
+  // reads as a translucent ghost until its own field is touched.
+  volumeTouched: boolean
+  loadTouched: boolean
+  // This set's actual from the client's most recent completed session, matched
+  // by set number (Change 3). Only rendered as a reference line on kg/lb sets.
+  lastLogged: { set: LastLoggedSet; dateLabel: string } | undefined
   onChange: (field: keyof Draft, value: string) => void
   onSave: () => Promise<{ error: string | null }>
 }) {
@@ -755,14 +810,12 @@ function SetRow({
   const volumePlaceholder = repsNumeric
     ? undefined
     : prescribed.reps?.trim() || undefined
-  // Ghost: a still-untouched prescribed default reads muted, so one tap on Log
-  // commits "exactly as prescribed" while an edit reads as a deliberate change.
-  const volumeDefault = repsNumeric ? prescribed.reps!.trim() : ''
-  const loadDefault = loadUnit ? (prescribed.optionalValue ?? '') : ''
-  const volumeGhost =
-    !done && draft.reps.trim() !== '' && draft.reps.trim() === volumeDefault
-  const loadGhost =
-    !done && draft.load.trim() !== '' && draft.load.trim() === loadDefault.trim()
+  // Ghost: any prefill — the prescription, a value carried from a previous set,
+  // or the last-logged fallback — reads translucent until the client edits THAT
+  // field. So one tap on Log commits the suggestion as-is, while a hand-edit
+  // reads as a deliberate change. (Logged sets are never ghosted.)
+  const volumeGhost = !done && !volumeTouched && draft.reps.trim() !== ''
+  const loadGhost = !done && !loadTouched && draft.load.trim() !== ''
 
   function handleSave() {
     setError(null)
@@ -899,6 +952,22 @@ function SetRow({
           />
         )}
       </div>
+
+      {/* Reference line (Change 3) — load-only scope: shown only on kg/lb sets
+          with a prior completed log carrying a weight. Reference only, never
+          writes to the box; absent (no "last: —") when there's no prior. */}
+      {loadUnit && lastLogged && lastLogged.set.weightValue != null && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: '.72rem',
+            color: 'var(--session-text-muted)',
+            fontFamily: 'var(--font-sans)',
+          }}
+        >
+          last: {referenceLoad(lastLogged.set)} · {lastLogged.dateLabel}
+        </div>
+      )}
     </div>
   )
 }
@@ -1195,6 +1264,14 @@ function prescribedLoadUnit(
   return m === 'kg' || m === 'lb' ? m : null
 }
 
+// "80kg × 6" / "40kg × 20m" / "80kg" — a kg/lb set's last completed actual, load
+// first then the volume in its own unit. Only called when weightValue != null.
+function referenceLoad(s: LastLoggedSet): string {
+  const w = `${s.weightValue}${s.weightMetric ?? ''}`
+  const vol = formatVolume(s.reps != null ? String(s.reps) : null, s.repMetric)
+  return vol ? `${w} × ${vol}` : w
+}
+
 function mapFromLogs(logs: LoggedSet[]): Map<string, LoggedSet> {
   const m = new Map<string, LoggedSet>()
   for (const l of logs) m.set(setKey(l.programExerciseId, l.setNumber), l)
@@ -1252,16 +1329,26 @@ function loggedToDraft(l: LoggedSet): Draft {
   }
 }
 
-/** Draft seeded from the EP's prescription. Volume (reps) seeds only when it is
- *  a plain number; load seeds only when kg/lb is the prescribed load metric.
- *  RPE / % / tempo are prescription-side targets, never logged, so never seed. */
-function draftFromPrescription(p: PrescribedSet): Draft {
+/**
+ * Draft seeded from the EP's prescription. Volume (reps) seeds only when it is a
+ * plain number. Load seeds only on kg/lb sets, with the Change-3 priority: a
+ * prescribed weight WINS (a deliberate prescription is never overwritten); only
+ * when the kg/lb set carries no prescribed weight does the client's last-logged
+ * actual (`lastSet`) pre-fill. RPE / % / tempo are targets, never logged.
+ */
+function draftFromPrescription(p: PrescribedSet, lastSet?: LastLoggedSet): Draft {
+  const loadIsKgLb = p.optionalMetric === 'kg' || p.optionalMetric === 'lb'
+  let load = ''
+  if (loadIsKgLb) {
+    if (p.optionalValue != null && p.optionalValue.trim() !== '') {
+      load = p.optionalValue.trim()
+    } else if (lastSet?.weightValue != null) {
+      load = String(lastSet.weightValue)
+    }
+  }
   return {
     reps: p.reps && /^\d+$/.test(p.reps.trim()) ? p.reps.trim() : '',
-    load:
-      p.optionalMetric === 'kg' || p.optionalMetric === 'lb'
-        ? (p.optionalValue ?? '')
-        : '',
+    load,
   }
 }
 
@@ -1274,15 +1361,17 @@ function draftEqualsLogged(d: Draft, l: LoggedSet): boolean {
 }
 
 /**
- * Seed the editable drafts for every set. A logged set always shows its
- * saved values. For an unlogged set with autofill ON, carry the most recent
- * earlier actuals in the same exercise, falling back to the prescription;
- * with autofill OFF, leave it blank.
+ * Seed the editable drafts for every set. A logged set always shows its saved
+ * values. For an unlogged set with autofill ON, carry the most recent earlier
+ * actuals in the same exercise; otherwise seed from the prescription — which,
+ * on a kg/lb set with no prescribed weight, falls back to the matching
+ * last-logged set (Change 3). With autofill OFF, leave it blank.
  */
 function buildInitialDrafts(
   exercises: LoggerExercise[],
   logs: Map<string, LoggedSet>,
   autofill: boolean,
+  lastLogged: Record<string, LastLoggedExercise>,
 ): Map<string, Draft> {
   const drafts = new Map<string, Draft>()
   for (const ex of exercises) {
@@ -1295,7 +1384,14 @@ function buildInitialDrafts(
         drafts.set(key, d)
         lastActuals = d
       } else if (autofill) {
-        drafts.set(key, lastActuals ? { ...lastActuals } : draftFromPrescription(p))
+        if (lastActuals) {
+          drafts.set(key, { ...lastActuals })
+        } else {
+          const lastSet = lastLogged[ex.exerciseId]?.sets.find(
+            (s) => s.setNumber === p.setNumber,
+          )
+          drafts.set(key, draftFromPrescription(p, lastSet))
+        }
       } else {
         drafts.set(key, { reps: '', load: '' })
       }

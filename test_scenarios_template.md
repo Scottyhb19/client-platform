@@ -111,3 +111,92 @@ Prescription pre-fills; native numeric keypad; focus pre-selects.
 - **Setup:** One exercise prescribed in `kg`, one in `lb`.
 - **Pass:** The load box reads **KG** and **LB** respectively (from the stored
   `optional_metric`), and a bare number is logged in that unit. Never "Load".
+
+### CP-LOG-9 — Carried-forward prefill reads as an adjustable ghost
+- **Setup:** Set 1 logged as a deviation (e.g. prescribed 80kg, logged 82kg);
+  set 2 untouched, autofill on.
+- **Pass:** Set 2's load pre-fills **82** rendered as a **translucent ghost** (not
+  solid) — signalling it's still adjustable. Editing set 2's load makes only that
+  field solid (set 2's reps stay ghosted); tapping Log commits the carried value.
+  A field reads ghost until the client edits THAT field, for every prefill source
+  (prescription, carry-forward, or last-logged fallback).
+
+---
+
+## Client portal — last-logged reference line + prefill fallback (Change 3, 2026-06-26)
+
+Context: a quiet `last: 80kg × 6 · Sat 11 Apr` reference line beneath kg/lb set
+rows, and a prefill fallback that protects a deliberate prescription. Requires a
+test client with **prior completed sessions** logging the same exercises. Reuses
+the staff builder's last-logged read (client-RLS, most-recent-completed wins,
+keyed by `exercise_id`); no new RPC, no migration.
+
+### CP-REF-1 — Reference line on a kg/lb set with prior history
+- **Setup:** A kg exercise the client logged last session (e.g. 80kg × 6).
+- **Pass:** Beneath that set's boxes, a muted line reads `last: 80kg × 6 · <date>`
+  (load × volume in its unit; date in the client's timezone). Reference only —
+  it does not write into the box.
+
+### CP-REF-2 — No prior history → no reference line (clean absence)
+- **Setup:** A kg exercise the client has never logged.
+- **Pass:** No reference line renders — never `last: —`.
+
+### CP-REF-3 — Unmatched set number → no reference line for that set
+- **Setup:** Last session logged 3 sets; today's prescription has 4.
+- **Pass:** Sets 1–3 show their matched reference lines; **set 4 shows none**
+  (no `last: —`).
+
+### CP-REF-4 — Load-only scope
+- **Setup:** A bodyweight set, a timed set, and a distance-only (no-kg) set, all
+  with prior completed logs.
+- **Pass:** **No reference line** on any of them — the line appears only on kg/lb
+  sets, where it informs what to load.
+
+### CP-REF-5 — Prefill priority (prescription protected) + reference independence
+- **Setup (a):** kg set prescribed `@ 85kg`, last logged `80kg`. **(b):** kg set
+  with the **metric but no prescribed weight**, last logged `80kg`.
+- **Pass:** (a) the box pre-fills **85** (the prescription wins; last-logged never
+  overwrites it), and the reference line still shows `last: 80kg …`. (b) the box
+  pre-fills **80** from the last-logged actual. In both, the reference line is
+  shown because prior history exists — independent of what pre-filled.
+
+---
+
+## Staff session builder — last-logged footer reads sessions.completed_at (bug fix, 2026-06-26)
+
+Context: the per-exercise "Last logged" footer on the staff session builder
+(`src/app/(staff)/clients/[id]/program/days/[dayId]/page.tsx`) filtered and
+ordered on `exercise_logs.completed_at` — a column **no logging path ever
+populates** (the portal RPCs stamp `set_logs.completed_at` and, on finish,
+`sessions.completed_at`; the `exercise_logs` parent is inserted without a
+`completed_at`). Result: `.not('completed_at','is',null)` matched nothing, so the
+footer was **always empty for every portal-logged session**. Fixed to key off
+`sessions.completed_at` via a `sessions!inner(client_id, completed_at)` join with
+a TS recency sort (PostgREST can't order the parent by an embedded child column),
+mirroring the portal's own last-logged read. No migration, no new RPC. Requires a
+test client with prior **completed** sessions logging the day's exercises.
+
+### SB-LL-1 — Portal-logged completed session surfaces in the footer (the regression)
+- **Setup:** Client logs an exercise via the portal (e.g. 80kg × 6) and **completes**
+  the session. Open that exercise on the staff session builder for the same client.
+- **Pass:** The exercise card's "Last logged" footer renders the logged sets
+  (80kg × 6) dated to the session's completion. (Before the fix: always empty.)
+
+### SB-LL-2 — Most-recent completed session wins, deduped by exercise
+- **Setup:** The same exercise completed in two sessions on different dates.
+- **Pass:** The footer shows only the **newest** completed session's sets — one
+  footer per exercise, never stacked history.
+
+### SB-LL-3 — In-progress session excluded (completion gates the footer)
+- **Setup:** Client logs sets for the exercise but does **not** complete the
+  session (`sessions.completed_at` IS NULL), and no earlier completed session
+  exists for it.
+- **Pass:** No footer renders for that exercise — only completed sessions count
+  as "last logged", matching the portal's reference-line behaviour.
+
+### SB-LL-4 — Client scoping (shared exercise_id never leaks across clients)
+- **Setup:** Two clients in the org have each completed the same catalog exercise.
+  Open the exercise on client A's session builder.
+- **Pass:** The footer shows **only client A's** logged sets — client B's history
+  for the same `exercise_id` never appears (the `.eq('sessions.client_id', id)`
+  scope holds; RLS keeps the org boundary, the client filter narrows within it).

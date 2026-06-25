@@ -2,9 +2,15 @@ import Link from 'next/link'
 import { cookies } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { Logger, type LoggedSet, type LoggerExercise } from './_components/Logger'
+import {
+  Logger,
+  type LoggedSet,
+  type LoggerExercise,
+  type LastLoggedExercise,
+} from './_components/Logger'
 import { startOrResumeSessionAction } from './actions'
 import { PORTAL_AUTOFILL_COOKIE } from '../../_lib/portal-helpers'
+import { resolvePortalToday } from '../../_lib/timezone'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,6 +132,7 @@ export default async function PortalSessionPage({
 
     exercises.push({
       programExerciseId: e.program_exercise_id,
+      exerciseId: e.exercise_id,
       name: e.exercise_name,
       sectionTitle: e.section_title,
       instructions: e.instructions,
@@ -167,20 +174,45 @@ export default async function PortalSessionPage({
     )
   }
 
-  // Pull existing set logs + per-exercise notes for this session so a
-  // resume shows what's already been done (sets) and prefills the per-group
-  // notes field (notes, P1-4).
-  const { data: logRows } = await supabase
-    .from('exercise_logs')
-    .select(
-      `id, program_exercise_id, notes,
-       sets:set_logs(
-         set_number, reps_performed, rep_metric, weight_value, weight_metric,
-         optional_value
-       )`,
-    )
-    .eq('session_id', sessionId)
-    .is('deleted_at', null)
+  // Resolve the device/org timezone once — used to label the "last logged" date.
+  const { tz } = await resolvePortalToday(supabase)
+  const exerciseIds = Array.from(new Set(exercises.map((e) => e.exerciseId)))
+
+  // Two independent reads in parallel (P1-7 latency):
+  //   - this session's existing set logs + per-group notes (resume state);
+  //   - the client's prior COMPLETED logs for THIS day's exercises (Change 3
+  //     reference line + no-prescribed-load prefill fallback). RLS scopes both
+  //     to the caller's own rows; the history query is bounded to the day's
+  //     exercise_ids via the embedded inner join, ordered most-recent-first.
+  const [{ data: logRows }, { data: historyRows }] = await Promise.all([
+    supabase
+      .from('exercise_logs')
+      .select(
+        `id, program_exercise_id, notes,
+         sets:set_logs(
+           set_number, reps_performed, rep_metric, weight_value, weight_metric,
+           optional_value
+         )`,
+      )
+      .eq('session_id', sessionId)
+      .is('deleted_at', null),
+    supabase
+      .from('sessions')
+      .select(
+        `completed_at,
+         exercise_logs!inner(
+           exercise_id, deleted_at,
+           set_logs(
+             set_number, weight_value, weight_metric, reps_performed, rep_metric,
+             deleted_at
+           )
+         )`,
+      )
+      .not('completed_at', 'is', null)
+      .is('deleted_at', null)
+      .in('exercise_logs.exercise_id', exerciseIds)
+      .order('completed_at', { ascending: false }),
+  ])
 
   const existingLogs: LoggedSet[] = []
   const exerciseNotes: Record<string, string> = {}
@@ -201,6 +233,32 @@ export default async function PortalSessionPage({
     }
   }
 
+  // Most-recent-completed actual per exercise (historyRows already ordered
+  // completed_at DESC), keyed by exercise_id. First hit per exercise wins;
+  // deleted logs/sets skipped; an exercise with no usable set data is omitted.
+  const lastLogged: Record<string, LastLoggedExercise> = {}
+  for (const sess of historyRows ?? []) {
+    if (!sess.completed_at) continue
+    for (const el of sess.exercise_logs ?? []) {
+      if (el.deleted_at !== null || !el.exercise_id) continue
+      if (lastLogged[el.exercise_id]) continue
+      const sets = (el.set_logs ?? [])
+        .filter((x) => x.deleted_at === null)
+        .sort((a, b) => a.set_number - b.set_number)
+      if (sets.length === 0) continue
+      lastLogged[el.exercise_id] = {
+        dateLabel: formatLastDate(sess.completed_at, tz),
+        sets: sets.map((x) => ({
+          setNumber: x.set_number,
+          weightValue: x.weight_value !== null ? Number(x.weight_value) : null,
+          weightMetric: x.weight_metric,
+          reps: x.reps_performed,
+          repMetric: x.rep_metric,
+        })),
+      }
+    }
+  }
+
   return (
     <Logger
       sessionId={sessionId}
@@ -211,8 +269,19 @@ export default async function PortalSessionPage({
       existingLogs={existingLogs}
       exerciseNotes={exerciseNotes}
       autofill={autofill}
+      lastLogged={lastLogged}
     />
   )
+}
+
+/** Format a session's completed_at as "Sat 11 Apr" in the client's timezone. */
+function formatLastDate(iso: string, tz: string): string {
+  return new Intl.DateTimeFormat('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: tz,
+  }).format(new Date(iso))
 }
 
 function SessionError({
