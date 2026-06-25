@@ -85,6 +85,25 @@ This was confirmed against migration source, not against the live database — n
 
 **Gate status:** the runtime-verify step is now DONE (the platform-wide enumeration exists and was run 2026-06-23). The soft-delete/restore + program (23) + portal (25) + scheduling (26) + messaging families are discharged. What remains is per-owner remediation of the candidate bucket above — **none of it gating**; each is protected in the meantime by its in-body auth guard, its pre-auth legitimacy, or its RLS-role scoping.
 
+## 4b. Anon table-grant posture on tenant tables (defense-in-depth, parked)
+
+Tenant tables (e.g. `clients`) keep the Supabase **default table-level grant** for
+`anon`; anon is denied not at the grant layer but by RLS (there is no `TO anon`
+policy). pgTAP `46_clients_update_role_anon_denial` proves this holds today for the
+`clients` UPDATE path (anon UPDATE affects 0 rows, not a grant error). The posture
+is **acceptable** (RLS is the security boundary by design) but not the intended end
+state: anon retaining table grants means a single RLS regression is all that stands
+between anon and the row. Tightening means `REVOKE`-ing the unused anon table
+privileges so anon is denied at both the grant and RLS layers. This is distinct from
+the §4 *function*-EXECUTE sweep (which covers SECURITY DEFINER functions, not table
+DML).
+
+**Gate:** tighten — or consciously re-accept — the anon table-grant posture on tenant
+tables before identifiable client health data enters the project. Surfaced as a
+condition on the item-3 sign-off (2026-06-26,
+`docs/polish/dashboard-board-and-overdue.md` §Sign-off); a standing liability, not an
+item-3 defect.
+
 ## 5. Non-prod test target (standing liability)
 
 All pgTAP, including the Track C recovery-ticket tests, runs only against the live production Supabase project via `BEGIN ... ROLLBACK`. There is no non-prod test target. Docker does not run on the operator's laptop (confirmed; not a path). Real options are a throwaway Supabase cloud staging project or Supabase branching.

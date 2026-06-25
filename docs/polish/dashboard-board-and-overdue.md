@@ -1,6 +1,6 @@
 # Polish doc — dashboard: cancelled on the board, recent-activity colour, overdue follow-up
 
-**Status: IMPLEMENTED 2026-06-25; acceptance verified 2026-06-26 (operator render-pass + pgTAP `46` + threshold proof) — awaiting reviewer sign-off stamp.** Three dashboard
+**Status: IMPLEMENTED 2026-06-25; acceptance verified 2026-06-26 (operator render-pass + pgTAP `46` + threshold proof) — CLOSED 2026-06-26 (reviewer: claude.ai project chat; Approved — see Sign-off).** Three dashboard
 dogfooding captures, batched. Items 1–2 are contained fixes inside the
 already-signed-off dashboard surface; item 3 touches the schema (one nullable
 column) so it re-enters the polish protocol per CLAUDE.md "Current operating
@@ -159,3 +159,27 @@ clarification.
 via `activeToday`); RPE colour contrast (reused the legible amber tag, not bright
 warning text); overdue item never re-surfacing after ack (clock-reset model, not
 hide-until-logged). **Accepted:** OCC version bump on ack.
+
+---
+
+## Sign-off
+- **Date signed off:** 2026-06-26
+- **Reviewer:** claude.ai project chat (challenger role)
+- **Decision:** Approved — **CLOSED**
+
+Evidence basis (reviewer): the `clients.overdue_followed_up_at` acknowledgement
+path is closed end-to-end — pgTAP 46 green on prod (client-role 0 rows, anon 0
+rows, staff control 1 row, confirming the denials are role/anon-driven, not a
+locked fixture); the suppression mechanic proven (ack on date D suppresses through
+D+10, re-fires from D+11, inclusive boundary, verified against `dates.ts` and the
+live -9d/-11d render); the operator render-pass green for all three captures. The
+turn-one waiver that claimed non-existent clients-UPDATE coverage is resolved, with
+pgTAP 46 as the named proof.
+
+**Conditions on the stamp** (standing platform liabilities, *not* item-3 defects;
+neither blocks closure):
+1. Anon-out-of-`clients` tightening remains parked — pgTAP 46 proves anon is denied
+   by RLS today (acceptable default-grant posture), but not the intended end state
+   before identifiable client health data enters. Tracked: `go-live-checklist.md` §4b.
+2. No non-prod test target — pgTAP 46 ran against prod under `BEGIN/ROLLBACK` as the
+   sole safety net. Tracked: `go-live-checklist.md` §5.
