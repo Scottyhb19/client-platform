@@ -145,7 +145,12 @@ export function Logger({
     if (repsNum !== null && (!Number.isFinite(repsNum) || repsNum < 0)) {
       return { error: `${volumeUnitLabel(repMetric)} must be a whole number.` }
     }
-    const parsedLoad = parseLoad(d.load)
+    // The load box is headed by the prescribed unit, so a bare "80" is logged in
+    // that unit (kg/lb); an explicit suffix the client types still wins.
+    const parsedLoad = parseLoad(
+      d.load,
+      prescribedLoadUnit(exercises, exerciseId, setNumber) ?? 'kg',
+    )
 
     const res = await logSetAction({
       sessionId,
@@ -293,7 +298,7 @@ export function Logger({
                   <SetRow
                     key={sn}
                     setNumber={sn}
-                    repMetric={prescribed.repMetric}
+                    prescribed={prescribed}
                     draft={drafts.get(key) ?? { reps: '', load: '' }}
                     logged={logsByKey.get(key)}
                     onChange={(field, value) =>
@@ -713,14 +718,14 @@ function ExerciseBlock({
 // the parent's draft map so carry-forward / log-all update live.
 function SetRow({
   setNumber,
-  repMetric,
+  prescribed,
   draft,
   logged,
   onChange,
   onSave,
 }: {
   setNumber: number
-  repMetric: string | null
+  prescribed: PrescribedSet
   draft: Draft
   logged: LoggedSet | undefined
   onChange: (field: keyof Draft, value: string) => void
@@ -731,6 +736,33 @@ function SetRow({
 
   const dirty = logged !== undefined && !draftEqualsLogged(draft, logged)
   const done = logged !== undefined && !dirty
+
+  // Metric-driven layout (Decision B). The volume box is always shown, headed by
+  // the prescribed unit (Reps / Seconds / Metres). A load box appears ONLY when
+  // kg/lb is the prescribed load metric — everything else (bodyweight, RPE/%/
+  // tempo targets, or no metric at all) is volume-only. We never assume a load
+  // the prescription didn't state.
+  const repMetric = prescribed.repMetric
+  const loadUnit =
+    prescribed.optionalMetric === 'kg' || prescribed.optionalMetric === 'lb'
+      ? prescribed.optionalMetric
+      : null
+  // Non-numeric prescriptions (max / AMRAP / "8-12" / "8 e/s") can't seed a
+  // single number — the prescribed text becomes a placeholder hint and the
+  // client types the actual achieved value.
+  const repsNumeric =
+    prescribed.reps != null && /^\d+$/.test(prescribed.reps.trim())
+  const volumePlaceholder = repsNumeric
+    ? undefined
+    : prescribed.reps?.trim() || undefined
+  // Ghost: a still-untouched prescribed default reads muted, so one tap on Log
+  // commits "exactly as prescribed" while an edit reads as a deliberate change.
+  const volumeDefault = repsNumeric ? prescribed.reps!.trim() : ''
+  const loadDefault = loadUnit ? (prescribed.optionalValue ?? '') : ''
+  const volumeGhost =
+    !done && draft.reps.trim() !== '' && draft.reps.trim() === volumeDefault
+  const loadGhost =
+    !done && draft.load.trim() !== '' && draft.load.trim() === loadDefault.trim()
 
   function handleSave() {
     setError(null)
@@ -845,21 +877,27 @@ function SetRow({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          gridTemplateColumns: loadUnit ? '1fr 1fr' : '1fr',
           gap: 8,
         }}
       >
         <LogInput
           label={volumeUnitLabel(repMetric)}
           value={draft.reps}
+          placeholder={volumePlaceholder}
+          ghost={volumeGhost}
           onChange={(v) => onChange('reps', v)}
           inputMode="numeric"
         />
-        <LogInput
-          label="Load"
-          value={draft.load}
-          onChange={(v) => onChange('load', v)}
-        />
+        {loadUnit && (
+          <LogInput
+            label={loadUnit}
+            value={draft.load}
+            ghost={loadGhost}
+            onChange={(v) => onChange('load', v)}
+            inputMode="decimal"
+          />
+        )}
       </div>
     </div>
   )
@@ -870,11 +908,17 @@ function LogInput({
   value,
   onChange,
   inputMode,
+  placeholder,
+  // `ghost` renders a still-untouched prescribed default in muted text so it
+  // reads as a soft suggestion rather than a value the client typed.
+  ghost = false,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   inputMode?: 'numeric' | 'decimal' | 'text'
+  placeholder?: string
+  ghost?: boolean
 }) {
   return (
     <div>
@@ -893,7 +937,11 @@ function LogInput({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        // Pre-select on focus: a drastic change is one type-over; a fine change
+        // is direct entry on the native numeric keypad (inputMode).
+        onFocus={(e) => e.currentTarget.select()}
         inputMode={inputMode}
+        placeholder={placeholder}
         style={{
           width: '100%',
           height: 40,
@@ -904,7 +952,9 @@ function LogInput({
           fontFamily: 'var(--font-display)',
           fontWeight: 700,
           fontSize: '1.05rem',
-          color: 'var(--session-input-text)',
+          color: ghost
+            ? 'var(--session-text-muted)'
+            : 'var(--session-input-text)',
           outline: 'none',
           boxSizing: 'border-box',
         }}
@@ -1132,6 +1182,19 @@ function prescribedRepMetric(
   )
 }
 
+// The prescribed LOAD unit for a set — but only kg/lb, the units a client logs a
+// load in. NULL for any other optional metric (rpe / % / tempo / bodyweight):
+// those are targets, not loads, so there is no load box and no default unit.
+function prescribedLoadUnit(
+  exercises: LoggerExercise[],
+  exerciseId: string,
+  setNumber: number,
+): string | null {
+  const ex = exercises.find((e) => e.programExerciseId === exerciseId)
+  const m = ex?.prescribedSets.find((s) => s.setNumber === setNumber)?.optionalMetric
+  return m === 'kg' || m === 'lb' ? m : null
+}
+
 function mapFromLogs(logs: LoggedSet[]): Map<string, LoggedSet> {
   const m = new Map<string, LoggedSet>()
   for (const l of logs) m.set(setKey(l.programExerciseId, l.setNumber), l)
@@ -1175,11 +1238,13 @@ function initialGroupIdx(
   return groups.length
 }
 
-/** Draft strings reconstructed from a saved set (for editing + dirty checks). */
+/** Draft strings reconstructed from a saved set (for editing + dirty checks).
+ *  Load is the bare number — its unit lives in the box heading (metric-driven
+ *  layout), and parseLoad re-attaches the prescribed unit on save. */
 function loggedToDraft(l: LoggedSet): Draft {
   const load =
     l.weightValue !== null
-      ? `${l.weightValue}${l.weightMetric ?? ''}`
+      ? String(l.weightValue)
       : (l.optionalValue ?? '')
   return {
     reps: l.reps !== null ? String(l.reps) : '',
@@ -1187,12 +1252,16 @@ function loggedToDraft(l: LoggedSet): Draft {
   }
 }
 
-/** Draft seeded from the EP's prescription (reps numeric; load by metric). RPE
- *  is a prescription-side target, never a logged input, so it never seeds. */
+/** Draft seeded from the EP's prescription. Volume (reps) seeds only when it is
+ *  a plain number; load seeds only when kg/lb is the prescribed load metric.
+ *  RPE / % / tempo are prescription-side targets, never logged, so never seed. */
 function draftFromPrescription(p: PrescribedSet): Draft {
   return {
     reps: p.reps && /^\d+$/.test(p.reps.trim()) ? p.reps.trim() : '',
-    load: p.optionalMetric === 'rpe' ? '' : (p.optionalValue ?? ''),
+    load:
+      p.optionalMetric === 'kg' || p.optionalMetric === 'lb'
+        ? (p.optionalValue ?? '')
+        : '',
   }
 }
 
@@ -1254,13 +1323,26 @@ function buildRxLabel(e: LoggerExercise): string {
   if (vol) bits.push(`${sets.length} × ${vol}`)
   else bits.push(`${sets.length} sets`)
   if (first.optionalValue) {
-    bits.push(
-      first.optionalMetric === 'rpe'
-        ? `RPE ${first.optionalValue}`
-        : first.optionalValue,
-    )
+    bits.push(formatOptional(first.optionalMetric, first.optionalValue))
   }
   return bits.join(' · ')
+}
+
+// Render a prescription's optional metric+value in house voice for the rx chip:
+// "80kg" / "RPE 8" / "75%"; tempo and anything else pass through. The client
+// never logs the last three (they are targets) — they belong on the summary only.
+function formatOptional(metric: string | null, value: string): string {
+  switch (metric) {
+    case 'kg':
+    case 'lb':
+      return `${value}${metric}`
+    case 'rpe':
+      return `RPE ${value}`
+    case 'percentage':
+      return `${value}%`
+    default:
+      return value
+  }
 }
 
 /**
@@ -1269,7 +1351,7 @@ function buildRxLabel(e: LoggerExercise): string {
  *   "BW"          → { weightValue: null, weightMetric: null, optionalValue: 'BW' }
  *   ""            → all null
  */
-function parseLoad(raw: string): {
+function parseLoad(raw: string, defaultMetric: string = 'kg'): {
   weightValue: number | null
   weightMetric: string | null
   optionalValue: string | null
@@ -1280,7 +1362,8 @@ function parseLoad(raw: string): {
   const numMatch = /^(\d+(?:\.\d+)?)\s*(kg|lb|lbs)?$/i.exec(s)
   if (numMatch) {
     const n = parseFloat(numMatch[1]!)
-    const metric = (numMatch[2] ?? 'kg').toLowerCase()
+    // A bare number takes the prescribed (heading) unit; an explicit suffix wins.
+    const metric = (numMatch[2] ?? defaultMetric).toLowerCase()
     return {
       weightValue: Number.isFinite(n) ? n : null,
       weightMetric: metric === 'lbs' ? 'lb' : metric,

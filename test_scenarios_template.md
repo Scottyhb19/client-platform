@@ -50,3 +50,64 @@ removed. Owner-approved deviation from brief §6.3.1 (see
   value `8`. **Setup (b):** an exercise with no RPE prescribed.
 - **Pass:** (a) the day-card exercise row and the in-session prescription line
   both show "RPE 8"; (b) nothing RPE-related appears on either surface.
+
+---
+
+## Client portal — metric-driven set logging (Change 2, 2026-06-26)
+
+Context: each set row's inputs are driven by the stored prescription metric —
+the volume box is headed by the actual unit (Reps / Seconds / Metres), and a
+load box appears ONLY when kg/lb is the prescribed load metric (Decision B).
+Prescription pre-fills; native numeric keypad; focus pre-selects.
+
+### CP-LOG-1 — Weighted (kg) exercise
+- **Setup:** A set prescribed reps + `optional_metric='kg'`, value `80`.
+- **Pass:** Two boxes — one headed **REPS** pre-filled with the reps, one headed
+  **KG** pre-filled `80`. No generic "Load" heading anywhere. Logging stores
+  `reps_performed` + `weight_value=80`, `weight_metric='kg'`.
+
+### CP-LOG-2 — Bodyweight / no-load exercise
+- **Setup:** A set with `optional_metric='bodyweight'` or NULL (not kg/lb), reps volume.
+- **Pass:** A single **REPS** box, full width. **No load box.** Logging stores
+  `reps_performed`, no weight.
+
+### CP-LOG-3 — AMRAP / "max" exercise
+- **Setup:** A set with non-numeric reps (`max`, or a range like `8-12`).
+- **Pass:** The volume box shows the prescribed text as a **placeholder** (e.g.
+  "max"), empty value, and is the primary input. Typing a number logs it as the
+  actual reps.
+
+### CP-LOG-4 — Timed hold (load box suppressed BY the time metric, by design)
+- **Setup:** A set with `rep_metric='time_minsec'`, reps `30`.
+- **Pass:** A single box headed **SECONDS**, pre-filled `30`, no load box, no
+  separate reps box. Logging stores `reps_performed=30`, `rep_metric='time_minsec'`.
+- **By design:** the load box is suppressed *because the volume metric is time*,
+  not coincidentally absent — a timed hold is time-only even if a kg load were
+  prescribed. (No weighted timed holds exist in the library today; revisit only
+  if one is ever added.)
+
+### CP-LOG-5 — Distance (and loaded carry)
+- **Setup (a):** `rep_metric='distance_m'`, reps `20`, no kg. **(b):** same with
+  `optional_metric='kg'`, value `40` (e.g. a Farmer's Carry).
+- **Pass:** (a) one box headed **METRES** pre-filled `20`, no load box. (b)
+  **METRES** + **KG** boxes (distance + load), both pre-filled.
+- **By design — integer metres:** distance logs as **whole metres** via a numeric
+  (not decimal) keypad, because the volume column `set_logs.reps_performed` is
+  `smallint`. This is intentional, not a decimal-input bug — sub-metre precision
+  would require a schema change (out of scope; would re-enter the polish protocol).
+
+### CP-LOG-6 — Confirm-as-prescribed is one tap
+- **Setup:** Any prescribed set, autofill on.
+- **Pass:** The prescribed values show as muted (ghost) defaults; tapping **Log**
+  once (no keyboard) commits the set exactly as prescribed.
+
+### CP-LOG-7 — Deviation persists the actual, changes only the touched value
+- **Action:** Tap the load value (it pre-selects), type a different number, tap Log.
+- **Pass:** Only the touched field changes; the volume keeps its prescribed value.
+  The logged set reflects the deviation (actual ≠ prescription), and the row reads
+  as edited (not ghost) for the changed field.
+
+### CP-LOG-8 — Heading is the runtime metric, never hardcoded
+- **Setup:** One exercise prescribed in `kg`, one in `lb`.
+- **Pass:** The load box reads **KG** and **LB** respectively (from the stored
+  `optional_metric`), and a bare number is logged in that unit. Never "Load".
