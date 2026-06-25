@@ -42,8 +42,12 @@ Clarifications (asked + answered 2026-06-25):
   no backfill). Migration `20260625140000`.
 - **Security:** written through the existing **"staff update clients in own org"**
   RLS UPDATE policy (role-scoped: owner/staff, own org). Clients/portal have
-  **no** UPDATE policy on `clients` → cannot write it. **No new security surface
-  → no new pgTAP gate** (consistent with the security-surface-only rule).
+  **no** UPDATE policy on `clients` → cannot write it. No *new* security surface,
+  but that inherited denial was **previously untested**: `17_cross_tenant_isolation`
+  proved only the org predicate (staff-in-wrong-org → 0 rows), never the role
+  predicate. Item 3 adds pgTAP `46_clients_update_role_anon_denial` — a
+  client-role UPDATE and an anon UPDATE of `clients` each asserted to affect 0
+  rows, with a staff-can-update control.
 - **Suppression logic** (`buildAttentionList`): an acknowledgement within the
   overdue cadence (`overdue_followed_up_at >= tenDaysAgo`) suppresses the Overdue
   trigger. After ~10 days it re-fires with the *real* "Last session N days ago"
@@ -96,7 +100,7 @@ Clarifications (asked + answered 2026-06-25):
       **does** re-appear (with the real "Last session N days ago") if still
       silent.
 - [ ] Logging a session in the meantime clears it the normal way (unaffected).
-- [ ] A client/portal token cannot write `overdue_followed_up_at` (RLS).
+- [ ] A client/portal token cannot write `overdue_followed_up_at` (RLS) — backed by pgTAP `46_clients_update_role_anon_denial`.
 
 ## Acceptance / verification run (2026-06-25)
 - `npm run type-check` — **pass** (clean).
@@ -124,11 +128,14 @@ clear Overdue lacked (Ending/New self-clear, Overdue did not).
 regenerated. Pass criteria above are written; live render verification is
 operator-side (auth wall).
 
-**Deferred / accepted:** no new pgTAP — #3 adds no new security surface (existing
-role-scoped clients UPDATE policy; clients/portal cannot UPDATE). `version` /
-`updated_at` bump on the stamp accepted at f&f scale (matches the flag-review
-precedent). Today's-board inline action for incomplete sessions was **not** built
-— #3 was scoped to the Overdue attention item per the owner's clarification.
+**Added / accepted:** #3 adds pgTAP `46_clients_update_role_anon_denial`, closing
+the previously-untested clients-UPDATE denial for the client and anon roles — the
+suite had proved only the staff-wrong-org org-isolation case
+(`17_cross_tenant_isolation`), never the role/anon predicate of the same policy.
+`version` / `updated_at` bump on the stamp accepted at f&f scale (matches the
+flag-review precedent). Today's-board inline action for incomplete sessions was
+**not** built — #3 was scoped to the Overdue attention item per the owner's
+clarification.
 
 **Premortem modes mitigated:** cancelled slot inflating the live count (filtered
 via `activeToday`); RPE colour contrast (reused the legible amber tag, not bright
