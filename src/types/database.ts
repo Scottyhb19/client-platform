@@ -870,6 +870,7 @@ export type Database = {
           last_name: string
           onboarded_at: string | null
           organization_id: string
+          overdue_followed_up_at: string | null
           phone: string | null
           referral_source: string | null
           referred_by: string | null
@@ -896,6 +897,7 @@ export type Database = {
           last_name: string
           onboarded_at?: string | null
           organization_id: string
+          overdue_followed_up_at?: string | null
           phone?: string | null
           referral_source?: string | null
           referred_by?: string | null
@@ -922,6 +924,7 @@ export type Database = {
           last_name?: string
           onboarded_at?: string | null
           organization_id?: string
+          overdue_followed_up_at?: string | null
           phone?: string | null
           referral_source?: string | null
           referred_by?: string | null
@@ -3695,6 +3698,10 @@ export type Database = {
           p_source_program_id: string
         }
         Returns: Json
+      }
+      _get_or_create_loose_program: {
+        Args: { p_client_id: string }
+        Returns: string
       }
       _program_for_date: {
         Args: { p_client_id: string; p_date: string }

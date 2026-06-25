@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import {
   initialsFor,
   toneFor,
@@ -130,10 +130,11 @@ function CompletionRow({
 }) {
   const canExpand = completion.set_count > 0
   const fullName = `${completion.client_first_name} ${completion.client_last_name}`
-  const detailBits: string[] = [completion.day_label]
-  if (completion.session_rpe !== null) {
-    detailBits.push(`RPE ${completion.session_rpe}`)
-  }
+  // RPE >= 8 is a genuinely hard session (<=2 reps in reserve); surface it with
+  // the amber tag so a tough session reads at a glance. Below that it stays
+  // neutral. The colour here is clinical signal, not decoration.
+  const hardSession =
+    completion.session_rpe !== null && completion.session_rpe >= 8
 
   return (
     <div
@@ -190,11 +191,26 @@ function CompletionRow({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {detailBits.join(' · ')}
+              {completion.day_label}
+              {completion.session_rpe !== null && (
+                <>
+                  {' · '}
+                  {hardSession ? (
+                    <span className="tag overdue">
+                      RPE {completion.session_rpe}
+                    </span>
+                  ) : (
+                    <>RPE {completion.session_rpe}</>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <span
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
               fontSize: '.72rem',
               color: 'var(--color-muted)',
               fontFamily: 'var(--font-display)',
@@ -203,6 +219,14 @@ function CompletionRow({
               whiteSpace: 'nowrap',
             }}
           >
+            {/* Completion checkmark — sanctioned structural use of accent
+                green (each row is a logged, completed session). */}
+            <Check
+              size={13}
+              strokeWidth={2.5}
+              color="var(--color-accent)"
+              aria-hidden
+            />
             {relativeTime(completion.completed_at)}
           </span>
         </Link>

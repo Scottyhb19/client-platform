@@ -17,6 +17,7 @@ import {
   RecentlyCompletedPanel,
   type DashboardCompletion,
 } from './_components/RecentlyCompletedPanel'
+import { OverdueFollowUpButton } from './_components/OverdueFollowUpButton'
 import type {
   ProfileCompletionExercise,
   ProfileCompletionSet,
@@ -84,7 +85,9 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     supabase
       .from('clients')
-      .select('id, first_name, last_name, invited_at, onboarded_at, created_at')
+      .select(
+        'id, first_name, last_name, invited_at, onboarded_at, created_at, overdue_followed_up_at',
+      )
       .is('deleted_at', null)
       .is('archived_at', null),
     supabase
@@ -102,7 +105,6 @@ export default async function DashboardPage() {
       .gte('start_at', todayStart.toISOString())
       .lt('start_at', todayEnd.toISOString())
       .is('deleted_at', null)
-      .neq('status', 'cancelled')
       .order('start_at'),
     // 5 most recent completed sessions across this EP's clients (RLS scopes
     // to own org). Fetch 8 then drop archived-client / null rows and slice
@@ -203,6 +205,23 @@ export default async function DashboardPage() {
     }
   }
 
+  // client_id → overdue follow-up acknowledgement (ms). Set by the dashboard
+  // "Program checked & message sent" button; suppresses the Overdue trigger for
+  // ~10 days, then lets it re-surface if the client is still silent. See
+  // buildAttentionList + acknowledgeOverdueFollowupAction.
+  const overdueFollowedUpByClient = new Map<string, number>()
+  for (const c of (activeClients ?? []) as Array<{
+    id: string
+    overdue_followed_up_at: string | null
+  }>) {
+    if (c.overdue_followed_up_at) {
+      overdueFollowedUpByClient.set(
+        c.id,
+        new Date(c.overdue_followed_up_at).getTime(),
+      )
+    }
+  }
+
   const completedAssessmentIds = new Set(
     ((completedAssessmentRows ?? []) as Array<{ client_id: string }>).map(
       (a) => a.client_id,
@@ -214,8 +233,15 @@ export default async function DashboardPage() {
   )
 
   // ── Stats ──────────────────────────────────────────────────────────────
-  const sessionsToday = todaysAppointments?.length ?? 0
-  const nextSession = todaysAppointments?.find(
+  // Cancelled appointments still render on the board (struck-through) so a
+  // cancelled slot doesn't silently vanish — but a cancelled slot is not a
+  // "session happening today", so the stat count + the next-session cue are
+  // computed over the live (non-cancelled) rows only.
+  const activeToday = (todaysAppointments ?? []).filter(
+    (a) => a.status !== 'cancelled',
+  )
+  const sessionsToday = activeToday.length
+  const nextSession = activeToday.find(
     (a) => new Date(a.start_at).getTime() >= now.getTime(),
   )
   const activeClientCount = activeClients?.length ?? 0
@@ -241,6 +267,7 @@ export default async function DashboardPage() {
     activeClients: activeClients ?? [],
     activePrograms,
     lastCompletedByClient,
+    overdueFollowedUpByClient,
     completedAssessmentIds,
     clientsWithAnyProgram,
     clientsWithDraftProgram,
@@ -583,6 +610,7 @@ function buildAttentionList({
   activeClients,
   activePrograms,
   lastCompletedByClient,
+  overdueFollowedUpByClient,
   completedAssessmentIds,
   clientsWithAnyProgram,
   clientsWithDraftProgram,
@@ -603,6 +631,7 @@ function buildAttentionList({
   }>
   activePrograms: AttentionProgram[]
   lastCompletedByClient: Map<string, string>
+  overdueFollowedUpByClient: Map<string, number>
   completedAssessmentIds: Set<string>
   clientsWithAnyProgram: Set<string>
   clientsWithDraftProgram: Set<string>
@@ -653,10 +682,19 @@ function buildAttentionList({
     // for an in-window program. A client who has never logged is measured from
     // start_date + 10 days, so a brand-new program doesn't flag on day one.
     // (Q1: 10 days.)
+    // "Program checked & message sent" resets the overdue clock: an
+    // acknowledgement inside the overdue cadence suppresses the trigger, so the
+    // client re-surfaces only if still silent ~10 days later (Q: reset the
+    // clock). Overdue is the one trigger with no natural clear, so this is its
+    // manual exit. See OverdueFollowUpButton / acknowledgeOverdueFollowupAction.
+    const followedUpMs = overdueFollowedUpByClient.get(p.client_id)
+    const recentlyFollowedUp =
+      followedUpMs !== undefined && followedUpMs >= tenDaysAgoMs
+
     const last = lastCompletedByClient.get(p.client_id)
     let overdue = false
     let overdueReason = ''
-    if (inWindow && last) {
+    if (inWindow && !recentlyFollowedUp && last) {
       if (new Date(last).getTime() < tenDaysAgoMs) {
         overdue = true
         const days = Math.max(
@@ -665,7 +703,13 @@ function buildAttentionList({
         )
         overdueReason = `Last session ${days} days ago`
       }
-    } else if (inWindow && !last && p.start_date && p.start_date <= tenDaysAgoIso) {
+    } else if (
+      inWindow &&
+      !recentlyFollowedUp &&
+      !last &&
+      p.start_date &&
+      p.start_date <= tenDaysAgoIso
+    ) {
       overdue = true
       overdueReason = 'No sessions logged yet'
     }
@@ -838,9 +882,16 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
                     {it.reason}
                   </div>
                 </div>
-                <Link href={it.action.href} className="btn outline">
-                  {it.action.label}
-                </Link>
+                {it.tone === 'overdue' ? (
+                  // Overdue's manual exit (no natural clear). The client name
+                  // above still links to the profile, so "Open" is redundant
+                  // here — this slot becomes the acknowledge action instead.
+                  <OverdueFollowUpButton clientId={it.clientId} />
+                ) : (
+                  <Link href={it.action.href} className="btn outline">
+                    {it.action.label}
+                  </Link>
+                )}
               </div>
             )
           })}
@@ -918,13 +969,23 @@ function TodaysSessionsPanel({
           .map((s) => {
             const start = new Date(s.start_at)
             const end = new Date(s.end_at)
+            const isCancelled = s.status === 'cancelled'
+            // A cancelled slot isn't happening, so it carries no live state —
+            // the "Cancelled" pill + struck-through name say everything.
             const isLive =
+              !isCancelled &&
               start.getTime() <= now.getTime() &&
               end.getTime() >= now.getTime()
-            const isPast = end.getTime() < now.getTime()
+            const isPast = !isCancelled && end.getTime() < now.getTime()
             // Live cue (Q2): "now" while in progress, "done" once past; the
             // booking status (confirmed/pending) is the right-side pill.
-            const liveLabel = isLive ? 'Now' : isPast ? 'Done' : 'Upcoming'
+            const liveLabel = isCancelled
+              ? null
+              : isLive
+                ? 'Now'
+                : isPast
+                  ? 'Done'
+                  : 'Upcoming'
             const booking = bookingStatus(s.status)
             return (
               <Link
@@ -946,17 +1007,29 @@ function TodaysSessionsPanel({
                     fontFamily: 'var(--font-display)',
                     fontWeight: 700,
                     fontSize: '1.05rem',
-                    color: isLive
-                      ? 'var(--color-accent)'
-                      : isPast
-                        ? 'var(--color-muted)'
-                        : 'var(--color-charcoal)',
+                    color: isCancelled
+                      ? 'var(--color-muted)'
+                      : isLive
+                        ? 'var(--color-accent)'
+                        : isPast
+                          ? 'var(--color-muted)'
+                          : 'var(--color-charcoal)',
                   }}
                 >
                   {formatTime(start, tz)}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      ...(isCancelled
+                        ? {
+                            textDecoration: 'line-through',
+                            color: 'var(--color-muted)',
+                          }
+                        : null),
+                    }}
+                  >
                     {s.client!.first_name} {s.client!.last_name}
                   </div>
                   <div
@@ -966,16 +1039,18 @@ function TodaysSessionsPanel({
                     }}
                   >
                     {s.appointment_type}
-                    <span
-                      style={{
-                        color: isLive
-                          ? 'var(--color-accent)'
-                          : 'var(--color-muted)',
-                      }}
-                    >
-                      {' '}
-                      · {liveLabel}
-                    </span>
+                    {liveLabel && (
+                      <span
+                        style={{
+                          color: isLive
+                            ? 'var(--color-accent)'
+                            : 'var(--color-muted)',
+                        }}
+                      >
+                        {' '}
+                        · {liveLabel}
+                      </span>
+                    )}
                   </div>
                 </div>
                 {booking ? (
@@ -1004,6 +1079,8 @@ function bookingStatus(
       return { label: 'No show', cls: 'flag' }
     case 'completed':
       return { label: 'Completed', cls: 'ending' }
+    case 'cancelled':
+      return { label: 'Cancelled', cls: 'cancelled' }
     default:
       return null
   }
