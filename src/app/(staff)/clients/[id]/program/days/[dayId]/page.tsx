@@ -242,9 +242,20 @@ export default async function SessionBuilderPage({
     throw new Error(`Load publications: ${publicationsResult.error.message}`)
 
   // Phase H (2026-05-08): "Last logged" footer per exercise card.
-  // For each exercise_id on this day, find the most recent completed
-  // exercise_log for THIS client, with its set_logs. Pre-launch the result
-  // is empty for every row — fine, the footer just doesn't render.
+  // For each exercise_id on this day, find the client's most recent set
+  // data from a COMPLETED session, with its set_logs. Pre-launch the
+  // result is empty for every row — fine, the footer just doesn't render.
+  //
+  // "Completed" is read off sessions.completed_at, NOT
+  // exercise_logs.completed_at. The latter column exists but no logging
+  // path ever populates it: the portal RPCs (client_log_set,
+  // client_log_exercise_note) insert the exercise_logs parent without it,
+  // and client_complete_session stamps sessions.completed_at instead. A
+  // filter/sort on exercise_logs.completed_at therefore silently matched
+  // nothing, so the footer was always empty for portal-logged sessions.
+  // This mirrors the portal's own "last logged" read (src/app/portal/
+  // session/[dayId]/page.tsx), which keys off sessions.completed_at for
+  // exactly the same reason.
   //
   // Why join via sessions!inner + filter on sessions.client_id rather than
   // trusting RLS alone: exercise_logs.exercise_id is shared across all
@@ -253,13 +264,15 @@ export default async function SessionBuilderPage({
   // RLS keeps us inside the org; the client-id filter narrows to this
   // person.
   //
-  // No DISTINCT ON in supabase-js — we order DESC, then dedupe by
-  // exercise_id in TS taking the first (most recent) hit. Pre-launch this
-  // is empty; post-launch the row count is bounded by sessions × exercises
-  // and an `exercise_logs_exercise_idx` partial index covers the where
-  // clause. If real-traffic profiling shows it's slow, swap to a
-  // SECURITY DEFINER RPC with a per-exercise lateral subquery
-  // (deferred per docs/polish/session-builder.md §2.9).
+  // No DISTINCT ON in supabase-js, and PostgREST can't order the parent
+  // (exercise_logs) by an embedded child column (sessions.completed_at) —
+  // so we sort newest-first in TS, then dedupe by exercise_id taking the
+  // first (most recent) hit. Pre-launch this is empty; post-launch the row
+  // count is bounded by sessions × exercises, the `exercise_logs_exercise_idx`
+  // partial index covers the exercise_id/deleted_at predicate and
+  // `sessions_completed_idx` covers the join side. If real-traffic profiling
+  // shows it's slow, swap to a SECURITY DEFINER RPC with a per-exercise
+  // lateral subquery (deferred per docs/polish/session-builder.md §2.9).
   const exerciseIdsOnDay = Array.from(
     new Set((programExercisesRaw ?? []).map((pe) => pe.exercise_id)),
   )
@@ -270,8 +283,7 @@ export default async function SessionBuilderPage({
       .from('exercise_logs')
       .select(
         `exercise_id,
-         completed_at,
-         sessions!inner(client_id),
+         sessions!inner(client_id, completed_at),
          set_logs(
            set_number, weight_value, weight_metric,
            reps_performed, rep_metric, deleted_at
@@ -280,15 +292,25 @@ export default async function SessionBuilderPage({
       .eq('sessions.client_id', id)
       .in('exercise_id', exerciseIdsOnDay)
       .is('deleted_at', null)
-      .not('completed_at', 'is', null)
-      .order('completed_at', { ascending: false })
+      .not('sessions.completed_at', 'is', null)
 
     if (logsErr) throw new Error(`Load last-logged: ${logsErr.message}`)
 
-    for (const log of logsRaw ?? []) {
+    // Sort newest-completed-first in TS (PostgREST can't order the parent by
+    // the embedded sessions.completed_at). completed_at is ISO-8601, so a
+    // lexical compare is chronological. Nulls are already excluded by the
+    // filter above; the ?? '' is a type-narrowing guard only.
+    const logsByRecency = [...(logsRaw ?? [])].sort((a, b) =>
+      (b.sessions?.completed_at ?? '').localeCompare(
+        a.sessions?.completed_at ?? '',
+      ),
+    )
+
+    for (const log of logsByRecency) {
+      const completedAt = log.sessions?.completed_at
       // First hit per exercise_id wins (rows ordered completed_at DESC).
       if (lastLoggedByExerciseId.has(log.exercise_id)) continue
-      if (!log.completed_at) continue
+      if (!completedAt) continue
 
       const sets = (log.set_logs ?? [])
         .filter((s) => s.deleted_at === null)
@@ -299,7 +321,7 @@ export default async function SessionBuilderPage({
       if (sets.length === 0) continue
 
       lastLoggedByExerciseId.set(log.exercise_id, {
-        completedAt: log.completed_at,
+        completedAt,
         sets: sets.map((s) => ({
           weightValue: s.weight_value === null ? null : Number(s.weight_value),
           weightMetric: s.weight_metric,
