@@ -883,10 +883,29 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
                   </div>
                 </div>
                 {it.tone === 'overdue' ? (
-                  // Overdue's manual exit (no natural clear). The client name
-                  // above still links to the profile, so "Open" is redundant
-                  // here — this slot becomes the acknowledge action instead.
-                  <OverdueFollowUpButton clientId={it.clientId} />
+                  // Overdue's manual exit (no natural clear). Keep "Open" so the
+                  // EP can jump straight to the program to check it, then
+                  // acknowledge with the button beside it. "Open" here goes to
+                  // the program calendar (the name above still opens the
+                  // profile), since checking the program is the point.
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                    }}
+                  >
+                    <OverdueFollowUpButton clientId={it.clientId} />
+                    {/* "Open" sits on the right so it lines up with the
+                        single action button on every other needs-attention
+                        row (one clean column down the right edge). */}
+                    <Link
+                      href={`/clients/${it.clientId}/program`}
+                      className="btn outline"
+                    >
+                      Open
+                    </Link>
+                  </div>
                 ) : (
                   <Link href={it.action.href} className="btn outline">
                     {it.action.label}

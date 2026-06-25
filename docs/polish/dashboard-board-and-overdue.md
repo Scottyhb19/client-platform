@@ -68,8 +68,9 @@ Clarifications (asked + answered 2026-06-25):
 - **#3** new `clients.overdue_followed_up_at`; new
   `acknowledgeOverdueFollowupAction` (`dashboard/actions.ts`); new
   `OverdueFollowUpButton` client component; the `buildAttentionList` suppression
-  clause; the Overdue row's action slot becomes the button (the client-name link
-  still opens the profile, so "Open" was redundant there).
+  clause; the Overdue row gets the button **plus** an "Open" link pointed at the
+  program calendar (`/clients/[id]/program`) so the EP can check the program
+  first (the client-name link still opens the profile).
 
 ## Pass criteria (Maintenance rule)
 **#1 — cancelled on the board**
@@ -87,8 +88,9 @@ Clarifications (asked + answered 2026-06-25):
 - [ ] No new shadows/gradients; restraint holds (visual).
 
 **#3 — overdue follow-up**
-- [ ] An Overdue client shows the "Program checked & message sent" button in
-      place of "Open"; the name still links to the profile.
+- [ ] An Overdue client shows an "Open" link (→ program calendar) **and** the
+      "Program checked & message sent" button; the name still links to the
+      profile.
 - [ ] Clicking it removes the client from Needs-attention on the next render.
 - [ ] The same client does **not** re-appear as Overdue for ~10 days, then
       **does** re-appear (with the real "Last session N days ago") if still
