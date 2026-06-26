@@ -200,3 +200,71 @@ test client with prior **completed** sessions logging the day's exercises.
 - **Pass:** The footer shows **only client A's** logged sets — client B's history
   for the same `exercise_id` never appears (the `.eq('sessions.client_id', id)`
   scope holds; RLS keeps the org boundary, the client filter narrows within it).
+
+---
+
+## Staff platform — on-system dialogs & notices (2026-06-27)
+
+Context: every native browser `confirm()`/`alert()` across the staff app was
+replaced with on-system UI. Confirmations use the shared `ConfirmDialog`
+(`src/app/(staff)/_components/ConfirmDialog.tsx`); failures at sites with no
+inline error slot use a new bottom-anchored `Notice` toast
+(`src/app/(staff)/_components/Notice.tsx`, with `NoticeHost` mounted once in the
+staff layout). No `confirm()`/`alert()` calls remain (the PWA-install
+`promptEvent.prompt()` is a different API and is untouched). Migration-free, no
+new DB surface.
+
+### DLG-1 — Destructive actions confirm via ConfirmDialog, not the browser
+- **Setup:** Any delete/archive across the staff app (e.g. Settings → Session
+  types → trash a type; a library circuit/session/program card → Delete; a
+  program-day → Delete day; an availability rule → Delete).
+- **Action:** Click the delete/archive control.
+- **Pass:** The on-system ConfirmDialog opens (dark scrim, ~440px card,
+  display-font heading, Cancel + tonal confirm) — never the browser's native
+  `confirm()`. Cancel closes it with no change; the confirm button carries the
+  action's verb (e.g. "Delete", "Archive", "Unassign").
+
+### DLG-2 — A confirmed action that fails surfaces inside the dialog (retry, no alert)
+- **Setup:** Trigger a delete/archive whose server action fails (e.g. offline).
+- **Action:** Confirm in the dialog.
+- **Pass:** The dialog STAYS open and shows the error in its inline alert block;
+  the buttons re-enable so the EP can retry or cancel. No browser `alert()` fires,
+  and the item is not removed from the list.
+
+### DLG-3 — A no-slot failure surfaces as an on-system notice (toast)
+- **Setup:** A tiny async control with no inline error slot — the session-builder
+  set grid (add/move set, group/ungroup, reorder), a library set-stepper or
+  column-unit dropdown (`editor-kit`), a settings test toggle, or a schedule
+  drag-to-reschedule.
+- **Action:** Force the underlying server action to fail (e.g. offline), then use
+  the control.
+- **Pass:** A bottom-anchored on-system notice appears with the error message
+  (alert-red, AlertCircle icon, dismiss ×), auto-dismisses after ~6s and is
+  dismissible by hand. No browser `alert()` fires. Optimistic UI reverts where
+  applicable (e.g. the test toggle flips back).
+
+### DLG-4 — The schedule popover's confirm renders ABOVE the popover
+- **Setup:** Schedule grid → click an appointment to open its popover (z-index 1000).
+- **Action:** Click "Cancel appointment" (client appt) or "Remove block"
+  (Unavailable block).
+- **Pass:** The ConfirmDialog scrim + card render ABOVE the popover (caller passes
+  `zIndex={1100}`) and are fully interactive; confirming performs the action and a
+  failure shows in the dialog. A lifecycle action (Complete / No-show) that fails
+  shows an on-system notice visible ABOVE the popover (NoticeHost z-index 2000),
+  never a browser `alert()`.
+
+### DLG-5 — NoticeHost causes no hydration mismatch
+- **Setup:** Any staff page (NoticeHost is mounted in the staff layout).
+- **Action:** Load the page fresh (full SSR + hydration) with the browser console open.
+- **Pass:** No "Hydration failed" / NoticeHost mismatch error. NoticeHost renders
+  nothing while no notice is active — the list is empty through SSR and the first
+  client render, so the server and client trees match — and the toast container
+  mounts only once a notice is pushed.
+
+### DLG-6 — Advisory (non-destructive) confirm is primary-toned
+- **Setup:** Settings → Availability → add/edit an hours rule whose time range
+  overlaps an existing rule for the same day/date.
+- **Action:** Save.
+- **Pass:** A primary-toned ConfirmDialog asks "Save anyway?" (overlap is allowed
+  by the DB — recoverable, not destructive). Confirming saves; cancelling returns
+  to the form with no save. No browser `confirm()`.
