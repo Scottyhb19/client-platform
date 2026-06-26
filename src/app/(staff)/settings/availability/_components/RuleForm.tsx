@@ -10,6 +10,7 @@ import {
   type AvailabilityRuleRow,
 } from '../actions'
 import { dayLong, formatTime, todayIso } from '../_lib/format'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * Shared form for creating or editing one availability rule.
@@ -48,6 +49,9 @@ export function RuleForm({
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [overlapConfirm, setOverlapConfirm] = useState<{ range: string } | null>(
+    null,
+  )
 
   // "More options" disclosure — opens by default in edit mode if either
   // optional field is non-default, so the EP doesn't lose track of an
@@ -94,14 +98,15 @@ export function RuleForm({
     return null
   }
 
+  // Advisory overlap warning (Q4) — on-system ConfirmDialog in place of
+  // browser confirm(). Saving is recoverable (the DB allows overlap), so the
+  // confirm is primary-toned, not destructive.
   function handleSave() {
     const overlap = findOverlap()
     if (overlap) {
       const range = `${formatTime(overlap.start_time)}–${formatTime(overlap.end_time)}`
-      const ok = window.confirm(
-        `This overlaps with an existing rule (${range}). Save anyway?`,
-      )
-      if (!ok) return
+      setOverlapConfirm({ range })
+      return
     }
     submit()
   }
@@ -360,6 +365,29 @@ export function RuleForm({
           {pending ? 'Saving…' : 'Save'}
         </button>
       </div>
+
+      {overlapConfirm && (
+        <ConfirmDialog
+          title="Overlapping hours"
+          body={
+            <>
+              This overlaps with an existing rule ({overlapConfirm.range}). Save
+              anyway?
+            </>
+          }
+          confirmLabel="Save anyway"
+          tone="primary"
+          busy={pending}
+          onCancel={() => {
+            if (pending) return
+            setOverlapConfirm(null)
+          }}
+          onConfirm={() => {
+            setOverlapConfirm(null)
+            submit()
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -73,6 +73,7 @@ import {
 import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import { timeAgo } from '../../../../_components/reports/helpers'
 import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /*
  * Session Builder — light/cream skeleton.
@@ -289,7 +290,7 @@ export function SessionBuilder({
         movedPeId,
       )
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1226,7 +1227,7 @@ function ExerciseBody({
     startTransition(async () => {
       const res = await moveProgramExerciseAction(clientId, dayId, pe.id, direction)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1242,7 +1243,7 @@ function ExerciseBody({
     startTransition(async () => {
       const res = await ungroupFromSupersetAction(clientId, dayId, pe.id)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1790,7 +1791,7 @@ function MetricColumnDropdown({
         next,
       )
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1901,7 +1902,7 @@ function VolumeColumnDropdown({
         next,
       )
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1983,7 +1984,7 @@ function SetStepper({
     startTransition(async () => {
       const res = await addProgramExerciseSetAction(clientId, dayId, pe.id)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1997,7 +1998,7 @@ function SetStepper({
     startTransition(async () => {
       const res = await removeProgramExerciseSetAction(clientId, dayId, last.id)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -2367,7 +2368,7 @@ function BetweenCardsBar({
         afterPeId!,
       )
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -2647,7 +2648,7 @@ function SectionTitleField({
         next === '' ? null : next,
       )
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -2688,10 +2689,10 @@ function SectionTitleField({
         addRes.error &&
         !addRes.error.toLowerCase().includes('already exists')
       ) {
-        alert(addRes.error)
+        notify(addRes.error)
       }
       if (updateRes.error) {
-        alert(updateRes.error)
+        notify(updateRes.error)
         return
       }
       router.refresh()

@@ -52,6 +52,7 @@ import {
   MUTED,
 } from './editor-kit'
 import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /*
  * DayContentEditor — the reusable, client-agnostic "edit a day of exercises"
@@ -205,7 +206,7 @@ export function DayContentEditor({
     startReorderTransition(async () => {
       const res = await run(actions.reorderExercises(orderedIds, movedId))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -794,7 +795,7 @@ function DayExerciseBody({
     startTransition(async () => {
       const res = await run(actions.moveExercise(exercise.id, direction))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -805,7 +806,7 @@ function DayExerciseBody({
     startTransition(async () => {
       const res = await run(actions.ungroup(exercise.id))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1090,7 +1091,7 @@ function BetweenCardsBar({
     startTransition(async () => {
       const res = await run(actions.groupAcross(beforeId!, afterId!))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1232,7 +1233,7 @@ function SectionTitleField({
     startTransition(async () => {
       const res = await run(onApply(next === '' ? null : next))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -1269,10 +1270,10 @@ function SectionTitleField({
         addRes.error &&
         !addRes.error.toLowerCase().includes('already exists')
       ) {
-        alert(addRes.error)
+        notify(addRes.error)
       }
       if (applyRes.error) {
-        alert(applyRes.error)
+        notify(applyRes.error)
         return
       }
       router.refresh()

@@ -4,6 +4,7 @@ import { useEffect, useState, useTransition } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { CatalogCategory } from '@/lib/testing'
 import { setTestEnabledAction } from '../actions'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 const STORAGE_KEY = 'settings.tests.disable.openCategories.v1'
 
@@ -74,7 +75,7 @@ export function DisableTestsList({ schemaCatalog, disabled }: Props) {
           else next.delete(testId)
           return next
         })
-        alert(res.error)
+        notify(res.error)
       }
     })
   }

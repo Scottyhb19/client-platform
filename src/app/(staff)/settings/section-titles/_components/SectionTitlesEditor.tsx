@@ -10,6 +10,7 @@ import {
   renameSectionTitleAction,
   type SectionTitleRow,
 } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * Settings editor for the session builder's per-exercise section titles
@@ -31,6 +32,10 @@ export function SectionTitlesEditor({
   const [newName, setNewName] = useState('')
   const [rowError, setRowError] = useState<Record<string, string | null>>({})
   const [addError, setAddError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<SectionTitleRow | null>(
+    null,
+  )
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   function setError(id: string, msg: string | null) {
@@ -73,21 +78,20 @@ export function SectionTitlesEditor({
     })
   }
 
-  function handleDelete(row: SectionTitleRow) {
-    if (
-      !confirm(
-        `Delete "${row.name}"? Exercises already carrying this title keep it — this only removes it from the builder's dropdown.`,
-      )
-    ) {
-      return
-    }
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    const row = confirmDelete
+    if (!row) return
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteSectionTitleAction(row.id)
       if (res.error) {
-        alert(res.error)
+        setDeleteError(res.error)
         return
       }
       setTitles((prev) => prev.filter((t) => t.id !== row.id))
+      setConfirmDelete(null)
       router.refresh()
     })
   }
@@ -202,7 +206,10 @@ export function SectionTitlesEditor({
           <button
             type="button"
             aria-label={`Delete ${t.name}`}
-            onClick={() => handleDelete(t)}
+            onClick={() => {
+              setDeleteError(null)
+              setConfirmDelete(t)
+            }}
             disabled={pending}
             style={{
               width: 32,
@@ -292,6 +299,27 @@ export function SectionTitlesEditor({
           <Plus size={15} aria-hidden />
         </button>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete section title?"
+          body={
+            <>
+              Delete “{confirmDelete.name}”? Exercises already carrying this
+              title keep it — this only removes it from the builder’s dropdown.
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(null)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
+      )}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import {
   removeMovementPatternAction,
 } from '../actions'
 import { inputStyle } from './PracticeInfoForm'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 export type LookupRow = { id: string; name: string }
 
@@ -59,6 +60,8 @@ export function LookupManager({
   const { add, remove, placeholder, label } = ACTIONS[kind]
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<LookupRow | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   // Optimistic list — instant UI feedback while the server action runs.
@@ -91,17 +94,20 @@ export function LookupManager({
     })
   }
 
-  function handleRemove(id: string, rowName: string) {
-    if (
-      !confirm(
-        `Remove "${rowName}"? Existing records keep using it but it'll be hidden from new pickers.`,
-      )
-    )
-      return
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); a remove failure shows inside the dialog so the EP can retry.
+  function runRemove() {
+    const row = confirmDelete
+    if (!row) return
+    setDeleteError(null)
     startTransition(async () => {
-      applyOptimistic({ kind: 'remove', id })
-      const res = await remove(id)
-      if (res.error) alert(res.error)
+      applyOptimistic({ kind: 'remove', id: row.id })
+      const res = await remove(row.id)
+      if (res.error) {
+        setDeleteError(res.error)
+        return
+      }
+      setConfirmDelete(null)
     })
   }
 
@@ -162,7 +168,10 @@ export function LookupManager({
               {r.name}
               <button
                 type="button"
-                onClick={() => handleRemove(r.id, r.name)}
+                onClick={() => {
+                  setDeleteError(null)
+                  setConfirmDelete(r)
+                }}
                 disabled={pending}
                 aria-label={`Remove ${r.name}`}
                 style={{
@@ -205,6 +214,27 @@ export function LookupManager({
           {pending ? 'Adding…' : `Add ${label}`}
         </button>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Remove this ${label}?`}
+          body={
+            <>
+              Remove “{confirmDelete.name}”? Existing records keep using it but
+              it’ll be hidden from new pickers.
+            </>
+          }
+          confirmLabel="Remove"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(null)
+            setDeleteError(null)
+          }}
+          onConfirm={runRemove}
+        />
+      )}
     </div>
   )
 }

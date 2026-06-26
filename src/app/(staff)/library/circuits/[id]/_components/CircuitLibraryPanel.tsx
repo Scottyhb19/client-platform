@@ -10,6 +10,7 @@ import { TagChips } from '@/app/(staff)/library/_components/TagChips'
 import { ExerciseGrid } from '@/app/(staff)/library/_components/ExerciseGrid'
 import type { LibraryExercise } from '@/app/(staff)/library/types'
 import { addExerciseToCircuitAction } from '../../../circuit-actions'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /**
  * Circuit-editor right-panel Library tab — a carbon-copy of the session
@@ -97,7 +98,7 @@ export function CircuitLibraryPanel({
     startTransition(async () => {
       const res = await addExerciseToCircuitAction(circuitId, exerciseId)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
       } else {
         router.refresh()
       }

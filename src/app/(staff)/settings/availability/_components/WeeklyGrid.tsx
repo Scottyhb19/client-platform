@@ -9,6 +9,7 @@ import {
 } from '../actions'
 import { RuleForm } from './RuleForm'
 import { dayShort, formatTime } from '../_lib/format'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * Seven-column display of recurring weekly rules. Each column shows the
@@ -31,6 +32,8 @@ export function WeeklyGrid({ rules }: { rules: AvailabilityRuleRow[] }) {
   const router = useRouter()
   const [editing, setEditing] = useState<EditingState>(null)
   const [pending, startTransition] = useTransition()
+  const [confirmDelete, setConfirmDelete] =
+    useState<AvailabilityRuleRow | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const rulesByDay = new Map<number, AvailabilityRuleRow[]>()
@@ -44,13 +47,11 @@ export function WeeklyGrid({ rules }: { rules: AvailabilityRuleRow[] }) {
     list.sort((a, b) => a.start_time.localeCompare(b.start_time))
   }
 
-  function handleDelete(rule: AvailabilityRuleRow) {
-    if (rule.day_of_week == null) return
-    const range = `${formatTime(rule.start_time)}–${formatTime(rule.end_time)}`
-    const ok = window.confirm(
-      `Delete ${dayShort(rule.day_of_week)} ${range}? Existing bookings inside this window stay scheduled.`,
-    )
-    if (!ok) return
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    const rule = confirmDelete
+    if (!rule || rule.day_of_week == null) return
     setDeleteError(null)
     startTransition(async () => {
       const r = await deleteAvailabilityRuleAction(rule.id)
@@ -58,6 +59,7 @@ export function WeeklyGrid({ rules }: { rules: AvailabilityRuleRow[] }) {
         setDeleteError(r.error)
         return
       }
+      setConfirmDelete(null)
       router.refresh()
     })
   }
@@ -103,7 +105,10 @@ export function WeeklyGrid({ rules }: { rules: AvailabilityRuleRow[] }) {
                   key={rule.id}
                   rule={rule}
                   onEdit={() => setEditing({ kind: 'edit', rule })}
-                  onDelete={() => handleDelete(rule)}
+                  onDelete={() => {
+                    setDeleteError(null)
+                    setConfirmDelete(rule)
+                  }}
                   disabled={pending}
                 />
               ))}
@@ -137,19 +142,6 @@ export function WeeklyGrid({ rules }: { rules: AvailabilityRuleRow[] }) {
         })}
       </div>
 
-      {deleteError && (
-        <div
-          role="alert"
-          style={{
-            fontSize: '.78rem',
-            color: 'var(--color-alert)',
-            marginTop: 12,
-          }}
-        >
-          {deleteError}
-        </div>
-      )}
-
       {editing && (
         <RuleForm
           mode="weekly"
@@ -160,6 +152,29 @@ export function WeeklyGrid({ rules }: { rules: AvailabilityRuleRow[] }) {
           existingRules={rules}
           onSaved={() => setEditing(null)}
           onCancel={() => setEditing(null)}
+        />
+      )}
+
+      {confirmDelete && confirmDelete.day_of_week != null && (
+        <ConfirmDialog
+          title="Delete these hours?"
+          body={
+            <>
+              Delete {dayShort(confirmDelete.day_of_week)}{' '}
+              {formatTime(confirmDelete.start_time)}–
+              {formatTime(confirmDelete.end_time)}? Existing bookings inside
+              this window stay scheduled.
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(null)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
         />
       )}
     </div>

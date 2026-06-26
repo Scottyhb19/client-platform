@@ -6,6 +6,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import type { CatalogCategory, EditableBatteryRow } from '@/lib/testing'
 import { BatteryForm } from './BatteryForm'
 import { archiveBatteryAction } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 interface Props {
   batteries: EditableBatteryRow[]
@@ -17,25 +18,27 @@ type Mode = { type: 'closed' } | { type: 'create' } | { type: 'edit'; id: string
 export function BatteryBuilder({ batteries, catalog }: Props) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>({ type: 'closed' })
+  const [confirmArchive, setConfirmArchive] =
+    useState<EditableBatteryRow | null>(null)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const editingBattery =
     mode.type === 'edit' ? batteries.find((b) => b.id === mode.id) ?? null : null
 
-  function handleArchive(b: EditableBatteryRow) {
-    if (
-      !confirm(
-        `Archive "${b.name}"? Past test sessions tagged with this battery stay readable, but it won't appear in the capture flow's battery picker. You can recreate it later.`,
-      )
-    ) {
-      return
-    }
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); an archive failure shows inside the dialog so the EP can retry.
+  function runArchive() {
+    const b = confirmArchive
+    if (!b) return
+    setArchiveError(null)
     startTransition(async () => {
       const res = await archiveBatteryAction(b.id)
       if (res.error) {
-        alert(res.error)
+        setArchiveError(res.error)
         return
       }
+      setConfirmArchive(null)
       router.refresh()
     })
   }
@@ -67,7 +70,10 @@ export function BatteryBuilder({ batteries, catalog }: Props) {
             isEditing={mode.type === 'edit' && mode.id === b.id}
             disabled={pending}
             onEdit={() => setMode({ type: 'edit', id: b.id })}
-            onArchive={() => handleArchive(b)}
+            onArchive={() => {
+              setArchiveError(null)
+              setConfirmArchive(b)
+            }}
           />
         ))}
       </div>
@@ -110,6 +116,28 @@ export function BatteryBuilder({ batteries, catalog }: Props) {
             }}
           />
         </div>
+      )}
+
+      {confirmArchive && (
+        <ConfirmDialog
+          title="Archive battery?"
+          body={
+            <>
+              Archive “{confirmArchive.name}”? Past test sessions tagged with
+              this battery stay readable, but it won’t appear in the capture
+              flow’s battery picker. You can recreate it later.
+            </>
+          }
+          confirmLabel="Archive"
+          busy={pending}
+          error={archiveError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmArchive(null)
+            setArchiveError(null)
+          }}
+          onConfirm={runArchive}
+        />
       )}
     </div>
   )

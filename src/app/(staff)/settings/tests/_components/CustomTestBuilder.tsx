@@ -6,6 +6,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import type { CatalogCategory, PracticeCustomTest } from '@/lib/testing'
 import { CustomTestForm } from './CustomTestForm'
 import { archiveCustomTestAction } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 interface Props {
   customTests: PracticeCustomTest[]
@@ -17,26 +18,28 @@ type Mode = { type: 'closed' } | { type: 'create' } | { type: 'edit'; id: string
 export function CustomTestBuilder({ customTests, catalog }: Props) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>({ type: 'closed' })
+  const [confirmArchive, setConfirmArchive] =
+    useState<PracticeCustomTest | null>(null)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const existingTestIds = new Set(customTests.map((t) => t.test_id))
   const editingTest =
     mode.type === 'edit' ? customTests.find((t) => t.id === mode.id) ?? null : null
 
-  function handleArchive(t: PracticeCustomTest) {
-    if (
-      !confirm(
-        `Archive "${t.name}"? Past results referencing this test stay queryable, but it won't appear in new capture flows. You can recreate it later.`,
-      )
-    ) {
-      return
-    }
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); an archive failure shows inside the dialog so the EP can retry.
+  function runArchive() {
+    const t = confirmArchive
+    if (!t) return
+    setArchiveError(null)
     startTransition(async () => {
       const res = await archiveCustomTestAction(t.id)
       if (res.error) {
-        alert(res.error)
+        setArchiveError(res.error)
         return
       }
+      setConfirmArchive(null)
       router.refresh()
     })
   }
@@ -68,7 +71,10 @@ export function CustomTestBuilder({ customTests, catalog }: Props) {
             isEditing={mode.type === 'edit' && mode.id === t.id}
             disabled={pending}
             onEdit={() => setMode({ type: 'edit', id: t.id })}
-            onArchive={() => handleArchive(t)}
+            onArchive={() => {
+              setArchiveError(null)
+              setConfirmArchive(t)
+            }}
           />
         ))}
       </div>
@@ -113,6 +119,28 @@ export function CustomTestBuilder({ customTests, catalog }: Props) {
             }}
           />
         </div>
+      )}
+
+      {confirmArchive && (
+        <ConfirmDialog
+          title="Archive custom test?"
+          body={
+            <>
+              Archive “{confirmArchive.name}”? Past results referencing this
+              test stay queryable, but it won’t appear in new capture flows. You
+              can recreate it later.
+            </>
+          }
+          confirmLabel="Archive"
+          busy={pending}
+          error={archiveError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmArchive(null)
+            setArchiveError(null)
+          }}
+          onConfirm={runArchive}
+        />
       )}
     </div>
   )

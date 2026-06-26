@@ -14,6 +14,7 @@ import {
   swapProgramExerciseAction,
   type InsertSlot,
 } from '../actions'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /**
  * Session-builder right-panel Library tab (§6.5.2).
@@ -129,7 +130,7 @@ export function LibraryPanel({
           exerciseId,
         )
         if (res.error) {
-          alert(res.error)
+          notify(res.error)
         } else {
           setSwapTarget(null)
           onSwapComplete()
@@ -143,7 +144,7 @@ export function LibraryPanel({
     startTransition(async () => {
       const res = await addExerciseToDayAction(clientId, dayId, exerciseId, slot)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
       } else {
         setInsertSlot(null)
         router.refresh()

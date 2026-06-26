@@ -10,6 +10,7 @@ import {
 } from '../actions'
 import { RuleForm } from './RuleForm'
 import { formatDate, formatTime } from '../_lib/format'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * Secondary panel for one-off rules. Two kinds sit here:
@@ -39,6 +40,10 @@ export function OneOffOverrides({
   const [editing, setEditing] = useState<EditingState>(null)
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{
+    rule: AvailabilityRuleRow
+    isClosure: boolean
+  } | null>(null)
 
   // Closure ("close a date") form state.
   const [closing, setClosing] = useState(false)
@@ -61,19 +66,19 @@ export function OneOffOverrides({
     .filter((r) => r.is_blocked)
     .sort((a, b) => (a.specific_date ?? '').localeCompare(b.specific_date ?? ''))
 
-  function handleDelete(rule: AvailabilityRuleRow, isClosure: boolean) {
-    if (!rule.specific_date) return
-    const label = isClosure
-      ? `Re-open ${formatDate(rule.specific_date)}?`
-      : `Delete exception on ${formatDate(rule.specific_date)} (${formatTime(rule.start_time)}–${formatTime(rule.end_time)})?`
-    if (!window.confirm(label)) return
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    const target = confirmDelete
+    if (!target || !target.rule.specific_date) return
     setError(null)
     startTransition(async () => {
-      const r = await deleteAvailabilityRuleAction(rule.id)
+      const r = await deleteAvailabilityRuleAction(target.rule.id)
       if (r.error) {
         setError(r.error)
         return
       }
+      setConfirmDelete(null)
       router.refresh()
     })
   }
@@ -181,7 +186,10 @@ export function OneOffOverrides({
               </button>
               <button
                 type="button"
-                onClick={() => handleDelete(rule, false)}
+                onClick={() => {
+                  setError(null)
+                  setConfirmDelete({ rule, isClosure: false })
+                }}
                 disabled={pending}
                 aria-label="Delete exception"
                 style={{ ...iconButtonStyle, color: 'var(--color-alert)' }}
@@ -257,7 +265,10 @@ export function OneOffOverrides({
               </div>
               <button
                 type="button"
-                onClick={() => handleDelete(rule, true)}
+                onClick={() => {
+                  setError(null)
+                  setConfirmDelete({ rule, isClosure: true })
+                }}
                 disabled={pending}
                 aria-label="Re-open this date"
                 style={{ ...iconButtonStyle, color: 'var(--color-alert)' }}
@@ -392,19 +403,6 @@ export function OneOffOverrides({
         </div>
       )}
 
-      {error && (
-        <div
-          role="alert"
-          style={{
-            fontSize: '.78rem',
-            color: 'var(--color-alert)',
-            marginTop: 12,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
       {editing && (
         <RuleForm
           mode="one_off"
@@ -412,6 +410,39 @@ export function OneOffOverrides({
           existingRules={rules}
           onSaved={() => setEditing(null)}
           onCancel={() => setEditing(null)}
+        />
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={
+            confirmDelete.isClosure ? 'Re-open this date?' : 'Delete exception?'
+          }
+          body={
+            confirmDelete.isClosure ? (
+              <>
+                Re-open {formatDate(confirmDelete.rule.specific_date!)}? Bookings
+                can be made on this date again.
+              </>
+            ) : (
+              <>
+                Delete the exception on{' '}
+                {formatDate(confirmDelete.rule.specific_date!)} (
+                {formatTime(confirmDelete.rule.start_time)}–
+                {formatTime(confirmDelete.rule.end_time)})?
+              </>
+            )
+          }
+          confirmLabel={confirmDelete.isClosure ? 'Re-open' : 'Delete'}
+          tone={confirmDelete.isClosure ? 'primary' : 'alert'}
+          busy={pending}
+          error={error}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(null)
+            setError(null)
+          }}
+          onConfirm={runDelete}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import {
   deleteSessionAction,
   renameSessionAction,
 } from '../session-actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * S-4 — the Sessions tab. Lists the org's session templates and is the entrance
@@ -136,21 +137,21 @@ function SessionCard({ session: s }: { session: SessionTemplateSummary }) {
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(s.name)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  function handleDelete() {
-    setMenuOpen(false)
-    if (
-      !window.confirm(
-        `Delete "${s.name}"?\n\nDeleting hides the session from the library; programs you've already built with it are unaffected.`,
-      )
-    ) {
-      return
-    }
-    setError(null)
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteSessionAction(s.id)
-      if (res.error) setError(res.error)
-      else router.refresh()
+      if (res.error) {
+        setDeleteError(res.error)
+        return
+      }
+      setConfirmDelete(false)
+      router.refresh()
     })
   }
 
@@ -277,7 +278,14 @@ function SessionCard({ session: s }: { session: SessionTemplateSummary }) {
                   >
                     Rename
                   </MenuItem>
-                  <MenuItem onClick={handleDelete} danger>
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setDeleteError(null)
+                      setConfirmDelete(true)
+                    }}
+                    danger
+                  >
                     Delete
                   </MenuItem>
                 </div>
@@ -291,6 +299,27 @@ function SessionCard({ session: s }: { session: SessionTemplateSummary }) {
         <div role="alert" style={{ marginTop: 10, fontSize: '.78rem', color: 'var(--color-alert)' }}>
           {error}
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete session?"
+          body={
+            <>
+              Delete “{s.name}”? Deleting hides the session from the library;
+              programs you’ve already built with it are unaffected.
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
       )}
     </article>
   )

@@ -9,6 +9,7 @@ import {
   deleteCircuitAction,
   renameCircuitAction,
 } from '../circuit-actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * C-4 / #3 — the Circuits tab. Lists the org's circuits and is the entrance to
@@ -152,21 +153,21 @@ function CircuitCard({ circuit: c }: { circuit: CircuitSummary }) {
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(c.name)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  function handleDelete() {
-    setMenuOpen(false)
-    if (
-      !window.confirm(
-        `Delete "${c.name}"?\n\nDeleting hides the circuit from the library; sessions you've already built with it are unaffected.`,
-      )
-    ) {
-      return
-    }
-    setError(null)
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteCircuitAction(c.id)
-      if (res.error) setError(res.error)
-      else router.refresh()
+      if (res.error) {
+        setDeleteError(res.error)
+        return
+      }
+      setConfirmDelete(false)
+      router.refresh()
     })
   }
 
@@ -291,7 +292,14 @@ function CircuitCard({ circuit: c }: { circuit: CircuitSummary }) {
                   >
                     Rename
                   </MenuItem>
-                  <MenuItem onClick={handleDelete} danger>
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setDeleteError(null)
+                      setConfirmDelete(true)
+                    }}
+                    danger
+                  >
                     Delete
                   </MenuItem>
                 </div>
@@ -311,6 +319,27 @@ function CircuitCard({ circuit: c }: { circuit: CircuitSummary }) {
         <div role="alert" style={{ marginTop: 10, fontSize: '.78rem', color: 'var(--color-alert)' }}>
           {error}
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete circuit?"
+          body={
+            <>
+              Delete “{c.name}”? Deleting hides the circuit from the library;
+              sessions you’ve already built with it are unaffected.
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
       )}
     </article>
   )

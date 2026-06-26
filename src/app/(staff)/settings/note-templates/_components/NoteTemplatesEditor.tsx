@@ -24,6 +24,8 @@ import {
   type NoteTemplateRow,
 } from '../actions'
 import { type TemplateNoteType } from '../template-note-types'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 // CN-3: the note type a template stamps onto notes written from it.
 // Sentence-case labels per the design system; flag types are not offered
@@ -67,6 +69,10 @@ export function NoteTemplatesEditor({
   const [openId, setOpenId] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<NoteTemplateRow | null>(
+    null,
+  )
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   // Re-sync local templates when server-fed prop refreshes (e.g. after
@@ -93,22 +99,21 @@ export function NoteTemplatesEditor({
     })
   }
 
-  function handleDeleteTemplate(t: NoteTemplateRow) {
-    if (
-      !confirm(
-        `Delete "${t.name}"? Existing notes written with this template stay readable — they keep their field labels — but you won't be able to write new notes against this template.`,
-      )
-    ) {
-      return
-    }
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); a delete failure shows inside the dialog so the EP can retry.
+  function runDeleteTemplate() {
+    const t = confirmDelete
+    if (!t) return
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteNoteTemplateAction(t.id)
       if (res.error) {
-        alert(res.error)
+        setDeleteError(res.error)
         return
       }
       setTemplates((prev) => prev.filter((x) => x.id !== t.id))
       if (openId === t.id) setOpenId(null)
+      setConfirmDelete(null)
       router.refresh()
     })
   }
@@ -122,7 +127,10 @@ export function NoteTemplatesEditor({
             template={t}
             open={openId === t.id}
             onToggle={() => setOpenId((cur) => (cur === t.id ? null : t.id))}
-            onDelete={() => handleDeleteTemplate(t)}
+            onDelete={() => {
+              setDeleteError(null)
+              setConfirmDelete(t)
+            }}
           />
         ))}
       </div>
@@ -188,6 +196,28 @@ export function NoteTemplatesEditor({
           </div>
         )}
       </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete note template?"
+          body={
+            <>
+              Delete “{confirmDelete.name}”? Existing notes written with this
+              template stay readable — they keep their field labels — but you
+              won’t be able to write new notes against this template.
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(null)
+            setDeleteError(null)
+          }}
+          onConfirm={runDeleteTemplate}
+        />
+      )}
     </div>
   )
 }
@@ -432,7 +462,7 @@ function FieldBuilder({
     startAdding(async () => {
       const res = await deleteNoteTemplateFieldAction(fieldId)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -443,7 +473,7 @@ function FieldBuilder({
     startAdding(async () => {
       const res = await moveNoteTemplateFieldAction(fieldId, direction)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()

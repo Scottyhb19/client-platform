@@ -11,6 +11,7 @@ import { ExerciseGrid } from './ExerciseGrid'
 import type { LibraryExercise } from '../types'
 import { useSaveRun, type SaveResult } from './editor-kit'
 import type { InsertSlot } from './DayContentEditor'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /**
  * Slot-aware Library picker for the in-Library day editors (sessions &
@@ -108,7 +109,7 @@ export function DayLibraryPanel({
     startTransition(async () => {
       const res = await run(onAdd(exerciseId, slot))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
       } else {
         setInsertSlot(null)
         router.refresh()

@@ -29,6 +29,7 @@ import {
   type SectionTitleOption,
 } from '@/app/(staff)/library/_components/DayContentEditor'
 import type { LibraryExercise } from '@/app/(staff)/library/types'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 import { renameProgramTemplateAction } from '@/app/(staff)/library/program-template-actions'
 import { addSessionSectionTitleAction } from '@/app/(staff)/library/session-actions'
 import {
@@ -437,6 +438,8 @@ function DayRow({
   const [renaming, setRenaming] = useState(false)
   const [label, setLabel] = useState(day.day_label)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const liveGroups = new Set(
     day.exercises.map((e) => e.superset_group_id).filter((g): g is string => g !== null),
@@ -466,11 +469,19 @@ function DayRow({
     run(renameTemplateDayAction(templateId, day.id, trimmed), () => setRenaming(false))
   }
 
-  function handleDelete() {
-    setMenuOpen(false)
-    if (!window.confirm(`Delete "${day.day_label}" and its exercises from this template?`)) return
-    run(deleteTemplateDayAction(templateId, day.id), () => {
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    setDeleteError(null)
+    startTransition(async () => {
+      const res = await deleteTemplateDayAction(templateId, day.id)
+      if (res.error) {
+        setDeleteError(res.error)
+        return
+      }
       if (expanded) onToggle()
+      setConfirmDelete(false)
+      router.refresh()
     })
   }
 
@@ -600,7 +611,15 @@ function DayRow({
                     >
                       Duplicate day
                     </DayMenuItem>
-                    <DayMenuItem icon={<Trash2 size={14} aria-hidden />} danger onClick={handleDelete}>
+                    <DayMenuItem
+                      icon={<Trash2 size={14} aria-hidden />}
+                      danger
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setDeleteError(null)
+                        setConfirmDelete(true)
+                      }}
+                    >
                       Delete day
                     </DayMenuItem>
                   </div>
@@ -623,6 +642,24 @@ function DayRow({
         <div role="alert" style={{ fontSize: '.78rem', color: 'var(--color-alert)' }}>
           {error}
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete day?"
+          body={
+            <>Delete “{day.day_label}” and its exercises from this template?</>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
       )}
 
       {expanded && (

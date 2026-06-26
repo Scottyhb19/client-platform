@@ -13,6 +13,7 @@ import {
   setOverrideFieldAction,
   type OverrideField,
 } from '../actions'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 const STORAGE_KEY = 'settings.tests.openCategories.v1'
 
@@ -104,7 +105,7 @@ export function OverrideEditor({ catalog, initialOverrides, disabled }: Props) {
           else delete rolled[key]
           return rolled
         })
-        alert(res.error)
+        notify(res.error)
       }
     })
   }
@@ -124,7 +125,7 @@ export function OverrideEditor({ catalog, initialOverrides, disabled }: Props) {
       const res = await resetOverrideRowAction(testId, metricId)
       if (res.error) {
         setOverrides((prev) => ({ ...prev, [key]: before }))
-        alert(res.error)
+        notify(res.error)
       }
     })
   }

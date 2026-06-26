@@ -35,6 +35,7 @@ export function ConfirmDialog({
   tone = 'alert',
   busy = false,
   error = null,
+  zIndex = 300,
   onCancel,
   onConfirm,
 }: {
@@ -44,6 +45,10 @@ export function ConfirmDialog({
   tone?: 'alert' | 'primary'
   busy?: boolean
   error?: string | null
+  // Scrim stacking level. Defaults above the calendar/toolbar modal layer
+  // (200). Raise it when opening over a higher surface — e.g. the schedule's
+  // appointment popover sits at 1000, so it passes zIndex={1100}.
+  zIndex?: number
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -97,8 +102,8 @@ export function ConfirmDialog({
         display: 'grid',
         placeItems: 'center',
         // Above the calendar/toolbar modal layer (200) and every in-card
-        // stacking context.
-        zIndex: 300,
+        // stacking context; callers raise it for higher surfaces.
+        zIndex,
         padding: 16,
       }}
     >

@@ -10,6 +10,7 @@ import {
   type SessionTypeKind,
   type SessionTypeRow,
 } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 type Draft = {
   name: string
@@ -57,6 +58,10 @@ export function SessionTypesEditor({
   })
   const [rowError, setRowError] = useState<Record<string, string | null>>({})
   const [addError, setAddError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<SessionTypeRow | null>(
+    null,
+  )
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const appointmentTypes = types.filter((t) => t.kind !== 'unavailable')
@@ -87,21 +92,20 @@ export function SessionTypesEditor({
     })
   }
 
-  function handleDelete(row: SessionTypeRow) {
-    if (
-      !confirm(
-        `Delete "${row.name}"? Existing appointments with this type will stay labelled but use a fallback colour.`,
-      )
-    ) {
-      return
-    }
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    const row = confirmDelete
+    if (!row) return
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteSessionTypeAction(row.id)
       if (res.error) {
-        alert(res.error)
+        setDeleteError(res.error)
         return
       }
       setTypes((prev) => prev.filter((t) => t.id !== row.id))
+      setConfirmDelete(null)
       router.refresh()
     })
   }
@@ -217,7 +221,10 @@ export function SessionTypesEditor({
         <button
           type="button"
           aria-label={`Delete ${t.name}`}
-          onClick={() => handleDelete(t)}
+          onClick={() => {
+            setDeleteError(null)
+            setConfirmDelete(t)
+          }}
           disabled={pending}
           style={{
             width: 32,
@@ -412,6 +419,27 @@ export function SessionTypesEditor({
           <Plus size={15} aria-hidden />
         </button>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete session type?"
+          body={
+            <>
+              Delete “{confirmDelete.name}”? Existing appointments with this
+              type will stay labelled but use a fallback colour.
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(null)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
+      )}
     </div>
   )
 }

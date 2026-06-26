@@ -1,6 +1,7 @@
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { TopBar } from './_components/TopBar'
+import { NoticeHost } from './_components/Notice'
 
 /**
  * Staff platform shell.
@@ -55,6 +56,9 @@ export default async function StaffLayout({
         organizationId={organizationId}
       />
       <div className="flex-1">{children}</div>
+      {/* App-wide host for on-system notices (the alert() replacement at
+          no-slot sites). Mounted once; notify() reaches it from anywhere. */}
+      <NoticeHost />
     </>
   )
 }

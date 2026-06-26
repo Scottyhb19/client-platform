@@ -34,6 +34,8 @@ import {
   MonthYearPicker,
   monthArrowStyle,
 } from '../../_components/MonthYearPicker'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { notify } from '@/app/(staff)/_components/Notice'
 import {
   cancelAppointmentAction,
   createAppointmentAction,
@@ -1432,7 +1434,7 @@ function AppointmentBlock({
         newStart.toISOString(),
         newEnd.toISOString(),
       )
-      if (res.error) alert(res.error)
+      if (res.error) notify(res.error)
       callbacksRef.current.onCommitted()
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1785,6 +1787,12 @@ function AppointmentPopover({
   const [cancelling, startCancel] = useTransition()
   const [statusPending, startStatus] = useTransition()
   const busy = cancelling || statusPending
+  // On-system confirms (shared ConfirmDialog) in place of browser confirm()/
+  // alert(). The popover sits at zIndex 1000, so the dialog is raised above it.
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
 
   // The client's next booked session after this one (P2-14). undefined = still
   // loading. This hook precedes the no-client early return below, so it stays
@@ -1803,19 +1811,12 @@ function AppointmentPopover({
     }
   }, [c, appt.start_at])
 
-  function handleCancel() {
-    if (
-      !confirm(
-        c
-          ? `Cancel ${c.first_name}'s ${formatTime(start)} ${appt.appointment_type}?`
-          : `Remove this ${appt.appointment_type} block?`,
-      )
-    )
-      return
+  function runCancel() {
+    setCancelError(null)
     startCancel(async () => {
       const res = await cancelAppointmentAction(appt.id, null)
       if (res.error) {
-        alert(res.error)
+        setCancelError(res.error)
         return
       }
       onChanged()
@@ -1825,12 +1826,12 @@ function AppointmentPopover({
   // P2-8 review fix — removing an Unavailable block soft-deletes it (it
   // disappears) rather than cancelling it (which would leave a cancelled
   // ghost). Client appointments still cancel, above.
-  function handleRemoveBlock() {
-    if (!confirm(`Remove this ${appt.appointment_type} block?`)) return
+  function runRemoveBlock() {
+    setRemoveError(null)
     startCancel(async () => {
       const res = await removeUnavailableBlockAction(appt.id)
       if (res.error) {
-        alert(res.error)
+        setRemoveError(res.error)
         return
       }
       onChanged()
@@ -1839,11 +1840,12 @@ function AppointmentPopover({
 
   // P2-8c — move the appointment along its lifecycle (complete / no-show /
   // reopen). The reminder trigger auto-handles the reminder on the status flip.
+  // No confirm; a failure surfaces as an on-system notice (no inline slot here).
   function handleSetStatus(status: 'completed' | 'no_show' | 'confirmed') {
     startStatus(async () => {
       const res = await setAppointmentStatusAction(appt.id, status)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       onChanged()
@@ -1956,7 +1958,10 @@ function AppointmentPopover({
           >
             <button
               type="button"
-              onClick={handleRemoveBlock}
+              onClick={() => {
+                setRemoveError(null)
+                setConfirmRemove(true)
+              }}
               disabled={cancelling}
               style={{
                 background: 'transparent',
@@ -1972,6 +1977,23 @@ function AppointmentPopover({
               {cancelling ? 'Removing…' : 'Remove block'}
             </button>
           </div>
+        )}
+
+        {confirmRemove && (
+          <ConfirmDialog
+            title="Remove this block?"
+            body={<>Remove this {appt.appointment_type} block?</>}
+            confirmLabel="Remove block"
+            zIndex={1100}
+            busy={cancelling}
+            error={removeError}
+            onCancel={() => {
+              if (cancelling) return
+              setConfirmRemove(false)
+              setRemoveError(null)
+            }}
+            onConfirm={runRemoveBlock}
+          />
         )}
       </div>
     )
@@ -2203,9 +2225,34 @@ function AppointmentPopover({
             label={cancelling ? 'Cancelling…' : 'Cancel appointment'}
             color="var(--color-alert)"
             disabled={busy}
-            onClick={handleCancel}
+            onClick={() => {
+              setCancelError(null)
+              setConfirmCancel(true)
+            }}
           />
         </div>
+      )}
+
+      {confirmCancel && (
+        <ConfirmDialog
+          title="Cancel this appointment?"
+          body={
+            <>
+              Cancel {c.first_name}’s {formatTime(start)}{' '}
+              {appt.appointment_type}?
+            </>
+          }
+          confirmLabel="Cancel appointment"
+          zIndex={1100}
+          busy={cancelling}
+          error={cancelError}
+          onCancel={() => {
+            if (cancelling) return
+            setConfirmCancel(false)
+            setCancelError(null)
+          }}
+          onConfirm={runCancel}
+        />
       )}
     </div>
   )

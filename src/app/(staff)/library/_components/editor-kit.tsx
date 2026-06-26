@@ -16,6 +16,7 @@ import {
   VOLUME_UNIT_OPTIONS,
   volumeUnitLabel,
 } from '@/lib/prescription/volume-units'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /*
  * Editor kit — the shared, client-agnostic card atoms behind the in-Library
@@ -561,7 +562,7 @@ export function VolumeColumnDropdown({
     startTransition(async () => {
       const res = await run(onCommit(next))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -616,7 +617,7 @@ export function MetricColumnDropdown({
     startTransition(async () => {
       const res = await run(onCommit(next))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -713,7 +714,7 @@ export function SetStepper({
     startTransition(async () => {
       const res = await run(onAdd())
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -725,7 +726,7 @@ export function SetStepper({
     startTransition(async () => {
       const res = await run(onRemove())
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()

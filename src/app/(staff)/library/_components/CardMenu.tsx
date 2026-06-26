@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { MoreVertical, Pencil, Trash2 } from 'lucide-react'
 import { deleteExerciseAction } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 interface CardMenuProps {
   exerciseId: string
@@ -18,21 +19,22 @@ export function CardMenu({
   usageCount,
 }: CardMenuProps) {
   const [open, setOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
-  function handleDelete() {
-    const message =
-      usageCount > 0
-        ? `Delete "${exerciseName}"?\n\nUsed in ${usageCount} program ${usageCount === 1 ? 'day' : 'days'}. The exercise will be hidden from the library; existing prescriptions are unaffected.`
-        : `Delete "${exerciseName}"?`
-    if (!confirm(message)) return
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteExerciseAction(exerciseId)
       if (res.error) {
-        alert(res.error)
+        setDeleteError(res.error)
         return
       }
+      setConfirmDelete(false)
       setOpen(false)
       router.refresh()
     })
@@ -92,22 +94,51 @@ export function CardMenu({
             <button
               type="button"
               role="menuitem"
-              onClick={handleDelete}
+              onClick={() => {
+                setOpen(false)
+                setDeleteError(null)
+                setConfirmDelete(true)
+              }}
               disabled={pending}
               style={{
                 ...menuItemStyle,
                 width: '100%',
                 background: 'none',
                 border: 'none',
-                cursor: pending ? 'wait' : 'pointer',
+                cursor: 'pointer',
                 color: 'var(--color-alert)',
               }}
             >
-              <Trash2 size={14} aria-hidden />{' '}
-              {pending ? 'Deleting…' : 'Delete'}
+              <Trash2 size={14} aria-hidden /> Delete
             </button>
           </div>
         </>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete exercise?"
+          body={
+            usageCount > 0 ? (
+              <>
+                Delete “{exerciseName}”? Used in {usageCount} program{' '}
+                {usageCount === 1 ? 'day' : 'days'}. The exercise will be hidden
+                from the library; existing prescriptions are unaffected.
+              </>
+            ) : (
+              <>Delete “{exerciseName}”?</>
+            )
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
       )}
     </div>
   )

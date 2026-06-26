@@ -57,6 +57,7 @@ import {
 } from '@/app/(staff)/library/_components/editor-kit'
 import { CircuitLibraryPanel } from './CircuitLibraryPanel'
 import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 /*
  * Circuit editor (#3 workbench) — card UI carbon-copied from the session
@@ -387,7 +388,7 @@ function CircuitGroupBlock({
     startReorder(async () => {
       const res = await run(reorderCircuitExercisesAction(circuitId, orderedIds))
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
@@ -518,7 +519,7 @@ function ExerciseBody({
         moveCircuitExerciseAction(circuitId, exercise.id, direction),
       )
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()

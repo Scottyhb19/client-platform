@@ -9,6 +9,7 @@ import {
   formatBookingTimeRange,
 } from '@/app/portal/book/new/_lib/format'
 import type { ProfileAppointment } from './ClientProfile'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * §6.1 Bookings tab. Renders this client's appointments (already loaded on the
@@ -31,7 +32,10 @@ export function BookingsTab({
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState<ProfileAppointment | null>(
+    null,
+  )
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   const now = Date.now()
   const isUpcoming = (a: ProfileAppointment) =>
@@ -51,21 +55,19 @@ export function BookingsTab({
         new Date(b.start_at).getTime() - new Date(a.start_at).getTime(),
     )
 
-  function handleCancel(a: ProfileAppointment) {
-    if (
-      !window.confirm(
-        `Cancel the ${formatBookingDateLine(a.start_at, PRACTICE_TIMEZONE)} ${a.appointment_type}?`,
-      )
-    ) {
-      return
-    }
-    setError(null)
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a cancel failure shows inside the dialog so the EP can retry.
+  function runCancel() {
+    const a = confirmCancel
+    if (!a) return
+    setCancelError(null)
     startTransition(async () => {
       const res = await cancelAppointmentAction(a.id, null)
       if (res.error) {
-        setError(res.error)
+        setCancelError(res.error)
         return
       }
+      setConfirmCancel(null)
       router.refresh()
     })
   }
@@ -123,7 +125,10 @@ export function BookingsTab({
         {cancellable && (
           <button
             type="button"
-            onClick={() => handleCancel(a)}
+            onClick={() => {
+              setCancelError(null)
+              setConfirmCancel(a)
+            }}
             disabled={pending}
             style={{
               background: 'transparent',
@@ -171,10 +176,29 @@ export function BookingsTab({
         </section>
       )}
 
-      {error && (
-        <div role="alert" style={{ fontSize: '.8rem', color: 'var(--color-alert)' }}>
-          {error}
-        </div>
+      {confirmCancel && (
+        <ConfirmDialog
+          title="Cancel this booking?"
+          body={
+            <>
+              Cancel the{' '}
+              {formatBookingDateLine(
+                confirmCancel.start_at,
+                PRACTICE_TIMEZONE,
+              )}{' '}
+              {confirmCancel.appointment_type}?
+            </>
+          }
+          confirmLabel="Cancel booking"
+          busy={pending}
+          error={cancelError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmCancel(null)
+            setCancelError(null)
+          }}
+          onConfirm={runCancel}
+        />
       )}
     </div>
   )

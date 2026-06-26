@@ -1,12 +1,14 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Send } from 'lucide-react'
 import {
   publishProgramDayAction,
   unpublishProgramDayAction,
 } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
+import { notify } from '@/app/(staff)/_components/Notice'
 
 interface AssignButtonProps {
   clientId: string
@@ -25,32 +27,32 @@ export function AssignButton({
 }: AssignButtonProps) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false)
+  const [unpublishError, setUnpublishError] = useState<string | null>(null)
   const published = publishedAt !== null
 
   function handlePublish() {
     startTransition(async () => {
       const res = await publishProgramDayAction(clientId, dayId)
       if (res.error) {
-        alert(res.error)
+        notify(res.error)
         return
       }
       router.refresh()
     })
   }
 
-  function handleUnpublish() {
-    if (
-      !confirm(
-        `Unpublish this session? ${clientFirstName} will stop seeing it in the portal.`,
-      )
-    )
-      return
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm()/
+  // alert(); an unassign failure shows inside the dialog so the EP can retry.
+  function runUnpublish() {
+    setUnpublishError(null)
     startTransition(async () => {
       const res = await unpublishProgramDayAction(clientId, dayId)
       if (res.error) {
-        alert(res.error)
+        setUnpublishError(res.error)
         return
       }
+      setConfirmUnpublish(false)
       router.refresh()
     })
   }
@@ -82,13 +84,33 @@ export function AssignButton({
         </span>
         <button
           type="button"
-          onClick={handleUnpublish}
+          onClick={() => {
+            setUnpublishError(null)
+            setConfirmUnpublish(true)
+          }}
           disabled={pending}
           className="btn outline"
           style={{ fontSize: '.82rem' }}
         >
           Unassign
         </button>
+        {confirmUnpublish && (
+          <ConfirmDialog
+            title="Unassign this session?"
+            body={
+              <>{clientFirstName} will stop seeing this session in the portal.</>
+            }
+            confirmLabel="Unassign"
+            busy={pending}
+            error={unpublishError}
+            onCancel={() => {
+              if (pending) return
+              setConfirmUnpublish(false)
+              setUnpublishError(null)
+            }}
+            onConfirm={runUnpublish}
+          />
+        )}
       </div>
     )
   }

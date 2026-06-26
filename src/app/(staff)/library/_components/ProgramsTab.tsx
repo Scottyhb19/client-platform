@@ -9,6 +9,7 @@ import {
   deleteProgramTemplateAction,
   renameProgramTemplateAction,
 } from '../program-template-actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * LPT-2 — the Programs tab list. Renders the org's saved program templates
@@ -57,6 +58,8 @@ function TemplateCard({
   const [slotWeekdays, setSlotWeekdays] = useState<number[]>([])
   const [name, setName] = useState(t.name)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Weekly session slots = the first week's days, in order — the repeating
   // weekly pattern. The EP picks a weekday per slot; it repeats every week.
@@ -121,18 +124,18 @@ function TemplateCard({
     })
   }
 
-  function handleDelete() {
-    setMenuOpen(false)
-    const usage =
-      t.usedCount > 0
-        ? `\n\nStarted by ${t.usedCount} ${t.usedCount === 1 ? 'client' : 'clients'}. Deleting hides the template; their programs are unaffected.`
-        : ''
-    if (!window.confirm(`Delete "${t.name}"?${usage}`)) return
-    setError(null)
+  // On-system confirm (shared ConfirmDialog) in place of browser confirm();
+  // a delete failure shows inside the dialog so the EP can retry.
+  function runDelete() {
+    setDeleteError(null)
     startTransition(async () => {
       const res = await deleteProgramTemplateAction(t.id)
-      if (res.error) setError(res.error)
-      else router.refresh()
+      if (res.error) {
+        setDeleteError(res.error)
+        return
+      }
+      setConfirmDelete(false)
+      router.refresh()
     })
   }
 
@@ -280,7 +283,14 @@ function TemplateCard({
                   >
                     Rename
                   </MenuItem>
-                  <MenuItem onClick={handleDelete} danger>
+                  <MenuItem
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setDeleteError(null)
+                      setConfirmDelete(true)
+                    }}
+                    danger
+                  >
                     Delete
                   </MenuItem>
                 </div>
@@ -445,6 +455,34 @@ function TemplateCard({
         >
           {error}
         </div>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete program template?"
+          body={
+            <>
+              Delete “{t.name}”?
+              {t.usedCount > 0 && (
+                <>
+                  {' '}
+                  Started by {t.usedCount}{' '}
+                  {t.usedCount === 1 ? 'client' : 'clients'}. Deleting hides the
+                  template; their programs are unaffected.
+                </>
+              )}
+            </>
+          }
+          confirmLabel="Delete"
+          busy={pending}
+          error={deleteError}
+          onCancel={() => {
+            if (pending) return
+            setConfirmDelete(false)
+            setDeleteError(null)
+          }}
+          onConfirm={runDelete}
+        />
       )}
     </article>
   )
