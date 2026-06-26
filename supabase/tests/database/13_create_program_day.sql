@@ -150,8 +150,11 @@ INSERT INTO _tap (n, line) VALUES (3, (
 
 
 -- ----------------------------------------------------------------------------
--- §B. no_program path — Aug 15 falls outside the Apr 27 → May 25 block.
--- Returns status='no_program'; no insert.
+-- §B. Loose-fallback path — Aug 15 falls outside the Apr 27 → May 25 block, so
+-- the day attaches to the client's get-or-created loose one-off container
+-- (item 3, 2026-06-25, migration 20260625120000) and returns status='created'.
+-- 'no_program' is now unreachable for a valid client; the loose fallback itself
+-- is covered end-to-end by test 44.
 -- ----------------------------------------------------------------------------
 INSERT INTO _tap (n, line) VALUES (4, (
   SELECT is(
@@ -159,8 +162,8 @@ INSERT INTO _tap (n, line) VALUES (4, (
       (SELECT client_a FROM _ids),
       '2026-08-15'::date
     ))->>'status'),
-    'no_program',
-    'B1: target date outside any active block returns status=no_program'
+    'created',
+    'B1: target date outside any dated block falls back to the loose container (status=created)'
   )
 ));
 

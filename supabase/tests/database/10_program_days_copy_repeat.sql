@@ -249,13 +249,16 @@ INSERT INTO _tap (n, line) VALUES (7, (
 
 
 -- ----------------------------------------------------------------------------
--- §B. copy_program_day no-program path — target date outside the
--- program's range (May 25 is the exclusive end; May 26 is outside).
+-- §B. copy_program_day loose-fallback path — May 26 is outside the dated
+-- program's range (May 25 is the exclusive end), so the cloned day attaches to
+-- the client's get-or-created loose one-off container (item 3, 2026-06-25,
+-- migration 20260625130000) and returns status='created'. 'no_program' is now
+-- unreachable for a valid client; the loose copy fallback is covered by test 45.
 -- ----------------------------------------------------------------------------
-CREATE TEMP TABLE _no_prog_result (result jsonb) ON COMMIT DROP;
-GRANT INSERT, SELECT ON _no_prog_result TO authenticated;
+CREATE TEMP TABLE _loose_result (result jsonb) ON COMMIT DROP;
+GRANT INSERT, SELECT ON _loose_result TO authenticated;
 
-INSERT INTO _no_prog_result
+INSERT INTO _loose_result
   SELECT public.copy_program_day(
     (SELECT source_day FROM _ids),
     '2026-05-26'::date
@@ -263,9 +266,9 @@ INSERT INTO _no_prog_result
 
 INSERT INTO _tap (n, line) VALUES (8, (
   SELECT is(
-    (SELECT result ->> 'status' FROM _no_prog_result),
-    'no_program',
-    'B1: target date outside any program returns status=no_program'
+    (SELECT result ->> 'status' FROM _loose_result),
+    'created',
+    'B1: copy to a date outside any dated block falls back to the loose container (status=created)'
   )
 ));
 
