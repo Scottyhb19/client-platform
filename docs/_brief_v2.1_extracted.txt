@@ -1,0 +1,339 @@
+Client Platform
+Product Brief & Build Specification
+Version 2.1 — UX Validated (Supersedes v2.0)
+Date: April 2026
+Author: Claude (AI Build Partner)
+Stakeholder: Exercise Physiologist / Founder
+This document captures all product decisions, requirements, UX principles, technical specifications, hosting architecture, and compliance requirements. Version 2.1 incorporates validated UX specifications from interactive prototyping sessions covering the EP program calendar, session builder, client portal, and exercise library. All screens have been prototyped and approved by the stakeholder.
+1. Product Vision
+Combine the exercise programming capabilities of TrainHeroic with the clinical management of Cliniko into a single, closed, self-owned platform. The system must be intuitive, visually clean, and designed with the philosophy of Steve Jobs: every interaction should feel effortless, every screen should earn its existence, and complexity should be hidden behind simplicity.
+This is not about replicating two products. It is about building one product that makes the workflow of an Exercise Physiologist seamless — from clinical assessment to program delivery to client communication.
+The platform fully replaces Cliniko from day one. There is no coexistence period. If it cannot replace Cliniko entirely, it is not ready to ship.
+2. Product Principles
+These principles govern every design and engineering decision:
+2.1 Progressive Disclosure
+Show only what is needed at any moment. Calendar weeks are minimised by default and expand on click. Clinical notes live in a collapsible side panel. Details are always one tap away, never cluttering the primary view.
+2.2 Sensible Defaults with Override
+Exercises carry their usual sets, reps, rest, and RPE by default from the exercise library. The clinician only changes what is different from the norm. The system remembers patterns and reduces repetitive data entry.
+2.3 Contextual Reference
+Clinical notes, assessment data, injury flags, and performance reports are adjacent to the programming calendar — not buried in separate sections. Information is where you need it, when you need it.
+2.4 Inline Navigation
+No pop-up windows. No redirects. The program calendar lives inside the client profile as a native section. Tapping between Profile, Program, Reports, Bookings, and Comms transitions within the same page context. The client’s clinical data remains accessible without navigating away.
+2.5 Ownership & Privacy
+This is a closed system. Client data is stored on Australian infrastructure you control. No third-party platform owns your client relationships or data. Full compliance with the Privacy Act 1988 and Australian Privacy Principles.
+3. Practitioner Context
+The following operational context was established through stakeholder interviews and governs all design decisions:
+4. User Roles & Access
+Data isolation is non-negotiable. The same interface serves both roles, but clients are walled off from all data that is not explicitly theirs.
+4.1 Client Onboarding Flow
+Email invite from EP. The EP creates the client record, enters personal details and initial assessment, then triggers an email invite. The client receives a branded email with a one-time link to set their password. No self-registration. No approval queue. The EP controls who gets access.
+5. Data Model — Core Entities
+The data model was revised from v1.0 based on workflow analysis. The critical insight: a program is a living document, not a calendar. The calendar is a rendering of the program, not the source of truth.
+5.1 Exercise Library
+Each exercise is a first-class entity in the library, carrying:
+Name, muscle groups/tags, movement category
+Default prescription: sets, reps, rest period, RPE target
+Video URL (YouTube link from EP’s own channel)
+EP notes (coaching cues, common errors, contraindications)
+Usage count (how often prescribed — surfaces most-used exercises)
+When an exercise is added to a client program, it inherits all defaults. The EP only overrides what is different for that individual.
+5.2 Program Templates
+A template is a named, reusable collection of exercises organised into training days (Day A, Day B, Day C, etc.). Templates are not tied to any client. They represent standard protocols: “ACL Rehab Phase 2,” “General Strength 3x/wk,” “Hip Strengthening.”
+Cloning a template to a client creates a client-specific copy that diverges independently. Changes to the template do not propagate to existing client programs (this is clinically critical — retroactive changes to active programs would be dangerous).
+5.3 Client Programs
+A client’s program is the active set of exercises they are currently performing. It is structured as:
+Program name and type (Home/Gym or In-Clinic)
+Training days (Day A, Day B, Day C — not calendar dates)
+Exercises within each day, with client-specific overrides on any default
+Start date, mesocycle length (typically 4–6 weeks), active/archived status
+Link to source template (if created from one)
+The program persists until the EP manually changes it. There is no auto-expiry. The calendar view renders this program across weeks by mapping training days to calendar dates.
+5.4 Session Logs
+When a client completes a session, they log:
+Actual weight used per exercise
+Actual reps completed per set
+RPE (Rate of Perceived Exertion) per exercise
+Optional subjective note (free text)
+Session completion timestamp
+This data is visible to the EP on the client profile and feeds into the AI assistant’s follow-up logic in Phase 4.
+6. Core Features
+6.1 Client Profile (Staff View)
+The client profile is the central hub. It contains the following sections, accessible via inline tab navigation:
+Profile: Personal details (name, DOB, contact, medical history, referral source)
+Program: Inline program calendar view with clinical notes side panel
+Reports: Rendered HTML performance reports from VALD data
+Bookings: Session history, upcoming appointments, booking management
+Comms: Communication log (emails sent, reminders, AI-drafted messages)
+6.2 Program Calendar (Staff View)
+The calendar is a pure month-view calendar (not labelled weeks or mesocycles). Mesocycle logic exists in the backend but the UI presents a clean calendar interface.
+Month-view layout with Mon–Sun columns and date numbers in each cell
+Month navigation via arrow buttons and a “Today” button to snap back
+Session days show a badge (e.g., “Day A”, “Day B”) on the date cell
+Click anywhere on a week’s date row to expand that week and reveal exercises
+Individual days within an expanded week can be opened and closed independently
+Trailing dates from adjacent months shown in muted style
+Calendar fills full screen width by default
+Clinical notes panel slides in from the right — calendar resizes to accommodate, never overlays
+Copy Week and Repeat Specific buttons in the toolbar
+Program label simply reads “Gym Program” or “Home Program” with an Active tag — no mesocycle language in the UI
+6.3 Client Portal (Client View)
+Mobile-first PWA. Warm and personal tone — like a coach’s message, not a clinical app.
+Home screen: “Good morning, [Name]” greeting, current week strip with day dots
+Week strip shows Mon–Sun with green dots on session days, today highlighted
+Arrow buttons to navigate between weeks
+Tapping a session day reveals the session card with full exercise list and “Begin Session” button
+Tapping a rest day shows: “Rest day. No session scheduled. Recovery is part of the process.”
+Bottom navigation bar: Program, Reports, Bookings
+No top navigation tabs — bottom nav only for thumb-friendly mobile use
+6.3.1 In-Session Logging Flow
+Guided exercise-by-exercise flow on a dark background (gym-friendly, reduces glare).
+Exercises grouped by superset/tri-set shown on the same screen — log all exercises in a group before advancing
+Each exercise shows: sequence label, name, set rows (weight + reps inputs), check button per set
+Small expandable video thumbnail per exercise — tap to expand, tap again to open YouTube
+Coaching instructions visible per exercise (populated from EP’s instructions field)
+RPE slider (1–10, whole numbers, drag) at the bottom of each exercise group
+Optional notes field per group
+Progress bar at top showing position through the session
+All exercises show “Next” button — never “Finish Session” until the final screen
+After last exercise: Session RPE screen — “Great work, [Name]” with overall session RPE slider and optional “How are you feeling?” text field
+Completion screen: “Session complete. Another one in the bank. Consistency wins.” with summary stats (exercises, sets, duration)
+No surveillance language — no “your EP will see your results”
+6.4 Session Booking & Scheduling
+Replaces Cliniko’s scheduling functionality:
+Staff manage availability windows (recurring and one-off)
+Clients view available slots and book in-clinic sessions
+Staff can confirm, cancel, or reschedule bookings
+Calendar view shows all upcoming sessions across all clients
+Automated email + SMS reminders 24 hours before appointment
+Booking confirmations sent via email + SMS
+6.5 Session Builder (Staff View)
+Opens when EP clicks a day on the calendar to create or edit a session. TrainHeroic-inspired two-column card layout per exercise.
+Each exercise is a two-column card: left side (sequence badge, name, instructions textarea, small video thumbnail), right side (sets/reps table with Sets/Reps/Optional columns, +/- sets control, “Last” performance data)
+Exercises are flat rows by default — no grouped containers until supersetting
+Between every two exercises: always-visible action bar with “Superset” and “+ Add Exercise” buttons
+Click “Superset” to group — exercises visually merge (green dashed border), sequence re-letters dynamically (e.g., D1+E1 become D1+D2, everything below shifts)
+Click “Ungroup” to split — fully reversible, sequences recalculate
+Supersetting across section boundaries is allowed — second exercise’s title auto-clears
+Dynamic sequencing: all exercises start as A1, B1, C1, D1, etc. Grouping changes the numbering (A1/A2 superset, B1 standalone, etc.). Always recalculates live.
+6.5.1 Per-Exercise Section Titles
+Every exercise has its own title slot with the following behaviour:
+Title dropdown with 10 default options (practitioner-configurable in settings): Mobility, Movement Restoration, Plyometrics, Power, Strength, Hypertrophy, Conditioning, On-Field Conditioning, Technique Work, Recovery
+Click title text to change via dropdown, click ✘ (always red) to clear
+Auto-deduplication: if two consecutive exercises share the same title, only the first shows it
+When supersetting, the second exercise’s title is automatically removed
+Practitioners can add, remove, reorder, and rename section titles in settings
+6.5.2 Shared Right Panel
+The right panel serves three functions via tabs (all always visible):
+Notes tab (default): injury flags, progress notes, initial assessment — visible while programming
+Reports tab: client’s performance reports with test dates and VALD tags
+Library tab: exercise search with movement pattern filters and custom tags
+Click an exercise name to swap: name blanks to “Select exercise...”, panel auto-switches to Library with “Replacing: [name]” banner, prescription stays visible. Select new exercise → panel returns to Notes.
+Click “+ Add Exercise”: panel switches to Library without swap banner
+6.5.3 Exercise Prescription (TrainHeroic Style)
+Table with clear column headers: Sets | Reps | Optional
+Set numbers in first column, reps input field, optional field with metric dropdown
+Optional field dropdown (metric-first): kg, time (min:sec), distance (m), percentage (%), RPE (1-10), tempo (e.g. 3010), bodyweight — then imperial: lb, miles, km
+One default prescription per exercise, set when adding to the library — auto-populates every time
++/− sets control to add or remove set rows
+“Last” section showing previous session’s performance data
+Instructions textarea per exercise for coaching cues (also visible in client portal during session)
+6.6 Exercise Library
+Dual-purpose: standalone management screen (from top nav) and inline panel within the session builder.
+Search bar with instant name filtering
+Primary filter: movement patterns — All, Push, Pull, Squat, Hinge, Carry, Core, Isometric
+Secondary filter: custom tags — DGR, PRI, Plyometrics, Rehab, Prehab (practitioner-configurable in settings)
+Each exercise shows: name, movement pattern, default prescription, video indicator, tags
+One default prescription per exercise set at creation — auto-populates when added to any program
+YouTube video URL per exercise (EP’s own coaching videos)
+“+ Create New Exercise” at the bottom of the library list
+Future: individual practitioners can customise their own tag sets and movement pattern categories
+6.7 Communication System
+Communication is email-based. The platform does not include in-app messaging. This is a deliberate design decision: personal email contact makes clients feel valued rather than processed by a system.
+Platform drafts emails (manually or AI-assisted in Phase 4)
+Emails sent via EP’s email domain using Resend/SendGrid
+Client receives a normal email from the EP — no platform branding
+Sent communications logged to the client’s Comms tab
+SMS used for appointment reminders and booking confirmations only
+6.8 EP Dashboard (Landing Page)
+The dashboard is the EP’s first screen on login. It is a clinical briefing, not a calendar — the Schedule tab handles the detailed appointment view. The dashboard answers: “what needs my attention?”
+6.8.1 Stat Cards
+Sessions today — count with next client name and time
+Active clients — total count with new additions this week
+Needs attention — count of clients requiring follow-up, colour-coded by urgency
+Programs ending this week — count of clients whose mesocycle is expiring
+Colour coding: green (healthy), amber (review needed), red (urgent)
+6.8.2 Needs Attention Panel
+Clients requiring action, ranked by urgency. In Phase 2, the AI assistant will power this panel with intelligent pattern detection. In Phase 1, it uses rule-based triggers:
+Active injury flags not reviewed within 14 days → Flag tag (red)
+Client hasn’t logged a session beyond their normal frequency → Overdue tag (amber)
+Program ending within 7 days with no new program created → Ending tag (amber)
+New client with completed assessment but no program assigned → New tag (green)
+6.8.3 Today’s Sessions
+Quick view of today’s in-clinic appointments with time, client name, clinical context, and confirmed/pending status
+Not a full schedule — just enough context to prep mentally for the day
+6.8.4 Recently Completed
+The 5 most recently completed client sessions
+Shows: when, who, what day/session type, and session RPE
+Simple and clean — no narrative, just completed sessions
+6.8.5 Client List (Right Column)
+Sticky sidebar with all active clients, searchable by name or meta text
+Category filter chips: All, Athlete, Rehab, Lifestyle, Golf, Osteoporosis, Neurological
+Categories are practitioner-configurable in settings (same pattern as exercise section titles)
+Each client shows: initials avatar, name, category, current context (program status, flags, last activity)
+Green status dot for active clients, muted for inactive/archived
+Click any client to navigate directly to their profile
+7. Hosting, Data Sovereignty & Compliance
+This section resolves the open question from v1.0 regarding hosting preference.
+7.1 Legal Requirements
+As an allied health provider (Exercise Physiologist), the platform is subject to:
+Privacy Act 1988 (Cth) and the 13 Australian Privacy Principles (APPs)
+Health information classified as “sensitive information” under the Act, triggering higher protection standards
+Mandatory data breach notification under the Notifiable Data Breaches scheme
+State-level health records legislation (NSW: HRIPA 2002 if operating in NSW)
+APP 11.1: reasonable steps to protect information from misuse, interference, loss, unauthorised access, modification, or disclosure
+Onshore data storage requirement: personal health information must be stored within Australian jurisdiction
+7.2 Retention Requirements
+Adults: minimum 7 years from the date of last entry
+Patients under 18: records retained until the patient reaches 25 years of age
+Where litigation risk exists: retain indefinitely or 7 years after patient’s death
+Platform must implement soft-delete with archival, not hard deletion
+Archived records remain queryable but are separated from active client views
+7.3 Hosting Architecture
+Recommendation: AWS ap-southeast-2 (Sydney Region)
+Estimated monthly cost at current scale (40–50 active clients): $50–80 AUD/month. Comparable to Cliniko’s solo practitioner plan ($45/month) while providing full data ownership.
+7.4 Security Requirements
+Encryption at rest (AES-256) for all stored data
+Encryption in transit (TLS 1.3) for all connections
+Role-based access control on every API endpoint
+Automated daily backups with 30-day retention
+Audit logging for all data access and modifications
+Client data isolation enforced at the database query level
+No PHI in URL parameters, query strings, or client-side logs
+8. Technical Architecture
+8.1 Code Standards
+TypeScript throughout — no JavaScript files
+Component-based architecture — reusable, testable components
+Database migrations tracked in code — no manual schema changes
+Environment variables for all secrets and configuration
+Role-based middleware for every API route
+Responsive design: test at 375px (iPhone SE), 768px (iPad), 1440px (desktop)
+Client portal: mobile-first design (clients use phones)
+Staff portal: desktop-first design (EPs use computers during sessions)
+8.2 Brand & Design System
+9. Build Phases
+The build follows an iterative approach. Phase 1 is designed to fully replace Cliniko. Each subsequent phase adds capabilities that enhance the platform beyond what Cliniko offered.
+9.1 Phase 1: Foundation (Cliniko Replacement)
+Goal: Ship a platform that replaces Cliniko entirely. Every item below is required to achieve this.
+Authentication — staff login, client login, role-based routing, email invite onboarding
+Client profiles — personal details, medical history, referral source, standardised initial assessment template
+Clinical notes — standardised template entry, progress notes, injury flags, contraindications, collapsible side panel
+Exercise library — CRUD operations, YouTube links, default prescriptions, tagging, search/filter
+Program templates — create, edit, clone to client, training day structure
+Program engine — create program from template or scratch, assign to client, exercise cards with defaults + override, copy week, repeat specific
+Program calendar view — collapsible weeks, day columns, drag-and-drop reorder, batch operations
+Client portal (PWA) — view program, video links, log weight/reps/RPE, subjective notes
+Scheduling — availability management, client booking, calendar view, appointment management
+Notifications — email + SMS appointment reminders (24h before), booking confirmations
+EP Dashboard — stat cards, needs-attention panel, today’s sessions, recently completed, client list with category filters
+9.2 Phase 2: Intelligence Layer
+AI-drafted personalised client communications (check-ins, progress emails)
+Staff approval workflow for all AI-generated content (AI drafts, EP decides)
+Intelligent follow-up suggestions based on program adherence and session logs
+Communication templates with personalisation tokens
+9.3 Phase 3: Performance Reporting
+VALD CSV upload pipeline with server-side parsing
+Server-side report generation (migrating from Cowork skill)
+Reports render inline in client portal under Reports tab
+Historical report storage — client can toggle between test dates
+Longitudinal comparison view showing progress over time
+9.4 Phase 4: Analytics & Scale
+Practice analytics dashboard (client retention, session adherence, revenue tracking)
+Multi-practitioner UI (practitioner accounts, shared/private client views)
+VALD API integration (if API access available)
+Billing integration or built-in invoicing
+Client outcome tracking and practice growth metrics
+10. What NOT to Build
+No social features (no client-to-client interaction)
+No exercise marketplace or community library
+No video hosting (link to external YouTube videos)
+No payment processing in v1 (handle billing externally initially)
+No native mobile app in v1 (PWA is sufficient)
+No in-app messaging or chat (email is the communication channel)
+No multi-practitioner UI in v1 (architected for, not built)
+11. UX Targets
+Speed of clinical workflow: EP adjusts a program in under 60 seconds
+Client comprehension: if a client needs a tutorial, the design has failed
+Data density without clutter: show what matters, hide what doesn’t, everything one tap away
+Mobile-first for client portal: optimised for iPhone (375px minimum)
+Desktop-first for staff portal: optimised for 1440px with responsive down to 768px
+Zero-training onboarding: email invite, set password, see program immediately
+12. Previously Open Questions (All Resolved)
+All open questions from v1.0 have been resolved through stakeholder interviews:
+13. Reference Assets
+Performance Report — HTML report generated by Claude Cowork skill (1,500 lines, fully branded, responsive). Design system extracted for platform use.
+Brand identity — colour palette, typography, design tokens defined in report CSS and documented in Section 8.2.
+VALD testing protocols — ForceDecks (CMJ), NordBord (hamstrings), ForceFrame (hip strength), DynaMo.
+EPL 24/25 normative data — benchmarking percentiles used in report generation.
+Program Calendar Prototype — month-view calendar with collapsible weeks and days, clinical notes panel. Validated by stakeholder.
+Client Portal Prototype — mobile PWA with week strip, begin session flow, guided logging with superset grouping, session RPE, completion screen. Validated by stakeholder.
+Session Builder Prototype — TrainHeroic-style two-column exercise cards, dynamic sequencing, superset grouping via click-between, per-exercise section titles, shared right panel (Notes/Reports/Library), exercise swap flow. Validated by stakeholder.
+Client Dashboard Prototype — EP landing page with stat cards, needs-attention panel, today’s sessions, recently completed sessions, client list with category filters. Validated by stakeholder.
+Client workflow knowledge — documented in this brief from stakeholder interviews.
+End of Document — v2.1
+Parameter | Decision
+Active caseload | 40–50 clients per practitioner
+Archival capacity | 1000+ records with 7-year minimum retention (per Privacy Act)
+Practitioner model | Solo practitioner now; multi-EP within 12 months. Architect for multi-tenancy from day one, build single-practitioner UI for v1.
+Client training context | Mix of in-clinic sessions and independent home/gym training
+Programming cadence | 4–6 week mesocycles for home/gym programs. In-clinic programs may update weekly. Programs persist until manually changed.
+Exercise library | ~200 exercises, growing. 80% repeat, 20% new. YouTube video links stored per exercise.
+Client logging | Clients log actual weight, reps performed, and RPE/subjective feedback per exercise
+Communication | Email only. Platform drafts and sends via EP’s email domain. No in-app messaging. Personal touch prioritised.
+Current systems | Cliniko (notes + scheduling + billing). To be fully replaced.
+Client referral sources | Mix: GP referrals, self-referred, word of mouth, social media
+Clinical documentation | Standardised template filled in by EP
+Client population | Currently general population; transitioning toward athletes and sports rehab. VALD integration is a strategic priority.
+Role | Can Access | Cannot Access
+Staff (EP) | All client profiles, all clinical notes, all programs, all reports, scheduling, billing references, AI assistant, analytics dashboard, exercise library, program templates | N/A — full access
+Client | Own program calendar, own performance reports (when published), own session bookings, own exercise logging data, own EP notes visible to client | Other clients’ data, clinical reasoning notes, staff-only views, raw assessment data (unless published as a report), exercise library management, program templates
+Component | Service | Region | Purpose
+Database | AWS RDS (PostgreSQL) | ap-southeast-2 | All client data, clinical notes, programs, bookings
+File Storage | AWS S3 | ap-southeast-2 | Reports, attachments, VALD exports, exercise videos metadata
+Application | AWS App Runner or ECS Fargate | ap-southeast-2 | Next.js API routes, backend logic
+Frontend CDN | Vercel | Global (no PHI) | Static assets, SSR rendering. No health data touches Vercel.
+Email | Resend or SendGrid | AU region preferred | Transactional emails, reminders
+SMS | Twilio or MessageMedia | AU | Appointment reminders, booking confirmations
+Layer | Technology | Rationale
+Frontend | React (Next.js 14+) | Component-based UI, server-side rendering, API routes, excellent for portal architecture
+Language | TypeScript throughout | Type safety, better developer experience, catches errors at compile time
+Styling | Tailwind CSS | Utility-first, fast iteration, consistent design system, responsive by default
+Backend | Next.js API Routes | Unified codebase, serverless-compatible, role-based middleware
+Database | PostgreSQL 16+ | Relational, robust, handles complex queries for client data, excellent JSON support
+ORM | Prisma or Drizzle | Type-safe database queries, schema migrations tracked in code
+Authentication | Clerk or NextAuth.js | Role-based access (staff vs client), email invite flow, session management
+AI Layer | Anthropic API (Claude) | Email drafting, personalised communications (Phase 4)
+Email | Resend | Transactional emails via EP’s domain, excellent developer experience
+SMS | Twilio or MessageMedia | Australian SMS delivery for appointment reminders
+Hosting | AWS ap-southeast-2 | Data sovereignty, compliance, auto-scaling
+VALD Integration | CSV upload (Phase 5) | Manual upload initially; VALD API if available later
+Token | Value
+Primary (Deep Forest Green) | #0A5540
+Dark Primary | #083D2F
+Charcoal | #231F20
+Slate | #35363A
+Accent (Bright Green) | #2DB24C
+Light Background | #F0F4F2
+Card Background | #FFFFFF
+Border | #E2E8E4
+Amber (Warning/Flags) | #E8A317
+Red (Alerts/Contraindications) | #D64045
+Typography — Display | Barlow Condensed (700, 900)
+Typography — Body | Barlow (300–700)
+Card Style | White bg, subtle shadow, 14px border-radius, 1px border #E2E8E4
+Question | Resolution
+VALD API access | Fallback to CSV upload for Phase 3. VALD API integration deferred to Phase 4 pending API availability investigation.
+Hosting preference | AWS ap-southeast-2 (Sydney). Cloud-hosted with full data sovereignty. See Section 7.
+Client onboarding flow | Email invite from EP. EP creates client record, triggers invite. No self-registration.
+Notification preferences | Email + SMS from day one. SMS for appointment reminders and booking confirmations.
+Report format evolution | Reports rendered as HTML. Platform supports rendering updated formats without client-side changes. Versioning handled server-side.
+Multi-practitioner support | Solo practitioner for v1. Multi-EP architecture built into data model from day one. UI deferred to Phase 4.
