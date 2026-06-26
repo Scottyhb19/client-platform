@@ -3,7 +3,7 @@
 **Brief:** [`CLAUDE_CODE_BUILD_PROMPT_testing_module.md`](../../CLAUDE_CODE_BUILD_PROMPT_testing_module.md)
 **Schema:** [`data/physical_markers_schema_v1.1.json`](../../data/physical_markers_schema_v1.1.json)
 **Audit date:** 2026-04-28
-**Status:** Gap document — awaiting sign-off before any code changes.
+**Status:** Closed — Phases A–F + M complete; pgTAP green on staging; superseded as active section by Auth & Onboarding per CLAUDE.md.
 
 ---
 
