@@ -36,15 +36,18 @@ interface ComparisonTableProps {
 }
 
 export function ComparisonTable({ view }: ComparisonTableProps) {
+  // Group rows by test for visual separation. Memoised above the early
+  // returns so the hook is called unconditionally on every render
+  // (react-hooks/rules-of-hooks). Harmless when rows is empty — the result
+  // is unused on the early-return paths below.
+  const grouped = useMemo(() => groupByTest(view.rows), [view.rows])
+
   if (view.sessions.length === 0) {
     return <Empty label="Select at least one session to compare." />
   }
   if (view.rows.length === 0) {
     return <Empty label="No metrics captured in the selected sessions." />
   }
-
-  // Group rows by test for visual separation.
-  const grouped = useMemo(() => groupByTest(view.rows), [view.rows])
 
   return (
     <section

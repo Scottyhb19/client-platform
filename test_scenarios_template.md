@@ -360,3 +360,32 @@ schema, RPC, or data change.
 - **Pass:** Absent groups don't render (no empty "Upcoming"/"Past" headers),
   "None — no linked session" is always selectable, and there is no leftover
   "Show more" affordance or blank row beneath the select.
+
+---
+
+## Staff reports comparison — hook-order crash on clearing selection (bug fix, 2026-06-27)
+
+Context: `ComparisonTable` (`src/app/(staff)/clients/[id]/_components/reports/ComparisonTable.tsx`)
+called `useMemo` **after** two early `return`s (no sessions selected / no rows).
+Because the table is always mounted inside the comparison overlay and `view` is
+driven by the session-picker's selection state, clearing the selection toggled
+the component from the populated path (1 hook) to the early-return path (0 hooks)
+on the **same instance** — a `react-hooks/rules-of-hooks` violation that makes
+React throw "Rendered fewer hooks than expected" and blanks the overlay. Fixed by
+hoisting the `useMemo` above the early returns so the hook runs unconditionally;
+its result is unused on the early-return paths, so render output is unchanged.
+
+### RPT-CMP-1 — Clearing the session selection does not crash the overlay
+- **Setup:** Open the reports comparison overlay for a client with ≥1 captured
+  session and select one or more sessions (the pivot table renders).
+- **Action:** Click "Clear" in the session picker, then re-select a session.
+- **Pass:** The table cleanly swaps to the "Select at least one session to
+  compare." empty state and back to the populated pivot — no blank overlay, no
+  "Rendered fewer hooks than expected" console error. (Before the fix: clearing
+  crashed the comparison view.)
+
+### RPT-CMP-2 — Populated pivot is byte-for-byte unchanged
+- **Setup:** A client with multiple captured sessions, several selected.
+- **Pass:** Rows (one per test/metric/side), the chronological session columns,
+  and the "Δ baseline → latest" column render exactly as before the refactor —
+  the hoist changed only *when* the memo runs, not its value or the markup.
