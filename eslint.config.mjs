@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Git-ignored, non-shipping code that should not be linted:
+    // transient Claude Code worktrees and design-reference prototypes.
+    ".claude/**",
+    ".design-ref/**",
   ]),
 ]);
 
