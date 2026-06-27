@@ -1347,6 +1347,13 @@ function AppointmentBlock({
   useEffect(() => {
     callbacksRef.current = { onOpenPopover, onCommitted }
   }, [onOpenPopover, onCommitted])
+  // pxPerQuarter is re-measured at runtime (and on resize). Mirror it into a
+  // ref so the stable-identity drag handlers snap against the CURRENT px scale
+  // instead of the value captured when handleMove was created (deps [gridRef]).
+  const pxPerQuarterRef = useRef(pxPerQuarter)
+  useEffect(() => {
+    pxPerQuarterRef.current = pxPerQuarter
+  }, [pxPerQuarter])
 
   const handleMove = useCallback(
     (ev: PointerEvent) => {
@@ -1359,7 +1366,7 @@ function AppointmentBlock({
         Math.abs(dy) > DRAG_THRESHOLD_PX
 
       // Snap vertical to 15-min increments (pxPerQuarter px each).
-      const deltaMin = Math.round(dy / pxPerQuarter) * 15
+      const deltaMin = Math.round(dy / pxPerQuarterRef.current) * 15
 
       // For 'move', also detect horizontal shift by sniffing the day
       // column under the cursor.
@@ -1392,6 +1399,7 @@ function AppointmentBlock({
   const handleUp = useCallback((ev: PointerEvent) => {
     const d = dragRef.current
     window.removeEventListener('pointermove', handleMove)
+    // eslint-disable-next-line react-hooks/immutability -- handleUp has [] deps, so its identity is stable; the self-reference for listener teardown resolves to the same function at call time. The "accessed before declared" is a static-analysis artifact here, not a staleness risk.
     window.removeEventListener('pointerup', handleUp)
     window.removeEventListener('pointercancel', handleUp)
     if (!d) {
