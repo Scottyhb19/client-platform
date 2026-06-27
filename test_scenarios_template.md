@@ -318,3 +318,45 @@ migration-free; no new DB surface.
   and not a single value. Varied RPE lists the same way ("· RPE 7 / 8 / 9"); a set
   left blank holds its place ("80kg / – / 90kg"); a uniform load still collapses to
   one ("· 80kg").
+
+## Staff session notes — appointment picker lists all sessions (UX papercut, 2026-06-27)
+
+Context: on the client "Session notes" tab, the New-note SESSION dropdown
+(`NotesTab.tsx` → `AppointmentPicker`) capped Upcoming and Past to a 14-day window
+and rendered a "Show N more sessions" link beneath the select to uncap. That extra
+row made the Session field taller than the Template field; because the parent row
+bottom-aligns its fields (`alignItems: 'flex-end'`), the taller Session field
+pushed Template down so the two no longer shared a line. The cap and the link are
+removed: the dropdown now lists every session — Next session, then all Upcoming,
+then all Past (newest first) — in its own scroll, so future sessions are visible on
+open and the Session/Template fields are equal height and aligned. UI-only; no
+schema, RPC, or data change.
+
+### SN-APT-1 — Session and Template sit on one line
+- **Setup:** Open a client with many sessions (enough that the old picker would
+  have shown "Show N more sessions") → Session notes tab → New note.
+- **Action:** Look at the SESSION and TEMPLATE fields without interacting.
+- **Pass:** Both labels and both dropdowns share the same baseline — Template is
+  not pushed below Session. No "Show N more sessions" link appears beneath SESSION.
+
+### SN-APT-2 — Future sessions show on open, no "show more" step
+- **Setup:** A client with future sessions scheduled more than 14 days out.
+- **Action:** Open the SESSION dropdown.
+- **Pass:** "Next session · …" is first, then an "Upcoming" group listing every
+  remaining future appointment (including ones beyond 14 days) — reachable without
+  any "Show more" click. "None — no linked session" sits between Next session and
+  Upcoming.
+
+### SN-APT-3 — Past sessions remain available, newest first
+- **Setup:** A client with past sessions older than 14 days, some already carrying
+  a note.
+- **Action:** Scroll the open dropdown to the "Past" group.
+- **Pass:** Every past appointment is listed, most-recent first; none are hidden by
+  a cap. Appointments that already have a note still read "· ✓ has note".
+
+### SN-APT-4 — Empty / sparse states stay clean
+- **Setup:** A client with no upcoming sessions (or no sessions at all).
+- **Action:** Open the SESSION dropdown.
+- **Pass:** Absent groups don't render (no empty "Upcoming"/"Past" headers),
+  "None — no linked session" is always selectable, and there is no leftover
+  "Show more" affordance or blank row beneath the select.

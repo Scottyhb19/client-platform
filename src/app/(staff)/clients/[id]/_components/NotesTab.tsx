@@ -66,7 +66,6 @@ type SidebarView =
   | { kind: 'reading'; noteId: string }
 
 const PAGE_SIZE = 10
-const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000
 
 interface NotesTabProps {
   clientId: string
@@ -1223,15 +1222,17 @@ const selectStyle: React.CSSProperties = {
 /**
  * Appointment picker.
  *
- * Layout (top → bottom):
+ * Options (top → bottom):
  *   1. Next session     ← single row, the next future/in-progress appt
  *   2. None             ← "don't link this note to any appointment"
- *   3. Upcoming         ← optgroup, capped at appointments within 14 days
- *   4. Past             ← optgroup, capped at appointments within 14 days
+ *   3. Upcoming         ← optgroup, every remaining future appointment
+ *   4. Past             ← optgroup, every past appointment, newest first
  *
- * "Show more" toggle (rendered outside the dropdown, beneath it) uncaps
- * both groups so an EP can write a note for a session further out or
- * further back than two weeks.
+ * The dropdown lists every session — future and past — with no cap, so
+ * opening it surfaces the upcoming sessions directly. There is no "show
+ * more" affordance: it added a row beneath the select that knocked the
+ * Session and Template fields out of horizontal alignment (the parent row
+ * bottom-aligns, so the taller field pushed the other down).
  *
  * Bucketing uses `end_at >= now` so an appointment that's currently in
  * progress, or one that hasn't started yet, both count as upcoming. This
@@ -1249,9 +1250,7 @@ function AppointmentPicker({
   onChange: (id: string | null) => void
   takenAppointmentIds: Map<string, string>
 }) {
-  const [showAll, setShowAll] = useState(false)
-
-  const { nextSession, upcomingRest, past, hiddenCount } = useMemo(() => {
+  const { nextSession, upcomingRest, past } = useMemo(() => {
     const now = Date.now()
     const upcomingAll = appointments
       .filter((a) => new Date(a.end_at).getTime() >= now)
@@ -1266,38 +1265,12 @@ function AppointmentPicker({
           new Date(y.start_at).getTime() - new Date(x.start_at).getTime(),
       )
 
-    const nextSession = upcomingAll[0] ?? null
-    const upcomingRestAll = upcomingAll.slice(1)
-
-    if (showAll) {
-      return {
-        nextSession,
-        upcomingRest: upcomingRestAll,
-        past: pastAll,
-        hiddenCount: 0,
-      }
-    }
-
-    const upcomingCutoff = now + FOURTEEN_DAYS_MS
-    const pastCutoff = now - FOURTEEN_DAYS_MS
-    const upcomingCapped = upcomingRestAll.filter(
-      (a) => new Date(a.start_at).getTime() <= upcomingCutoff,
-    )
-    const pastCapped = pastAll.filter(
-      (a) => new Date(a.start_at).getTime() >= pastCutoff,
-    )
-    const hidden =
-      upcomingRestAll.length -
-      upcomingCapped.length +
-      (pastAll.length - pastCapped.length)
-
     return {
-      nextSession,
-      upcomingRest: upcomingCapped,
-      past: pastCapped,
-      hiddenCount: hidden,
+      nextSession: upcomingAll[0] ?? null,
+      upcomingRest: upcomingAll.slice(1),
+      past: pastAll,
     }
-  }, [appointments, showAll])
+  }, [appointments])
 
   function labelFor(a: ProfileAppointment): string {
     const base = formatAppointmentLabel(a)
@@ -1305,58 +1278,36 @@ function AppointmentPicker({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <select
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || null)}
-        style={selectStyle}
-      >
-        {nextSession && (
-          <option value={nextSession.id}>
-            Next session · {labelFor(nextSession)}
-          </option>
-        )}
-        <option value="">None — no linked session</option>
-        {upcomingRest.length > 0 && (
-          <optgroup label="Upcoming">
-            {upcomingRest.map((a) => (
-              <option key={a.id} value={a.id}>
-                {labelFor(a)}
-              </option>
-            ))}
-          </optgroup>
-        )}
-        {past.length > 0 && (
-          <optgroup label="Past">
-            {past.map((a) => (
-              <option key={a.id} value={a.id}>
-                {labelFor(a)}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
-      {!showAll && hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowAll(true)}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--color-text-light)',
-            fontSize: '.74rem',
-            textAlign: 'left',
-            padding: 0,
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            fontFamily: 'inherit',
-            alignSelf: 'flex-start',
-          }}
-        >
-          Show {hiddenCount} more session{hiddenCount === 1 ? '' : 's'}
-        </button>
+    <select
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value || null)}
+      style={selectStyle}
+    >
+      {nextSession && (
+        <option value={nextSession.id}>
+          Next session · {labelFor(nextSession)}
+        </option>
       )}
-    </div>
+      <option value="">None — no linked session</option>
+      {upcomingRest.length > 0 && (
+        <optgroup label="Upcoming">
+          {upcomingRest.map((a) => (
+            <option key={a.id} value={a.id}>
+              {labelFor(a)}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      {past.length > 0 && (
+        <optgroup label="Past">
+          {past.map((a) => (
+            <option key={a.id} value={a.id}>
+              {labelFor(a)}
+            </option>
+          ))}
+        </optgroup>
+      )}
+    </select>
   )
 }
 
