@@ -121,6 +121,7 @@ export function CustomTestForm(props: Props) {
     if (mode === 'edit') return
     if (testIdEdited) return
     if (name.trim().length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- testId auto-derives from name during create, gated by the manual-override flag (testIdEdited) and existingTestIds collision-avoidance; a render-phase rewrite risks a loop if existingTestIds is not referentially stable.
       setTestId('')
       return
     }
@@ -709,13 +710,15 @@ function CategoryPicker({
 
   // If the value drifts out of the option set (or options become empty),
   // flip to free-text. Don't auto-flip back — the user uses the "Use
-  // list" button when they want to.
-  useEffect(() => {
-    if (options.length === 0 && mode === 'list') setMode('free')
-    else if (value !== '' && !optionIds.has(value) && mode === 'list') {
-      setMode('free')
-    }
-  }, [options.length, optionIds, value, mode])
+  // list" button when they want to. Done during render as a guarded,
+  // converging state adjustment, not an effect (react-hooks/set-state-in-effect):
+  // once mode is 'free' the condition no longer fires, so it cannot loop.
+  if (
+    mode === 'list' &&
+    (options.length === 0 || (value !== '' && !optionIds.has(value)))
+  ) {
+    setMode('free')
+  }
 
   if (mode === 'free') {
     return (

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ArrowDown, Share, Smartphone } from 'lucide-react'
 
 type Platform = 'ios' | 'android' | 'desktop' | 'standalone' | 'unknown'
@@ -39,19 +39,30 @@ function detectPlatform(): Platform {
   return 'desktop'
 }
 
+// platform is a pure client-side read (navigator + display-mode). Reading it
+// through useSyncExternalStore renders the server/hydration snapshot
+// ('unknown') and then switches to the detected value on the client — no
+// hydration mismatch and no setState-in-effect. The UA does not change after
+// mount, so subscribe is a no-op (matching the original detect-once effect).
+const subscribePlatform = () => () => {}
+const getServerPlatform = (): Platform => 'unknown'
+
 /**
  * Eyebrow + heading + subtitle live in the AuthShell wrapper at
  * /welcome/install/page.tsx — this component renders just the platform-
  * specific install instructions and the "skip" escape hatch.
  */
 export function InstallScreen() {
-  const [platform, setPlatform] = useState<Platform>('unknown')
+  const platform = useSyncExternalStore(
+    subscribePlatform,
+    detectPlatform,
+    getServerPlatform,
+  )
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
     const p = detectPlatform()
-    setPlatform(p)
     // Already installed → skip straight to portal. No need to make them
     // tap "Continue" — they're literally inside the installed app.
     if (p === 'standalone') {

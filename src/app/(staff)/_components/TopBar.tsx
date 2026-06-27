@@ -52,10 +52,16 @@ export function TopBar({ userInitials, todayLabel, messageCount = 0, organizatio
   const [contactsOpen, setContactsOpen] = useState(false)
   const contactsRef = useRef<HTMLDivElement>(null)
 
-  // Close the dropdown on route change or outside click.
-  useEffect(() => {
+  // Close the dropdown on route change. Done during render via the
+  // previous-pathname pattern (not an effect) so the menu never lingers open
+  // for a frame after navigation, and to satisfy
+  // react-hooks/set-state-in-effect. (Outside-click close is handled by the
+  // mousedown effect below.)
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname)
     setContactsOpen(false)
-  }, [pathname])
+  }
 
   // Live-refresh the unread badge. messageCount is server-rendered by the
   // staff layout, so router.refresh() re-runs the count query. We listen for

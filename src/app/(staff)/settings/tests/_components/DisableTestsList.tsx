@@ -28,6 +28,7 @@ export function DisableTestsList({ schemaCatalog, disabled }: Props) {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) {
         const arr = JSON.parse(raw)
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe localStorage hydration on mount; localStorage is unavailable during render.
         if (Array.isArray(arr)) setOpenCats(new Set(arr))
       }
     } catch {

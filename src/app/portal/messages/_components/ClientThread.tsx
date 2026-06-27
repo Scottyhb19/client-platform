@@ -100,9 +100,14 @@ export function ClientThread(props: ClientThreadProps) {
     () => true, // server snapshot: dismissed → no SSR render, no hydration split.
   )
 
-  useEffect(() => {
+  // Sync local messages when the server hands down a new initialMessages.
+  // Done during render via the previous-value pattern, not an effect
+  // (react-hooks/set-state-in-effect).
+  const [prevInitialMessages, setPrevInitialMessages] = useState(initialMessages)
+  if (prevInitialMessages !== initialMessages) {
+    setPrevInitialMessages(initialMessages)
     setMessages(initialMessages)
-  }, [initialMessages])
+  }
 
   useEffect(() => {
     const el = bodyRef.current

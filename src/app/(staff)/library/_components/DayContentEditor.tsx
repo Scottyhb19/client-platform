@@ -1223,6 +1223,7 @@ function SectionTitleField({
   // a section via the fan-out). Skip mid-create so the draft survives.
   useEffect(() => {
     if (mode === 'creating') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional prop->state sync for the superset-sibling section-title fan-out (clone of the locked SessionBuilder effect), guarded against mid-create.
     setValue(initialValue)
   }, [initialValue, mode])
 

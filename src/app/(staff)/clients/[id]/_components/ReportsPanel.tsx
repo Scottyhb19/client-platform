@@ -96,6 +96,7 @@ export function ReportsPanel({
   const [pins, setPins] = useState<Set<string>>(() => new Set())
   useEffect(() => {
     if (!clientId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- SSR-safe localStorage hydration on mount / clientId change; localStorage is unavailable during render, so this cannot be derived or lazily initialised.
     setPins(loadPins(clientId))
   }, [clientId])
 

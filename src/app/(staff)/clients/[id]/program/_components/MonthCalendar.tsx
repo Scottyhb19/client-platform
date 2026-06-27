@@ -1078,10 +1078,16 @@ function MonthGrid({
 
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<number>>(new Set())
 
-  // Reset collapsed state when the month changes.
-  useEffect(() => {
+  // Reset collapsed state when the month changes. Done during render via the
+  // previous-month-key pattern (not an effect) to satisfy
+  // react-hooks/set-state-in-effect; behaviour is identical — a newly shown
+  // month starts fully expanded.
+  const monthKey = `${year}-${month}`
+  const [prevMonthKey, setPrevMonthKey] = useState(monthKey)
+  if (prevMonthKey !== monthKey) {
+    setPrevMonthKey(monthKey)
     setCollapsedWeeks(new Set())
-  }, [year, month])
+  }
 
   // P2-3 / FM-7 — one toggle shared by the chevron gutter AND the collapsed
   // summary strip, so the collapse affordance is the whole row edge / strip,

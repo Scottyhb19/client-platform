@@ -41,12 +41,15 @@ export function ComparisonOverlay({
   )
   const [selectedIds, setSelectedIds] = useState<Set<string>>(allIds)
 
-  // Reset selection if the underlying session list changes (e.g. the
-  // user captures a new session while the overlay is open — unlikely
-  // but cheap to guard).
-  useEffect(() => {
-    setSelectedIds(new Set(history.sessions.map((s) => s.session_id)))
-  }, [history.sessions])
+  // Reset selection if the underlying session list changes (e.g. the user
+  // captures a new session while the overlay is open — unlikely but cheap to
+  // guard). Done during render via the previous-value pattern, not an effect
+  // (react-hooks/set-state-in-effect). allIds already mirrors history.sessions.
+  const [prevSessions, setPrevSessions] = useState(history.sessions)
+  if (prevSessions !== history.sessions) {
+    setPrevSessions(history.sessions)
+    setSelectedIds(allIds)
+  }
 
   // Escape dismisses; lock body scroll while open.
   useEffect(() => {

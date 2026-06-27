@@ -38,10 +38,19 @@ export function DayLabelEditor({
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   // Keep local state in sync if a parent refresh hands down a new label
-  // (e.g. concurrent edit from another tab + revalidate).
-  useEffect(() => {
+  // (e.g. concurrent edit from another tab + revalidate) — but never while
+  // the user is mid-edit. Done during render via the previous-value pattern,
+  // not an effect (react-hooks/set-state-in-effect). Tracking `editing` too
+  // preserves the catch-up: a label that arrived during an edit is adopted
+  // when editing ends.
+  const [prevLabelSync, setPrevLabelSync] = useState({ initialLabel, editing })
+  if (
+    prevLabelSync.initialLabel !== initialLabel ||
+    prevLabelSync.editing !== editing
+  ) {
+    setPrevLabelSync({ initialLabel, editing })
     if (!editing) setLabel(initialLabel)
-  }, [initialLabel, editing])
+  }
 
   useEffect(() => {
     if (editing && inputRef.current) {

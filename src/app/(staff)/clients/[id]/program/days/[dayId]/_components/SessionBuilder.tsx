@@ -2628,6 +2628,7 @@ function SectionTitleField({
   // Skip while the user is mid-create to not blow away their draft.
   useEffect(() => {
     if (mode === 'creating') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional prop->state sync for the superset-sibling section-title fan-out, guarded against mid-create; the effect's `mode` dep provides the on-exit catch-up. Locked component — deliberately not converted to a render-phase rewrite.
     setValue(initialValue)
   }, [initialValue, mode])
 

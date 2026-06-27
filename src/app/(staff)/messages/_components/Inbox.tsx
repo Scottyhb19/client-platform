@@ -148,6 +148,7 @@ export function Inbox(props: InboxProps) {
 
   // Sync local state when navigating between threads (server props change).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets thread-local view state (messages/draft/error) on thread navigation or server refresh; intentional effect in the signed-off messaging surface.
     setMessages(initialMessages)
     setDraft('')
     setError(null)

@@ -76,10 +76,14 @@ export function NoteTemplatesEditor({
   const [pending, startTransition] = useTransition()
 
   // Re-sync local templates when server-fed prop refreshes (e.g. after
-  // adding a field). Keeps the UI in lockstep with the database.
-  useEffect(() => {
+  // adding a field). Keeps the UI in lockstep with the database. Done during
+  // render via the previous-value pattern, not an effect
+  // (react-hooks/set-state-in-effect).
+  const [prevInitialTemplates, setPrevInitialTemplates] = useState(initialTemplates)
+  if (prevInitialTemplates !== initialTemplates) {
+    setPrevInitialTemplates(initialTemplates)
     setTemplates(initialTemplates)
-  }, [initialTemplates])
+  }
 
   function handleAddTemplate() {
     if (!newName.trim()) {
@@ -240,11 +244,21 @@ function TemplateCard({
   const [renameError, setRenameError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
-  // Sync local state if the prop is refreshed by the server.
-  useEffect(() => {
+  // Sync local state if the prop is refreshed by the server. Done during
+  // render via the previous-value pattern, not an effect
+  // (react-hooks/set-state-in-effect).
+  const [prevTemplateProps, setPrevTemplateProps] = useState({
+    name: template.name,
+    noteType: template.note_type,
+  })
+  if (
+    prevTemplateProps.name !== template.name ||
+    prevTemplateProps.noteType !== template.note_type
+  ) {
+    setPrevTemplateProps({ name: template.name, noteType: template.note_type })
     setName(template.name)
     setNoteType(template.note_type)
-  }, [template.name, template.note_type])
+  }
 
   function commitNoteType(next: TemplateNoteType) {
     const previous = noteType
@@ -630,11 +644,26 @@ function FieldBlock({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
-  // Re-sync if the parent passes new server data.
-  useEffect(() => {
+  // Re-sync if the parent passes new server data. Done during render via the
+  // previous-value pattern, not an effect (react-hooks/set-state-in-effect).
+  const [prevFieldProps, setPrevFieldProps] = useState({
+    id: field.id,
+    label: field.label,
+    defaultValue: field.default_value ?? '',
+  })
+  if (
+    prevFieldProps.id !== field.id ||
+    prevFieldProps.label !== field.label ||
+    prevFieldProps.defaultValue !== (field.default_value ?? '')
+  ) {
+    setPrevFieldProps({
+      id: field.id,
+      label: field.label,
+      defaultValue: field.default_value ?? '',
+    })
     setLabel(field.label)
     setDefaultValue(field.default_value ?? '')
-  }, [field.id, field.label, field.default_value])
+  }
 
   // "Saved" pip auto-clears after a moment so it doesn't hang around.
   useEffect(() => {

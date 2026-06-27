@@ -519,6 +519,7 @@ const NoteForm = forwardRef<
   useEffect(() => {
     if (mode !== 'create') return
     if (!activeTemplate) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional ref-gated template seeding (see seededTemplateRef above); clears form values when the active template is removed mid-create. Not derivable during render.
       setValues({})
       seededTemplateRef.current = null
       return
@@ -1582,10 +1583,14 @@ function PreviousNotesList({
   const [actionError, setActionError] = useState<string | null>(null)
 
   // Reset to page 0 whenever the search query changes — otherwise a query
-  // that yields fewer pages than `page` would land on a blank slice.
-  useEffect(() => {
+  // that yields fewer pages than `page` would land on a blank slice. Done
+  // during render via the previous-value pattern, not an effect
+  // (react-hooks/set-state-in-effect).
+  const [prevQuery, setPrevQuery] = useState(query)
+  if (prevQuery !== query) {
+    setPrevQuery(query)
     setPage(0)
-  }, [query])
+  }
 
   // Filter then split into pinned vs unpinned. Search is case-insensitive
   // and matches across content_json field labels + values plus the legacy
@@ -2024,9 +2029,13 @@ function PinToggle({
   const router = useRouter()
 
   // Keep local optimistic state in sync if the prop changes underneath.
-  useEffect(() => {
+  // Done during render via the previous-value pattern, not an effect
+  // (react-hooks/set-state-in-effect).
+  const [prevIsPinned, setPrevIsPinned] = useState(note.is_pinned)
+  if (prevIsPinned !== note.is_pinned) {
+    setPrevIsPinned(note.is_pinned)
     setPinned(note.is_pinned)
-  }, [note.is_pinned])
+  }
 
   function handleToggle(e: React.MouseEvent) {
     e.stopPropagation()
