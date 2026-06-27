@@ -165,7 +165,7 @@ export function PractitionerSidebar({
                 lineHeight: 1.4,
               }}
             >
-              Select who you'd like to see on the calendar.
+              Select who you&apos;d like to see on the calendar.
             </div>
             {staff.map((s) => {
               const checked = selectedStaffIds.includes(s.user_id)

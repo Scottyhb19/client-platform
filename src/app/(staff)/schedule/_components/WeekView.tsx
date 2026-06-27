@@ -2626,7 +2626,7 @@ function BookingComposer({
                     padding: '8px 0',
                   }}
                 >
-                  No clients yet — use "+ New client" above.
+                  No clients yet — use &quot;+ New client&quot; above.
                 </div>
               ) : (
                 <select
