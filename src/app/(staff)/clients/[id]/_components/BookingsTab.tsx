@@ -37,6 +37,7 @@ export function BookingsTab({
   )
   const [cancelError, setCancelError] = useState<string | null>(null)
 
+  // eslint-disable-next-line react-hooks/purity -- intentional per-render current-time read; the upcoming/past split must reflect the live clock.
   const now = Date.now()
   const isUpcoming = (a: ProfileAppointment) =>
     new Date(a.start_at).getTime() >= now &&

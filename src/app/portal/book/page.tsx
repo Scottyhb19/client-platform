@@ -98,6 +98,7 @@ export default async function PortalBookPage({
           <div style={{ padding: '0 16px 24px' }}>
             {upcoming.map((appt) => {
               const startMs = new Date(appt.start_at).getTime()
+              // eslint-disable-next-line react-hooks/purity -- server component; Date.now() is the one-time per-request cancel-window check.
               const hoursAway = (startMs - Date.now()) / (1000 * 60 * 60)
               const canCancel = hoursAway >= 24
 

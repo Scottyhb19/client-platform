@@ -237,6 +237,7 @@ function OverviewTab({
   // Totals — compare current window to previous window for the delta pill.
   const prevStart = new Date(
     rangeStartFor(range).getTime() -
+      // eslint-disable-next-line react-hooks/purity -- intentional per-render current-time read for the previous-window delta; re-evaluation each render is the desired behaviour.
       (Date.now() - rangeStartFor(range).getTime()),
   )
   const previousCount = appointments.filter((a) => {

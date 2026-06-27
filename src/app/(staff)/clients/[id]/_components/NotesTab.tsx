@@ -322,6 +322,7 @@ export function NotesTab({
         onStartEdit={handleStartEdit}
         copyMode={copyMode}
         copyTemplateId={
+          // eslint-disable-next-line react-hooks/refs -- reads the note form's active template id at the moment copy-mode renders (a user-initiated transient); feeds the SideRail copy affordance.
           copyMode ? formRef.current?.getActiveTemplateId() ?? null : null
         }
         onCopyFromNote={handleCopyFromNote}
@@ -467,6 +468,7 @@ const NoteForm = forwardRef<
     for (const n of notes) {
       if (n.appointment_id) usedAppointmentIds.add(n.appointment_id)
     }
+    // eslint-disable-next-line react-hooks/purity -- intentional current-time read to pick a default appointment relative to "now".
     const now = Date.now()
     const future = appointments
       .filter((a) => new Date(a.end_at).getTime() >= now)
@@ -673,7 +675,6 @@ const NoteForm = forwardRef<
     }),
     // performSave / applyCopiedFields close over latest state via refs;
     // intentional rebuild each render to keep the closures fresh.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   )
 
   // ---- Copy Previous Note (create mode only) ----------------------------
@@ -1252,6 +1253,7 @@ function AppointmentPicker({
   takenAppointmentIds: Map<string, string>
 }) {
   const { nextSession, upcomingRest, past } = useMemo(() => {
+    // eslint-disable-next-line react-hooks/purity -- intentional current-time read to bucket sessions into next/upcoming/past relative to "now".
     const now = Date.now()
     const upcomingAll = appointments
       .filter((a) => new Date(a.end_at).getTime() >= now)

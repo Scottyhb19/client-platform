@@ -56,6 +56,7 @@ export default async function InviteGatePage({
   if (error || !token) return <ErrorShell reason="not_found" />
 
   if (token.consumed_at !== null) return <ErrorShell reason="consumed" />
+  // eslint-disable-next-line react-hooks/purity -- server component; Date.now() is the one-time per-request token-expiry check.
   if (new Date(token.expires_at).getTime() < Date.now()) {
     return <ErrorShell reason="expired" />
   }
