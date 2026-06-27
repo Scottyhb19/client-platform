@@ -70,6 +70,10 @@ export default async function DashboardPage() {
   )
   const tenDaysAgoIso = addDaysToIsoDate(todayIso, -10)
   const tenDaysAgo = startOfDayInstant(tenDaysAgoIso, tz)
+  // Onboarding funnel (§1 v2): a client invited 7+ days ago who still has no
+  // first logged session is "hasn't got going". Start-of-day floor, consistent
+  // with the other thresholds above.
+  const sevenDaysAgo = startOfDayInstant(addDaysToIsoDate(todayIso, -7), tz)
   const todayPlus7Iso = addDaysToIsoDate(todayIso, 7)
 
   // Parallel fetches.
@@ -81,7 +85,9 @@ export default async function DashboardPage() {
     { data: allProgramRows },
     { data: flaggedNotes },
     { data: lastCompletedRows },
-    { data: completedAssessmentRows },
+    { data: assessmentNoteRows },
+    { data: apptActivityRows },
+    { data: upcomingProgramDayRows },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -169,11 +175,38 @@ export default async function DashboardPage() {
       .not('completed_at', 'is', null)
       .is('deleted_at', null)
       .order('completed_at', { ascending: false }),
-    // Clients with a completed assessment, for the New trigger.
+    // Clients with a recorded initial assessment, for the New trigger. The live
+    // signal is an `initial_assessment` clinical note (the note-template path) —
+    // NOT the dormant `assessments` table, which has no write path in the app
+    // and never gains rows, so the previous query made the "assessment complete"
+    // branch dead in real use (v2 fix).
     supabase
-      .from('assessments')
+      .from('clinical_notes')
       .select('client_id')
-      .eq('status', 'completed')
+      .eq('note_type', 'initial_assessment')
+      .is('deleted_at', null),
+    // Appointments (in-clinic / booked sessions), for the "no upcoming training"
+    // gap detection — including single-session clients who have no program at
+    // all and would otherwise be invisible here. Real client bookings only:
+    // kind 'unavailable' (staff admin blocks, no client) and cancelled slots are
+    // excluded. Split into upcoming vs past in code; the latest past one is the
+    // client's "last seen".
+    supabase
+      .from('appointments')
+      .select('client_id, start_at')
+      .eq('kind', 'appointment')
+      .neq('status', 'cancelled')
+      .not('client_id', 'is', null)
+      .is('deleted_at', null),
+    // Upcoming program days (scheduled today or later), for "sessions remaining":
+    // a client with a future day still has training queued, so they are not a
+    // gap even once the program passes its nominal end date — and conversely a
+    // program past its last scheduled day IS a gap. More precise than the end
+    // date alone.
+    supabase
+      .from('program_days')
+      .select('scheduled_date, program:programs(client_id, status, deleted_at)')
+      .gte('scheduled_date', todayIso)
       .is('deleted_at', null),
   ])
 
@@ -222,8 +255,8 @@ export default async function DashboardPage() {
     }
   }
 
-  const completedAssessmentIds = new Set(
-    ((completedAssessmentRows ?? []) as Array<{ client_id: string }>).map(
+  const assessedClientIds = new Set(
+    ((assessmentNoteRows ?? []) as Array<{ client_id: string }>).map(
       (a) => a.client_id,
     ),
   )
@@ -231,6 +264,49 @@ export default async function DashboardPage() {
   const clientsWithDraftProgram = new Set(
     allPrograms.filter((p) => p.status === 'draft').map((p) => p.client_id),
   )
+
+  // Appointment activity, split past vs upcoming. `upcomingApptClientIds` = a
+  // booked session today or later (so a single-session client isn't a gap).
+  // `lastApptMsByClient` = when last seen in-clinic, so a single-session client
+  // who has stopped — and has no program — is caught (and dated).
+  const todayStartMs = todayStart.getTime()
+  const upcomingApptClientIds = new Set<string>()
+  const lastApptMsByClient = new Map<string, number>()
+  for (const a of (apptActivityRows ?? []) as Array<{
+    client_id: string | null
+    start_at: string
+  }>) {
+    if (!a.client_id) continue
+    const t = new Date(a.start_at).getTime()
+    if (t >= todayStartMs) {
+      upcomingApptClientIds.add(a.client_id)
+    } else {
+      const prev = lastApptMsByClient.get(a.client_id)
+      if (prev === undefined || t > prev) lastApptMsByClient.set(a.client_id, t)
+    }
+  }
+
+  // Clients with at least one upcoming program day (the program live or queued,
+  // not deleted): training is still scheduled, so they are not a gap — this is
+  // the "sessions remaining" test (§2 v2), more precise than the program's
+  // nominal end date.
+  const upcomingProgramDayClientIds = new Set<string>()
+  for (const d of (upcomingProgramDayRows ?? []) as unknown as Array<{
+    program: {
+      client_id: string
+      status: string
+      deleted_at: string | null
+    } | null
+  }>) {
+    const prog = d.program
+    if (
+      prog &&
+      !prog.deleted_at &&
+      (prog.status === 'active' || prog.status === 'draft')
+    ) {
+      upcomingProgramDayClientIds.add(prog.client_id)
+    }
+  }
 
   // ── Stats ──────────────────────────────────────────────────────────────
   // Cancelled appointments still render on the board (struck-through) so a
@@ -268,12 +344,16 @@ export default async function DashboardPage() {
     activePrograms,
     lastCompletedByClient,
     overdueFollowedUpByClient,
-    completedAssessmentIds,
+    assessedClientIds,
     clientsWithAnyProgram,
     clientsWithDraftProgram,
+    upcomingApptClientIds,
+    lastApptMsByClient,
+    upcomingProgramDayClientIds,
     nowMs: now.getTime(),
     tenDaysAgoMs: tenDaysAgo.getTime(),
     tenDaysAgoIso,
+    sevenDaysAgoMs: sevenDaysAgo.getTime(),
     todayIso,
     todayPlus7Iso,
   })
@@ -563,7 +643,26 @@ function StatCard({
 
 /* ====================== Needs-attention panel ====================== */
 
-type AttentionTone = 'flag' | 'overdue' | 'ending' | 'new'
+type AttentionTone =
+  | 'flag'
+  | 'overdue'
+  | 'ended'
+  | 'ending'
+  | 'new'
+  | 'onboarding'
+
+// Lower = more urgent. Drives per-client dedup (keep the most urgent reason) and
+// the panel sort order. The brief §6.8.2 order (Flag → Overdue → Ending → New)
+// extended for the v2 triggers: Ended (training gap live now) sits above Ending
+// (≤7 days out), and Onboarding (a quiet new-client nudge) is the least urgent.
+const PRIORITY = {
+  flag: 0,
+  overdue: 1,
+  ended: 2,
+  ending: 3,
+  new: 4,
+  onboarding: 5,
+} as const
 
 type AttentionItem = {
   clientId: string
@@ -575,7 +674,7 @@ type AttentionItem = {
   reason: string
   action: { label: string; href: string }
   // Lower = more urgent. Drives dedupe (keep the most urgent per client) +
-  // the panel sort order. Brief §6.8.2 lists: Flag, Overdue, Ending, New.
+  // the panel sort order. See the PRIORITY map above.
   priority: number
 }
 
@@ -611,12 +710,16 @@ function buildAttentionList({
   activePrograms,
   lastCompletedByClient,
   overdueFollowedUpByClient,
-  completedAssessmentIds,
+  assessedClientIds,
   clientsWithAnyProgram,
   clientsWithDraftProgram,
+  upcomingApptClientIds,
+  lastApptMsByClient,
+  upcomingProgramDayClientIds,
   nowMs,
   tenDaysAgoMs,
   tenDaysAgoIso,
+  sevenDaysAgoMs,
   todayIso,
   todayPlus7Iso,
 }: {
@@ -632,12 +735,16 @@ function buildAttentionList({
   activePrograms: AttentionProgram[]
   lastCompletedByClient: Map<string, string>
   overdueFollowedUpByClient: Map<string, number>
-  completedAssessmentIds: Set<string>
+  assessedClientIds: Set<string>
   clientsWithAnyProgram: Set<string>
   clientsWithDraftProgram: Set<string>
+  upcomingApptClientIds: Set<string>
+  lastApptMsByClient: Map<string, number>
+  upcomingProgramDayClientIds: Set<string>
   nowMs: number
   tenDaysAgoMs: number
   tenDaysAgoIso: string
+  sevenDaysAgoMs: number
   todayIso: string
   todayPlus7Iso: string
 }): AttentionItem[] {
@@ -661,11 +768,13 @@ function buildAttentionList({
           ? `Active ${kind} — ${n.flag_body_region}`
           : `Active ${kind}`),
       action: { label: 'Review', href: `/clients/${n.client.id}` },
-      priority: 0,
+      priority: PRIORITY.flag,
     })
   }
 
-  // Active programs feed both Overdue and Ending.
+  // Active programs feed Overdue and Ending. The Ended/gap trigger is handled in
+  // the client loop below instead — it must also see clients who have no program
+  // at all (single-session clients), which this program loop never reaches.
   for (const p of activePrograms) {
     if (!p.client || p.client.archived_at) continue
     const c = p.client
@@ -722,8 +831,11 @@ function buildAttentionList({
         tone: 'overdue',
         tag: 'Overdue',
         reason: overdueReason,
-        action: { label: 'Open', href: `/clients/${c.id}` },
-        priority: 1,
+        // "Open" goes to the program calendar (checking the program is the
+        // point); the row name still links to the profile. Lines up with the
+        // ack button beside it in the panel.
+        action: { label: 'Open', href: `/clients/${c.id}/program` },
+        priority: PRIORITY.overdue,
       })
     }
 
@@ -743,14 +855,84 @@ function buildAttentionList({
         tag: 'Ending',
         reason: `Program ends ${endRelative(endIso, todayIso)} — no new block yet`,
         action: { label: 'Plan', href: `/clients/${c.id}/program` },
-        priority: 2,
+        priority: PRIORITY.ending,
       })
     }
   }
 
-  // New (green) — needs first program, or invited but not yet onboarded.
+  // Per-active-client triggers: Ended/gap, New, Onboarding. Iterating clients
+  // (not programs) is what lets the gap detector see single-session clients who
+  // have no program row at all. A client can match more than one; the per-client
+  // dedupe below keeps the most urgent.
   for (const c of activeClients) {
-    if (completedAssessmentIds.has(c.id) && !clientsWithAnyProgram.has(c.id)) {
+    // ── Ended / gap (amber) — out of training, two tracks judged separately ──
+    // A client trains on a PROGRAM (home/gym day-by-day) and/or via booked
+    // APPOINTMENTS (in-clinic). These are different tracks, so an ended program
+    // is judged by the program — NOT by the nominal end date, and NOT by whether
+    // appointments happen to be booked. (Conflating them was the original bug:
+    // a client with a finished block but standing appointments never surfaced.)
+    if (clientsWithAnyProgram.has(c.id)) {
+      // Program client: gap when no training day is scheduled today or later
+      // ("sessions remaining", §2 v2 — true even for an open-ended program with
+      // no dates set) and no draft block is queued. The next block is the action,
+      // so it fires regardless of any in-clinic appointments they may also have.
+      if (
+        !upcomingProgramDayClientIds.has(c.id) &&
+        !clientsWithDraftProgram.has(c.id)
+      ) {
+        candidates.push({
+          clientId: c.id,
+          avatar: initialsFor(c.first_name, c.last_name),
+          firstName: c.first_name,
+          lastName: c.last_name,
+          tone: 'ended',
+          tag: 'Ended',
+          reason: 'Program ended — no new block',
+          action: { label: 'Plan', href: `/clients/${c.id}/program` },
+          priority: PRIORITY.ended,
+        })
+      }
+    } else {
+      // Single-session client (no program at all): their training IS their
+      // bookings, so the gap is "no upcoming appointment". Needs evidence they
+      // trained before (a logged session or a past booking) and have lapsed past
+      // the ~10-day cadence, so a client who just hasn't rebooked yet isn't
+      // nagged, and a brand-new client (New/Onboarding territory) isn't caught.
+      const lastCompletedIso = lastCompletedByClient.get(c.id)
+      const lastCompletedMs = lastCompletedIso
+        ? new Date(lastCompletedIso).getTime()
+        : null
+      const lastApptMs = lastApptMsByClient.get(c.id) ?? null
+      const lastMs =
+        lastCompletedMs === null
+          ? lastApptMs
+          : lastApptMs === null
+            ? lastCompletedMs
+            : Math.max(lastCompletedMs, lastApptMs)
+      if (
+        !upcomingApptClientIds.has(c.id) &&
+        lastMs !== null &&
+        lastMs < tenDaysAgoMs
+      ) {
+        const days = Math.max(1, Math.round((nowMs - lastMs) / 86_400_000))
+        candidates.push({
+          clientId: c.id,
+          avatar: initialsFor(c.first_name, c.last_name),
+          firstName: c.first_name,
+          lastName: c.last_name,
+          tone: 'ended',
+          tag: 'Ended',
+          reason: `No sessions booked — last seen ${days} days ago`,
+          action: { label: 'Open', href: `/clients/${c.id}` },
+          priority: PRIORITY.ended,
+        })
+      }
+    }
+
+    // ── New (green) — initial assessment recorded, but no program yet ──
+    // Sourced from the live `initial_assessment` note (assessedClientIds); the
+    // dormant `assessments` table never had rows (v2 fix).
+    if (assessedClientIds.has(c.id) && !clientsWithAnyProgram.has(c.id)) {
       candidates.push({
         clientId: c.id,
         avatar: initialsFor(c.first_name, c.last_name),
@@ -760,19 +942,46 @@ function buildAttentionList({
         tag: 'New',
         reason: 'Assessment complete — no program yet',
         action: { label: 'Build program', href: `/clients/${c.id}/program/new` },
-        priority: 3,
+        priority: PRIORITY.new,
       })
-    } else if (c.invited_at && !c.onboarded_at) {
+    }
+
+    // ── Onboarding funnel (§1 v2) — invited 7+ days ago, no logged session ──
+    // "Got going" = a logged portal session ONLY (operator decision 2026-06-28:
+    // an in-clinic appointment does NOT count — surface every invited client who
+    // hasn't logged so they can be nudged, then dismissed if they're fine).
+    // Replaces the old "invited — not onboarded" New reason. Two reason states,
+    // not three: there's no queryable last-login, and onboarded_at already
+    // implies the client logged in once (accepting the invite sets the
+    // password). The "Program checked & message sent" ack (shared with Overdue)
+    // snoozes it ~10 days, then it re-surfaces if still stalled — its manual
+    // exit, since reaching out leaves no other DB trace.
+    const onboardingFollowedUpMs = overdueFollowedUpByClient.get(c.id)
+    const onboardingRecentlyFollowedUp =
+      onboardingFollowedUpMs !== undefined &&
+      onboardingFollowedUpMs >= tenDaysAgoMs
+    if (
+      c.invited_at &&
+      new Date(c.invited_at).getTime() <= sevenDaysAgoMs &&
+      !lastCompletedByClient.has(c.id) &&
+      !onboardingRecentlyFollowedUp
+    ) {
+      const days = Math.max(
+        1,
+        Math.round((nowMs - new Date(c.invited_at).getTime()) / 86_400_000),
+      )
       candidates.push({
         clientId: c.id,
         avatar: initialsFor(c.first_name, c.last_name),
         firstName: c.first_name,
         lastName: c.last_name,
-        tone: 'new',
-        tag: 'New',
-        reason: 'Invited — not yet onboarded',
+        tone: 'onboarding',
+        tag: 'Onboarding',
+        reason: c.onboarded_at
+          ? 'Onboarded — no sessions logged yet'
+          : `Invited ${days} days ago — not accepted`,
         action: { label: 'Open', href: `/clients/${c.id}` },
-        priority: 3,
+        priority: PRIORITY.onboarding,
       })
     }
   }
@@ -882,12 +1091,12 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
                     {it.reason}
                   </div>
                 </div>
-                {it.tone === 'overdue' ? (
-                  // Overdue's manual exit (no natural clear). Keep "Open" so the
-                  // EP can jump straight to the program to check it, then
-                  // acknowledge with the button beside it. "Open" here goes to
-                  // the program calendar (the name above still opens the
-                  // profile), since checking the program is the point.
+                {it.tone === 'overdue' || it.tone === 'onboarding' ? (
+                  // Manual exit for the two triggers with no natural DB clear:
+                  // Overdue (only the client logging clears it) and Onboarding
+                  // (reaching out leaves no trace). The shared ack snoozes the
+                  // row ~10 days; the action link sits beside it (lined up with
+                  // the single button on every other row — one clean right edge).
                   <div
                     style={{
                       display: 'flex',
@@ -896,14 +1105,8 @@ function AttentionPanel({ items }: { items: AttentionItem[] }) {
                     }}
                   >
                     <OverdueFollowUpButton clientId={it.clientId} />
-                    {/* "Open" sits on the right so it lines up with the
-                        single action button on every other needs-attention
-                        row (one clean column down the right edge). */}
-                    <Link
-                      href={`/clients/${it.clientId}/program`}
-                      className="btn outline"
-                    >
-                      Open
+                    <Link href={it.action.href} className="btn outline">
+                      {it.action.label}
                     </Link>
                   </div>
                 ) : (
@@ -1116,14 +1319,18 @@ function programEndIso(
   return addDaysToIsoDate(startDate, durationWeeks * 7)
 }
 
+/** Whole days from `fromIso` to `toIso` (positive when `toIso` is later). */
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  return Math.round(
+    (Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`)) /
+      86_400_000,
+  )
+}
+
 /** "today" / "tomorrow" / "in N days" for a near-future ISO date. */
 function endRelative(endIso: string, todayIso: string): string {
   if (endIso === todayIso) return 'today'
-  const days = Math.round(
-    (Date.parse(`${endIso}T00:00:00Z`) -
-      Date.parse(`${todayIso}T00:00:00Z`)) /
-      86_400_000,
-  )
+  const days = daysBetweenIso(todayIso, endIso)
   if (days === 1) return 'tomorrow'
   return `in ${days} days`
 }

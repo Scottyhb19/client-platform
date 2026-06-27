@@ -389,3 +389,158 @@ its result is unused on the early-return paths, so render output is unchanged.
 - **Pass:** Rows (one per test/metric/side), the chronological session columns,
   and the "Δ baseline → latest" column render exactly as before the refactor —
   the hoist changed only *when* the memo runs, not its value or the markup.
+
+---
+
+## EP Dashboard — Needs-Attention Trigger Set v2 (2026-06-28)
+
+Context: the Needs-Attention panel (`src/app/(staff)/dashboard/page.tsx`,
+`buildAttentionList`) gains two **light** triggers and a dead-trigger fix, as the
+v2 follow-up to the closed EP Dashboard §11 (see
+`docs/polish/ep-dashboard.md` §9). Logic-only — no schema, no new security
+surface. The structural pair (Reconciliation, Assessment-completeness) and the
+Email-failure slot stay parked. All routing/dedupe behaves like the live four.
+
+### DASH-V2-1 — Onboarding funnel: invite not accepted
+- **Setup:** A client with `invited_at` 8 days ago, `onboarded_at` NULL, no
+  completed sessions, not archived.
+- **Action:** Load `/dashboard`.
+- **Pass:** A Needs-attention row with the **Onboarding** tag, reason
+  "Invited 8 days ago — not accepted", action **Open** → `/clients/{id}`
+  (client details). The avatar is amber; the tag is the soft neutral style.
+
+### DASH-V2-2 — Onboarding funnel: onboarded, no first session
+- **Setup:** A client `onboarded_at` set, `invited_at` 9 days ago, zero rows in
+  `sessions` with `completed_at` for that client.
+- **Pass:** One **Onboarding** row, reason "Onboarded — no sessions logged yet",
+  action Open → client details.
+
+### DASH-V2-3 — Onboarding funnel stays quiet when it should
+- **Setup (a):** A client invited 3 days ago, not accepted. **(b):** a client
+  invited 20 days ago who has ≥1 completed (logged) portal session. **(c):** a
+  client created with no invite (`invited_at` NULL). **(d):** a stalled client
+  whose `overdue_followed_up_at` was set <10 days ago.
+- **Pass:** None of (a)–(d) produce an Onboarding row. (a) inside the 7-day
+  clock; (b) has logged a portal session; (c) never invited; (d) acknowledged
+  recently. **Note:** a past in-clinic appointment does NOT suppress onboarding
+  (operator decision 2026-06-28) — only a logged portal session counts as
+  "got going". See DASH-V2-14.
+
+### DASH-V2-4 — The old "invited — not onboarded" New row is gone
+- **Setup:** Any invited-not-onboarded client past 7 days.
+- **Pass:** Their row carries the **Onboarding** tag, never a green **New** tag
+  reading "Invited — not yet onboarded" (that branch was replaced).
+
+### DASH-V2-5 — Program ended: no training days remaining
+- **Setup:** A program client with **no program day scheduled today or later**
+  (across their active/draft programs) and no `draft` block queued. Their nominal
+  end date and any booked appointments are irrelevant to this trigger.
+- **Pass:** One **Ended** row (amber tag), reason "Program ended — no new block",
+  action **Plan** → `/clients/{id}/program`. The client does **not** also appear
+  as Overdue or Ending.
+
+### DASH-V2-6 — Ending → Ended is a state machine (never both)
+- **Setup:** A program with no program day scheduled beyond its end and no future
+  booking. Move its end across "today": first 5 days in the future, then 2 days
+  in the past.
+- **Pass:** While future-dated the client shows exactly one **Ending** row; once
+  past-dated with nothing remaining, exactly one **Ended** row. Never both at
+  once for the same client.
+
+### DASH-V2-7 — Ended suppressors (program track vs single-session track)
+- **Setup (a):** A program client with a `draft` block queued. **(b):** a
+  program client with a program day scheduled today-or-later (incl. one past the
+  nominal end date). **(c):** a single-session client (no program) with an
+  upcoming appointment.
+- **Pass:** None produce an Ended row. For a **program** client only a remaining
+  program day or a draft suppresses — booked appointments do **not** (the next
+  block is still owed). For a **single-session** client the upcoming appointment
+  is what suppresses.
+
+### DASH-V2-8 — "New" fires off the initial-assessment note (dead-table fix)
+- **Setup:** A client with a `clinical_notes` row `note_type =
+  'initial_assessment'` (`deleted_at` NULL) and no program of any status.
+- **Pass:** One green **New** row, "Assessment complete — no program yet",
+  action **Build program** → `/clients/{id}/program/new`. Verified the dashboard
+  no longer queries the dormant `assessments` table (it queries `clinical_notes`
+  for `initial_assessment`). A client with **no** initial-assessment note does
+  not get this row.
+
+### DASH-V2-9 — Per-client dedupe keeps the most urgent across the new tones
+- **Setup:** One client who is simultaneously assessment-complete-no-program
+  (**New**) and 8-days-invited-no-session (**Onboarding**).
+- **Pass:** Exactly one row for that client — the **New** row (New outranks
+  Onboarding). Priority order overall: Flag > Overdue > Ended > Ending > New >
+  Onboarding.
+
+### DASH-V2-10 — Onboarding can be dismissed like Overdue
+- **Setup:** An Onboarding row (e.g. invited 8 days ago, not accepted).
+- **Action:** Click **Program checked & message sent** beside the row.
+- **Pass:** `clients.overdue_followed_up_at` is stamped; the row drops off on
+  revalidate and stays gone for ~10 days, then re-surfaces if the client is still
+  stalled. It is the same control (and label) Overdue uses.
+
+### DASH-V2-11 — Single-session client with no program is caught
+- **Setup:** A client with **no program of any status**, a past (non-cancelled)
+  in-clinic appointment **>10 days ago**, and no upcoming appointment.
+- **Pass:** One **Ended** row, reason "No sessions booked — last seen N days
+  ago", action **Open** → `/clients/{id}`. (Before v2 this client was invisible
+  to the panel.) A single-session client last seen **<10 days ago**, or with any
+  upcoming appointment booked, produces **no** row.
+
+### DASH-V2-12 — "Sessions remaining" beats the nominal end date
+- **Setup:** An `active` program already past `start_date + duration_weeks×7`
+  but with at least one program day scheduled today or later.
+- **Pass:** **No Ended row** — a remaining scheduled session means training isn't
+  over, even though the nominal end date has passed.
+
+### DASH-V2-13 — Program ended shows even with standing appointments (regression)
+- **Setup:** A program client with **0 upcoming program days** (including the
+  open-ended case: an `active` program with NULL `start_date`/`duration_weeks`)
+  **and** many upcoming appointments booked.
+- **Pass:** They surface as **Ended → "Program ended — no new block"**. This is
+  the bug found in review against the seeded "Browning" test clients: the
+  nominal-window check (an open-ended program counted as "in window") plus the
+  appointment check together hid these clients even though their programs had no
+  training days left. The trigger judges the program track by program days only;
+  appointments belong to the single-session track.
+
+### DASH-V2-14 — In-clinic client with no logged session shows as Onboarding
+- **Setup:** A client invited 8+ days ago, accepted (`onboarded_at` set), with
+  past and/or upcoming in-clinic appointments but **no logged portal session**,
+  not acknowledged.
+- **Pass:** They surface as **Onboarding → "Onboarded — no sessions logged yet"**
+  (action Open → client details), regardless of their appointments. Operator
+  decision 2026-06-28: only a logged portal session counts as "got going". A
+  client who also qualifies for a more urgent row (e.g. a program client who is
+  also Ended) shows that row instead via dedupe — so the onboarding row appears
+  only for clients with no higher-priority reason (e.g. a no-program in-clinic
+  client like the seeded Imaan Sedghi).
+
+## Staff schedule — drag-snap uses the live grid scale (bug fix, 2026-06-28)
+
+Context: WeekView's appointment drag handler (`handleMove`) is created once with
+stable identity (deps `[gridRef]`) and reads dynamic values through refs. But
+`pxPerQuarter` — the measured pixels-per-15-min, re-measured at runtime and on
+window resize — was read directly, so `handleMove` captured the pre-measure
+default (`PX_PER_QUARTER_DEFAULT`) for the component's lifetime. Vertical snapping
+(`Math.round(dy / pxPerQuarter) * 15`) therefore used the wrong scale whenever the
+measured value differed from the default. Fixed by mirroring `pxPerQuarter` into a
+`pxPerQuarterRef` (kept fresh by an effect, matching the existing
+dragRef/apptRef/callbacksRef pattern) and snapping against `pxPerQuarterRef.current`.
+This is the `react-hooks/exhaustive-deps` warning that flagged the stale capture.
+
+### SCH-DRAG-1 — Vertical drag snaps to the visible 15-min grid
+- **Setup:** Open the staff schedule on a viewport where the measured
+  pxPerQuarter differs from the pre-measure default (most real screens).
+- **Action:** Drag an appointment block up/down by a few rows.
+- **Pass:** The committed start/end time matches the 15-min line it was dropped
+  on — snap granularity tracks the visible grid, not a fixed default scale.
+  (Before the fix: the offset could be proportionally off after the grid
+  re-measured.)
+
+### SCH-DRAG-2 — Drag still works after a window resize
+- **Setup:** Resize the browser so the schedule re-measures pxPerQuarter, then
+  drag an appointment.
+- **Pass:** Snapping reflects the new scale immediately; horizontal day-shift and
+  the click-vs-drag threshold are unchanged.

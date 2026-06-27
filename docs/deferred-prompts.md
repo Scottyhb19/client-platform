@@ -148,3 +148,26 @@ When triggered, this runs as a full Phase-3 section: seven-step polish protocol 
 - The recon's codebase claims (tests exist, enum reserved, staging present) are claims, not verified ground truth — confirm against the live schema as the cheap first build step.
 
 **Source:** VALD recon doc (2026-06-27); testing-module brief §9 (VALD = Phase 3); CLAUDE.md "What NOT to build" + beta-entry hardening gate.
+
+---
+
+## Needs-Attention triggers v2 — structural pair (Reconciliation, Assessment-completeness)
+
+**Surfaced:** 2026-06-28, from the design-lock `needs-attention-trigger-set-v2.md`. The **light pair** (Onboarding funnel, Program ended) + the dead-trigger fix landed this date (see `docs/polish/ep-dashboard.md` §9). These two remain parked — each is its **own** full polish-protocol pass with its own migration + pgTAP gate. Not bundled with each other.
+
+**§3 — Past session not reconciled (in-clinic only).** A past in-clinic appointment with no settled outcome → needs attendance / note owed. Audit (2026-06-28) confirms the data model does **not** support it yet:
+- `appointment_status` is booking-lifecycle only (`pending/confirmed/cancelled/completed/no_show`) — **no positive "attended" outcome** distinct from "completed", and **no `rescheduled`** (reschedule is a destructive in-place `start_at` edit, no history).
+- In-clinic vs remote is only inferrable from free-text `appointment_type` (tenant-customisable via `session_types`) — fragile to filter on a string; likely wants an explicit determinant.
+- Reconciled-vs-note-owed needs cross-checking `clinical_notes.appointment_id`.
+- Payment dimension stays a **dormant model slot** until Phase-4 billing (no payment record exists; a live check would fire forever).
+- Routing → the specific booking in the schedule.
+
+**§4 — Initial assessment record completeness.** After an initial assessment is complete, medical history / goals / referral source each filled **or** explicitly marked nil/none. Audit confirms:
+- **No affirmative "nil/none" state** on any of `clients.goals`, `clients.referral_source`, `client_medical_history` (empty-vs-non-empty only) — needs schema (nil-flags or a structured capture).
+- The "assessment completed" anchor is a `clinical_notes` `note_type='initial_assessment'` row (the live note-template path), **not** the dormant `assessments` table — so §4 is **decoupled from §3** (no shared enum) and can land first.
+- Open question to resolve at that pass: contraindications (live as `note_type='contraindication'` Flag notes) vs the design-lock's swap to goals — fold in or keep as a required Phase-2 field.
+- Phase 1 (before assessment) chases basic client-details presence on a booked initial assessment; Phase 2 (after) is the completeness check above. Routing → client details.
+
+**§5 — Email send failure (attention row).** Blocked, not just deferred: cannot go EP-facing until the deferred **Part B** (client-profile Comms tab + system-send log-wiring) lands — today a failed send only hits the `console.error`/Sentry stub. Reserve the slot; do not build until Part B is on the table. Tracked in `go-live-checklist.md` §8.
+
+**Source:** `needs-attention-trigger-set-v2.md`; dependency audit 2026-06-28; `docs/polish/ep-dashboard.md` §9.

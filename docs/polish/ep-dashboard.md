@@ -223,3 +223,89 @@ Acceptance re-run after the Overdue fix: type-check + next build + eslint all cl
 Section 11 (EP Dashboard) closing commit accepted on branch `polish/section-11-dashboard` (`0ee8d15` → `b9d1007` → `13020a8`), merged to master; prod healthy. The reviewer's four pre-sign-off conditions were resolved by the operator (2026-06-22): (1) P0-1 timezone fix confirmed on the live UTC server — the AU landing page resolves the correct practice-tz "today", the real-environment test localhost could not reproduce; (2) Overdue confirmed to exclude past-end programs, so FM-4's inflation does not reappear in the attention panel; (3) the two verify-by-reasoning passes (no residual server-local time math; each loader org-scoped by RLS) confirmed performed; (4) the shared-component (`SessionExerciseSummary`) change reviewed for revert-isolation risk.
 
 Owner-approved deviations from brief §6.8 recorded, not gaps: §6.8.5 client list (P1-1) and responsive layout (P2-4). Accepted-with-re-trigger: FM-7 (recent-completions nested query at f&f scale), FM-11 (no new pgTAP — read-only over already-tested RLS surfaces).
+
+---
+
+## 9. Follow-up pass — Needs-Attention Trigger Set v2 (2026-06-28)
+
+**Trigger:** the design-lock note `needs-attention-trigger-set-v2.md` (operator's desk) extends the closed §11 needs-attention panel with new triggers. Expanding a signed-off section re-enters the protocol; the **light pair** below is logic-only (no schema, no new security surface → no new pgTAP gate, consistent with the §11 / security-surface-only rule), the **structural pair** is parked as its own work.
+
+**Status:** **Light pair built + dead-trigger fix landed — awaiting reviewer sign-off.** Built on `master` working tree (operator commits). No migrations.
+
+### 9.1 Audit — dependency verification (protocol steps 1–2)
+
+The design lock's "verify before building" checks, resolved against the live schema:
+
+| Dependency | Result | Evidence |
+|---|---|---|
+| Onboarding timestamps | **Partial — funnel is 2-stage, not 3** | `clients.invited_at` (sent) + `onboarded_at` (accept/password-set) exist; first-session via `sessions.completed_at`. **No `last_login_at`** — only `auth.users.last_sign_in_at`, unreachable by app code. And `onboarded_at` already implies "logged in once" (accepting the invite sets the password), so "accepted but never logged in" and "logged in but no session" collapse into one state. |
+| Ending → Ended dedup | **Clean state machine** | Ended (`endIso < today`) and Ending (`today ≤ endIso ≤ today+7`) are disjoint by date; Overdue already excludes past-end programs (`page.tsx` `inWindow`), so a client surfaces in exactly one of the three. |
+| Attendance-outcome enum (for §3) | **Needs adding** | `appointment_status` is booking-lifecycle only (`pending/confirmed/cancelled/completed/no_show`); no positive "attended" outcome, no `rescheduled` (reschedule is a destructive in-place `start_at` edit, no history). In-clinic is only inferrable from free-text `appointment_type`. → §3 is genuinely structural. |
+| Affirmative "nil/none" state (for §4) | **Does not exist** | `clients.goals`, `clients.referral_source`, and the `client_medical_history` table are empty-vs-non-empty only. → §4 needs schema. |
+| "Assessment completed" signal | **It's the `initial_assessment` note** | A `clinical_notes` row with `note_type='initial_assessment'` (note-template path), **not** the `assessments` table — which is documented dormant ("no UI, no rows", `docs/schema.md`) and has **no write path in the app** (only the dashboard read referenced it). This decouples §4 from §3 (no shared enum needed). |
+| Contraindications | **Live as clinical-note flags** | `note_type='contraindication'` already feeds the live **Flag** trigger; not a client field. §4's contraindication question stays open for that pass. |
+| Payment slot | **Correctly parked** | No payment record exists; a live check would fire forever. Phase-4. |
+
+**Material discovery:** the existing §11 **New — "assessment complete, no program"** branch read the dormant `assessments` table, so in real use it never fired (only the "invited — not onboarded" fallback did). The §11 sign-off verified it via a hand-seeded row, which passed routing over a branch that can't trigger through the UI. Zero live impact (no real client data), but it is repointed in this pass.
+
+### 9.2 Premortem (new triggers only)
+
+| # | Failure mode | Likelihood | → |
+|---|---|---|---|
+| **V2-FM-1** | Onboarding funnel reads as 3-stage when only 2 are knowable, mislabelling a client (e.g. "never logged in" when there's no such signal). | Certain if attempted | Built 2-stage; reasons keyed only on `onboarded_at` presence. Mitigated. |
+| **V2-FM-2** | Ended fires on a client who still has training coming (a live program, a remaining program day, a future booking, or a queued draft). | Medium | Gap requires **none** of: in-window program / upcoming program day / upcoming appointment / draft. Mitigated. |
+| **V2-FM-3** | Funnel + old "invited" New branch both fire → duplicate/competing rows. | Certain if stacked | Old branch **replaced**, not layered; per-client dedupe is the backstop. Mitigated. |
+| **V2-FM-4** | Repointed New trigger keys on a note type that doesn't exist / isn't written. | Low | Confirmed `initial_assessment` is the live template-stamped note type (`settings/note-templates/actions.ts:366`). Mitigated. |
+| **V2-FM-5** | New tones lack tag/avatar styling → unstyled chip. | Low | `.tag.ended` / `.tag.onboarding` added to `globals.css` using existing tokens; avatar falls through to amber. Mitigated. |
+| **V2-FM-6** | A never-logged client whose program has already lapsed shows "Ended" rather than the truer "hasn't got going". | Low (edge) | **Accepted** — dedupe keeps Ended (more actionable: build next block). Re-trigger: operator finds the copy misleading in practice. |
+| **V2-FM-7** | The Onboarding dismiss reuses `overdue_followed_up_at`, so an Overdue ack also snoozes a later Onboarding row for the same client (and vice versa). | Medium | **Accepted** — "the EP followed up with this client recently" is a coherent shared meaning, and the 10-day box prevents stale carry-over (a months-old ack never suppresses a genuine new trigger). Avoids a schema column. Re-trigger: the two need independent snooze clocks. |
+| **V2-FM-8** | A "done" single-session client (won't rebook) nags as an Ended/gap row forever. | Medium | Mitigated by the ~10-day grace (not flagged the day after a session) + **archive** (archived clients are excluded). The shared dismiss is **not** wired to Ended this pass. Re-trigger: operator wants an explicit dismiss on Ended. |
+| **V2-FM-9** | The appointment-activity query scans all non-cancelled appointments on each load. | Low at f&f | **Accepted** — small table at f&f scale; same watch-list as the recent-completions fan-out (FM-7). Re-trigger: dashboard latency / volume growth → narrow to a window or an RPC. |
+
+### 9.3 Gap list (v2)
+
+**Light pair — built this pass:**
+- **V2-1 Onboarding funnel (§1).** New `onboarding` tone. Fires when `invited_at` is 7+ days old and the client has **no logged portal session** (operator decision 2026-06-28: an in-clinic appointment does NOT count as "got going" — surface every invited client who hasn't logged so they can be nudged, then dismissed if fine; see §9.6). Two reasons by furthest stage: "Invited N days ago — not accepted" / "Onboarded — no sessions logged yet". Action: Open → client details. **Replaces** the old "invited — not onboarded" New reason. **Dismissible** via the shared "Program checked & message sent" ack (same control + label as Overdue) — snoozes ~10 days, since reaching out leaves no DB trace. *(Operator request, this pass.)*
+- **V2-2 Ended → gap, judged per training track (§2).** New `ended` tone over **all active clients** (not just programs), so single-session clients are seen. The two training tracks are judged **separately**: a **program** client surfaces when no program day is scheduled today-or-later (the "sessions remaining" test — true even for an open-ended program, and independent of the nominal end date) and no draft block is queued → "Program ended — no new block" → program calendar; **booked appointments do not suppress this** (the next block is still owed). A **single-session** client (no program) surfaces when no upcoming appointment, has trained before, and is >10 days past their last session → "No sessions booked — last seen N days ago" → client details. Mutually exclusive with Ending/Overdue. *(Single-session coverage + "sessions remaining" precision: operator request. The program-vs-appointment separation was a review fix — see §9.5.)*
+- **V2-3 Dead-trigger fix.** Repoint New — "assessment complete, no program" — from the dormant `assessments` table to `clinical_notes` `note_type='initial_assessment'`.
+
+**Parked — each re-enters the full protocol + its own pgTAP gate, separately:**
+- **§3 Reconciliation** (structural). Needs an attendance-outcome model (attended/no-show/cancelled/rescheduled — none exist today), a reliable in-clinic determinant, and a reschedule representation (none today). Its own migration + pgTAP.
+- **§4 Assessment-completeness** (structural). Needs the affirmative nil/none state (schema) and anchors on the `initial_assessment` note. **Decoupled from §3** (no shared enum), so it can land first. Contraindications-vs-goals question to resolve at that pass.
+- **§5 Email send failure** — blocked on the deferred Part B (Comms tab + system-send log-wiring), per `go-live-checklist.md` §8. Unchanged.
+
+### 9.4 Closing note (awaiting sign-off)
+
+**What changed (files):** `src/app/(staff)/dashboard/page.tsx` (the gap detector rebuilt over all active clients incl. single-session; the onboarding funnel with the shared dismiss + in-clinic "got going" suppression; the repoint; two new read queries — appointments + upcoming program days; a `PRIORITY` map; a `daysBetweenIso` helper); `src/app/globals.css` (`.tag.ended`, `.tag.onboarding`); `dashboard/actions.ts` + `_components/OverdueFollowUpButton.tsx` (comments — the ack + button are now shared by Overdue **and** Onboarding); `test_scenarios_template.md` (DASH-V2-1…12). **No DB changes** — both new queries are reads over existing RLS-scoped tables (`appointments`, `program_days`); the onboarding dismiss reuses the existing `overdue_followed_up_at` column.
+
+**Priority order (dedupe + sort):** Flag > Overdue > Ended > Ending > New > Onboarding.
+
+**Acceptance tests:** `tsc --noEmit` clean; ESLint clean (`page.tsx`, `actions.ts`, `OverdueFollowUpButton.tsx`). No migrations → no pgTAP gate (logic-only over already-tested RLS surfaces; same call as §11 FM-11). **Behavioural verification is the operator's browser pass on the authed `/dashboard` at :3000 with seeded test clients** (no real data in the live DB to exercise the triggers) — scenarios DASH-V2-1…12 are the matrix. Held-not-done until that pass.
+
+**Premortem:** mitigated V2-FM-1…5; accepted V2-FM-6 (Ended-over-Onboarding copy edge), V2-FM-7 (shared follow-up ack across Overdue+Onboarding — coherent, avoids a schema column), V2-FM-8 (single-session "done" client nags until archived; dismiss not wired to Ended this pass), V2-FM-9 (appointment query scan at f&f scale).
+
+**Next:** operator commits, runs the DASH-V2 matrix, and pastes this closing note into the claude.ai reviewer chat for sign-off (Date / Reviewer / Decision recorded beneath).
+
+### 9.5 Review fix — Ended over-suppressed (2026-06-28)
+
+**Symptom (operator):** clients with no remaining sessions weren't surfacing — confirmed against the seeded "Browning" test clients (Scott / David / Wendy), each with a finished/empty program but no Ended row.
+
+**Root cause:** the first cut of V2-2 used one combined `hasUpcomingTraining` flag that mixed two different signals, and **either** wrongly suppressed the gap:
+1. `activeInWindowClientIds` treated an `active` program as ongoing whenever its nominal end date was in the future **or null** — so an **open-ended program** (NULL `start_date`/`duration_weeks`, which all three Brownings had) was permanently "in window" regardless of whether any training day remained.
+2. `upcomingApptClientIds` let **booked appointments** suppress a program-ended gap — Scott had 24 upcoming appointments masking a program with 0 days left.
+
+Both contradicted the operator's "no **sessions** remaining" intent (sessions = program training days, a different track from in-clinic appointments).
+
+**Fix:** judge the two tracks separately. The program track is now judged **only** by upcoming program days (+ no draft); the nominal window and `activeInWindowClientIds` were removed entirely. Appointments suppress **only** the single-session (no-program) track. Verified read-only against the live DB (`_diag_gap.sql`): the three Brownings now verdict `ENDED → Program ended — no new block`, while clients with remaining days (Antonio, Luke) or a future booking on the single-session track (Imaan) correctly do not. Locked by **DASH-V2-13** (regression) + the revised DASH-V2-5/7/12.
+
+**Note (data, not code):** those three clients each carry an `active` program with NULL start/duration and no days — seed/test cruft. The trigger correctly flags them as needing a real next block; the stub programs themselves are the operator's to clean up.
+
+### 9.6 Decision — Onboarding "got going" = a logged session only (2026-06-28)
+
+**Question (operator):** why didn't clients who hadn't logged a session (e.g. Imaan Sedghi) show as Onboarding, when they were never dismissed?
+
+**Finding (live data, `_diag_onboarding.sql`):** they were suppressed by the v2 rule that a **past in-clinic appointment** counts as "got going" — Imaan has 2 past + 2 upcoming appointments and no logged portal session, so the funnel treated her as started. Not the dismiss (her ack was NULL).
+
+**Decision:** the operator chose the stricter rule — **only a logged portal session counts as "got going".** A past appointment no longer suppresses onboarding. Removed the `pastApptClientIds` check (and the now-unused set). Net effect: every invited client with no logged session surfaces (e.g. Imaan → "Onboarded — no sessions logged yet"), and the operator dismisses any who are fine via the shared ack. A client who also qualifies for a higher-priority row (Wendy → Ended) shows that instead via dedupe.
+
+**Accepted tradeoff / re-trigger:** a permanent in-clinic-only client (sees the EP in person, never logs, has no home program) will re-surface as Onboarding every ~10 days (the ack window), dismissable but recurring. Tolerable at f&f scale (and archiving removes them). **Re-trigger:** if recurring in-clinic clients become noisy, add a per-client "in-clinic only / skip onboarding" suppression or treat an upcoming appointment as a softer suppressor. Verified by `_diag_onboarding.sql` + DASH-V2-14.

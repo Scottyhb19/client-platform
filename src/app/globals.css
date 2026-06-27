@@ -398,12 +398,28 @@ body {
   background: rgba(232, 163, 23, 0.1);
   color: #9a7a0e;
 }
+/* Ended = program lapsed, the training gap is live now (§2 v2). Amber, same
+   program-lifecycle family as Ending/Overdue, distinguished by its label; never
+   red (it's a workflow state, not a clinical alert). */
+.tag.ended {
+  background: rgba(232, 163, 23, 0.1);
+  color: #9a7a0e;
+}
 /* Cancelled = "this isn't happening", not an alert — so neutral grey, never
    red. Used on the dashboard board so a cancelled slot stays visible rather
    than silently vanishing. The tint is charcoal (#1C1917) at low alpha. */
 .tag.cancelled {
   background: rgba(28, 25, 23, 0.06);
   color: var(--color-muted);
+}
+/* Onboarding = a quiet "new client hasn't got going" nudge (funnel, §1 v2).
+   The least-urgent attention row, so a soft neutral — deliberately calmer than
+   the amber program actions, and never green (green is reserved for success).
+   Slightly darker text than Cancelled so it reads as a live to-do, not a
+   struck-through one. */
+.tag.onboarding {
+  background: rgba(28, 25, 23, 0.05);
+  color: var(--color-text-light);
 }
 .chip {
   padding: 6px 14px;

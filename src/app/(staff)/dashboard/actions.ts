@@ -5,16 +5,20 @@ import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
- * Acknowledge an overdue client from the dashboard Needs-attention panel
+ * Acknowledge a follow-up from the dashboard Needs-attention panel
  * ("Program checked & message sent"). Stamps clients.overdue_followed_up_at =
- * now, which the Overdue trigger treats as activity — the client drops off the
- * panel and only re-surfaces if they are still silent after the overdue
- * cadence (~10 days). Mirrors markClinicalFlagReviewedAction (the flag snooze).
+ * now, a generic "the EP followed up with this client" marker that both the
+ * Overdue and the Onboarding triggers treat as activity — the client drops off
+ * the panel and only re-surfaces if they are still silent after the ~10-day
+ * cadence. Mirrors markClinicalFlagReviewedAction (the flag snooze).
+ *
+ * (The column name is overdue-specific for historical reasons; it now serves as
+ * a shared follow-up ack. No rename — it is referenced across deployed code.)
  *
  * Acknowledgement only: it records that the EP did the follow-up (checked the
- * program, sent a message via the client / messaging screens). It does not
- * itself send anything. RLS ("staff update clients in own org") scopes the
- * write to the EP's own org; clients/portal cannot UPDATE clients at all.
+ * program / reached out via the client / messaging screens). It does not itself
+ * send anything. RLS ("staff update clients in own org") scopes the write to the
+ * EP's own org; clients/portal cannot UPDATE clients at all.
  */
 export async function acknowledgeOverdueFollowupAction(
   clientId: string,
