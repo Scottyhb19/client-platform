@@ -55,17 +55,13 @@ export interface ProgramSummary {
 export interface ProgramExerciseWithMeta {
   id: string
   sort_order: number
-  sets: number | null
-  reps: string | null
-  optional_value: string | null
-  optional_metric: string | null
-  rpe: number | null
-  rest_seconds: number | null
-  tempo: string | null
-  instructions: string | null
-  section_title: string | null
   superset_group_id: string | null
   exercise: { name: string; video_url: string | null } | null
+  // One-line prescription summary (e.g. "3 × 8 · 80kg · 90s rest"), built
+  // server-side from the per-set program_exercise_sets rows via
+  // summarisePrescription so the volume/load units can't drift from the
+  // builder. Empty string when nothing is prescribed yet → the row shows '—'.
+  prescription: string
 }
 
 export interface ProgramDayWithExercises {
@@ -1917,7 +1913,7 @@ function DaySummaryPopover({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {formatPrescription(exercise) || '—'}
+                  {exercise.prescription || '—'}
                 </span>
               </div>
             </li>
@@ -2687,22 +2683,6 @@ function letterFor(idx: number): string {
   const high = Math.floor(idx / 26) - 1
   const low = idx % 26
   return String.fromCharCode(65 + high) + String.fromCharCode(65 + low)
-}
-
-function formatPrescription(ex: ProgramExerciseWithMeta): string {
-  const parts: string[] = []
-  if (ex.sets !== null && ex.reps !== null) {
-    parts.push(`${ex.sets} × ${ex.reps}`)
-  } else if (ex.sets !== null) {
-    parts.push(`${ex.sets} sets`)
-  } else if (ex.reps !== null) {
-    parts.push(ex.reps)
-  }
-  if (ex.rpe !== null) parts.push(`RPE ${ex.rpe}`)
-  if (ex.rest_seconds !== null && ex.rest_seconds > 0) {
-    parts.push(`${ex.rest_seconds}s rest`)
-  }
-  return parts.join(' · ')
 }
 
 function parseIso(iso: string): Date {

@@ -4,6 +4,7 @@ import { ArrowLeft, Info } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
 import { todayIsoInPracticeTz } from '@/lib/dates'
+import { summarisePrescription } from '@/lib/prescription/summarise'
 import { resolveCurrentBlock } from '@/lib/programs/current-block'
 import { loadCatalog, loadTestHistoryForClient } from '@/lib/testing/loaders'
 import type { ClientTestHistory } from '@/lib/testing/loader-types'
@@ -122,42 +123,66 @@ export default async function ClientProgramPage({
 
     if (daysErr) throw new Error(`Load days: ${daysErr.message}`)
 
-    // Bulk-fetch all exercises for those days. Single round-trip; the
-    // calendar renders each day's summary inline without lazy-loading.
+    // Bulk-fetch all exercises for those days, plus their per-set
+    // prescription rows. The live prescription lives in
+    // program_exercise_sets (reps + volume unit, and load value + load
+    // unit) since the per-set fan-out; the flat sets/reps/rpe/optional_*
+    // columns on program_exercises are dead — reading them was why the day
+    // popover showed "—" for every exercise. The metric-label lookup
+    // resolves the LOAD unit code → display label for the summary line.
+    // Single round-trip; the calendar renders each day's summary inline
+    // without lazy-loading.
     const exercisesByDayId = new Map<string, ProgramExerciseWithMeta[]>()
     if ((daysRaw ?? []).length > 0) {
       const dayIds = (daysRaw ?? []).map((d) => d.id)
 
-      const { data: exRaw, error: exErr } = await supabase
-        .from('program_exercises')
-        .select(
-          `id, program_day_id, sort_order, sets, reps, optional_value,
-           optional_metric, rpe, rest_seconds, tempo, instructions,
-           section_title, superset_group_id,
-           exercise:exercises(name, video_url)`,
-        )
-        .in('program_day_id', dayIds)
-        .is('deleted_at', null)
-        .order('sort_order', { ascending: true })
+      const [{ data: exRaw, error: exErr }, { data: metricUnitsRaw }] =
+        await Promise.all([
+          supabase
+            .from('program_exercises')
+            .select(
+              `id, program_day_id, sort_order, superset_group_id, rest_seconds,
+               exercise:exercises(name, video_url),
+               prescription_sets:program_exercise_sets(
+                 set_number, reps, rep_metric, optional_metric, optional_value, deleted_at
+               )`,
+            )
+            .in('program_day_id', dayIds)
+            .is('deleted_at', null)
+            .order('sort_order', { ascending: true }),
+          // Tenant-configurable LOAD-unit labels (code → display_label).
+          // Not is_active-filtered: a deactivated unit still needs its
+          // label so an existing prescription renders, not a raw code.
+          supabase
+            .from('exercise_metric_units')
+            .select('code, display_label')
+            .is('deleted_at', null),
+        ])
 
       if (exErr) throw new Error(`Load exercises: ${exErr.message}`)
 
+      const metricLabelByCode: Record<string, string> = {}
+      for (const u of metricUnitsRaw ?? []) {
+        metricLabelByCode[u.code] = u.display_label
+      }
+
       for (const e of exRaw ?? []) {
         const list = exercisesByDayId.get(e.program_day_id) ?? []
+        // Live sets only, in set order — mirrors the builder loader. The
+        // supabase-js select can't express the per-relation deleted_at
+        // filter + set_number order cleanly, so do it in TS (tiny arrays).
+        const liveSets = (e.prescription_sets ?? [])
+          .filter((s) => s.deleted_at === null)
+          .sort((a, b) => a.set_number - b.set_number)
         list.push({
           id: e.id,
           sort_order: e.sort_order,
-          sets: e.sets,
-          reps: e.reps,
-          optional_value: e.optional_value,
-          optional_metric: e.optional_metric,
-          rpe: e.rpe,
-          rest_seconds: e.rest_seconds,
-          tempo: e.tempo,
-          instructions: e.instructions,
-          section_title: e.section_title,
           superset_group_id: e.superset_group_id,
           exercise: e.exercise,
+          prescription: summarisePrescription(liveSets, {
+            metricLabelByCode,
+            restSeconds: e.rest_seconds,
+          }),
         })
         exercisesByDayId.set(e.program_day_id, list)
       }

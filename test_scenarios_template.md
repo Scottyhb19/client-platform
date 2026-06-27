@@ -268,3 +268,53 @@ new DB surface.
 - **Pass:** A primary-toned ConfirmDialog asks "Save anyway?" (overlap is allowed
   by the DB — recoverable, not destructive). Confirming saves; cancelling returns
   to the form with no save. No browser `confirm()`.
+
+## Staff program calendar — day popover prescription summary (bug fix, 2026-06-27)
+
+Context: the program-calendar day popover (`MonthCalendar.tsx` → `DaySummaryPopover`)
+showed "—" for every exercise's set/reps/metrics. Root cause: its loader
+(`clients/[id]/program/page.tsx`) read the legacy flat columns
+`program_exercises.sets/reps/rpe/optional_*`, which have been dead since the
+per-set fan-out — the live prescription lives in the child
+`program_exercise_sets` table (per-set `reps` + `rep_metric`, and `optional_value`
++ `optional_metric`). The loader now reads the per-set rows and precomputes a
+one-line summary via the shared `summarisePrescription`
+(`src/lib/prescription/summarise.ts`), which renders the volume axis through the
+same `formatVolume` the builder/portal use, so units can't drift. Read-only;
+migration-free; no new DB surface.
+
+### PCAL-1 — The day popover shows the real prescription, not "—"
+- **Setup:** A client with a programmed day whose exercises carry prescribed sets
+  (e.g. the seed "Day 1": Hip Circles 2×12, 90/90 breathing 1×10, Adductor 2×12,
+  BB Back Squat 3×8 @ 80kg).
+- **Action:** Open the program calendar and click that day to open its summary popover.
+- **Pass:** Each exercise row shows its prescription under the name — "2 × 12",
+  "1 × 10", "2 × 12", "3 × 8 · 80kg" — not "—". The `×` is the U+00D7 sign and
+  sets/reps match what the session builder shows for the same day.
+
+### PCAL-2 — Volume and load metrics render in the summary
+- **Setup:** On one day, prescribe a timed hold (e.g. 3 sets, volume unit Seconds,
+  value 30), a percentage-load lift (e.g. 1 × 5 at 75%), and an RPE-targeted set
+  (Load/Notes metric = RPE, value 8).
+- **Action:** Open the day popover.
+- **Pass:** The timed row reads "3 × 30s" (the volume unit, via `formatVolume`),
+  the percentage row reads "1 × 5 · 75%", and the RPE row appends "· RPE 8".
+  A uniform load shows once (e.g. "· 80kg"); varied reps list compactly
+  ("8 / 6 / 4") rather than collapsing to a single value.
+
+### PCAL-3 — Honest "—" only when nothing is prescribed
+- **Setup:** Add an exercise to a day but leave all of its sets blank (no reps,
+  no load), or an exercise with no set rows yet.
+- **Action:** Open the day popover.
+- **Pass:** That row shows "—" (genuinely empty), while sibling exercises that DO
+  have a prescription render theirs. An exercise with set rows but no reps typed
+  reads "{n} sets".
+
+### PCAL-4 — An ascending / varied load lists every set's value
+- **Setup:** Prescribe an exercise as an ascending-load sequence — same reps,
+  different load per set (e.g. 3 × 8 at 80 / 85 / 90 kg).
+- **Action:** Open the day popover.
+- **Pass:** The row lists every load — "3 × 8 · 80kg / 85kg / 90kg" — not a blank
+  and not a single value. Varied RPE lists the same way ("· RPE 7 / 8 / 9"); a set
+  left blank holds its place ("80kg / – / 90kg"); a uniform load still collapses to
+  one ("· 80kg").
