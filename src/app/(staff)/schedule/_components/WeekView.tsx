@@ -12,6 +12,7 @@ import {
   useTransition,
 } from 'react'
 import {
+  CalendarClock,
   CalendarPlus,
   ChevronDown,
   ChevronLeft,
@@ -165,6 +166,58 @@ export function WeekView({
 
   // Composer state: which slot the user clicked to create a booking.
   const [composer, setComposer] = useState<{ startAt: Date } | null>(null)
+  // Calendar reschedule move-mode (operator request 2026-06-28): the EP clicks
+  // Reschedule in the popover, then navigates/scrolls the grid freely and taps a
+  // new slot to move the appointment there. `moveTarget` holds the tapped slot
+  // pending a confirm; the move keeps the original duration and reuses the
+  // drag-move write path (updateAppointmentTimeAction) + its double-booking guard.
+  const [reschedulingAppt, setReschedulingAppt] = useState<Appointment | null>(
+    null,
+  )
+  const [moveTarget, setMoveTarget] = useState<{
+    appt: Appointment
+    startAt: Date
+  } | null>(null)
+  const [moveError, setMoveError] = useState<string | null>(null)
+  const [moving, startMove] = useTransition()
+
+  function runMove() {
+    if (!moveTarget) return
+    setMoveError(null)
+    const { appt, startAt } = moveTarget
+    const durationMs =
+      new Date(appt.end_at).getTime() - new Date(appt.start_at).getTime()
+    const newEnd = new Date(startAt.getTime() + durationMs)
+    startMove(async () => {
+      const res = await updateAppointmentTimeAction(
+        appt.id,
+        startAt.toISOString(),
+        newEnd.toISOString(),
+        true, // deliberate reschedule → email the client
+      )
+      if (res.error) {
+        setMoveError(res.error)
+        return
+      }
+      setMoveTarget(null)
+      setReschedulingAppt(null)
+      router.refresh()
+    })
+  }
+
+  // Esc leaves move-mode (the popover is already closed once a move starts).
+  useEffect(() => {
+    if (!reschedulingAppt) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setReschedulingAppt(null)
+        setMoveTarget(null)
+        setMoveError(null)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [reschedulingAppt])
 
   // Client-name filter — dims non-matching appointments to spotlight one
   // client without removing context. Blank → nothing dimmed.
@@ -595,11 +648,17 @@ export function WeekView({
                       key={q}
                       quarterIndex={q}
                       pxPerQuarter={pxPerQuarter}
-                      onClick={() =>
-                        setComposer({
-                          startAt: slotToDate(date, q),
-                        })
-                      }
+                      onClick={() => {
+                        const slot = slotToDate(date, q)
+                        if (reschedulingAppt) {
+                          setMoveTarget({
+                            appt: reschedulingAppt,
+                            startAt: slot,
+                          })
+                        } else {
+                          setComposer({ startAt: slot })
+                        }
+                      }}
                     />
                   ),
                 )}
@@ -663,6 +722,91 @@ export function WeekView({
             setPopover(null)
             navigateTo(new Date(iso))
           }}
+          onReschedule={(a) => {
+            setPopover(null)
+            setReschedulingAppt(a)
+          }}
+        />
+      )}
+
+      {/* Reschedule move-mode: a persistent bar while the EP navigates the
+          calendar to a new slot, plus a confirm on the tapped slot. */}
+      {reschedulingAppt && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 20,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1200,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '10px 12px 10px 16px',
+            background: 'var(--color-charcoal)',
+            color: 'var(--color-card)',
+            borderRadius: 999,
+            boxShadow: '0 10px 30px rgba(0,0,0,.15)',
+            maxWidth: 'calc(100vw - 32px)',
+          }}
+        >
+          <CalendarClock size={15} aria-hidden />
+          <span style={{ fontSize: '.85rem' }}>
+            Rescheduling{' '}
+            <strong style={{ fontWeight: 600 }}>
+              {reschedulingAppt.client
+                ? `${reschedulingAppt.client.first_name} ${reschedulingAppt.client.last_name}`
+                : reschedulingAppt.appointment_type}
+            </strong>{' '}
+            — tap a new time on the calendar
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setReschedulingAppt(null)
+              setMoveTarget(null)
+              setMoveError(null)
+            }}
+            style={{
+              background: 'var(--color-card)',
+              color: 'var(--color-charcoal)',
+              border: 'none',
+              borderRadius: 999,
+              padding: '4px 12px',
+              fontSize: '.8rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {moveTarget && (
+        <ConfirmDialog
+          title="Move this appointment?"
+          body={
+            <>
+              Move{' '}
+              {moveTarget.appt.client
+                ? `${moveTarget.appt.client.first_name}’s`
+                : 'this'}{' '}
+              {moveTarget.appt.appointment_type} to{' '}
+              {formatDayDate(moveTarget.startAt)}{' '}
+              {formatTime(moveTarget.startAt)}?
+            </>
+          }
+          confirmLabel="Move"
+          zIndex={1300}
+          busy={moving}
+          error={moveError}
+          onCancel={() => {
+            if (moving) return
+            setMoveTarget(null)
+            setMoveError(null)
+          }}
+          onConfirm={runMove}
         />
       )}
 
@@ -1779,6 +1923,7 @@ function AppointmentPopover({
   onClose,
   onChanged,
   onNavigateToSession,
+  onReschedule,
 }: {
   data: { appt: Appointment; x: number; y: number }
   onClose: () => void
@@ -1787,6 +1932,9 @@ function AppointmentPopover({
   onChanged: () => void
   // Jump the grid to the client's next session (P2-14).
   onNavigateToSession: (startIso: string) => void
+  // Enter calendar move-mode for this appointment (operator request): the
+  // parent closes the popover and lets the EP tap a new slot on the grid.
+  onReschedule: (appt: Appointment) => void
 }) {
   const { appt, x, y } = data
   const c = appt.client
@@ -2190,6 +2338,28 @@ function AppointmentPopover({
           Take payment
         </button>
       </div>
+
+      {/* Reschedule (operator request): hand off to the calendar move-mode —
+          the popover closes and the EP taps a new slot on the grid. Pending /
+          confirmed only (a completed / no-show / cancelled slot is past its
+          lifecycle). */}
+      {(appt.status === 'pending' || appt.status === 'confirmed') && (
+        <div style={{ padding: '0 12px 12px' }}>
+          <button
+            type="button"
+            className="btn outline"
+            onClick={() => onReschedule(appt)}
+            style={{
+              width: '100%',
+              justifyContent: 'center',
+              padding: '8px 10px',
+            }}
+          >
+            <CalendarClock size={13} aria-hidden />
+            Reschedule
+          </button>
+        </div>
+      )}
 
       {appt.status !== 'cancelled' && (
         <div

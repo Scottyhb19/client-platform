@@ -544,3 +544,61 @@ This is the `react-hooks/exhaustive-deps` warning that flagged the stale capture
   drag an appointment.
 - **Pass:** Snapping reflects the new scale immediately; horizontal day-shift and
   the click-vs-drag threshold are unchanged.
+
+---
+
+## Schedule — reschedule via calendar move-mode (2026-06-28)
+
+Context: the appointment popover's **Reschedule** button puts the calendar into a
+move-mode — the popover closes, a persistent bar names the appointment being
+moved, and the EP navigates/scrolls the grid freely and **taps a new slot** to
+move it there (with a confirm). Picking a slot visually beats typing a time — you
+see availability. Reuses `updateAppointmentTimeAction` (no schema), so the
+double-booking guard + automatic reminder re-timing come for free; the tapped
+slot's instant comes from the grid's own `slotToDate` (practice-tz). Drag-to-move
+still works. Attendance (Complete/No-show) + the appointment-linked Add-note
+already existed and are unchanged. A move-mode reschedule also **emails the
+client** (new time, previous struck through), gated by the org email toggle; a
+drag-move stays silent. The portal bookings view reads the same `appointments`
+row (force-dynamic), so it reflects the new time on the client's next load.
+
+### SCH-RESCHED-1 — Move a booking by tapping a new slot
+- **Setup:** A confirmed 60-min appointment.
+- **Action:** Open its popover → **Reschedule**. The popover closes and a
+  "Rescheduling [name] — tap a new time" bar appears. Scroll / change day, then
+  tap an empty slot → confirm "Move … to [time]?" → **Move**.
+- **Pass:** The appointment moves to the tapped slot (duration preserved), the
+  bar clears, the grid refreshes. The confirm showed the slot just tapped.
+
+### SCH-RESCHED-2 — Move-mode survives calendar navigation
+- **Action:** Enter move-mode, then change week (prev/next) and scroll the grid.
+- **Pass:** The mode bar stays visible and tapping a slot in the new week still
+  moves the appointment there — navigating does not drop the mode.
+
+### SCH-RESCHED-3 — Overlap is rejected, no move
+- **Setup:** In move-mode, tap a slot that overlaps another booking for the same
+  practitioner.
+- **Pass:** The confirm surfaces an error ("overlaps an existing booking…"); the
+  appointment does **not** move; move-mode stays active so the EP can pick
+  another slot. (The 23P01 EXCLUDE-constraint backstop.)
+
+### SCH-RESCHED-4 — Button gating + exit
+- **Pass:** **Reschedule** appears in the popover for **pending / confirmed**
+  only (absent for completed / no-show / cancelled). **Cancel** on the mode bar
+  or **Esc** leaves move-mode with no change.
+
+### SCH-RESCHED-5 — Reschedule emails the client (move-mode only)
+- **Setup:** A confirmed client appointment; the client has an email; the org's
+  email notifications are ON.
+- **Action:** Reschedule it via move-mode (tap a slot → Move).
+- **Pass:** The client receives a "Rescheduled: …" email — new date/time, the
+  previous time struck through ("Was …"), type, location, and a "View booking"
+  link to the portal. Best-effort: a send failure logs but does not block the
+  move. **No** email when the org toggle is OFF, the client has no email, or it's
+  an Unavailable block. A **drag-move / resize** sends nothing (silent).
+
+### SCH-RESCHED-6 — Portal reflects the new time
+- **Setup:** Reschedule a client's upcoming appointment.
+- **Pass:** On the client's `/portal/book`, the booking shows the **new** date/
+  time — it reads the same `appointments` row (force-dynamic), so there's no
+  separate copy to sync. Moved into the past, it drops off the upcoming list.

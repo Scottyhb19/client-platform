@@ -5,6 +5,7 @@ import { headers } from 'next/headers'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
+import { sendRescheduleNotificationEmail } from '@/lib/email/send-reschedule-notification'
 import { EmailConfigError } from '@/lib/email/client'
 import { captureException } from '@/lib/observability/sentry'
 import { PRACTICE_TIMEZONE } from '@/lib/constants'
@@ -143,6 +144,70 @@ async function sendStaffBookingConfirmation(
     appointmentType: appt.appointment_type,
     dateLine: formatBookingDateLine(appt.start_at, tz),
     timeLine: formatBookingTimeRange(appt.start_at, appt.end_at, tz),
+    location: appt.location,
+    bookingUrl,
+  })
+}
+
+/**
+ * Email the client that their appointment has moved (deliberate reschedule from
+ * the staff schedule). Best-effort; mirrors sendStaffBookingConfirmation's fetch
+ * + gating (client email, org email toggle, appointment-kind only). The appt is
+ * read AFTER the move, so its start/end are the NEW time; the previous time is
+ * passed in for the "was …" line.
+ */
+async function sendStaffRescheduleNotification(
+  appointmentId: string,
+  previousStartIso: string | null,
+  previousEndIso: string | null,
+): Promise<void> {
+  const supabase = await createSupabaseServerClient()
+  const { data: appt } = await supabase
+    .from('appointments')
+    .select(
+      `id, start_at, end_at, appointment_type, location, kind, staff_user_id,
+       organization:organizations(name, timezone, email_notifications_enabled),
+       client:clients(first_name, email)`,
+    )
+    .eq('id', appointmentId)
+    .maybeSingle()
+
+  // Appointment-kind client bookings only; unavailable blocks have no client.
+  if (!appt || appt.kind !== 'appointment') return
+  if (!appt.client?.email || !appt.organization) return
+  // P2-5: respect the practice's email toggle.
+  if (!appt.organization.email_notifications_enabled) return
+
+  const { data: staffProfile } = await supabase
+    .from('user_profiles')
+    .select('first_name, last_name')
+    .eq('user_id', appt.staff_user_id)
+    .maybeSingle()
+
+  const tz = appt.organization.timezone ?? PRACTICE_TIMEZONE
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
+  const bookingUrl = baseUrl
+    ? `${baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`}/portal/book`
+    : 'https://app.example.com/portal/book'
+  const practitionerName =
+    `${staffProfile?.first_name ?? ''} ${staffProfile?.last_name ?? ''}`.trim() ||
+    'your EP'
+
+  const previousLine =
+    previousStartIso && previousEndIso
+      ? `${formatBookingDateLine(previousStartIso, tz)}, ${formatBookingTimeRange(previousStartIso, previousEndIso, tz)}`
+      : null
+
+  await sendRescheduleNotificationEmail({
+    to: appt.client.email,
+    firstName: appt.client.first_name ?? 'there',
+    practiceName: appt.organization.name,
+    practitionerName,
+    appointmentType: appt.appointment_type,
+    dateLine: formatBookingDateLine(appt.start_at, tz),
+    timeLine: formatBookingTimeRange(appt.start_at, appt.end_at, tz),
+    previousLine,
     location: appt.location,
     bookingUrl,
   })
@@ -472,6 +537,9 @@ export async function updateAppointmentTimeAction(
   appointmentId: string,
   startAtIso: string,
   endAtIso: string,
+  // Deliberate reschedule (the popover move-mode) emails the client their
+  // session moved; a drag-move/resize leaves it false and stays silent.
+  notifyClient = false,
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
 
@@ -485,6 +553,19 @@ export async function updateAppointmentTimeAction(
   }
 
   const supabase = await createSupabaseServerClient()
+
+  // Capture the pre-move time for the reschedule email's "was …" line, before
+  // the update overwrites it. Only when we're going to notify.
+  let previous: { start_at: string; end_at: string } | null = null
+  if (notifyClient) {
+    const { data } = await supabase
+      .from('appointments')
+      .select('start_at, end_at')
+      .eq('id', appointmentId)
+      .maybeSingle()
+    previous = data ?? null
+  }
+
   const { error } = await supabase
     .from('appointments')
     .update({
@@ -502,7 +583,26 @@ export async function updateAppointmentTimeAction(
     }
     return { error: `Update failed: ${error.message}` }
   }
+
+  // Tell the client their session moved (deliberate reschedule only). Best-
+  // effort — the move is already saved, so an email failure isn't fatal.
+  if (notifyClient) {
+    await sendStaffRescheduleNotification(
+      appointmentId,
+      previous?.start_at ?? null,
+      previous?.end_at ?? null,
+    ).catch((e) => {
+      if (e instanceof EmailConfigError) throw e
+      captureException(e, { where: 'reschedule-notify:staff' })
+      return null
+    })
+  }
+
   revalidatePath('/schedule')
+  // The portal's bookings view reads the same appointment row (force-dynamic),
+  // so the new time shows on the client's next load; revalidate keeps it fresh
+  // even if that route is ever cached.
+  revalidatePath('/portal/book')
   return { error: null }
 }
 
