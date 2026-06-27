@@ -10,8 +10,6 @@ import {
 } from '../actions'
 import { slugifyMetricId, slugifyTestId } from '../_lib/slugify'
 
-type Mode = 'create' | 'edit'
-
 interface PropsCreate {
   mode: 'create'
   existingTestIds: ReadonlySet<string>

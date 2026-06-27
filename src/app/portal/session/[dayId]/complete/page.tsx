@@ -52,13 +52,11 @@ export default async function PortalSessionCompletePage({
 
   // Summary stats.
   let totalSets = 0
-  let totalReps = 0
   let totalVolumeKg = 0
 
   for (const el of session.exercise_logs ?? []) {
     for (const s of el.sets ?? []) {
       totalSets += 1
-      if (s.reps_performed !== null) totalReps += s.reps_performed
       if (s.weight_value !== null && s.reps_performed !== null) {
         totalVolumeKg += Number(s.weight_value) * s.reps_performed
       }

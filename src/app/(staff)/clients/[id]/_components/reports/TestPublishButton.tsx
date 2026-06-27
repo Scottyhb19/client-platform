@@ -20,7 +20,6 @@ import { CircleCheck, Send } from 'lucide-react'
 import { useState } from 'react'
 import { TestPublishDialog } from './TestPublishDialog'
 import {
-  latestLivePublicationForTest,
   latestUnpublishedSessionForTest,
   testIsPublishable,
 } from './helpers'

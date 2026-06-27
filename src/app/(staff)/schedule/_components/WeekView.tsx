@@ -750,7 +750,7 @@ function DateRolodex({
   // already landed there themselves.
   const suppressScrollAdjustRef = useRef(false)
 
-  const { dates, todayIdx } = useMemo(() => {
+  const { dates } = useMemo(() => {
     const anchor = new Date(
       today.getFullYear(),
       today.getMonth(),

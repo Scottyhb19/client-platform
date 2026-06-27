@@ -23,7 +23,7 @@
  * for publishing" branch.
  */
 
-import { ChevronLeft, ChevronRight, Plus, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import {
   useMemo,
   useState,
