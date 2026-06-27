@@ -17,6 +17,23 @@ const eslintConfig = defineConfig([
     ".claude/**",
     ".design-ref/**",
   ]),
+  {
+    // Honour the `_`-prefix convention for intentionally-unused bindings
+    // (e.g. signature params kept for documentation/future variants). The
+    // rule stays full-strength for genuinely dead code — only names that
+    // explicitly opt out with a leading underscore are ignored. Severity
+    // matches eslint-config-next ('warn').
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
