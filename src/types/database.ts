@@ -3758,6 +3758,7 @@ export type Database = {
         Args: { p_program_day_id: string; p_session_id: string }
         Returns: Json
       }
+      archive_appointment: { Args: { p_id: string }; Returns: undefined }
       assert_audit_resolver_coverage: { Args: never; Returns: undefined }
       audit_diff_fields: {
         Args: { p_new: Json; p_old: Json }

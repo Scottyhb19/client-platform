@@ -484,6 +484,34 @@ export async function removeUnavailableBlockAction(
 }
 
 /**
+ * Archive a client appointment created by mistake. Unlike cancellation — which
+ * is meaningful history and counts toward the cancellation-rate KPI — an
+ * accidental booking should count as nothing at all. Archiving soft-deletes the
+ * row (deleted_at), so it vanishes from the grid, dashboard, and analytics and
+ * is neither attended nor cancelled.
+ *
+ * Goes through the SECURITY DEFINER archive_appointment RPC: a direct UPDATE
+ * deleted_at trips the appointments deleted_at-IS-NULL SELECT-policy re-select
+ * trap (42501). The RPC is scoped to kind='appointment' and also cancels any
+ * queued reminder (the reminder trigger does not fire on deleted_at).
+ */
+export async function archiveAppointmentAction(
+  appointmentId: string,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { error } = await supabase.rpc('archive_appointment', {
+    p_id: appointmentId,
+  })
+
+  if (error) return { error: `Could not archive appointment: ${error.message}` }
+  revalidatePath('/schedule')
+  revalidatePath('/dashboard')
+  return { error: null }
+}
+
+/**
  * Move an appointment along its lifecycle from the schedule popover (P2-8c):
  * mark it completed or a no-show, or reopen a mis-marked one back to confirmed.
  * Mirrors cancelAppointmentAction; cancellation keeps its own action (it
@@ -612,9 +640,15 @@ export async function updateAppointmentTimeAction(
 }
 
 /**
- * The given client's next booked session after `afterIso` (P2-14 popover): the
+ * The given client's next *actual upcoming* booked session (P2-14 popover): the
  * soonest pending/confirmed appointment-kind booking, used to show "Next
- * session · <date>" when the EP opens an appointment. RLS scopes reads to the
+ * session · <date>" when the EP opens an appointment.
+ *
+ * The anchor is `max(now, afterIso)`, never `afterIso` alone. Opening a session
+ * from the past must NOT report "the next one after that past session" — that
+ * appointment may itself be long gone, which reads as a lie. Anchoring on now
+ * means a past session shows the genuinely-next upcoming booking, while opening
+ * a future booking still shows the one that follows it. RLS scopes reads to the
  * caller's org. Returns null when the client has nothing further booked.
  */
 export async function getClientNextAppointmentAction(
@@ -624,6 +658,9 @@ export async function getClientNextAppointmentAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
+  const nowIso = new Date().toISOString()
+  const anchorIso = afterIso > nowIso ? afterIso : nowIso
+
   const { data } = await supabase
     .from('appointments')
     .select('start_at')
@@ -631,7 +668,7 @@ export async function getClientNextAppointmentAction(
     .eq('kind', 'appointment')
     .in('status', ['pending', 'confirmed'])
     .is('deleted_at', null)
-    .gt('start_at', afterIso)
+    .gt('start_at', anchorIso)
     .order('start_at', { ascending: true })
     .limit(1)
     .maybeSingle()

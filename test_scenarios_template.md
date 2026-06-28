@@ -685,3 +685,98 @@ row (force-dynamic), so it reflects the new time on the client's next load.
 - **Pass:** On the client's `/portal/book`, the booking shows the **new** date/
   time — it reads the same `appointments` row (force-dynamic), so there's no
   separate copy to sync. Moved into the past, it drops off the upcoming list.
+
+## Staff schedule — round-two (next-session, status visuals, archive) (2026-06-29)
+
+These cover the schedule popover "Next session" anchor fix, the completed/
+no-show/cancelled pill treatment, and the new Archive action. Setup: a staff
+session on `/schedule` with a client who has a mix of past and future bookings.
+
+### SCH-NEXT-1 — "Next session" on a PAST appointment shows the next UPCOMING one
+- **Setup:** Open an appointment whose `start_at` is in the past (e.g. months
+  ago), while the client has a genuinely-future pending/confirmed booking.
+- **Pass:** "Next session" shows the **upcoming** booking (anchored on now), not
+  "the next one after that past session." Before the fix it reported a stale
+  appointment that was itself already past. (`getClientNextAppointmentAction`
+  anchors on `max(now, appt.start_at)`.)
+
+### SCH-NEXT-2 — "Next session" on a FUTURE appointment shows the one after it
+- **Setup:** Open a future booking that has another booking later still.
+- **Pass:** "Next session" shows the **later** booking — opening a future slot
+  still reports the one that follows it, not now's next.
+
+### SCH-NEXT-3 — No upcoming booking → "none booked"
+- **Setup:** Open any appointment for a client with nothing scheduled after now.
+- **Pass:** "Next session · none booked" (cancelled / no-show / completed /
+  soft-deleted bookings never count).
+
+### SCH-VIS-1 — Completed appointment: green tick, colour unchanged
+- **Setup:** Mark an appointment Complete.
+- **Pass:** A small **green tick** pip appears top-right (beside the time / any
+  Odyssey mark). The pill keeps its normal colour (session-type colour, or the
+  green fallback) — no full repaint, no opacity change.
+
+### SCH-VIS-2 — No-show appointment: red minus, colour unchanged
+- **Setup:** Mark an appointment No-show.
+- **Pass:** A small **red minus** pip appears top-right. The pill keeps its
+  normal colour — it no longer floods red. (Pre-change behaviour painted the
+  whole block red; that drowned the signal when no-shows piled up.)
+
+### SCH-VIS-3 — Cancelled is the ONLY pill that changes colour/opacity
+- **Setup:** Cancel an appointment (with "Show cancelled" on so it stays
+  visible).
+- **Pass:** The pill goes **neutral grey** (surface fill, border-grey) with
+  **faded** content — visibly "voided" and distinct from completed/no-show,
+  which keep their colour. No other status changes colour or opacity.
+
+### SCH-ARCH-1 — Archive removes a mis-booking without a cancellation
+- **Setup:** Open a client appointment created by mistake → "Archive (created by
+  mistake)" → confirm.
+- **Pass:** The appointment **disappears** from the grid (soft-deleted,
+  `deleted_at` set). It does **not** appear under "Show cancelled," and the
+  Analytics cancellation rate is **unchanged** (archive ≠ cancel). Any queued
+  reminder for it is cancelled, so the client is not emailed.
+
+### SCH-ARCH-2 — Archive is available for every status, including cancelled
+- **Setup:** Open an already-**cancelled** appointment (a mistaken cancel that
+  polluted the rate) → Archive → confirm.
+- **Pass:** It soft-deletes and drops out of the cancellation-rate denominator/
+  numerator — the Archive row is present regardless of status.
+
+### SCH-ARCH-3 — Archive is auth-scoped and kind-scoped (DB)
+- **Pass (pgTAP / manual):** `archive_appointment` rejects anon (EXECUTE
+  revoked + in-body 42501 guard), only soft-deletes rows in the caller's org,
+  and refuses `kind='unavailable'` blocks (those use `soft_delete_unavailable_block`).
+
+### SCH-DLG-1 — Popover confirm dialogs actually fire (regression)
+- **Context:** The appointment popover closes on any outside `mousedown`.
+  `ConfirmDialog` portals to `<body>`, so a click on its confirm button is
+  "outside" the popover card — the popover used to close and unmount the dialog
+  before the button's onClick ran, so **Cancel / Archive / Remove appeared dead
+  (no error, nothing happened)** while in-card Complete / No-show worked. The
+  fix exempts `[role="dialog"][aria-modal="true"]` from the outside-click close.
+- **Pass:** Open an appointment → Cancel appointment → **confirm** → the
+  appointment cancels and the popover closes. Same for **Archive**, and for an
+  Unavailable block's **Remove**. Clicking the dialog's own Cancel (or its scrim)
+  dismisses only the dialog and leaves the popover open to retry.
+
+### SCH-PILL-1 — Short blocks degrade instead of clipping content
+- **Context:** Block height tracks duration; inner content is fixed-size, so
+  short slots used to clip the name / time / type line under overflow:hidden.
+- **Pass:** A 60-min block shows name + time (+ full "Odyssey." mark if
+  app-booked) + the session-type line. A ~30-min block tightens padding and
+  **drops the type line** (no clipped half-line). A 15-min sliver keeps the name
+  + time legible. Nothing renders as a cut-off partial row.
+
+### SCH-PILL-3 — App-booked mark stays visible on short blocks (compact "O.")
+- **Setup:** An online/client-portal-booked appointment at a short duration
+  (e.g. 30 min) and at a long duration (e.g. 60 min).
+- **Pass:** The long block shows the full **"Odyssey."** wordmark stacked above
+  the time (top-right). The short block shows a compact **"O."** (accent-green
+  dot kept) **inline next to the time** on the right, and the name, time, and
+  status badge shrink so the **name fits on its own row without being squeezed**.
+  A staff-booked appointment shows no mark at either size.
+
+### SCH-PILL-2 — Height stays proportional to duration
+- **Pass:** A 90-min appointment renders visibly ~3× the height of a 30-min one
+  in the same view; durations remain readable as relative block heights.

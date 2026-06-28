@@ -12,8 +12,10 @@ import {
   useTransition,
 } from 'react'
 import {
+  Archive,
   CalendarClock,
   CalendarPlus,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +23,7 @@ import {
   Eye,
   EyeOff,
   FileText,
+  Minus,
   Search,
   StickyNote,
   Wrench,
@@ -38,6 +41,7 @@ import {
 import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 import { notify } from '@/app/(staff)/_components/Notice'
 import {
+  archiveAppointmentAction,
   cancelAppointmentAction,
   createAppointmentAction,
   createClientInlineAction,
@@ -316,7 +320,17 @@ export function WeekView({
     }
     function onClick(e: MouseEvent) {
       const el = e.target as HTMLElement
-      if (!el.closest('[data-popover-card]')) {
+      // Keep the popover open when the click lands inside it OR inside a modal
+      // dialog it spawned. ConfirmDialog (Cancel / Archive / Remove) portals to
+      // <body>, so it is NOT a DOM descendant of the popover card — without the
+      // aria-modal exception this mousedown would close the popover and unmount
+      // the dialog before its confirm button's onClick fired, making those
+      // actions appear dead (no error, nothing happens). The popover card is
+      // role="dialog" but not aria-modal, so this matches only the ConfirmDialog.
+      if (
+        !el.closest('[data-popover-card]') &&
+        !el.closest('[role="dialog"][aria-modal="true"]')
+      ) {
         setPopover(null)
       }
     }
@@ -1369,7 +1383,10 @@ const RESIZE_HANDLE_HEIGHT = 8
  * it stays visible on short (≤45-min) blocks where a bottom-right
  * placement would be clipped by the resize handle.
  */
-function OdysseyMark() {
+function OdysseyMark({ compact = false }: { compact?: boolean }) {
+  // compact collapses the wordmark to just "O." so the app-booked signal stays
+  // visible on short slots, where it rides inline with the time instead of
+  // stacking above it (which would not fit). The accent-green dot is preserved.
   return (
     <span
       aria-hidden
@@ -1383,7 +1400,51 @@ function OdysseyMark() {
         pointerEvents: 'none',
       }}
     >
-      Odyssey<span style={{ color: 'var(--color-accent)' }}>.</span>
+      {compact ? 'O' : 'Odyssey'}
+      <span style={{ color: 'var(--color-accent)' }}>.</span>
+    </span>
+  )
+}
+
+/**
+ * Corner status pip for a completed or no-show appointment (schedule round-two).
+ * A green tick = the session happened; a red minus = no-show. Sits in the top-
+ * right stack of the block (above the time, beside the Odyssey mark) so it's
+ * legible even on short slots. Completed/no_show keep their normal pill colour —
+ * this badge, not a full-colour repaint, carries the status. Returns null for
+ * every other status.
+ */
+function StatusBadge({
+  status,
+  compact = false,
+}: {
+  status: Appointment['status']
+  compact?: boolean
+}) {
+  if (status !== 'completed' && status !== 'no_show') return null
+  const done = status === 'completed'
+  const Icon = done ? Check : Minus
+  const dim = compact ? 12 : 14
+  return (
+    <span
+      aria-label={done ? 'Completed' : 'No-show'}
+      title={done ? 'Completed' : 'No-show'}
+      style={{
+        flexShrink: 0,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: dim,
+        height: dim,
+        borderRadius: 999,
+        background: done
+          ? 'var(--color-accent-soft-strong)'
+          : 'var(--color-alert-soft)',
+        color: done ? 'var(--color-accent)' : 'var(--color-alert)',
+        pointerEvents: 'none',
+      }}
+    >
+      <Icon size={compact ? 8 : 9} strokeWidth={3.5} aria-hidden />
     </span>
   )
 }
@@ -1476,29 +1537,48 @@ function AppointmentBlock({
       pxPerQuarter -
     2
 
-  // Colour priority:
-  //   1. cancelled / no_show → red tone (overrides the type colour so the
-  //      status is unmissable). Cancelled gets the softer .05 fill so it
-  //      reads as "softly past tense" rather than "alert"; no_show stays
-  //      at .22 because it IS a needs-your-attention flag.
-  //   2. appointment has a known session-type colour → use it
-  //   3. fallback → status-based tone (default accent green)
+  // Colour priority (schedule round-two): cancelled is the ONLY status that
+  // changes the pill's colour/opacity — it goes neutral grey + faded so it
+  // reads as "voided". completed and no_show keep their normal colour (type
+  // colour, or the status fallback) and instead carry a corner status badge:
+  // a green tick (completed) or a red minus (no_show). This keeps the grid
+  // legible at a glance — a wall of red no-shows used to drown the signal.
+  //   1. cancelled → neutral grey (overrides the type colour).
+  //   2. appointment has a known session-type colour → use it.
+  //   3. fallback → status-based tone (pending amber, else accent green).
+  const isCancelled = appointment.status === 'cancelled'
   const tone = toneForStatus(appointment.status)
   const statusTone = toneToColors(tone)
-  const useTypeColor =
-    typeColor !== null &&
-    appointment.status !== 'cancelled' &&
-    appointment.status !== 'no_show'
-  const bg = useTypeColor
-    ? hexToRgba(typeColor!, 0.22)
-    : appointment.status === 'cancelled'
-      ? 'rgba(214,64,69,0.05)'
+  const useTypeColor = typeColor !== null && !isCancelled
+  const bg = isCancelled
+    ? 'var(--color-surface)'
+    : useTypeColor
+      ? hexToRgba(typeColor!, 0.22)
       : statusTone.bg
-  const border = useTypeColor ? typeColor! : statusTone.border
-  const isCancelled = appointment.status === 'cancelled'
+  const border = isCancelled
+    ? 'var(--color-border)'
+    : useTypeColor
+      ? typeColor!
+      : statusTone.border
   const isAppBooked = appointment.created_by_role === 'client_portal'
   const isAppCancellation =
     isCancelled && appointment.cancelled_by_role === 'client_portal'
+
+  // Height-aware content (schedule round-two). A block's height tracks its
+  // duration, but the inner content is fixed-size, so on short slots the
+  // secondary line — and even the name/time — used to clip under
+  // overflow:hidden (the screenshot-1 cutoff). Degrade by available height:
+  // tighten the padding, drop the second (type) line where it would only be
+  // clipped anyway, and drop the Odyssey mark on the very shortest slivers so
+  // the name + time stay legible. Thresholds are in px because the content size
+  // is fixed regardless of the duration-driven pxPerQuarter scale.
+  const compact = baseHeight < 30
+  const showSecondLine = baseHeight >= 40
+  // App-booked Odyssey mark: full "Odyssey." stacked above the time on taller
+  // blocks; on short blocks a compact "O." rides inline next to the time so the
+  // name keeps its own row (the compact fonts below let the name fit).
+  const showOdysseyFull = isAppBooked && !compact
+  const showOdysseyCompact = isAppBooked && compact
 
   const [drag, setDrag] = useState<DragState>(null)
   const dragRef = useRef<DragState>(null)
@@ -1678,7 +1758,7 @@ function AppointmentBlock({
         background: bg,
         borderLeft: `3px solid ${border}`,
         borderRadius: 6,
-        padding: '6px 10px',
+        padding: compact ? '1px 9px 3px' : '6px 10px',
         cursor: drag ? 'grabbing' : 'grab',
         overflow: 'hidden',
         color: 'var(--color-text)',
@@ -1709,7 +1789,7 @@ function AppointmentBlock({
             display: 'flex',
             alignItems: 'flex-start',
             gap: 6,
-            fontSize: '.76rem',
+            fontSize: compact ? '.66rem' : '.76rem',
             fontWeight: 600,
             color: 'var(--color-charcoal)',
           }}
@@ -1729,9 +1809,9 @@ function AppointmentBlock({
               : appointment.appointment_type}
             {isAppCancellation && ' · App Cancellation'}
           </span>
-          {/* Right column: Odyssey mark stacks above the time on app-booked
-              blocks so it stays visible even on 45-min slots (where a
-              bottom-right placement would be clipped by the resize handle). */}
+          {/* Right column: on taller blocks the full "Odyssey." mark stacks
+              above the time; on short blocks a compact "O." rides inline next to
+              the time (closer to it) and the fonts shrink so the name fits. */}
           <div
             style={{
               flexShrink: 0,
@@ -1742,33 +1822,49 @@ function AppointmentBlock({
               lineHeight: 1,
             }}
           >
-            {isAppBooked && <OdysseyMark />}
+            {showOdysseyFull && <OdysseyMark />}
             <span
               style={{
-                fontSize: '.66rem',
-                fontWeight: 600,
-                color: 'var(--color-text-light)',
-                fontVariantNumeric: 'tabular-nums',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: compact ? 2 : 3,
                 lineHeight: 1,
               }}
             >
-              {formatTime(start)}
+              <StatusBadge status={appointment.status} compact={compact} />
+              {showOdysseyCompact && <OdysseyMark compact />}
+              <span
+                style={{
+                  fontSize: compact ? '.58rem' : '.66rem',
+                  fontWeight: 600,
+                  color: 'var(--color-text-light)',
+                  fontVariantNumeric: 'tabular-nums',
+                  lineHeight: 1,
+                }}
+              >
+                {formatTime(start)}
+              </span>
             </span>
           </div>
         </div>
-        <div
-          style={{
-            fontSize: '.66rem',
-            color: 'var(--color-text-light)',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}
-        >
-          {drag
-            ? formatDragPreview(appointment, drag)
-            : appointment.appointment_type}
-        </div>
+        {/* Secondary line (session type, or the live drag preview). Hidden on
+            short blocks where it would only be clipped — but always shown while
+            dragging so the preview time is visible regardless of height. */}
+        {(showSecondLine || drag) && (
+          <div
+            style={{
+              fontSize: '.66rem',
+              color: 'var(--color-text-light)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {drag
+              ? formatDragPreview(appointment, drag)
+              : appointment.appointment_type}
+          </div>
+        )}
       </div>
 
       {/* Bottom resize handle */}
@@ -1970,13 +2066,16 @@ function AppointmentPopover({
   const end = new Date(appt.end_at)
   const [cancelling, startCancel] = useTransition()
   const [statusPending, startStatus] = useTransition()
-  const busy = cancelling || statusPending
+  const [archiving, startArchive] = useTransition()
+  const busy = cancelling || statusPending || archiving
   // On-system confirms (shared ConfirmDialog) in place of browser confirm()/
   // alert(). The popover sits at zIndex 1000, so the dialog is raised above it.
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const [confirmArchive, setConfirmArchive] = useState(false)
+  const [archiveError, setArchiveError] = useState<string | null>(null)
 
   // The client's next booked session after this one (P2-14). undefined = still
   // loading. This hook precedes the no-client early return below, so it stays
@@ -2016,6 +2115,22 @@ function AppointmentPopover({
       const res = await removeUnavailableBlockAction(appt.id)
       if (res.error) {
         setRemoveError(res.error)
+        return
+      }
+      onChanged()
+    })
+  }
+
+  // Archive a mis-booked client appointment: soft-delete it so it vanishes and
+  // counts as neither attended nor cancelled (unlike Cancel, which is real
+  // history and feeds the cancellation-rate KPI). For appointments created by
+  // mistake only.
+  function runArchive() {
+    setArchiveError(null)
+    startArchive(async () => {
+      const res = await archiveAppointmentAction(appt.id)
+      if (res.error) {
+        setArchiveError(res.error)
         return
       }
       onChanged()
@@ -2439,6 +2554,46 @@ function AppointmentPopover({
         </div>
       )}
 
+      {/* Archive (schedule round-two): quiet, always-available escape hatch for
+          an appointment created by mistake. Soft-deletes it so it counts as
+          neither attended nor cancelled — distinct from Cancel, which is real
+          history. Shown for every status (including already-cancelled, to undo
+          a mistaken cancel that polluted the rate). */}
+      <div
+        style={{
+          padding: '8px 12px 10px',
+          borderTop: '1px solid var(--color-border-subtle)',
+          display: 'flex',
+          justifyContent: 'flex-start',
+        }}
+      >
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setArchiveError(null)
+            setConfirmArchive(true)
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'none',
+            border: 'none',
+            padding: '2px 0',
+            color: 'var(--color-muted)',
+            fontFamily: 'var(--font-sans)',
+            fontSize: '.74rem',
+            fontWeight: 500,
+            cursor: busy ? 'default' : 'pointer',
+            opacity: busy ? 0.5 : 1,
+          }}
+        >
+          <Archive size={13} aria-hidden />
+          {archiving ? 'Archiving…' : 'Archive (created by mistake)'}
+        </button>
+      </div>
+
       {confirmCancel && (
         <ConfirmDialog
           title="Cancel this appointment?"
@@ -2458,6 +2613,30 @@ function AppointmentPopover({
             setCancelError(null)
           }}
           onConfirm={runCancel}
+        />
+      )}
+
+      {confirmArchive && (
+        <ConfirmDialog
+          title="Archive this appointment?"
+          body={
+            <>
+              Remove {c.first_name}’s {formatTime(start)}{' '}
+              {appt.appointment_type} from the schedule and all reports. Use
+              this for an appointment created by mistake — it won’t count as a
+              cancellation.
+            </>
+          }
+          confirmLabel="Archive"
+          zIndex={1100}
+          busy={archiving}
+          error={archiveError}
+          onCancel={() => {
+            if (archiving) return
+            setConfirmArchive(false)
+            setArchiveError(null)
+          }}
+          onConfirm={runArchive}
         />
       )}
     </div>
@@ -4154,7 +4333,8 @@ function navArrowStyle(side: 'left' | 'right'): React.CSSProperties {
 }
 
 function toneForStatus(status: Appointment['status']): AvatarTone {
-  if (status === 'cancelled' || status === 'no_show') return 'r'
+  // cancelled is handled separately (neutral grey) before this is consulted;
+  // no_show keeps a normal tone and signals via a corner badge, not red fill.
   if (status === 'pending') return 'a'
   return 'g'
 }
