@@ -22,16 +22,18 @@ SET search_path TO public, extensions, pg_temp;
 -- 2-arg overload was dropped post-deploy-#1 (20260615190000).
 -- soft_delete_unavailable_block (P2-8 review fix, 20260616120000) and
 -- staff_next_available_slot (P2-15 Find-next-available, 20260616130000) join
--- the family, so this is now a flat 6-function family (plan 12). Companion to
--- 25_portal_rpc_grants (section 7).
+-- the family. archive_appointment (schedule round-two, 20260629120000 — the
+-- soft-delete path for a mis-booked client appointment) joins it too, so this
+-- is now a flat 7-function family (plan 14). Companion to 25_portal_rpc_grants
+-- (section 7).
 --
 -- No fixtures, no JWT spoof — pure catalog checks as the test owner.
--- Test count: 12
+-- Test count: 14
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(12);
+SELECT plan(14);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 
@@ -45,7 +47,8 @@ WITH family(ord, sig) AS (
     (3, 'public.client_cancel_appointment(uuid)'),
     (4, 'public.soft_delete_availability_rule(uuid)'),
     (5, 'public.soft_delete_unavailable_block(uuid)'),
-    (6, 'public.staff_next_available_slot(uuid, timestamptz, integer)')
+    (6, 'public.staff_next_available_slot(uuid, timestamptz, integer)'),
+    (7, 'public.archive_appointment(uuid)')
 )
 INSERT INTO _tap (n, line)
 SELECT ord, ok(
@@ -59,17 +62,18 @@ FROM family;
 -- ----------------------------------------------------------------------------
 WITH family(ord, sig) AS (
   VALUES
-    (7,  'public.client_available_slots(timestamptz, timestamptz, integer)'),
-    (8,  'public.client_book_appointment(uuid, uuid, timestamptz, timestamptz)'),
-    (9,  'public.client_cancel_appointment(uuid)'),
-    (10, 'public.soft_delete_availability_rule(uuid)'),
-    (11, 'public.soft_delete_unavailable_block(uuid)'),
-    (12, 'public.staff_next_available_slot(uuid, timestamptz, integer)')
+    (8,  'public.client_available_slots(timestamptz, timestamptz, integer)'),
+    (9,  'public.client_book_appointment(uuid, uuid, timestamptz, timestamptz)'),
+    (10, 'public.client_cancel_appointment(uuid)'),
+    (11, 'public.soft_delete_availability_rule(uuid)'),
+    (12, 'public.soft_delete_unavailable_block(uuid)'),
+    (13, 'public.staff_next_available_slot(uuid, timestamptz, integer)'),
+    (14, 'public.archive_appointment(uuid)')
 )
 INSERT INTO _tap (n, line)
 SELECT ord, ok(
   has_function_privilege('authenticated', sig, 'EXECUTE'),
-  format('B%s: authenticated keeps EXECUTE on %s', ord - 6, sig)
+  format('B%s: authenticated keeps EXECUTE on %s', ord - 7, sig)
 )
 FROM family;
 
