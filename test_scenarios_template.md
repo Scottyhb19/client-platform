@@ -395,11 +395,14 @@ its result is unused on the early-return paths, so render output is unchanged.
 ## EP Dashboard — Needs-Attention Trigger Set v2 (2026-06-28)
 
 Context: the Needs-Attention panel (`src/app/(staff)/dashboard/page.tsx`,
-`buildAttentionList`) gains two **light** triggers and a dead-trigger fix, as the
-v2 follow-up to the closed EP Dashboard §11 (see
+`buildAttentionList`) gains the v2 triggers, a dead-trigger fix, and item-3
+reconciliation, as the follow-up to the closed EP Dashboard §11 (see
 `docs/polish/ep-dashboard.md` §9). Logic-only — no schema, no new security
-surface. The structural pair (Reconciliation, Assessment-completeness) and the
-Email-failure slot stay parked. All routing/dedupe behaves like the live four.
+surface. The panel splits into two **deduped-separately** groups (operator
+decision 2026-06-28): **Adherence** (Overdue/Ended/Ending/New/Onboarding — is the
+client training?) and **Clinical admin** (Flag/Reconcile — is the appointment
+paperwork done?); a client can show one row in each. Assessment-completeness
+stays parked.
 
 ### DASH-V2-1 — Onboarding funnel: invite not accepted
 - **Setup:** A client with `invited_at` 8 days ago, `onboarded_at` NULL, no
@@ -514,10 +517,90 @@ Email-failure slot stay parked. All routing/dedupe behaves like the live four.
   decision 2026-06-28: only a logged portal session counts as "got going". A
   client who also qualifies for a more urgent row (e.g. a program client who is
   also Ended) shows that row instead via dedupe — so the onboarding row appears
-  only for clients with no higher-priority reason (e.g. a no-program in-clinic
-  client like the seeded Imaan Sedghi).
+  only for clients with no higher-priority **adherence** reason. **Reconcile** is
+  a separate group (Clinical admin), so the same client can ALSO show a Reconcile
+  row — the two domains don't compete (DASH-V2-19).
 
-## Staff schedule — drag-snap uses the live grid scale (bug fix, 2026-06-28)
+### DASH-V2-15 — Reconcile: a past appointment needs attendance
+- **Setup:** A client with a `kind='appointment'` booking whose `end_at` is in
+  the past (within ~30 days), still `pending` or `confirmed` (attendance never
+  set).
+- **Pass:** A **Reconcile** row (amber), reason "<date> — attendance not set",
+  action **Open** → `/schedule?d=<that date>` (the schedule jumps to that day).
+  Marking the appointment completed or no-show (or it ageing past ~30 days)
+  clears it.
+
+### DASH-V2-16 — Reconcile: a completed session owes a note
+- **Setup:** A past `completed` appointment with **no** linked clinical note.
+- **Pass:** A **Reconcile** row, reason "<date> — note owed". Adding a clinical
+  note for that appointment (the popover Add-note carries the appointment link)
+  clears it. A completed appointment that already HAS a note does not show.
+
+### DASH-V2-17 — Reconcile excludes the reconciled / out-of-scope
+- **Pass:** No Reconcile row for: `no_show` or `cancelled`; completed-with-note;
+  appointments older than ~30 days; or `kind='unavailable'` blocks. Portal
+  home/gym training lives in `sessions` (not `appointments`), so it's excluded by
+  construction — the "in-clinic only" scope.
+
+### DASH-V2-18 — Reconcile is ONE combined row per client
+- **Setup:** A client with both an unactioned attendance (pending/confirmed) and
+  a note-owed (completed, no note) past appointment.
+- **Pass:** A SINGLE Reconcile row in the Clinical-admin group — attendance and
+  note are **never** split into separate rows (operator decision 2026-06-28).
+  Exactly one session total → inline "<when> — <type>" with a direct Open;
+  multiple (any mix) → "N sessions to reconcile" whose Open opens the pop-up
+  (DASH-V2-23).
+
+### DASH-V2-19 — Two domains: a client can show in both groups
+- **Setup:** A client with BOTH an adherence issue (e.g. an Ended program, or an
+  Onboarding/no-logged-session state) AND an unreconciled past appointment.
+- **Pass:** The Needs-attention panel renders **two labelled groups** —
+  **Adherence** and **Clinical admin**. The client appears **once in each** (e.g.
+  Ended under Adherence, Reconcile under Clinical admin); the two concerns dedupe
+  separately and never mask each other. Domains: Flag + Reconcile = Clinical
+  admin; Overdue/Ended/Ending/New/Onboarding = Adherence. An empty group renders
+  nothing; both empty → "Nothing flagged".
+
+### DASH-V2-20 — Dashboard caps at 10 rows; overflow opens an actionable modal
+- **Setup:** More than 10 attention rows across both groups.
+- **Pass:** The dashboard panel shows at most **10 rows** (Adherence first, then
+  Clinical admin). A **View more (N) →** appears (and the header **View all →**),
+  opening a **modal** that houses **every** row in both groups — not a link to
+  Clientele. Each row in the modal keeps its action (Open/Review/Build/Plan + the
+  Overdue/Onboarding ack), so it's actionable in place; an ack re-renders the
+  dashboard and the modal updates without closing. Esc / backdrop / × closes it.
+
+### DASH-V2-21 — Counts are by row, not client
+- **Setup:** A client with two rows (e.g. Ended + Reconcile).
+- **Pass:** The "Need attention" stat and the sub-line count **total rows** —
+  that client contributes **2**, not 1. The 10-row cap and the View-more
+  threshold are likewise row-based.
+
+### DASH-V2-22 — Actioning a past session on the schedule reflects on the dashboard
+- **Setup:** A Reconcile row → **Open** → the schedule jumps to that day.
+- **Action:** Mark the appointment Complete / No-show, or Cancel it.
+- **Pass:** Back on the dashboard the change is reflected — No-show / Cancel
+  clears the Reconcile row; Complete turns "attendance not set" into "note owed".
+  The lifecycle actions revalidate `/dashboard` (not just `/schedule`), so the
+  dashboard no longer shows the stale pre-action state.
+
+### DASH-V2-23 — Multiple sessions → one row + combined pop-up
+- **Setup:** A client with ≥2 unactioned past appointments (any mix of
+  attendance not set and note owed).
+- **Pass:** One Reconcile row "N sessions to reconcile"; its **Open** opens a
+  per-client **pop-up** (like the View-all modal) listing every session —
+  attendance and note **combined**, oldest-first (date + time, so same-day ones
+  are distinct) — each labelled with its type and with its own **Open →** that
+  booking on the schedule. A single-session client renders inline with a direct
+  Open and no pop-up.
+
+### DASH-V2-24 — Opening a session focuses it on the schedule
+- **Setup:** From a single Reconcile row's Open, or a session in the pop-up,
+  navigate to `/schedule?d=<date>&focus=<appointment id>`.
+- **Pass:** The schedule lands on that day **scrolled to the booking**, with it
+  **highlighted** (accent ring) and every other booking **dimmed** — the
+  client-finder spotlight. Navigating the week clears the focus; a `focus` id not
+  in the loaded set dims nothing (no false blackout).
 
 Context: WeekView's appointment drag handler (`handleMove`) is created once with
 stable identity (deps `[gridRef]`) and reads dynamic values through refs. But

@@ -108,6 +108,9 @@ interface WeekViewProps {
   selectedDateIso: string | null
   todayIso: string
   nowIso: string
+  // Reconcile deep-link from the dashboard (?focus=<appointment id>): highlight
+  // that one booking and dim the rest. Null when not focusing.
+  focusApptId: string | null
 }
 
 // Grid constants. HOUR_START/END/HOURS are the data range — bookings
@@ -141,6 +144,7 @@ export function WeekView({
   selectedDateIso,
   todayIso,
   nowIso,
+  focusApptId,
 }: WeekViewProps) {
   // Map of type name → hex colour, used to tint each appointment block
   // according to its `appointment_type` column. Names are lowercased so
@@ -154,6 +158,24 @@ export function WeekView({
   const today = parseIsoDate(todayIso)
   const selectedDate = selectedDateIso ? parseIsoDate(selectedDateIso) : null
   const now = new Date(nowIso)
+  // Reconcile deep-link target: only "focus" if the id is actually in the loaded
+  // set, else dimming everything would be wrong (e.g. after navigating away).
+  const focusedId =
+    focusApptId && appointments.some((a) => a.id === focusApptId)
+      ? focusApptId
+      : null
+  // The focused booking's start hour (practice tz) minus ~1h of context, so the
+  // grid's initial scroll lands on it instead of the default 7am window.
+  const focusScrollHour = (() => {
+    if (!focusedId) return null
+    const appt = appointments.find((a) => a.id === focusedId)
+    if (!appt) return null
+    const h = wallClockPartsInTimeZone(
+      new Date(appt.start_at),
+      PRACTICE_TIMEZONE,
+    ).hour
+    return Math.max(HOUR_START, h - 1)
+  })()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -275,17 +297,16 @@ export function WeekView({
     const el = gridScrollRef.current
     if (!el) return
     if (!hasSetInitialScrollRef.current) {
-      el.scrollTop =
-        (DEFAULT_VIEW_HOUR_START - HOUR_START) *
-        pxPerQuarter *
-        QUARTERS_PER_HOUR
+      // Land on the focused booking (reconcile deep-link) if any, else 7am.
+      const topHour = focusScrollHour ?? DEFAULT_VIEW_HOUR_START
+      el.scrollTop = (topHour - HOUR_START) * pxPerQuarter * QUARTERS_PER_HOUR
       hasSetInitialScrollRef.current = true
     } else if (prevPxPerQuarterRef.current !== pxPerQuarter) {
       const scale = pxPerQuarter / prevPxPerQuarterRef.current
       el.scrollTop = el.scrollTop * scale
     }
     prevPxPerQuarterRef.current = pxPerQuarter
-  }, [pxPerQuarter])
+  }, [pxPerQuarter, focusScrollHour])
 
   // ESC / outside-click closes the popover.
   useEffect(() => {
@@ -669,8 +690,10 @@ export function WeekView({
                     ? `${a.client.first_name} ${a.client.last_name}`.toLowerCase()
                     : ''
                   const dimmed =
-                    normalisedFilter.length > 0 &&
-                    !fullName.includes(normalisedFilter)
+                    (normalisedFilter.length > 0 &&
+                      !fullName.includes(normalisedFilter)) ||
+                    (focusedId !== null && a.id !== focusedId)
+                  const focused = focusedId !== null && a.id === focusedId
                   const typeColor =
                     sessionTypeColors.get(a.appointment_type.toLowerCase()) ??
                     null
@@ -682,6 +705,7 @@ export function WeekView({
                       gridRef={gridRef}
                       pxPerQuarter={pxPerQuarter}
                       dimmed={dimmed}
+                      focused={focused}
                       typeColor={typeColor}
                       lane={lay.lane}
                       lanes={lay.lanes}
@@ -1420,6 +1444,7 @@ function AppointmentBlock({
   gridRef,
   pxPerQuarter,
   dimmed,
+  focused,
   typeColor,
   lane,
   lanes,
@@ -1430,6 +1455,7 @@ function AppointmentBlock({
   gridRef: React.RefObject<HTMLDivElement | null>
   pxPerQuarter: number
   dimmed: boolean
+  focused: boolean
   typeColor: string | null
   lane: number
   lanes: number
@@ -1656,7 +1682,7 @@ function AppointmentBlock({
         cursor: drag ? 'grabbing' : 'grab',
         overflow: 'hidden',
         color: 'var(--color-text)',
-        zIndex: drag ? 3 : 2,
+        zIndex: drag ? 3 : focused ? 3 : 2,
         transform,
         transition: drag ? 'none' : 'transform 120ms, height 120ms',
         opacity: pending
@@ -1668,7 +1694,9 @@ function AppointmentBlock({
               : 1,
         boxShadow: drag
           ? '0 6px 18px rgba(0,0,0,.18)'
-          : undefined,
+          : focused
+            ? '0 0 0 2px var(--color-accent)'
+            : undefined,
         userSelect: 'none',
         touchAction: 'none',
       }}

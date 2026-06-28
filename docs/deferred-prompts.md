@@ -151,16 +151,11 @@ When triggered, this runs as a full Phase-3 section: seven-step polish protocol 
 
 ---
 
-## Needs-Attention triggers v2 — structural pair (Reconciliation, Assessment-completeness)
+## Needs-Attention triggers v2 — remaining items (Assessment-completeness; §3 payment dimension)
 
-**Surfaced:** 2026-06-28, from the design-lock `needs-attention-trigger-set-v2.md`. The **light pair** (Onboarding funnel, Program ended) + the dead-trigger fix landed this date (see `docs/polish/ep-dashboard.md` §9). These two remain parked — each is its **own** full polish-protocol pass with its own migration + pgTAP gate. Not bundled with each other.
+**Surfaced:** 2026-06-28, from the design-lock `needs-attention-trigger-set-v2.md`. The **light pair** (Onboarding funnel, Program ended), the dead-trigger fix, **and item-3 reconciliation** all landed this date (see `docs/polish/ep-dashboard.md` §9). What remains: **§4 Assessment-completeness** (the one genuinely-structural pass) and the dormant **§3 payment dimension**.
 
-**§3 — Past session not reconciled (in-clinic only).** A past in-clinic appointment with no settled outcome → needs attendance / note owed. Audit (2026-06-28) confirms the data model does **not** support it yet:
-- `appointment_status` is booking-lifecycle only (`pending/confirmed/cancelled/completed/no_show`) — **no positive "attended" outcome** distinct from "completed", and **no `rescheduled`** (reschedule is a destructive in-place `start_at` edit, no history).
-- In-clinic vs remote is only inferrable from free-text `appointment_type` (tenant-customisable via `session_types`) — fragile to filter on a string; likely wants an explicit determinant.
-- Reconciled-vs-note-owed needs cross-checking `clinical_notes.appointment_id`.
-- Payment dimension stays a **dormant model slot** until Phase-4 billing (no payment record exists; a live check would fire forever).
-- Routing → the specific booking in the schedule.
+**§3 — Past session not reconciled — BUILT 2026-06-28 (light, no schema).** Shipped as a dashboard trigger: a past `kind='appointment'` booking (ended, ~30-day window) surfaces as **attendance not set** (pending/confirmed) or **note owed** (completed, no `clinical_notes.appointment_id`). The original audit's "the data model doesn't support it" was **superseded** — the building blocks already existed (`appointment_status` completed/no_show + `setAppointmentStatusAction`; `clinical_notes.appointment_id` + `createClinicalNoteAction`), so no attendance enum / in-clinic column was needed. "In-clinic only" = all `kind='appointment'` (portal home/gym training lives in `sessions`). Lives in the panel's **Clinical admin** group. **Still parked:** the **payment dimension** — a dormant model slot until Phase-4 billing (no payment record exists; a live check would fire forever); the no-show-fee message is a billing automation, not a dashboard row.
 
 **§4 — Initial assessment record completeness.** After an initial assessment is complete, medical history / goals / referral source each filled **or** explicitly marked nil/none. Audit confirms:
 - **No affirmative "nil/none" state** on any of `clients.goals`, `clients.referral_source`, `client_medical_history` (empty-vs-non-empty only) — needs schema (nil-flags or a structured capture).

@@ -9,15 +9,16 @@ import {
   addDaysToIsoDate,
   hourInTimeZone,
 } from '@/lib/dates'
-import {
-  initialsFor,
-  type AvatarTone,
-} from '../clients/_lib/client-helpers'
+import { initialsFor } from '../clients/_lib/client-helpers'
 import {
   RecentlyCompletedPanel,
   type DashboardCompletion,
 } from './_components/RecentlyCompletedPanel'
-import { OverdueFollowUpButton } from './_components/OverdueFollowUpButton'
+import {
+  AttentionPanel,
+  type AttentionItem,
+  type AttentionTone,
+} from './_components/AttentionPanel'
 import type {
   ProfileCompletionExercise,
   ProfileCompletionSet,
@@ -75,6 +76,13 @@ export default async function DashboardPage() {
   // with the other thresholds above.
   const sevenDaysAgo = startOfDayInstant(addDaysToIsoDate(todayIso, -7), tz)
   const todayPlus7Iso = addDaysToIsoDate(todayIso, 7)
+  // Reconciliation (item 3): past appointments needing attendance set or a note,
+  // bounded to a recent window so ancient never-reconciled bookings don't nag
+  // forever (a months-old session won't get a fresh note anyway).
+  const reconcileLookback = startOfDayInstant(
+    addDaysToIsoDate(todayIso, -30),
+    tz,
+  )
 
   // Parallel fetches.
   const [
@@ -88,6 +96,8 @@ export default async function DashboardPage() {
     { data: assessmentNoteRows },
     { data: apptActivityRows },
     { data: upcomingProgramDayRows },
+    { data: pastApptRows },
+    { data: notedApptRows },
   ] = await Promise.all([
     supabase
       .from('clients')
@@ -208,6 +218,30 @@ export default async function DashboardPage() {
       .select('scheduled_date, program:programs(client_id, status, deleted_at)')
       .gte('scheduled_date', todayIso)
       .is('deleted_at', null),
+    // Reconciliation (item 3): past client appointments (ended, within the last
+    // ~30 days) that may need attention. pending/confirmed = attendance not set;
+    // completed = a note may be owed. no_show + cancelled are already reconciled
+    // (excluded). kind='appointment' = EP-conducted bookings (portal home/gym
+    // training lives in `sessions`, not here, so it's excluded by construction).
+    supabase
+      .from('appointments')
+      .select(
+        `id, start_at, status,
+         client:clients(id, first_name, last_name, archived_at)`,
+      )
+      .eq('kind', 'appointment')
+      .in('status', ['pending', 'confirmed', 'completed'])
+      .lt('end_at', now.toISOString())
+      .gte('start_at', reconcileLookback.toISOString())
+      .is('deleted_at', null)
+      .order('start_at', { ascending: true }),
+    // Appointment ids that already have a clinical note — for the "note owed"
+    // distinction (a completed appointment with no linked note).
+    supabase
+      .from('clinical_notes')
+      .select('appointment_id')
+      .not('appointment_id', 'is', null)
+      .is('deleted_at', null),
   ])
 
   // ── Derived lookups ────────────────────────────────────────────────────
@@ -308,6 +342,44 @@ export default async function DashboardPage() {
     }
   }
 
+  // Appointment ids that already carry a clinical note — the "note owed"
+  // reconciliation test (completed appointment, no note yet).
+  const notedApptIds = new Set(
+    ((notedApptRows ?? []) as Array<{ appointment_id: string | null }>)
+      .map((n) => n.appointment_id)
+      .filter((id): id is string => id !== null),
+  )
+
+  // Reconciliation candidates (item 3): one per past appointment that may need
+  // attention, ordered oldest-first so the per-client dedupe keeps the oldest.
+  // Dates are resolved in the practice tz here so buildAttentionList stays
+  // tz-agnostic (dateIso → the `?d=` schedule deep-link; dateShort → the reason).
+  type ReconcileApptRow = {
+    id: string
+    start_at: string
+    status: string
+    client: {
+      id: string
+      first_name: string
+      last_name: string
+      archived_at: string | null
+    } | null
+  }
+  const reconcileAppts: ReconcileAppt[] = (
+    (pastApptRows ?? []) as unknown as ReconcileApptRow[]
+  )
+    .filter((a) => a.client !== null && !a.client.archived_at)
+    .map((a) => ({
+      id: a.id,
+      clientId: a.client!.id,
+      firstName: a.client!.first_name,
+      lastName: a.client!.last_name,
+      status: a.status,
+      hasNote: notedApptIds.has(a.id),
+      dateIso: isoDateInTimeZone(a.start_at, tz),
+      when: formatDateTimeShort(new Date(a.start_at), tz),
+    }))
+
   // ── Stats ──────────────────────────────────────────────────────────────
   // Cancelled appointments still render on the board (struck-through) so a
   // cancelled slot doesn't silently vanish — but a cancelled slot is not a
@@ -350,6 +422,7 @@ export default async function DashboardPage() {
     upcomingApptClientIds,
     lastApptMsByClient,
     upcomingProgramDayClientIds,
+    reconcileAppts,
     nowMs: now.getTime(),
     tenDaysAgoMs: tenDaysAgo.getTime(),
     tenDaysAgoIso,
@@ -357,6 +430,10 @@ export default async function DashboardPage() {
     todayIso,
     todayPlus7Iso,
   })
+  // Total attention ROWS across both groups (rule 3, operator 2026-06-28: count
+  // rows, not clients — a client with both an adherence and a clinical-admin row
+  // counts twice). Drives the stat + sub-line.
+  const attentionRowCount = attention.adherence.length + attention.admin.length
 
   // Project recent completions into the panel shape, dropping archived-client
   // and null-client rows, then keeping the 5 most recent (P2-2).
@@ -452,8 +529,8 @@ export default async function DashboardPage() {
       ? `${sessionsToday} ${sessionsToday === 1 ? 'session' : 'sessions'} today`
       : 'No sessions booked today'
   const attentionClause =
-    attention.length > 0
-      ? `${attention.length} ${attention.length === 1 ? 'client needs' : 'clients need'} follow-up`
+    attentionRowCount > 0
+      ? `${attentionRowCount} ${attentionRowCount === 1 ? 'item needs' : 'items need'} follow-up`
       : null
   const subLine = attentionClause
     ? `${sessionsClause} · ${attentionClause}.`
@@ -498,12 +575,12 @@ export default async function DashboardPage() {
           }
         />
         <StatCard
-          value={String(attention.length)}
+          value={String(attentionRowCount)}
           label="Need attention"
           detail={
-            attention.length === 0 ? 'All clear' : 'See the panel below'
+            attentionRowCount === 0 ? 'All clear' : 'See the panel below'
           }
-          tone={attention.length > 0 ? 'warning' : 'neutral'}
+          tone={attentionRowCount > 0 ? 'warning' : 'neutral'}
         />
         <StatCard
           value={String(programsEndingCount)}
@@ -553,7 +630,10 @@ export default async function DashboardPage() {
             </div>
           </div>
         ) : (
-          <AttentionPanel items={attention} />
+          <AttentionPanel
+            adherence={attention.adherence}
+            admin={attention.admin}
+          />
         )}
         <TodaysSessionsPanel
           items={todaysAppointments ?? []}
@@ -643,39 +723,48 @@ function StatCard({
 
 /* ====================== Needs-attention panel ====================== */
 
-type AttentionTone =
-  | 'flag'
-  | 'overdue'
-  | 'ended'
-  | 'ending'
-  | 'new'
-  | 'onboarding'
-
 // Lower = more urgent. Drives per-client dedup (keep the most urgent reason) and
 // the panel sort order. The brief §6.8.2 order (Flag → Overdue → Ending → New)
 // extended for the v2 triggers: Ended (training gap live now) sits above Ending
-// (≤7 days out), and Onboarding (a quiet new-client nudge) is the least urgent.
+// (≤7 days out); Reconcile (a past session needing attendance/note, item 3)
+// below the training-state triggers but above the new-client setup ones; and
+// Onboarding (a quiet new-client nudge) is the least urgent.
 const PRIORITY = {
   flag: 0,
   overdue: 1,
   ended: 2,
   ending: 3,
-  new: 4,
-  onboarding: 5,
+  reconcile: 4,
+  new: 5,
+  onboarding: 6,
 } as const
 
-type AttentionItem = {
+// Which group each tone belongs to (operator decision 2026-06-28). Two distinct
+// concerns that don't compete for one row: ADHERENCE (portal / training — is the
+// client doing their program?) and CLINICAL ADMIN (bookings / records — is the
+// appointment paperwork done?). Deduped separately, so a client can show one row
+// in each group.
+const DOMAIN: Record<AttentionTone, 'adherence' | 'admin'> = {
+  flag: 'admin',
+  overdue: 'adherence',
+  ended: 'adherence',
+  ending: 'adherence',
+  reconcile: 'admin',
+  new: 'adherence',
+  onboarding: 'adherence',
+}
+
+// One past appointment that may need reconciling (item 3). Pre-projected in the
+// page (practice-tz dates resolved) so buildAttentionList stays tz-agnostic.
+type ReconcileAppt = {
+  id: string
   clientId: string
-  avatar: string
   firstName: string
   lastName: string
-  tone: AttentionTone
-  tag: string
-  reason: string
-  action: { label: string; href: string }
-  // Lower = more urgent. Drives dedupe (keep the most urgent per client) +
-  // the panel sort order. See the PRIORITY map above.
-  priority: number
+  status: string
+  hasNote: boolean
+  dateIso: string
+  when: string
 }
 
 type FlaggedNote = {
@@ -716,6 +805,7 @@ function buildAttentionList({
   upcomingApptClientIds,
   lastApptMsByClient,
   upcomingProgramDayClientIds,
+  reconcileAppts,
   nowMs,
   tenDaysAgoMs,
   tenDaysAgoIso,
@@ -741,13 +831,14 @@ function buildAttentionList({
   upcomingApptClientIds: Set<string>
   lastApptMsByClient: Map<string, number>
   upcomingProgramDayClientIds: Set<string>
+  reconcileAppts: ReconcileAppt[]
   nowMs: number
   tenDaysAgoMs: number
   tenDaysAgoIso: string
   sevenDaysAgoMs: number
   todayIso: string
   todayPlus7Iso: string
-}): AttentionItem[] {
+}): { adherence: AttentionItem[]; admin: AttentionItem[] } {
   const candidates: AttentionItem[] = []
 
   // Flag (red) — active injury flag / contraindication unreviewed > 14 days.
@@ -986,156 +1077,93 @@ function buildAttentionList({
     }
   }
 
-  // One row per client — keep the most urgent reason — then sort by urgency.
-  const byClient = new Map<string, AttentionItem>()
+  // Reconciliation (item 3) — ONE row per client, combining attendance-not-set
+  // and note-owed (operator decision 2026-06-28: never split into separate
+  // rows). >1 session total → the row's Open opens a per-client pop-up listing
+  // them all, each labelled with its type; exactly 1 → inline with a direct
+  // Open. no_show / completed-with-note are already reconciled (filtered out).
+  // reconcileAppts arrive oldest-first, so each client's sessions are too.
+  type ReconcileGroup = {
+    clientId: string
+    firstName: string
+    lastName: string
+    sessions: {
+      id: string
+      when: string
+      dateIso: string
+      typeLabel: string
+    }[]
+  }
+  const reconcileGroups = new Map<string, ReconcileGroup>()
+  for (const a of reconcileAppts) {
+    let typeLabel: string | null = null
+    if (a.status === 'pending' || a.status === 'confirmed')
+      typeLabel = 'attendance not set'
+    else if (a.status === 'completed' && !a.hasNote) typeLabel = 'note owed'
+    if (!typeLabel) continue
+    let g = reconcileGroups.get(a.clientId)
+    if (!g) {
+      g = {
+        clientId: a.clientId,
+        firstName: a.firstName,
+        lastName: a.lastName,
+        sessions: [],
+      }
+      reconcileGroups.set(a.clientId, g)
+    }
+    g.sessions.push({ id: a.id, when: a.when, dateIso: a.dateIso, typeLabel })
+  }
+  const reconcileItems: AttentionItem[] = [...reconcileGroups.values()]
+    .sort((a, b) => a.sessions[0]!.dateIso.localeCompare(b.sessions[0]!.dateIso))
+    .map((g) => {
+      const oldest = g.sessions[0]!
+      const n = g.sessions.length
+      return {
+        clientId: g.clientId,
+        avatar: initialsFor(g.firstName, g.lastName),
+        firstName: g.firstName,
+        lastName: g.lastName,
+        tone: 'reconcile' as const,
+        tag: 'Reconcile',
+        // Single → show the session inline; multiple → a count, the Open opens
+        // the per-client pop-up listing every attendance + note session.
+        reason:
+          n === 1
+            ? `${oldest.when} — ${oldest.typeLabel}`
+            : `${n} sessions to reconcile`,
+        action: {
+          label: 'Open',
+          href: `/schedule?d=${oldest.dateIso}&focus=${oldest.id}`,
+        },
+        priority: PRIORITY.reconcile,
+        sessions: g.sessions,
+      }
+    })
+
+  // Dedupe per (client × domain). Only Flag + the adherence tones live in
+  // `candidates`; reconcile rows are already grouped per (client × type) above
+  // and append to the admin group as-is, so a client can show an attendance row
+  // AND a note row alongside any flag.
+  const byKey = new Map<string, AttentionItem>()
   for (const it of candidates) {
-    const existing = byClient.get(it.clientId)
+    const key = `${it.clientId}:${DOMAIN[it.tone]}`
+    const existing = byKey.get(key)
     if (!existing || it.priority < existing.priority) {
-      byClient.set(it.clientId, it)
+      byKey.set(key, it)
     }
   }
-  return [...byClient.values()].sort((a, b) => a.priority - b.priority)
-}
-
-const ATTENTION_VISIBLE = 6
-
-function AttentionPanel({ items }: { items: AttentionItem[] }) {
-  const visible = items.slice(0, ATTENTION_VISIBLE)
-  const overflow = items.length - visible.length
-  return (
-    <div className="card" style={{ padding: '22px 26px' }}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 6,
-        }}
-      >
-        <div className="eyebrow" style={{ margin: 0 }}>
-          Needs attention
-        </div>
-        <Link
-          href="/clients"
-          style={{
-            fontSize: '.78rem',
-            color: 'var(--color-primary)',
-            fontWeight: 500,
-            textDecoration: 'none',
-          }}
-        >
-          View all →
-        </Link>
-      </div>
-
-      {items.length === 0 ? (
-        <div
-          style={{
-            padding: '28px 0',
-            textAlign: 'center',
-            color: 'var(--color-muted)',
-            fontSize: '.88rem',
-          }}
-        >
-          Nothing flagged.
-        </div>
-      ) : (
-        <>
-          {visible.map((it) => {
-            const variant: AvatarTone =
-              it.tone === 'flag' ? 'r' : it.tone === 'new' ? 'n' : 'a'
-            return (
-              <div
-                key={`${it.clientId}-${it.tag}`}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  padding: '14px 0',
-                  borderBottom: '1px solid var(--color-border-subtle)',
-                }}
-              >
-                <span
-                  className={`avatar ${variant}`}
-                  style={{ width: 40, height: 40, fontSize: 40 * 0.38 }}
-                >
-                  {it.avatar}
-                </span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <Link
-                      href={`/clients/${it.clientId}`}
-                      style={{
-                        fontWeight: 600,
-                        color: 'var(--color-charcoal)',
-                        textDecoration: 'none',
-                      }}
-                    >
-                      {it.firstName} {it.lastName}
-                    </Link>
-                    <span className={`tag ${it.tone}`}>{it.tag}</span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: '.78rem',
-                      color: 'var(--color-text-light)',
-                      marginTop: 2,
-                    }}
-                  >
-                    {it.reason}
-                  </div>
-                </div>
-                {it.tone === 'overdue' || it.tone === 'onboarding' ? (
-                  // Manual exit for the two triggers with no natural DB clear:
-                  // Overdue (only the client logging clears it) and Onboarding
-                  // (reaching out leaves no trace). The shared ack snoozes the
-                  // row ~10 days; the action link sits beside it (lined up with
-                  // the single button on every other row — one clean right edge).
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 8,
-                    }}
-                  >
-                    <OverdueFollowUpButton clientId={it.clientId} />
-                    <Link href={it.action.href} className="btn outline">
-                      {it.action.label}
-                    </Link>
-                  </div>
-                ) : (
-                  <Link href={it.action.href} className="btn outline">
-                    {it.action.label}
-                  </Link>
-                )}
-              </div>
-            )
-          })}
-          {overflow > 0 && (
-            <Link
-              href="/clients"
-              style={{
-                display: 'block',
-                padding: '12px 0 2px',
-                fontSize: '.78rem',
-                color: 'var(--color-primary)',
-                fontWeight: 500,
-                textDecoration: 'none',
-              }}
-            >
-              +{overflow} more →
-            </Link>
-          )}
-        </>
-      )}
-    </div>
-  )
+  const deduped = [...byKey.values()]
+  const byPriority = (a: AttentionItem, b: AttentionItem) =>
+    a.priority - b.priority
+  return {
+    adherence: deduped
+      .filter((it) => DOMAIN[it.tone] === 'adherence')
+      .sort(byPriority),
+    admin: [
+      ...deduped.filter((it) => DOMAIN[it.tone] === 'admin'),
+      ...reconcileItems,
+    ].sort(byPriority),
+  }
 }
 
 /* ====================== Today's sessions panel ====================== */
@@ -1357,4 +1385,32 @@ function formatTime(d: Date, timeZone: string): string {
     hour12: true,
     timeZone,
   }).format(d)
+}
+
+/** "Mon 23 Jun · 2:00pm" in the practice tz — a reconcile session's when (date +
+ * time, so multiple same-day sessions are distinguishable in the dropdown). */
+function formatDateTimeShort(d: Date, timeZone: string): string {
+  const date = new Intl.DateTimeFormat('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone,
+  }).format(d)
+  const time = new Intl.DateTimeFormat('en-AU', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone,
+  }).format(d)
+  return `${date} · ${time}`
+}
+
+/** Practice-tz calendar date (YYYY-MM-DD) of an instant — for the ?d= deep link. */
+function isoDateInTimeZone(iso: string, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(iso))
 }

@@ -31,6 +31,7 @@ export default async function SchedulePage({
     staff?: string
     view?: string
     d?: string
+    focus?: string
   }>
 }) {
   const params = await searchParams
@@ -216,6 +217,7 @@ export default async function SchedulePage({
       selectedDateIso={selectedIso}
       todayIso={todayIso}
       nowIso={new Date().toISOString()}
+      focusApptId={params.focus ?? null}
     />
   )
 }

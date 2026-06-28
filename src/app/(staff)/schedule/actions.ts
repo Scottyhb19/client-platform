@@ -451,6 +451,7 @@ export async function cancelAppointmentAction(
 
   if (error) return { error: `Cancel failed: ${error.message}` }
   revalidatePath('/schedule')
+  revalidatePath('/dashboard')
   return { error: null }
 }
 
@@ -525,6 +526,10 @@ export async function setAppointmentStatusAction(
 
   if (error) return { error: `Could not update status: ${error.message}` }
   revalidatePath('/schedule')
+  // The dashboard's reconcile + today's-sessions panels read this status, so
+  // refresh it too — otherwise actioning a past session here leaves the
+  // dashboard showing it unchanged on return.
+  revalidatePath('/dashboard')
   return { error: null }
 }
 

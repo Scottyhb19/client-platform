@@ -405,6 +405,12 @@ body {
   background: rgba(232, 163, 23, 0.1);
   color: #9a7a0e;
 }
+/* Reconcile = a past session needs attendance set or a note (item 3). Amber —
+   a "needs your action" item, distinguished by its label. */
+.tag.reconcile {
+  background: rgba(232, 163, 23, 0.1);
+  color: #9a7a0e;
+}
 /* Cancelled = "this isn't happening", not an alert — so neutral grey, never
    red. Used on the dashboard board so a cancelled slot stays visible rather
    than silently vanishing. The tint is charcoal (#1C1917) at low alpha. */
