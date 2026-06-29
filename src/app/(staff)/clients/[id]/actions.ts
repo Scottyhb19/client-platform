@@ -74,7 +74,7 @@ export type UpdateClientDetailsInput = {
   phone: string
   /** 'YYYY-MM-DD' or '' for none. */
   dob: string
-  gender: string
+  sex: string
   address: string
   categoryId: string | null
   referralSource: string
@@ -165,7 +165,7 @@ export async function updateClientDetailsAction(
       last_name: lastName,
       phone: clean(input.phone),
       dob,
-      gender: clean(input.gender),
+      sex: clean(input.sex),
       address: clean(input.address),
       category_id: input.categoryId,
       referral_source: clean(input.referralSource),

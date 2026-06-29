@@ -797,3 +797,61 @@ session on `/schedule` with a client who has a mix of past and future bookings.
   `status='cancelled'` / `no_show` / `completed` (migration `20260629130000`).
   Removing an unavailable block soft-deletes it (`deleted_at`), it does not
   cancel — so it never feeds the Analytics cancellation rate.
+
+---
+
+## Profile rework — client medications + gender→sex rename (commit 1, schema, 2026-06-29)
+
+Context: `client_medications` cloned from `client_medical_history` (migration
+`20260629140000`) — org-scoped, staff-only RLS, audit-registered, `is_active` +
+`deleted_at` status mechanism (active / ceased / archived). `clients.gender`
+renamed to `clients.sex` (migration `20260629150000`), a rename only — free-text,
+no value-model change. This commit lands schema only; the medications UI is
+commit 2.
+
+### MED-RLS-1 — A client cannot read its own medication rows (isolation)
+- **Setup:** A `client_medications` row owned by a client's `clients` row, in
+  the client's own org, with `clients.user_id` = the client's auth uid.
+- **Pass:** Under the client session, `SELECT … FROM client_medications` for that
+  `client_id` returns **0 rows** (staff-only SELECT policy); a staff session in
+  the same org sees the row (count 1); the same client session still sees its own
+  `clients` row (count 1, session live not blind). pgTAP `47` §A asserts all three.
+
+### MED-RLS-2 — Cross-tenant: org B cannot see org A's medications
+- **Pass:** A staff/owner of org B sees **0** of org A's `client_medications`
+  rows (the `organization_id = user_organization_id()` clause). Same property the
+  cross-tenant suite (test 17) proves for every tenant table; `client_medications`
+  carries `organization_id` and the same SELECT shape, so it inherits it.
+
+### MED-GRANTS-1 — Soft-delete / restore RPCs are anon-locked, authenticated-open
+- **Pass:** `has_function_privilege('anon', …, 'EXECUTE')` is **false** for both
+  `soft_delete_client_medications(uuid)` and `restore_client_medications(uuid)`;
+  **true** for `authenticated`. pgTAP `47` §B asserts all four. (Guards the
+  Supabase auto-grant trap: `REVOKE FROM PUBLIC` alone leaves anon a direct grant,
+  so the migration also `REVOKE … FROM anon`.)
+
+### MED-AUDIT-1 — Medication mutations are audit-logged with the right org
+- **Pass:** Insert/update/delete on `client_medications` writes an `audit_log`
+  row with the correct `organization_id` (direct-org resolver branch). The
+  migration ends with `assert_audit_resolver_coverage()`, which fails the push if
+  the `audit_client_medications` trigger lacks a resolver branch.
+
+### MED-STATUS-1 — The three states are reachable (active / ceased / archived)
+- **Pass:** A new row defaults `is_active = true` (**active**). Staff `UPDATE … SET
+  is_active = false` (ordinary RLS UPDATE) → **ceased**. `soft_delete_client_medications`
+  sets `deleted_at` → **archived** (drops out of the default `deleted_at IS NULL`
+  SELECT); `restore_client_medications` clears it. A bare `UPDATE … SET deleted_at`
+  by a staff session fails `42501` (the soft-delete-trap — why the RPC exists).
+
+### SEX-RENAME-1 — The field is "Sex" end to end, "gender" is gone
+- **Pass:** The Contact panel shows a **SEX** eyebrow label (uppercased by
+  `FieldBox`) reading the client's value; the Edit dialog field is labelled
+  **Sex** (`id="edit-sex"`) and saves through `updateClientDetailsAction({ …, sex })`
+  to `clients.sex`. A repo-wide grep for `gender` (case-insensitive) finds no live
+  code/type/query reference — only historical polish-doc mentions. The build is
+  clean.
+
+### SEX-RENAME-2 — The rename is value-preserving
+- **Pass:** Existing values survive the column rename unchanged (ALTER TABLE …
+  RENAME COLUMN is lossless); the field stays free-text (no enum, no new values).
+  A client whose value was "Female" still reads "Female" after the rename.

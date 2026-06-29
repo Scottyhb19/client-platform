@@ -47,7 +47,7 @@ export type ProfileClient = {
   email: string
   phone: string | null
   dob: string | null
-  gender: string | null
+  sex: string | null
   address: string | null
   referral_source: string | null
   referred_by: string | null
@@ -953,7 +953,7 @@ function DetailsTab({
             label="Date of birth"
             value={client.dob ? formatDob(client.dob) : null}
           />
-          <FieldBox label="Gender" value={client.gender} />
+          <FieldBox label="Sex" value={client.sex} />
           <FieldBox label="Address" value={client.address} span2 />
           <FieldBox label="Referrer" value={client.referral_source} />
           <FieldBox label="Referred by" value={client.referred_by} />

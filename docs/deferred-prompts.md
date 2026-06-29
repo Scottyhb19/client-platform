@@ -187,3 +187,29 @@ lever, but every capping layout leaves whitespace *somewhere* on a wide screen,
 and none of the placements landed. A `min/minmax(0, …)` track collapses to 0
 because the column's children are absolutely positioned — use a definite track.
 Reverted to the original full-width `1fr` day column (no code shipped).
+
+---
+
+## Medications — AI auto-populate the context note from exercise-relevant drug effects (Phase 2)
+
+**Surfaced:** 2026-06-29, when the `client_medications` table was added (migration
+`20260629140000`, profile rework commit 1). The table carries a required `name`
+and an optional free-text one-line `context_note` the EP fills in by hand.
+
+**Idea.** Auto-draft the `context_note` from the medication's known
+**exercise-relevant** effects — the things an EP actually programs around: e.g.
+beta-blockers blunting heart-rate response (RPE/HR-zone targets become
+unreliable), corticosteroids and tendon-load caution, statins and myalgia,
+SSRIs/sedatives and morning-session readiness, diuretics and hydration/cramping.
+The EP types or picks the drug `name`; the system proposes a one-line note the EP
+edits or accepts. Suggestion only — never silently stored, always EP-confirmed.
+
+**Re-trigger:** Phase 2 AI capabilities (CLAUDE.md "Phase 2" — AI-assisted client
+communications and drafting). This is the same class of feature: model-drafted
+clinical-adjacent text the EP reviews before it lands. It inherits Phase 2's
+gating note — the AI data flow (a medication name is clinical-adjacent input)
+must be documented before it is enabled in the friends-and-family beta.
+
+**Why deferred:** Phase 1 is a hand-typed note. The drug→effect knowledge base and
+the draft-and-confirm flow are net-new AI surface, out of scope for the schema-only
+profile rework. Logged, not built (dogfooding-loop feature-wish discipline).

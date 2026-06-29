@@ -4,7 +4,7 @@
  * CN-5 — edit dialog for a client's personal details and goals.
  *
  * One form covers everything the Contact and Goals panels render: name,
- * phone, DOB, gender, address, category, referrer, referred-by, emergency
+ * phone, DOB, sex, address, category, referrer, referred-by, emergency
  * contact, goals. Email renders read-only with no edit control — it is the
  * invite/login identity (see updateClientDetailsAction).
  *
@@ -32,7 +32,7 @@ export function EditClientDetailsDialog({
   const [lastName, setLastName] = useState(client.last_name)
   const [phone, setPhone] = useState(client.phone ?? '')
   const [dob, setDob] = useState(client.dob ?? '')
-  const [gender, setGender] = useState(client.gender ?? '')
+  const [sex, setSex] = useState(client.sex ?? '')
   const [address, setAddress] = useState(client.address ?? '')
   const [categoryId, setCategoryId] = useState(client.category_id ?? '')
   const [referralSource, setReferralSource] = useState(
@@ -64,7 +64,7 @@ export function EditClientDetailsDialog({
         lastName,
         phone,
         dob,
-        gender,
+        sex,
         address,
         categoryId: categoryId === '' ? null : categoryId,
         referralSource,
@@ -190,12 +190,12 @@ export function EditClientDetailsDialog({
         </Row>
 
         <Row style={{ marginTop: 12 }}>
-          <Field label="Gender" htmlFor="edit-gender">
+          <Field label="Sex" htmlFor="edit-sex">
             <input
-              id="edit-gender"
+              id="edit-sex"
               type="text"
-              value={gender}
-              onChange={(e) => setGender(e.target.value)}
+              value={sex}
+              onChange={(e) => setSex(e.target.value)}
               disabled={isSaving}
               style={inputStyle}
             />

@@ -865,7 +865,7 @@ CREATE TABLE clients (
   email               text         NOT NULL CHECK (email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
   phone               text,
   dob                 date,
-  gender              text,
+  sex                 text,
   address             text,
   emergency_contact_name  text,
   emergency_contact_phone text,

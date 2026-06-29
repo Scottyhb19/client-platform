@@ -81,7 +81,7 @@ export default async function ClientProfilePage({
     supabase
       .from('clients')
       .select(
-        `id, first_name, last_name, email, phone, dob, gender, address,
+        `id, first_name, last_name, email, phone, dob, sex, address,
          referral_source, referred_by, emergency_contact_name,
          emergency_contact_phone, goals, created_at, user_id, version,
          invited_at, onboarded_at, archived_at, category_id,
@@ -264,7 +264,7 @@ export default async function ClientProfilePage({
     email: client.email,
     phone: client.phone,
     dob: client.dob,
-    gender: client.gender,
+    sex: client.sex,
     address: client.address,
     referral_source: client.referral_source,
     referred_by: client.referred_by,

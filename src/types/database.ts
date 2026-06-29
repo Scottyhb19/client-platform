@@ -862,7 +862,6 @@ export type Database = {
           emergency_contact_name: string | null
           emergency_contact_phone: string | null
           first_name: string
-          gender: string | null
           goals: string | null
           id: string
           invited_at: string | null
@@ -874,6 +873,7 @@ export type Database = {
           phone: string | null
           referral_source: string | null
           referred_by: string | null
+          sex: string | null
           updated_at: string
           user_id: string | null
           version: number
@@ -889,7 +889,6 @@ export type Database = {
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
           first_name: string
-          gender?: string | null
           goals?: string | null
           id?: string
           invited_at?: string | null
@@ -901,6 +900,7 @@ export type Database = {
           phone?: string | null
           referral_source?: string | null
           referred_by?: string | null
+          sex?: string | null
           updated_at?: string
           user_id?: string | null
           version?: number
@@ -916,7 +916,6 @@ export type Database = {
           emergency_contact_name?: string | null
           emergency_contact_phone?: string | null
           first_name?: string
-          gender?: string | null
           goals?: string | null
           id?: string
           invited_at?: string | null
@@ -928,6 +927,7 @@ export type Database = {
           phone?: string | null
           referral_source?: string | null
           referred_by?: string | null
+          sex?: string | null
           updated_at?: string
           user_id?: string | null
           version?: number
