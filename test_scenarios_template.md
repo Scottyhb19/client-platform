@@ -780,3 +780,20 @@ session on `/schedule` with a client who has a mix of past and future bookings.
 ### SCH-PILL-2 — Height stays proportional to duration
 - **Pass:** A 90-min appointment renders visibly ~3× the height of a 30-min one
   in the same view; durations remain readable as relative block heights.
+
+### SCH-CANCEL-1 — "Hide cancelled" never hides unavailable blocks
+- **Context:** Unavailable blocks (admin / meeting / note, `kind='unavailable'`)
+  are the EP's own time-blocking, not client appointments. The "Hide cancelled"
+  filter is scoped to `kind='appointment'`, so it only hides cancelled client
+  appointments. (A legacy artifact left one note at `status='cancelled'`; the
+  data migration `20260629130000` reset live unavailable blocks to `confirmed`.)
+- **Pass:** Toggle **Hide cancelled** on a day that has a note/meeting block and
+  a cancelled client appointment. The cancelled appointment disappears; the
+  **note/meeting stays put**. The note renders in its neutral stone-grey type
+  colour (`#78716c`), not the cancelled grey, in both toggle states.
+
+### SCH-CANCEL-2 — Unavailable blocks are never in a cancelled state (DB)
+- **Pass (manual / SQL):** No live `kind='unavailable'` row sits at
+  `status='cancelled'` / `no_show` / `completed` (migration `20260629130000`).
+  Removing an unavailable block soft-deletes it (`deleted_at`), it does not
+  cancel — so it never feeds the Analytics cancellation rate.

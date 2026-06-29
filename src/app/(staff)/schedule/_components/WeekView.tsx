@@ -354,10 +354,17 @@ export function WeekView({
 
   // What actually renders, after the cancellations toggle (P2-8b). Lanes are
   // computed from this set, so hiding cancellations lets the survivors widen.
+  //
+  // "Hide cancelled" hides cancelled CLIENT APPOINTMENTS only. Unavailable
+  // blocks (admin / meeting / note time) are the EP's own time-blocking, never a
+  // client cancellation — they must never be swept up by this toggle, so the
+  // filter is scoped to kind='appointment'. (A legacy data artifact could leave
+  // an unavailable block at status='cancelled' — pre-section-9 removals cancelled
+  // instead of soft-deleting; the kind guard keeps such a block visible too.)
   const visibleByDay = useMemo(() => {
     if (showCancellations) return appointmentsByDay
     return appointmentsByDay.map((day) =>
-      day.filter((a) => a.status !== 'cancelled'),
+      day.filter((a) => !(a.kind === 'appointment' && a.status === 'cancelled')),
     )
   }, [appointmentsByDay, showCancellations])
 
