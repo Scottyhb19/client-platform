@@ -166,3 +166,24 @@ When triggered, this runs as a full Phase-3 section: seven-step polish protocol 
 **§5 — Email send failure (attention row).** Blocked, not just deferred: cannot go EP-facing until the deferred **Part B** (client-profile Comms tab + system-send log-wiring) lands — today a failed send only hits the `console.error`/Sentry stub. Reserve the slot; do not build until Part B is on the table. Tracked in `go-live-checklist.md` §8.
 
 **Source:** `needs-attention-trigger-set-v2.md`; dependency audit 2026-06-28; `docs/polish/ep-dashboard.md` §9.
+
+## Schedule — one-day view "less stretched" (parked 2026-06-29)
+
+**Friction:** In day view the single column uses `1fr` and stretches the full
+calendar width (~1350px+ on a wide monitor), so appointment pills look absurdly
+wide.
+
+**Tried and rejected (operator visual review):**
+- Cap the day column to a fixed width, **centred** (gutter+column centred with
+  whitespace both sides) — "did not look good at all" (too empty/floating).
+- Cap the column **left-aligned + dock the practitioner panel** immediately to
+  its right (panel auto-opens in day view; restructured so it sits below the
+  toolbar and never covers the DAYS control) — built and working, still "do not
+  like the look of it."
+
+**Notes for a future attempt:** the practitioner panel only reclaims ~260px, so
+it cannot meaningfully de-stretch on its own; capping the column is the only real
+lever, but every capping layout leaves whitespace *somewhere* on a wide screen,
+and none of the placements landed. A `min/minmax(0, …)` track collapses to 0
+because the column's children are absolutely positioned — use a definite track.
+Reverted to the original full-width `1fr` day column (no code shipped).
