@@ -81,7 +81,6 @@ export type UpdateClientDetailsInput = {
   referredBy: string
   emergencyContactName: string
   emergencyContactPhone: string
-  goals: string
 }
 
 const OCC_CONFLICT_MESSAGE =
@@ -172,7 +171,6 @@ export async function updateClientDetailsAction(
       referred_by: clean(input.referredBy),
       emergency_contact_name: clean(input.emergencyContactName),
       emergency_contact_phone: clean(input.emergencyContactPhone),
-      goals: clean(input.goals),
     })
     .eq('id', input.clientId)
     .eq('version', input.version)
@@ -206,6 +204,54 @@ export async function updateClientDetailsAction(
   }
 
   revalidatePath('/clients')
+  revalidatePath(`/clients/${input.clientId}`)
+  return { error: null }
+}
+
+/**
+ * Edit a client's goals in isolation — the Profile tab's Goals card has its
+ * own edit dialog, separate from the Contact "Edit details" form. Goals lives
+ * on `clients`, so it shares the OCC version with the details edit; both write
+ * `clients` and bump the same version, but they never co-edit (separate
+ * dialogs), so a stale-version save surfaces the standard OCC message.
+ */
+export async function updateClientGoalsAction(input: {
+  clientId: string
+  version: number
+  goals: string
+}): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  const supabase = await createSupabaseServerClient()
+
+  const { data: target } = await supabase
+    .from('clients')
+    .select('id, version')
+    .eq('id', input.clientId)
+    .maybeSingle()
+
+  if (!target) {
+    return { error: 'Client not found in your practice.' }
+  }
+  if (target.version !== input.version) {
+    return { error: OCC_CONFLICT_MESSAGE }
+  }
+
+  const trimmed = input.goals.trim()
+  const { data: updated, error: updateErr } = await supabase
+    .from('clients')
+    .update({ goals: trimmed.length > 0 ? trimmed : null })
+    .eq('id', input.clientId)
+    .eq('version', input.version)
+    .select('id')
+
+  if (updateErr) {
+    return { error: `Could not save goals: ${updateErr.message}` }
+  }
+  if (!updated || updated.length === 0) {
+    return { error: OCC_CONFLICT_MESSAGE }
+  }
+
   revalidatePath(`/clients/${input.clientId}`)
   return { error: null }
 }

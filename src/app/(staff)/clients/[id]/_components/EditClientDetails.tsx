@@ -1,21 +1,26 @@
 'use client'
 
 /**
- * CN-5 — edit dialog for a client's personal details and goals.
+ * CN-5 — edit dialog for a client's personal (Contact) details.
  *
- * One form covers everything the Contact and Goals panels render: name,
- * phone, DOB, sex, address, category, referrer, referred-by, emergency
- * contact, goals. Email renders read-only with no edit control — it is the
- * invite/login identity (see updateClientDetailsAction).
+ * Covers everything the Contact panel renders: name, phone, DOB, sex,
+ * address, category, referrer, referred-by, emergency contact. Email renders
+ * read-only with no edit control — it is the invite/login identity (see
+ * updateClientDetailsAction). Goals are edited separately via GoalsEditDialog
+ * (the Goals card has its own pencil), so they are no longer part of this form.
  *
  * OCC: the form carries clients.version from the page load; the action
  * refuses the save if the row has moved on (second tab, second staff
- * member) rather than silently clobbering.
+ * member) rather than silently clobbering. GoalsEditDialog shares the same
+ * version, so a goals edit and a details edit can't silently overwrite.
  */
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { updateClientDetailsAction } from '../actions'
+import {
+  updateClientDetailsAction,
+  updateClientGoalsAction,
+} from '../actions'
 import type { ProfileCategory, ProfileClient } from './ClientProfile'
 
 export function EditClientDetailsDialog({
@@ -45,7 +50,6 @@ export function EditClientDetailsDialog({
   const [emergencyPhone, setEmergencyPhone] = useState(
     client.emergency_contact_phone ?? '',
   )
-  const [goals, setGoals] = useState(client.goals ?? '')
   const [error, setError] = useState<string | null>(null)
   const [isSaving, startSaving] = useTransition()
 
@@ -71,7 +75,6 @@ export function EditClientDetailsDialog({
         referredBy,
         emergencyContactName: emergencyName,
         emergencyContactPhone: emergencyPhone,
-        goals,
       })
       if (res.error) {
         setError(res.error)
@@ -277,25 +280,6 @@ export function EditClientDetailsDialog({
           </Field>
         </Row>
 
-        <div style={{ marginTop: 12 }}>
-          <Field label="Goals" htmlFor="edit-goals">
-            <textarea
-              id="edit-goals"
-              value={goals}
-              onChange={(e) => setGoals(e.target.value)}
-              disabled={isSaving}
-              rows={3}
-              style={{
-                ...inputStyle,
-                height: 'auto',
-                padding: '8px 12px',
-                resize: 'vertical',
-                lineHeight: 1.5,
-              }}
-            />
-          </Field>
-        </div>
-
         {error && (
           <div
             role="alert"
@@ -336,6 +320,151 @@ export function EditClientDetailsDialog({
             disabled={isSaving}
           >
             {isSaving ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ====================== Goals edit dialog ====================== */
+
+/**
+ * Dedicated goals editor — opened from the Goals card's pencil, separate from
+ * the Contact "Edit details" form. One goal per line; the Profile tab renders
+ * the saved text as a real list by splitting on newlines.
+ */
+export function GoalsEditDialog({
+  client,
+  onClose,
+}: {
+  client: ProfileClient
+  onClose: () => void
+}) {
+  const router = useRouter()
+  const [goals, setGoals] = useState(client.goals ?? '')
+  const [error, setError] = useState<string | null>(null)
+  const [isSaving, startSaving] = useTransition()
+
+  function handleSave() {
+    if (isSaving) return
+    setError(null)
+    startSaving(async () => {
+      const res = await updateClientGoalsAction({
+        clientId: client.id,
+        version: client.version,
+        goals,
+      })
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      router.refresh()
+      onClose()
+    })
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="edit-goals-heading"
+      onClick={() => {
+        if (!isSaving) onClose()
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(28, 25, 23, .55)',
+        display: 'grid',
+        placeItems: 'center',
+        zIndex: 100,
+        padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 460,
+          background: 'var(--color-card)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 'var(--radius-card)',
+          padding: '24px 26px',
+          boxShadow: '0 12px 40px rgba(0,0,0,.18)',
+        }}
+      >
+        <h2
+          id="edit-goals-heading"
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: '1.3rem',
+            margin: '0 0 14px',
+            color: 'var(--color-charcoal)',
+          }}
+        >
+          Edit goals
+        </h2>
+
+        <FieldLabel htmlFor="goals-only">Goals</FieldLabel>
+        <textarea
+          id="goals-only"
+          value={goals}
+          onChange={(e) => setGoals(e.target.value)}
+          placeholder="One goal per line"
+          disabled={isSaving}
+          autoFocus
+          rows={5}
+          style={{
+            ...inputStyle,
+            height: 'auto',
+            padding: '8px 12px',
+            resize: 'vertical',
+            lineHeight: 1.5,
+          }}
+        />
+
+        {error && (
+          <div
+            role="alert"
+            style={{
+              marginTop: 12,
+              padding: '10px 12px',
+              background: 'rgba(214,64,69,.08)',
+              border: '1px solid rgba(214,64,69,.25)',
+              borderRadius: 8,
+              color: 'var(--color-alert)',
+              fontSize: '.84rem',
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 10,
+            marginTop: 18,
+          }}
+        >
+          <button
+            type="button"
+            className="btn outline"
+            onClick={onClose}
+            disabled={isSaving}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? 'Saving…' : 'Save goals'}
           </button>
         </div>
       </div>

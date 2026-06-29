@@ -792,6 +792,57 @@ export type Database = {
           },
         ]
       }
+      client_medications: {
+        Row: {
+          client_id: string
+          context_note: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          context_note?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          context_note?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_medications_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_medications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_publications: {
         Row: {
           created_at: string
@@ -4063,6 +4114,10 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
+      restore_client_medications: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
       restore_client_publication: { Args: { p_id: string }; Returns: undefined }
       restore_clinical_note: { Args: { p_id: string }; Returns: undefined }
       restore_practice_custom_test: {
@@ -4112,6 +4167,10 @@ export type Database = {
       }
       soft_delete_client: { Args: { p_id: string }; Returns: undefined }
       soft_delete_client_medical_history: {
+        Args: { p_id: string }
+        Returns: undefined
+      }
+      soft_delete_client_medications: {
         Args: { p_id: string }
         Returns: undefined
       }

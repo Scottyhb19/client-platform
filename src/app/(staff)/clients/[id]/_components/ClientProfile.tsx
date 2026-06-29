@@ -21,8 +21,10 @@ import { formatShortDate } from '@/lib/format-date'
 import { initialsFor, toneFor } from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
-import { EditClientDetailsDialog } from './EditClientDetails'
+import { EditClientDetailsDialog, GoalsEditDialog } from './EditClientDetails'
 import { MedicalHistoryPanel } from './MedicalHistory'
+import { MedicationsPanel } from './Medications'
+import { ProfileCard } from './profile-ui'
 import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
@@ -74,6 +76,13 @@ export type ProfileCondition = {
   notes: string | null
   is_active: boolean
   diagnosis_date: string | null
+}
+
+export type ProfileMedication = {
+  id: string
+  name: string
+  context_note: string | null
+  is_active: boolean
 }
 
 export type ProfileNoteContentField = {
@@ -207,7 +216,7 @@ export type Tab =
   | 'files'
 
 const TABS: Array<{ key: Tab; label: string }> = [
-  { key: 'details', label: 'Client details' },
+  { key: 'details', label: 'Profile' },
   { key: 'notes', label: 'Session notes' },
   { key: 'program', label: 'Programs' },
   { key: 'bookings', label: 'Bookings' },
@@ -219,6 +228,7 @@ interface ClientProfileProps {
   client: ProfileClient
   categories: ProfileCategory[]
   conditions: ProfileCondition[]
+  medications: ProfileMedication[]
   notes: ProfileNote[]
   program: ProfileProgramSummary | null
   // Phase D — most recent 10 completed sessions for this client. Feeds
@@ -286,6 +296,7 @@ export function ClientProfile({
   client,
   categories,
   conditions,
+  medications,
   notes,
   program,
   completions,
@@ -365,6 +376,7 @@ export function ClientProfile({
             client={client}
             categories={categories}
             conditions={conditions}
+            medications={medications}
           />
         )}
         {tab === 'notes' && (
@@ -908,14 +920,24 @@ function DetailsTab({
   client,
   categories,
   conditions,
+  medications,
 }: {
   client: ProfileClient
   categories: ProfileCategory[]
   conditions: ProfileCondition[]
+  medications: ProfileMedication[]
 }) {
-  // CN-5 — one dialog covers everything the Contact and Goals panels
-  // render; both panels' Edit buttons open it.
+  // CN-5 — the Contact panel's "Edit details" opens this. Goals have their
+  // own dialog (GoalsEditDialog) so the two edits are kept separate.
   const [editOpen, setEditOpen] = useState(false)
+  const [goalsEditOpen, setGoalsEditOpen] = useState(false)
+
+  // Goals render as a real list — one goal per line, split on newlines so
+  // multi-goal entries never collapse into run-on text.
+  const goalsList = (client.goals ?? '')
+    .split('\n')
+    .map((g) => g.trim())
+    .filter(Boolean)
 
   return (
     // CN-16 — the tab reads as a form at rest: a 2:1 grid (mirroring the
@@ -929,7 +951,7 @@ function DetailsTab({
         alignItems: 'start',
       }}
     >
-      <Panel
+      <ProfileCard
         title="Contact"
         action={
           <GhostBtn
@@ -966,36 +988,61 @@ function DetailsTab({
             value={client.emergency_contact_phone}
           />
         </div>
-      </Panel>
+      </ProfileCard>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {/* CN-6 — add / edit / resolve / archive conditions. Subsumes the
-            old read-only "Resolved / historical" panel. */}
-        <MedicalHistoryPanel clientId={client.id} conditions={conditions} />
-
-        <Panel
+        {/* Right rail order: Goals → Medical history → Medications. */}
+        <ProfileCard
           title="Goals"
           action={
             <GhostBtn
               icon={<Edit3 size={14} />}
               label="Edit goals"
-              onClick={() => setEditOpen(true)}
+              onClick={() => setGoalsEditOpen(true)}
             />
           }
         >
-          <div
-            style={{
-              padding: '14px 18px',
-              fontSize: '.86rem',
-              color: client.goals?.trim()
-                ? 'var(--color-text)'
-                : 'var(--color-muted)',
-              lineHeight: 1.6,
-            }}
-          >
-            {client.goals?.trim() || 'None recorded.'}
-          </div>
-        </Panel>
+          {goalsList.length === 0 ? (
+            <div
+              style={{
+                padding: '14px 18px',
+                fontSize: '.86rem',
+                color: 'var(--color-muted)',
+                lineHeight: 1.6,
+              }}
+            >
+              None recorded.
+            </div>
+          ) : (
+            <ul
+              style={{
+                margin: 0,
+                padding: '12px 18px 14px 34px',
+                listStyleType: 'disc',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              {goalsList.map((goal, i) => (
+                <li
+                  key={`${i}-${goal}`}
+                  style={{
+                    fontSize: '.86rem',
+                    color: 'var(--color-text)',
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {goal}
+                </li>
+              ))}
+            </ul>
+          )}
+        </ProfileCard>
+
+        <MedicalHistoryPanel clientId={client.id} conditions={conditions} />
+
+        <MedicationsPanel clientId={client.id} medications={medications} />
       </div>
 
       {editOpen && (
@@ -1003,6 +1050,13 @@ function DetailsTab({
           client={client}
           categories={categories}
           onClose={() => setEditOpen(false)}
+        />
+      )}
+
+      {goalsEditOpen && (
+        <GoalsEditDialog
+          client={client}
+          onClose={() => setGoalsEditOpen(false)}
         />
       )}
     </div>

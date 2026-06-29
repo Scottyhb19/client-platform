@@ -1,64 +1,65 @@
 'use client'
 
 /**
- * CN-6 — medical history panel on the Details tab.
+ * Medications card on the Profile tab (profile rework commit 2).
  *
- * The clinical-record surface for client_medical_history, which until this
- * section was a read-only rendering of an unwritable table. Active
- * conditions list first (they were previously visible only as header tags,
- * truncated to two); resolved / historical conditions sit in a subdued
- * group beneath, replacing the old separate read-only panel.
+ * Clone of MedicalHistory.tsx, retargeted at client_medications (migration
+ * 20260629140000). Each row is a medication name (body weight) with an
+ * optional one-line neutral context note beneath it. Row actions live in the
+ * hover / focus overflow menu (Edit, Mark ceased, Archive) — only Archive is
+ * red, and only inside the menu.
  *
- * Verbs (see medical-actions.ts): "Mark resolved" is the primary remove —
- * the row stays in the record. Archive is for entries created by mistake
- * and routes through the soft-delete RPC; the on-system confirm (CN-13)
- * steers genuine resolutions to Mark resolved.
+ * Verbs (see medication-actions.ts): "Mark ceased" (is_active = false) keeps
+ * the row in the record (Ceased group) — the primary remove. Archive routes
+ * through the soft-delete RPC and is for entries created by mistake; the
+ * on-system confirm steers genuine cessations to Mark ceased.
+ *
+ * The context note is for neutral context only (a nuance such as why
+ * something is not currently an issue) — never contraindications or
+ * precautions, which are flagged in the clinical-notes layer and not stored
+ * here.
  */
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus } from 'lucide-react'
 import {
-  archiveMedicalConditionAction,
-  createMedicalConditionAction,
-  setMedicalConditionActiveAction,
-  updateMedicalConditionAction,
-} from '../medical-actions'
+  archiveMedicationAction,
+  createMedicationAction,
+  setMedicationActiveAction,
+  updateMedicationAction,
+} from '../medication-actions'
 import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
-import { formatShortDate } from '@/lib/format-date'
 import { ProfileCard, ProfileRow, type OverflowItem } from './profile-ui'
-import type { ProfileCondition } from './ClientProfile'
+import type { ProfileMedication } from './ClientProfile'
 
-export function MedicalHistoryPanel({
+export function MedicationsPanel({
   clientId,
-  conditions,
+  medications,
 }: {
   clientId: string
-  conditions: ProfileCondition[]
+  medications: ProfileMedication[]
 }) {
   const router = useRouter()
   const [dialog, setDialog] = useState<
-    { mode: 'add' } | { mode: 'edit'; condition: ProfileCondition } | null
+    { mode: 'add' } | { mode: 'edit'; medication: ProfileMedication } | null
   >(null)
   const [error, setError] = useState<string | null>(null)
   const [pendingId, setPendingId] = useState<string | null>(null)
-  // CN-13: on-system archive confirm; action errors land in the panel's
-  // persistent error block via run().
-  const [confirmArchive, setConfirmArchive] = useState<ProfileCondition | null>(
-    null,
-  )
+  const [confirmArchive, setConfirmArchive] =
+    useState<ProfileMedication | null>(null)
   const [, startTransition] = useTransition()
 
-  const active = conditions.filter((c) => c.is_active)
-  const inactive = conditions.filter((c) => !c.is_active)
+  const active = medications.filter((m) => m.is_active)
+  const ceased = medications.filter((m) => !m.is_active)
 
   function run(
-    conditionId: string,
+    medicationId: string,
     action: () => Promise<{ error: string | null }>,
   ) {
     if (pendingId) return
     setError(null)
-    setPendingId(conditionId)
+    setPendingId(medicationId)
     startTransition(async () => {
       const res = await action()
       setPendingId(null)
@@ -70,18 +71,14 @@ export function MedicalHistoryPanel({
     })
   }
 
-  function handleArchive(c: ProfileCondition) {
-    setConfirmArchive(c)
-  }
-
   return (
     <ProfileCard
-      title="Medical history"
+      title="Medications"
       action={
         <button
           type="button"
           className="btn ghost"
-          aria-label="Add condition"
+          aria-label="Add medication"
           onClick={() => setDialog({ mode: 'add' })}
           style={{ padding: 6 }}
         >
@@ -89,7 +86,7 @@ export function MedicalHistoryPanel({
         </button>
       }
     >
-      {active.length === 0 && inactive.length === 0 ? (
+      {active.length === 0 && ceased.length === 0 ? (
         <div
           style={{
             padding: '14px 18px',
@@ -102,20 +99,20 @@ export function MedicalHistoryPanel({
         </div>
       ) : (
         <div style={{ padding: '2px 18px 12px' }}>
-          {active.map((c) => (
-            <ConditionRow
-              key={c.id}
-              condition={c}
-              busy={pendingId === c.id}
-              onEdit={() => setDialog({ mode: 'edit', condition: c })}
+          {active.map((m) => (
+            <MedicationRow
+              key={m.id}
+              medication={m}
+              busy={pendingId === m.id}
+              onEdit={() => setDialog({ mode: 'edit', medication: m })}
               onToggleActive={() =>
-                run(c.id, () => setMedicalConditionActiveAction(c.id, false))
+                run(m.id, () => setMedicationActiveAction(m.id, false))
               }
-              onArchive={() => handleArchive(c)}
+              onArchive={() => setConfirmArchive(m)}
             />
           ))}
 
-          {inactive.length > 0 && (
+          {ceased.length > 0 && (
             <>
               <div
                 className="eyebrow"
@@ -124,19 +121,19 @@ export function MedicalHistoryPanel({
                   margin: active.length > 0 ? '14px 0 4px' : '4px 0',
                 }}
               >
-                Resolved / historical
+                Ceased
               </div>
-              {inactive.map((c) => (
-                <ConditionRow
-                  key={c.id}
-                  condition={c}
+              {ceased.map((m) => (
+                <MedicationRow
+                  key={m.id}
+                  medication={m}
                   subdued
-                  busy={pendingId === c.id}
-                  onEdit={() => setDialog({ mode: 'edit', condition: c })}
+                  busy={pendingId === m.id}
+                  onEdit={() => setDialog({ mode: 'edit', medication: m })}
                   onToggleActive={() =>
-                    run(c.id, () => setMedicalConditionActiveAction(c.id, true))
+                    run(m.id, () => setMedicationActiveAction(m.id, true))
                   }
-                  onArchive={() => handleArchive(c)}
+                  onArchive={() => setConfirmArchive(m)}
                 />
               ))}
             </>
@@ -162,24 +159,24 @@ export function MedicalHistoryPanel({
       )}
 
       {dialog && (
-        <ConditionDialog
+        <MedicationDialog
           clientId={clientId}
-          condition={dialog.mode === 'edit' ? dialog.condition : null}
+          medication={dialog.mode === 'edit' ? dialog.medication : null}
           onClose={() => setDialog(null)}
         />
       )}
 
       {confirmArchive && (
         <ConfirmDialog
-          title="Archive this condition?"
-          body={`${confirmArchive.condition} — archiving is for conditions entered by mistake. If the condition has resolved, use Mark resolved so it stays in the client's history.`}
-          confirmLabel="Archive condition"
+          title="Archive this medication?"
+          body={`${confirmArchive.name} — archiving is for medications entered by mistake. If the client has stopped taking it, use Mark ceased so it stays in their history.`}
+          confirmLabel="Archive medication"
           tone="alert"
           onCancel={() => setConfirmArchive(null)}
           onConfirm={() => {
-            const c = confirmArchive
+            const m = confirmArchive
             setConfirmArchive(null)
-            run(c.id, () => archiveMedicalConditionAction(c.id))
+            run(m.id, () => archiveMedicationAction(m.id))
           }}
         />
       )}
@@ -187,37 +184,27 @@ export function MedicalHistoryPanel({
   )
 }
 
-function ConditionRow({
-  condition,
+function MedicationRow({
+  medication,
   subdued,
   busy,
   onEdit,
   onToggleActive,
   onArchive,
 }: {
-  condition: ProfileCondition
+  medication: ProfileMedication
   subdued?: boolean
   busy: boolean
   onEdit: () => void
   onToggleActive: () => void
   onArchive: () => void
 }) {
-  const metaText = [
-    condition.severity ? `Severity ${condition.severity}` : null,
-    condition.diagnosis_date
-      ? `diagnosed ${formatShortDate(condition.diagnosis_date)}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
-
-  // Progressive disclosure: actions live in the hover/focus overflow menu.
   // Only Archive is red, and only here in the menu.
   const menuItems: OverflowItem[] = [
     { key: 'edit', label: 'Edit', disabled: busy, onSelect: onEdit },
     {
       key: 'toggle',
-      label: condition.is_active ? 'Mark resolved' : 'Reactivate',
+      label: medication.is_active ? 'Mark ceased' : 'Reactivate',
       disabled: busy,
       onSelect: onToggleActive,
     },
@@ -232,24 +219,11 @@ function ConditionRow({
 
   return (
     <ProfileRow
-      name={condition.condition}
+      name={medication.name}
       subdued={subdued}
       busy={busy}
-      meta={
-        metaText ? (
-          <div
-            style={{
-              fontSize: '.76rem',
-              color: 'var(--color-muted)',
-              marginTop: 1,
-            }}
-          >
-            {metaText}
-          </div>
-        ) : undefined
-      }
-      contextNote={condition.notes}
-      menuLabel={`Actions for ${condition.condition}`}
+      contextNote={medication.context_note}
+      menuLabel={`Actions for ${medication.name}`}
       menuItems={menuItems}
     />
   )
@@ -257,48 +231,39 @@ function ConditionRow({
 
 /* ====================== Add / edit dialog ====================== */
 
-function ConditionDialog({
+function MedicationDialog({
   clientId,
-  condition,
+  medication,
   onClose,
 }: {
   clientId: string
-  /** Null = add; a condition = edit. */
-  condition: ProfileCondition | null
+  /** Null = add; a medication = edit. */
+  medication: ProfileMedication | null
   onClose: () => void
 }) {
   const router = useRouter()
-  const [name, setName] = useState(condition?.condition ?? '')
-  const [diagnosisDate, setDiagnosisDate] = useState(
-    condition?.diagnosis_date ?? '',
+  const [name, setName] = useState(medication?.name ?? '')
+  const [contextNote, setContextNote] = useState(
+    medication?.context_note ?? '',
   )
-  const [severity, setSeverity] = useState<string>(
-    condition?.severity ? String(condition.severity) : '',
-  )
-  const [notes, setNotes] = useState(condition?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
   const [isSaving, startSaving] = useTransition()
 
   function handleSave() {
     if (isSaving) return
     if (!name.trim()) {
-      setError('Condition is required.')
+      setError('Medication name is required.')
       return
     }
     setError(null)
     startSaving(async () => {
-      const fields = {
-        condition: name,
-        diagnosisDate,
-        severity: severity === '' ? null : Number(severity),
-        notes,
-      }
-      const res = condition
-        ? await updateMedicalConditionAction({
-            conditionId: condition.id,
+      const fields = { name, contextNote }
+      const res = medication
+        ? await updateMedicationAction({
+            medicationId: medication.id,
             ...fields,
           })
-        : await createMedicalConditionAction({ clientId, ...fields })
+        : await createMedicationAction({ clientId, ...fields })
       if (res.error) {
         setError(res.error)
         return
@@ -312,7 +277,7 @@ function ConditionDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-labelledby="condition-dialog-heading"
+      aria-labelledby="medication-dialog-heading"
       onClick={() => {
         if (!isSaving) onClose()
       }}
@@ -333,13 +298,13 @@ function ConditionDialog({
           maxWidth: 460,
           background: 'var(--color-card)',
           border: '1px solid var(--color-border-subtle)',
-          borderRadius: 14,
+          borderRadius: 'var(--radius-card)',
           padding: '24px 26px',
           boxShadow: '0 12px 40px rgba(0,0,0,.18)',
         }}
       >
         <h2
-          id="condition-dialog-heading"
+          id="medication-dialog-heading"
           style={{
             fontFamily: 'var(--font-display)',
             fontWeight: 700,
@@ -348,12 +313,12 @@ function ConditionDialog({
             color: 'var(--color-charcoal)',
           }}
         >
-          {condition ? 'Edit condition' : 'Add condition'}
+          {medication ? 'Edit medication' : 'Add medication'}
         </h2>
 
-        <FieldLabel htmlFor="condition-name">Condition</FieldLabel>
+        <FieldLabel htmlFor="medication-name">Medication</FieldLabel>
         <input
-          id="condition-name"
+          id="medication-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -363,60 +328,28 @@ function ConditionDialog({
               handleSave()
             }
           }}
-          placeholder="Osteoarthritis — L knee, T2 diabetes…"
+          placeholder="Metformin, Atorvastatin…"
           disabled={isSaving}
           autoFocus
           style={inputStyle}
         />
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
-          <div style={{ flex: 1 }}>
-            <FieldLabel htmlFor="condition-diagnosed">Diagnosed</FieldLabel>
-            <input
-              id="condition-diagnosed"
-              type="date"
-              value={diagnosisDate}
-              min="1900-01-01"
-              onChange={(e) => setDiagnosisDate(e.target.value)}
-              disabled={isSaving}
-              style={inputStyle}
-            />
-          </div>
-          <div style={{ width: 130 }}>
-            <FieldLabel htmlFor="condition-severity">Severity</FieldLabel>
-            <select
-              id="condition-severity"
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value)}
-              disabled={isSaving}
-              style={{ ...inputStyle, cursor: 'pointer' }}
-            >
-              <option value="">None</option>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={String(n)}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
         <div style={{ marginTop: 12 }}>
-          <FieldLabel htmlFor="condition-notes">Context note</FieldLabel>
-          <textarea
-            id="condition-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Optional neutral context — e.g. why this isn't currently a concern. Not for contraindications or precautions (flag those in clinical notes)."
-            disabled={isSaving}
-            rows={3}
-            style={{
-              ...inputStyle,
-              height: 'auto',
-              padding: '8px 12px',
-              resize: 'vertical',
-              lineHeight: 1.5,
+          <FieldLabel htmlFor="medication-context">Context note</FieldLabel>
+          <input
+            id="medication-context"
+            type="text"
+            value={contextNote}
+            onChange={(e) => setContextNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleSave()
+              }
             }}
+            placeholder="Optional one-line neutral context — not precautions"
+            disabled={isSaving}
+            style={inputStyle}
           />
         </div>
 
@@ -459,7 +392,11 @@ function ConditionDialog({
             onClick={handleSave}
             disabled={isSaving}
           >
-            {isSaving ? 'Saving…' : condition ? 'Save changes' : 'Save condition'}
+            {isSaving
+              ? 'Saving…'
+              : medication
+                ? 'Save changes'
+                : 'Save medication'}
           </button>
         </div>
       </div>
@@ -500,11 +437,10 @@ const inputStyle: React.CSSProperties = {
   height: 36,
   padding: '0 12px',
   border: '1px solid var(--color-border-subtle)',
-  borderRadius: 7,
+  borderRadius: 'var(--radius-input)',
   background: 'var(--color-card)',
   fontSize: '.86rem',
   fontFamily: 'inherit',
   color: 'var(--color-text)',
   outline: 'none',
 }
-

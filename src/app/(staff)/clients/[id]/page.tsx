@@ -13,6 +13,7 @@ import {
   type ProfileCompletionExercise,
   type ProfileCompletionSet,
   type ProfileCondition,
+  type ProfileMedication,
   type ProfileNote,
   type ProfileNoteTemplate,
   type ProfileProgramSummary,
@@ -63,6 +64,7 @@ export default async function ClientProfilePage({
   const [
     { data: client, error: clientErr },
     { data: conditions, error: conditionsErr },
+    { data: medications, error: medicationsErr },
     { data: notes, error: notesErr },
     { data: activeProgramRows },
     { data: noteTemplateRows },
@@ -93,6 +95,13 @@ export default async function ClientProfilePage({
     supabase
       .from('client_medical_history')
       .select('id, condition, severity, notes, is_active, diagnosis_date')
+      .eq('client_id', id)
+      .is('deleted_at', null)
+      .order('is_active', { ascending: false })
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('client_medications')
+      .select('id, name, context_note, is_active')
       .eq('client_id', id)
       .is('deleted_at', null)
       .order('is_active', { ascending: false })
@@ -223,6 +232,8 @@ export default async function ClientProfilePage({
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
   if (conditionsErr)
     throw new Error(`Load conditions: ${conditionsErr.message}`)
+  if (medicationsErr)
+    throw new Error(`Load medications: ${medicationsErr.message}`)
   if (notesErr) throw new Error(`Load notes: ${notesErr.message}`)
   if (completionsErr)
     throw new Error(`Load completions: ${completionsErr.message}`)
@@ -494,6 +505,7 @@ export default async function ClientProfilePage({
       client={profileClient}
       categories={categoryRows ?? []}
       conditions={(conditions ?? []) as ProfileCondition[]}
+      medications={(medications ?? []) as ProfileMedication[]}
       notes={profileNotes}
       program={programSummary}
       completions={completions}

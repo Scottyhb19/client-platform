@@ -855,3 +855,70 @@ commit 2.
 - **Pass:** Existing values survive the column rename unchanged (ALTER TABLE …
   RENAME COLUMN is lossless); the field stays free-text (no enum, no new values).
   A client whose value was "Female" still reads "Female" after the rename.
+
+---
+
+## Profile rework — clinical rail cards + progressive disclosure (commit 2, presentation, 2026-06-29)
+
+Context: the Profile tab (renamed from "Client details") brings Contact, Medical
+history, Medications, and Goals into the design-system card (`.card` — surface /
+border / 14px radius / shadow tokens). Left column = Contact; right rail =
+Medical history → Medications → Goals. Row actions moved into a hover/focus
+overflow menu (`profile-ui.tsx`). No schema change.
+
+### PROF-TAB-1 — The tab reads "Profile"
+- **Pass:** The record's first tab label reads **Profile** (not "Client
+  details"). Its URL key is unchanged (`?tab` absent / `details`), so existing
+  deep-links still land on it.
+
+### PROF-CARD-1 — The four sections are design-system cards
+- **Setup:** Open a client's Profile tab on an authenticated staff session.
+- **Pass:** Contact, Medical history, Medications, and Goals each render as a
+  white card — `background` = `--color-card` (#ffffff), `border` =
+  `1px solid --color-border`, `border-radius` = 14px (`--radius-card`), and the
+  `.card` box-shadow. Verified with `preview_inspect` on `.card`, not by eye. No
+  hardcoded colour/radius/shadow in the components (tokens only).
+
+### PROF-DISCLOSURE-1 — Row actions are hidden until hover, revealed on hover
+- **Setup:** A Medical history (or Medications) card with ≥1 row.
+- **Pass:** At rest the row shows the name (+ optional context note) and **no
+  action links / no visible control**. On row hover a single overflow (⋯)
+  control appears; clicking it opens a menu — Medical history: **Edit / Mark
+  resolved / Archive**; Medications: **Edit / Mark ceased / Archive**.
+
+### PROF-DISCLOSURE-2 — The overflow control and menu are keyboard accessible
+- **Pass:** Tabbing reaches the ⋯ control (it becomes visible on focus via the
+  row's focus-within, even with no mouse). `Enter`/`Space`/`ArrowDown` opens the
+  menu and focuses the first item; `ArrowUp`/`ArrowDown`/`Home`/`End` move focus
+  between items; `Enter` activates; `Escape` closes and returns focus to the ⋯
+  control. The trigger carries `aria-haspopup="menu"` + `aria-expanded`; the menu
+  is `role="menu"` with `role="menuitem"` children.
+
+### PROF-RED-1 — Archive is the only red item, and only inside the menu
+- **Pass:** In both menus, only **Archive** uses `--color-alert` (red); Edit and
+  Mark resolved / Mark ceased use the normal text token. Nothing on the row is
+  red at rest, and no routine action is ever red. Selecting Archive closes the
+  menu first, then opens the on-system confirm (no native dialog).
+
+### PROF-GOALS-1 — Goals render as a real list, one per line
+- **Setup:** Edit goals via the pencil affordance; enter three goals on three
+  lines; save.
+- **Pass:** The Goals card renders a real `<ul>` with one `<li>` per non-empty
+  line — never run-on inline text. The pencil **Edit goals** affordance still
+  opens the details dialog. Empty goals → muted "None recorded."
+
+### PROF-MEDS-1 — The Medications card reads and writes
+- **Setup:** Profile tab, Medications card (add affordance = the same "+" the
+  other sections use).
+- **Pass:** "+" opens Add medication (name required, optional one-line context
+  note). Saving inserts a `client_medications` row and it appears under the
+  active list. Edit updates it; **Mark ceased** moves it to a subdued "Ceased"
+  group (`is_active=false`); **Archive** (confirm) routes through
+  `soft_delete_client_medications` and removes it from the card. All writes are
+  staff-only (RLS + `requireRole`).
+
+### PROF-MEDS-2 — The context note is neutral-only, one line
+- **Pass:** The medication (and medical-history) context note renders in the
+  smaller muted body style beneath the name. Copy steers it to neutral context
+  ("why this isn't currently a concern"), explicitly **not** contraindications or
+  precautions — those are flagged in the clinical-notes layer, never stored here.
