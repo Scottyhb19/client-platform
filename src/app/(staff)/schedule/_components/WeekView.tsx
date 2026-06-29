@@ -87,6 +87,22 @@ export type Appointment = {
   } | null
 }
 
+/**
+ * Which removal path the popover "Remove" should take for a no-client card.
+ * The discriminator is the row's KIND, never the presence of a client object
+ * (RO-6 regression): a kind='appointment' row whose client was soft-deleted has
+ * a null client join but is still a real appointment and must ARCHIVE. Routing
+ * on client-absence sent it to the unavailable-only RPC, which raised
+ * no_data_found and left the row stuck. The two server destinations this picks
+ * are locked by pgTAP 49 (orphan archives via archive_appointment; the
+ * unavailable RPC no-ops on it). Pure + exported so it can be unit-tested.
+ */
+export function removalActionForKind(
+  kind: Appointment['kind'],
+): 'archive' | 'remove-unavailable' {
+  return kind === 'unavailable' ? 'remove-unavailable' : 'archive'
+}
+
 export type BookingClient = {
   id: string
   first_name: string
@@ -2152,7 +2168,7 @@ function AppointmentPopover({
     setRemoveError(null)
     startCancel(async () => {
       const res =
-        appt.kind === 'unavailable'
+        removalActionForKind(appt.kind) === 'remove-unavailable'
           ? await removeUnavailableBlockAction(appt.id)
           : await archiveAppointmentAction(appt.id)
       if (res.error) {

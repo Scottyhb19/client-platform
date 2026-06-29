@@ -245,8 +245,18 @@ export async function createAppointmentAction(
     return { error: 'Client required.', id: null }
   }
   if (!input.startAtIso) return { error: 'Start time required.', id: null }
-  if (!Number.isFinite(input.durationMinutes) || input.durationMinutes <= 0) {
-    return { error: 'Duration must be positive.', id: null }
+  // Whole minutes, 1..480 (8h). The DB also caps the span at 24h
+  // (appointments_duration_bound) as the bypass-proof backstop for a crafted
+  // direct write; this is the clean product-rule guard on the action path.
+  if (
+    !Number.isInteger(input.durationMinutes) ||
+    input.durationMinutes <= 0 ||
+    input.durationMinutes > 480
+  ) {
+    return {
+      error: 'Duration must be a whole number between 1 and 480 minutes.',
+      id: null,
+    }
   }
 
   const start = new Date(input.startAtIso)
@@ -366,8 +376,14 @@ export async function createRecurringAppointmentsAction(
   if (input.startAtIsos.length > 52) {
     return fail('Too many occurrences (max 52).')
   }
-  if (!Number.isFinite(input.durationMinutes) || input.durationMinutes <= 0) {
-    return fail('Duration must be positive.')
+  // Whole minutes, 1..480 (8h) — same product rule as the single-booking path;
+  // the DB appointments_duration_bound CHECK is the 24h bypass-proof backstop.
+  if (
+    !Number.isInteger(input.durationMinutes) ||
+    input.durationMinutes <= 0 ||
+    input.durationMinutes > 480
+  ) {
+    return fail('Duration must be a whole number between 1 and 480 minutes.')
   }
 
   const supabase = await createSupabaseServerClient()

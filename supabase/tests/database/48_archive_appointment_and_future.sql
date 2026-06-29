@@ -22,6 +22,9 @@ SET search_path TO public, extensions, pg_temp;
 --   8. scheduled reminders for the archived rows    → cancelled
 --   9. scheduled reminder for the kept earlier row  → still scheduled
 --  10. a DIFFERENT org's staff calling on our row   → no_data_found (org-scoped)
+--  11. a same-org STAFF-role member (not owner)      → can archive a series
+--      (owner+staff is the intended granularity — identical to cancel / status
+--      / single-archive; appointment management is not owner-only)
 --
 -- Fixtures use PAST dates so the appointment_manage_reminder trigger (future-
 -- only) does not enqueue competing reminders — the scheduled reminders here are
@@ -30,12 +33,12 @@ SET search_path TO public, extensions, pg_temp;
 -- FORCE RLS, so the owner's fixture writes bypass it; the SECURITY DEFINER RPC
 -- reads the spoofed JWT for its in-body org/role guard). Mirrors the fixture
 -- pattern in 27_appointment_overlap.
--- Test count: 10
+-- Test count: 11
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(10);
+SELECT plan(11);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 CREATE TEMP TABLE _r   (k text PRIMARY KEY, v text NOT NULL)   ON COMMIT DROP;
@@ -53,8 +56,12 @@ DECLARE
   v_a4     uuid := '00000000-0000-0000-0000-0000000a8104'::uuid;  -- later
   v_a5     uuid := '00000000-0000-0000-0000-0000000a8105'::uuid;  -- standalone
   v_b1     uuid := '00000000-0000-0000-0000-0000000a8106'::uuid;  -- other series
+  v_g3     uuid := '00000000-0000-0000-0000-0000000a8203'::uuid;  -- series C (staff-archived)
+  v_c1     uuid := '00000000-0000-0000-0000-0000000a8107'::uuid;
+  v_c2     uuid := '00000000-0000-0000-0000-0000000a8108'::uuid;
   v_staff1 uuid;
   v_staff2 uuid;
+  v_staff3 uuid;
   v_count  integer;
   caught   boolean;
 BEGIN
@@ -64,8 +71,11 @@ BEGIN
 
   v_staff1 := public._test_make_user('ro7-staff1@test.local');
   v_staff2 := public._test_make_user('ro7-staff2@test.local');
+  v_staff3 := public._test_make_user('ro7-staff3@test.local');
   PERFORM public._test_grant_membership(v_staff1, v_org1, 'owner'::user_role);
   PERFORM public._test_grant_membership(v_staff2, v_org2, 'owner'::user_role);
+  -- A non-owner STAFF member of org-one, for the role-granularity assertion.
+  PERFORM public._test_grant_membership(v_staff3, v_org1, 'staff'::user_role);
 
   INSERT INTO clients (id, organization_id, first_name, last_name, email)
     VALUES (v_client, v_org1, 'RO7', 'Client', 'ro7-client@test.local');
@@ -94,6 +104,15 @@ BEGIN
   VALUES
     (v_b1, v_org1, v_client, v_staff1, '2026-05-13T00:00:00Z', '2026-05-13T01:00:00Z', 'confirmed', 'in_clinic', now(), v_g2);
 
+  -- Series C (group v_g3) — archived by a STAFF-role member to prove the
+  -- owner+staff permission granularity.
+  INSERT INTO appointments
+    (id, organization_id, client_id, staff_user_id, start_at, end_at,
+     status, appointment_type, confirmed_at, recurrence_group_id)
+  VALUES
+    (v_c1, v_org1, v_client, v_staff1, '2026-06-01T00:00:00Z', '2026-06-01T01:00:00Z', 'confirmed', 'in_clinic', now(), v_g3),
+    (v_c2, v_org1, v_client, v_staff1, '2026-06-08T00:00:00Z', '2026-06-08T01:00:00Z', 'confirmed', 'in_clinic', now(), v_g3);
+
   -- Explicit scheduled reminders on the anchor, the two later rows, and the
   -- kept earlier row (past dates → the trigger did not enqueue its own).
   INSERT INTO appointment_reminders
@@ -121,6 +140,12 @@ BEGIN
   EXCEPTION WHEN no_data_found THEN caught := true;
   END;
   INSERT INTO _r VALUES ('cross_org_blocked', caught::text);
+
+  -- A non-owner STAFF member of the same org can archive a series (the intended
+  -- granularity — appointment management is owner+staff, not owner-only).
+  PERFORM public._test_set_jwt(v_staff3, v_org1, 'staff');
+  v_count := public.archive_appointment_and_future(v_c1);
+  INSERT INTO _r VALUES ('staff_count', v_count::text);
 
   PERFORM public._test_clear_jwt();
 END $$;
@@ -199,6 +224,14 @@ INSERT INTO _tap (n, line)
 SELECT 10, string_agg(l, E'\n') FROM ok(
   (SELECT v FROM _r WHERE k = 'cross_org_blocked') = 'true',
   '10: a different org''s owner cannot archive our appointment (org-scoped)'
+) AS l;
+
+INSERT INTO _tap (n, line)
+SELECT 11, string_agg(l, E'\n') FROM ok(
+  (SELECT v FROM _r WHERE k = 'staff_count') = '2'
+  AND (SELECT deleted_at IS NOT NULL FROM appointments WHERE id = '00000000-0000-0000-0000-0000000a8107')
+  AND (SELECT deleted_at IS NOT NULL FROM appointments WHERE id = '00000000-0000-0000-0000-0000000a8108'),
+  '11: a same-org staff-role member can archive a series (owner+staff granularity, by design)'
 ) AS l;
 
 SELECT line FROM _tap ORDER BY n;

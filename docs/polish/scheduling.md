@@ -705,3 +705,49 @@ failure mode accepted rather than mitigated, by owner decision.
 **Migration.** `20260630130000_appointment_recurrence_group.sql` — additive
 (nullable column + partial index + new RPC), backward-compatible with deployed
 master; applied to the live DB before this frontend change deploys.
+
+### Review follow-up (2026-06-30) — reviewer's blocking gaps closed
+
+The first sign-off pass was returned with two blocking gaps and one question.
+All three are now resolved.
+
+- **RO-6 now has a regression test (was: manual confirmation only).** The
+  reviewer's point stands — the live defect deserved a guard more than RO-7's
+  deferred one did. The classification is extracted to a pure, exported function
+  `removalActionForKind(kind)` (routes on KIND, never client-absence), and the
+  root cause is locked by **pgTAP `49_orphan_appointment_removal` (4/4 live)**:
+  a soft-deleted client is invisible under staff RLS (the null join is real),
+  the orphan row is still `kind=appointment`, `archive_appointment` removes it,
+  and `soft_delete_unavailable_block` raises `no_data_found` on it (the old
+  buggy route). No JS test runner exists in the project (pgTAP + browser are the
+  tiers), so the literal one-line client function is guarded by isolation +
+  this server-contract test rather than a unit test; adding a JS runner for
+  pure-function unit tests is a separate, conscious infra decision (noted, not
+  slipped into this commit).
+- **RO-5 duration now has a server + DB guard (was: client-side only).** The
+  reviewer is correct that `appointments` has an authenticated INSERT policy, so
+  the form cap was bypassable by a crafted request. `end_at > start_at` already
+  blocked zero/negative at the DB; the missing ceiling is now
+  `appointments_duration_bound CHECK (end_at <= start_at + interval '24 hours')`
+  (migration `20260630140000`, the bypass-proof layer), with the product rule
+  (whole minutes, 1–480) tightened in **both** server actions on top. Verified
+  additive (max existing span 1h, zero rows over 24h). Locked by **pgTAP
+  `50_appointment_duration_bound` (3/3)**: normal allowed, over-24h rejected
+  (`check_violation`), constraint present.
+- **Role granularity — conscious decision + test (was: silent).**
+  `archive_appointment_and_future` permits `owner`+`staff`, **identical to every
+  other appointment mutation** (cancel, status, single-archive all use the same
+  `caller_role IN ('owner','staff')` guard). Appointment management is a staff
+  capability in this product, not owner-only; series-archive matching it is
+  deliberate and consistent. Now asserted: **pgTAP `48` #11** — a same-org
+  staff-role member (not owner) can archive a series.
+- **Minor (wording).** The over-deletion bound is `start_at >= anchor` in the
+  RPC (`20260630130000` line 97, `start_at >= v_start`), in this doc, and in
+  test `48` #1, which explicitly asserts the earlier occurrence is *kept*. There
+  is no `= anchor` bound anywhere — the `>=` was misread.
+
+**Updated test evidence.** Code hygiene clean (type-check / lint / build). pgTAP
+live: `26` 16/16, `27` 6/6, `28` 3/3, `29` 4/4, `48` **11/11** (now incl. staff
+role-gating), `49` **4/4** (RO-6 root cause), `50` **3/3** (duration ceiling).
+**Second migration** `20260630140000_appointment_duration_bound.sql` — additive
+CHECK, validated against live data (0 violators).
