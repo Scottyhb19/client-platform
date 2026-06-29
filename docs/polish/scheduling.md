@@ -556,3 +556,152 @@ Close certifies: enqueue (pgTAP `29`), happy-path send proven live against the d
 - **Seed-reminder address safety** — 34 scheduled seed reminders cancelled before the next cron window; reversible. Done.
 - **Standing post-deploy EF synthetic send check** — added to the deploy + EF + rotation runbooks (validated against live). Done.
 - **Branch-coverage question** — answered (§8d.1); "by proxy" confirmed correct, mirror tightened to 12/12.
+
+---
+
+## 10. Round-three reopen — booking-modal UX, series archive, deletability, live month (2026-06-30)
+
+Operator-requested reopen of the (signed-off) scheduling surface. Captured from
+real use; triaged into the buckets below. The booking-modal items, the
+deletability bug, and the live-month-on-scroll are within the existing surface
+(four-bucket loop). The **series-archive** item needs a schema column + a new
+SECURITY DEFINER RPC → it re-entered the polish protocol (gap list + premortem +
+pgTAP + sign-off).
+
+### Gap list
+
+- **RO-1 (papercut) — booking modal defaults to the first client.** `clientId`
+  seeded from `allClients[0]`, so a booking could be filed against whoever sorts
+  first without a conscious choice. Fix: seed `''` + a disabled "Choose a
+  client…" placeholder; the existing required-field + submit guard reject empty.
+- **RO-2 (papercut) — start time was a free-minute native `time` input.** Felt
+  clunky; the practice books on 15-minute slots. Fix: 15-minute slot `<select>`
+  (full-day coverage, 12-hour labels), seed snapped to the nearest quarter.
+- **RO-3 (papercut) — Location field removed.** Owner decision: remove the field
+  only (stop capturing; emails/.ics omit it). Existing data + display on already-
+  booked appointments left intact (field-only, reversible). Type takes the freed
+  row width (RO-4).
+- **RO-4 (papercut) — Type cramped.** It's the field that decides what's booked;
+  it now spans the full row (falls out of RO-3).
+- **RO-5 (papercut) — Duration locked to 15-minute spinner steps, couldn't clear
+  to type a value.** `min={15} step={15}` blocked free entry. Fix: held as a raw
+  string (mirrors `countInput`), `step` dropped, cleared/typed freely, validated
+  `> 0` on submit. This was the operator's "type in the length of an unavailable
+  note" item — the field already showed for unavailable blocks; the friction was
+  the spinner constraint, and it applied to every booking.
+- **RO-6 (bug) — some appointments could not be deleted.** Root cause: the popover
+  branched on client-presence (`if (!c)`) to decide "unavailable block", and a
+  real `kind='appointment'` row whose client was since soft-deleted has a null
+  client join → fell into that branch → its Remove called the
+  `kind='unavailable'`-scoped RPC → zero rows → silent no-op. Fix: the no-client
+  Remove is now kind-aware (archives a real appointment via
+  `archive_appointment`), and the card copy/labels are honest ("Client no longer
+  on file" / "Remove appointment"). No schema change.
+- **RO-7 (structural) — archive a recurring occurrence and all *future* ones.**
+  Series rows were concrete + unlinked (no group id). Added nullable
+  `appointments.recurrence_group_id` (stamped once per series at creation; no
+  backfill — owner decision, new series only), a partial index, and
+  `archive_appointment_and_future(uuid)` (SECURITY DEFINER, mirrors
+  `archive_appointment`: org + owner/staff + kind=appointment guards; soft-
+  deletes the anchor and every later same-group occurrence, never the earlier
+  ones; cancels their queued reminders). UI: the archive ConfirmDialog gains a
+  "This session only / This and all later sessions" choice when the row is part
+  of a series (defaults to the single, less-destructive option).
+- **RO-8 (papercut) — month header static while scrolling the date strip.** It
+  derived from `weekStart`, committed only on scroll-end (280ms debounce). Fix:
+  the rolodex paints the header `textContent` live (same direct-DOM pattern as
+  the centred-number paint) as the centred date crosses a month boundary; React
+  re-syncs on the settled render.
+
+### Premortem (RO-7, the structural item)
+
+- **Backfill gap (accepted).** Only series booked after the migration are
+  linked; existing repeats archive single-row. Accepted per owner decision (no
+  fragile heuristic re-grouping). The dialog still works for them — it just
+  archives the one occurrence.
+- **Over-deletion (mitigated).** The RPC is `start_at >= anchor` within one
+  group + org + kind — it can never reach another client's series, another org
+  (org guard), an unavailable block (kind guard), or already-delivered earlier
+  occurrences.
+- **anon reachability (mitigated).** New CREATE auto-grants anon EXECUTE;
+  revoked, and the in-body auth guard fails closed. Locked by pgTAP `26`
+  (now 8-function family, plan 16).
+- **Reminder leak (mitigated).** Soft-delete alone leaves a queued reminder live
+  (the trigger fires on start_at/status, not deleted_at); the RPC cancels the
+  reminders for exactly the rows it archives, in-transaction.
+
+### Status (pending verification + sign-off)
+
+RO-1..RO-6 and RO-8 are migration-free and pass typecheck + lint. RO-7 ships
+migration `20260630130000_appointment_recurrence_group.sql` + the
+`archiveAppointmentAndFutureAction` server action + pgTAP `26` extension; it is
+gated on `supabase db push` → `npm run supabase:types` → typecheck → pgTAP run →
+browser verify. Closing commit + sign-off to follow once verified on a live
+authed session.
+
+### Closing commit (RO-1..RO-8)
+
+**What changed (plain language).** A round-three reopen of the Schedule booking
+modal, the appointment popover, the date strip, and the recurring-series model:
+
+- **Booking modal (RO-1..RO-5).** No default client — the field reads "Choose a
+  client…" and rejects an empty pick. Start time is a 15-minute slot dropdown
+  (seed snapped to the nearest quarter). The Location field was removed (field
+  only — existing data/display untouched). Type takes the freed width and now
+  sits **side by side with Client at the top** of the form (operator follow-up;
+  Type is full-width for an Unavailable block). Duration is freely typeable —
+  the 15-minute spinner lock is gone, it can be cleared and any positive number
+  entered, validated `> 0` on submit.
+- **Deletability bug (RO-6).** An appointment whose client was since soft-deleted
+  has a null client join, so the popover mis-classified it as an Unavailable
+  block and its Remove called the `kind='unavailable'`-scoped RPC → zero rows →
+  the "won't delete" symptom. The Remove is now kind-aware (archives a real
+  appointment via `archive_appointment`) with honest copy ("Client no longer on
+  file"). Confirmed against live data: the two stuck rows were Isaac Fong's
+  (client soft-deleted 2026-06-22).
+- **Series archive (RO-7, structural).** New nullable `recurrence_group_id`
+  stamped once per series at creation (no backfill — new series only). New
+  SECURITY DEFINER `archive_appointment_and_future(uuid)` archives the chosen
+  occurrence and every later same-group one (never earlier), cancelling their
+  reminders. The archive dialog offers "This session only / This and all later
+  sessions" when the row is part of a series.
+- **Live month header (RO-8).** The month label now paints live as the date
+  strip scrolls across a month boundary, instead of waiting for the scroll-end
+  commit.
+
+**Tests run — evidence (pre-commit health check, 2026-06-30).**
+- **Code hygiene** — `npm run type-check` clean; `npm run lint` (full project)
+  clean; `npm run build` exit 0 (all routes compiled, `/schedule` among them).
+- **Live DB read-back** (the "SQL editor" health, `supabase db query --linked`):
+  `recurrence_group_id` present (`uuid`, nullable); index
+  `appointments_recurrence_group_idx` present; function
+  `archive_appointment_and_future` present (`SECURITY DEFINER`, returns
+  `integer`); grants **anon EXECUTE = false**, **authenticated EXECUTE = true**.
+- **pgTAP — grants** `26_scheduling_rpc_grants` **16/16 live** (plan grown
+  14→16): anon cannot execute `archive_appointment_and_future` (A8),
+  authenticated keeps it (B8).
+- **pgTAP — no regression** from the column add: `27_appointment_overlap` 6/6,
+  `28_slot_granularity` 3/3, `29_reminder_lifecycle` 4/4.
+- **pgTAP — behavioural** `48_archive_appointment_and_future` **10/10 live**
+  (new): proves the RPC archives the anchor + every later same-group occurrence,
+  keeps the earlier one and other series, returns the right count (3 / 1 single),
+  cancels the archived rows' scheduled reminders while keeping the kept row's,
+  and is org-scoped (a different org's owner gets `no_data_found`).
+- **Operator browser pass** on a live authed session — SCHED-RO-1..8 confirmed
+  ("everything looks and works well").
+
+**Deferred / accepted.**
+- **No backfill of pre-migration repeats** (RO-7) — accepted per owner decision;
+  those archive single-row. Re-trigger: an operator request to retro-group
+  historical series. *(This is the one remaining accepted gap — the behavioural
+  test originally deferred here is now written and passing, pgTAP `48`.)*
+
+**Premortem mitigations.** Over-deletion bounded by group + org + kind + `start_at
+>= anchor` (can't reach another client's series, another org, an unavailable
+block, or earlier occurrences); anon reachability revoked + in-body guard, locked
+by pgTAP `26`; reminder leak closed in-transaction. The backfill gap is the one
+failure mode accepted rather than mitigated, by owner decision.
+
+**Migration.** `20260630130000_appointment_recurrence_group.sql` — additive
+(nullable column + partial index + new RPC), backward-compatible with deployed
+master; applied to the live DB before this frontend change deploys.

@@ -381,6 +381,11 @@ export async function createRecurringAppointmentsAction(
   let firstId: string | null = null
   const skipped: string[] = []
 
+  // One shared id across every occurrence of this series, so the EP can later
+  // archive "this occurrence and all later ones" (archive_appointment_and_future).
+  // A single booking (createAppointmentAction) never sets it.
+  const recurrenceGroupId = crypto.randomUUID()
+
   for (const startIso of input.startAtIsos) {
     const start = new Date(startIso)
     if (Number.isNaN(start.getTime())) {
@@ -404,6 +409,7 @@ export async function createRecurringAppointmentsAction(
         status: 'confirmed',
         confirmed_at: new Date().toISOString(),
         created_by_role: 'staff',
+        recurrence_group_id: recurrenceGroupId,
       })
       .select('id')
       .single()
@@ -509,6 +515,35 @@ export async function archiveAppointmentAction(
   revalidatePath('/schedule')
   revalidatePath('/dashboard')
   return { error: null }
+}
+
+/**
+ * Archive a recurring occurrence AND every later occurrence in its series
+ * (operator request: end a repeat from this session forward, keeping the
+ * already-delivered earlier ones). Delegates to archive_appointment_and_future,
+ * which soft-deletes the matching kind='appointment' rows and cancels their
+ * queued reminders in one transaction. A non-series row archives alone.
+ *
+ * Returns the count archived so the caller can confirm what happened. Only
+ * series booked after the recurrence_group_id migration are linked; older
+ * repeats fall back to single-row archive.
+ */
+export async function archiveAppointmentAndFutureAction(
+  appointmentId: string,
+): Promise<{ error: string | null; archived: number }> {
+  await requireRole(['owner', 'staff'])
+  const supabase = await createSupabaseServerClient()
+
+  const { data, error } = await supabase.rpc('archive_appointment_and_future', {
+    p_id: appointmentId,
+  })
+
+  if (error) {
+    return { error: `Could not archive series: ${error.message}`, archived: 0 }
+  }
+  revalidatePath('/schedule')
+  revalidatePath('/dashboard')
+  return { error: null, archived: typeof data === 'number' ? data : 0 }
 }
 
 /**

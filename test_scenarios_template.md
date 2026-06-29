@@ -964,3 +964,47 @@ types / queries). No new RLS or audit surface.
   condition defaults to Tagged, so the header looks unchanged until an EP
   un-tags one. pgTAP 19 still passes unchanged (it inserts `severity`, which
   remains a valid column).
+
+## Schedule round-three reopen (2026-06-30)
+
+### SCHED-RO-1 — Booking modal has no default client
+- **Pass:** Opening "Book an appointment" shows "Choose a client…" selected (not
+  a real client). Submitting without picking one is blocked. Picking a client
+  then booking works.
+
+### SCHED-RO-2 — Start time is 15-minute slots
+- **Pass:** Start time is a dropdown of 15-minute slots (12-hour labels). Opening
+  from a grid slot pre-selects that slot; opening from the button pre-selects the
+  nearest quarter. No free-minute typing.
+
+### SCHED-RO-3/4 — Location removed, Type full-width
+- **Pass:** No Location field in the modal. Type spans the full row. A booked
+  appointment that already had a location still shows it in its popover.
+
+### SCHED-RO-5 — Duration is freely typeable
+- **Pass:** The Duration field can be cleared and any positive number typed (not
+  locked to 15-minute steps). Choosing a Type still pre-fills its default
+  duration. Submitting with an empty/zero duration is blocked with a message.
+
+### SCHED-RO-6 — Orphaned-client appointment is deletable
+- **Setup:** An appointment whose client was since soft-deleted (the popover
+  shows "Client no longer on file").
+- **Pass:** Its "Remove appointment" archives the row (it disappears). A genuine
+  Unavailable block still shows "Unavailable · not client-visible" and removes
+  via its own path.
+
+### SCHED-RO-7 — Archive this occurrence and all future ones
+- **Setup:** A recurring series booked after the recurrence_group_id migration.
+- **Pass:** Archiving an occurrence offers "This session only" vs "This and all
+  later sessions". "This session only" removes one; "This and all later" removes
+  that occurrence and every later one in the series, leaving earlier ones intact.
+  Reminders for the archived rows are cancelled. A single (non-series) booking
+  shows no choice and archives alone. A pre-migration repeat archives single-row.
+- **DB/RLS:** pgTAP `26` — anon cannot execute `archive_appointment_and_future`,
+  authenticated keeps EXECUTE (plan 16). pgTAP `48` — behavioural: archives the
+  anchor + later occurrences, keeps earlier + other series, returns the count,
+  cancels the archived rows' reminders, org-scoped (10/10).
+
+### SCHED-RO-8 — Month header tracks the date strip live
+- **Pass:** Scrolling the date rolodex updates the month header as the centred
+  date crosses a month boundary, not only when scrolling stops.

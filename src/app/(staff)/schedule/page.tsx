@@ -136,7 +136,7 @@ export default async function SchedulePage({
       .from('appointments')
       .select(
         `id, start_at, end_at, appointment_type, status, kind, location, notes,
-         staff_user_id, created_by_role, cancelled_by_role,
+         staff_user_id, created_by_role, cancelled_by_role, recurrence_group_id,
          client:clients(id, first_name, last_name,
            category:client_categories(name))`,
       )
@@ -185,6 +185,7 @@ export default async function SchedulePage({
         a.created_by_role as Appointment['created_by_role'],
       cancelled_by_role:
         a.cancelled_by_role as Appointment['cancelled_by_role'],
+      recurrence_group_id: a.recurrence_group_id,
       // Unavailable-kind blocks (P1-7) have no client — the join returns null.
       client: a.client
         ? {

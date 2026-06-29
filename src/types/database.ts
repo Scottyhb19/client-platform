@@ -91,6 +91,7 @@ export type Database = {
           no_show_marked_at: string | null
           notes: string | null
           organization_id: string
+          recurrence_group_id: string | null
           staff_user_id: string
           start_at: string
           status: Database["public"]["Enums"]["appointment_status"]
@@ -113,6 +114,7 @@ export type Database = {
           no_show_marked_at?: string | null
           notes?: string | null
           organization_id: string
+          recurrence_group_id?: string | null
           staff_user_id: string
           start_at: string
           status?: Database["public"]["Enums"]["appointment_status"]
@@ -135,6 +137,7 @@ export type Database = {
           no_show_marked_at?: string | null
           notes?: string | null
           organization_id?: string
+          recurrence_group_id?: string | null
           staff_user_id?: string
           start_at?: string
           status?: Database["public"]["Enums"]["appointment_status"]
@@ -3810,6 +3813,10 @@ export type Database = {
         Returns: Json
       }
       archive_appointment: { Args: { p_id: string }; Returns: undefined }
+      archive_appointment_and_future: {
+        Args: { p_id: string }
+        Returns: number
+      }
       assert_audit_resolver_coverage: { Args: never; Returns: undefined }
       audit_diff_fields: {
         Args: { p_new: Json; p_old: Json }
@@ -4114,10 +4121,7 @@ export type Database = {
         Args: { p_id: string }
         Returns: undefined
       }
-      restore_client_medications: {
-        Args: { p_id: string }
-        Returns: undefined
-      }
+      restore_client_medications: { Args: { p_id: string }; Returns: undefined }
       restore_client_publication: { Args: { p_id: string }; Returns: undefined }
       restore_clinical_note: { Args: { p_id: string }; Returns: undefined }
       restore_practice_custom_test: {

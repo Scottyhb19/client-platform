@@ -42,6 +42,7 @@ import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 import { notify } from '@/app/(staff)/_components/Notice'
 import {
   archiveAppointmentAction,
+  archiveAppointmentAndFutureAction,
   cancelAppointmentAction,
   createAppointmentAction,
   createClientInlineAction,
@@ -74,6 +75,9 @@ export type Appointment = {
   staff_user_id: string
   created_by_role: 'staff' | 'client_portal' | 'system' | null
   cancelled_by_role: 'staff' | 'client_portal' | 'system' | null
+  // Shared across all occurrences of a recurring series (null for a single
+  // booking). Drives the "this & all future sessions" archive choice.
+  recurrence_group_id: string | null
   // null for unavailable-kind blocks (admin / meeting / note time) — P1-7.
   client: {
     id: string
@@ -369,6 +373,11 @@ export function WeekView({
   }, [appointmentsByDay, showCancellations])
 
   const monthLabel = formatMonthYear(weekStart)
+  // The rolodex paints this label directly (textContent) as the centred date
+  // crosses month boundaries mid-scroll, so the header tracks the strip live
+  // instead of waiting for the scroll-end URL commit. React re-syncs it to
+  // `monthLabel` on the next settled render.
+  const monthLabelRef = useRef<HTMLSpanElement>(null)
 
   // All toolbar navigation (week arrows, month arrows, Today) funnels
   // through `navigateTo` so `?d=` and `?w=` stay in sync. Without this,
@@ -541,7 +550,7 @@ export function WeekView({
               borderRadius: 6,
             }}
           >
-            {monthLabel}
+            <span ref={monthLabelRef}>{monthLabel}</span>
           </button>
           {monthPickerOpen && (
             <MonthYearPicker
@@ -575,6 +584,7 @@ export function WeekView({
         weekStart={weekStart}
         today={today}
         selectedDate={selectedDate}
+        monthLabelRef={monthLabelRef}
       />
 
       {/* Day headers */}
@@ -922,10 +932,14 @@ function DateRolodex({
   weekStart,
   today,
   selectedDate,
+  monthLabelRef,
 }: {
   weekStart: Date
   today: Date
   selectedDate: Date | null
+  // The parent's month-header label, painted live as the centred date crosses
+  // a month boundary during scroll.
+  monthLabelRef: React.RefObject<HTMLSpanElement | null>
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -1040,6 +1054,13 @@ function DateRolodex({
             paintCenteredNumber(cellRefs.current, nowCentered, prev)
             paintPill(pillRef.current, dates[nowCentered] ?? null)
             pulseRolodexCell(cellRefs.current[nowCentered] ?? null)
+            // Track the month header to the centred date live, so it updates
+            // as you scroll across a month boundary rather than snapping only
+            // on the scroll-end commit.
+            const centeredDate = dates[nowCentered]
+            if (monthLabelRef.current && centeredDate) {
+              monthLabelRef.current.textContent = formatMonthYear(centeredDate)
+            }
           }
           ticking = false
         })
@@ -1086,7 +1107,7 @@ function DateRolodex({
       container.removeEventListener('scroll', onScroll)
       if (commitTimer) clearTimeout(commitTimer)
     }
-  }, [dates, weekStart, selectedDate, router, searchParams])
+  }, [dates, weekStart, selectedDate, router, searchParams, monthLabelRef])
 
   return (
     <div style={{ position: 'relative' }}>
@@ -2083,6 +2104,10 @@ function AppointmentPopover({
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [confirmArchive, setConfirmArchive] = useState(false)
   const [archiveError, setArchiveError] = useState<string | null>(null)
+  // For a recurring occurrence: archive just this one, or this and every later
+  // one in the series. Defaults to the single, less-destructive choice.
+  const [archiveScope, setArchiveScope] = useState<'one' | 'future'>('one')
+  const isSeries = appt.recurrence_group_id !== null
 
   // The client's next booked session after this one (P2-14). undefined = still
   // loading. This hook precedes the no-client early return below, so it stays
@@ -2113,13 +2138,23 @@ function AppointmentPopover({
     })
   }
 
-  // P2-8 review fix — removing an Unavailable block soft-deletes it (it
-  // disappears) rather than cancelling it (which would leave a cancelled
-  // ghost). Client appointments still cancel, above.
+  // Remove from the compact "no client" card. Two rows land here:
+  //  • a true Unavailable block (kind='unavailable') — soft-delete it via its
+  //    kind-scoped RPC (P2-8 review fix: disappears rather than leaving a
+  //    cancelled ghost);
+  //  • an orphaned client appointment — a real kind='appointment' row whose
+  //    client was since soft-deleted, so the join came back null and it fell
+  //    into this branch. It must ARCHIVE via the appointment RPC.
+  // The previous code always called removeUnavailableBlockAction, which is
+  // scoped to kind='unavailable' and matched zero rows for the orphan — the
+  // "this session won't delete" bug.
   function runRemoveBlock() {
     setRemoveError(null)
     startCancel(async () => {
-      const res = await removeUnavailableBlockAction(appt.id)
+      const res =
+        appt.kind === 'unavailable'
+          ? await removeUnavailableBlockAction(appt.id)
+          : await archiveAppointmentAction(appt.id)
       if (res.error) {
         setRemoveError(res.error)
         return
@@ -2135,7 +2170,12 @@ function AppointmentPopover({
   function runArchive() {
     setArchiveError(null)
     startArchive(async () => {
-      const res = await archiveAppointmentAction(appt.id)
+      // Series + "this and future" → the group RPC; otherwise the single-row
+      // archive. A non-series appointment always takes the single path.
+      const res =
+        isSeries && archiveScope === 'future'
+          ? await archiveAppointmentAndFutureAction(appt.id)
+          : await archiveAppointmentAction(appt.id)
       if (res.error) {
         setArchiveError(res.error)
         return
@@ -2166,8 +2206,11 @@ function AppointmentPopover({
   const left = Math.min(Math.max(x + 12, 8), window.innerWidth - cardW - 8)
   const top = Math.min(Math.max(y + 12, 8), window.innerHeight - cardMaxH - 8)
 
-  // Unavailable-kind block (P1-7): no client. Render the type + note with a
-  // Remove action — none of the client-profile actions apply.
+  // No client object on the row. Usually a genuine Unavailable block (P1-7);
+  // occasionally an orphaned client appointment whose client was since deleted
+  // (the join returns null). Render the type + note with a Remove action —
+  // none of the client-profile actions apply.
+  const orphanAppt = appt.kind !== 'unavailable'
   if (!c) {
     return (
       <div
@@ -2216,7 +2259,9 @@ function AppointmentPopover({
                 marginTop: 1,
               }}
             >
-              Unavailable · not client-visible
+              {orphanAppt
+                ? 'Client no longer on file'
+                : 'Unavailable · not client-visible'}
             </div>
           </div>
           <button
@@ -2280,16 +2325,29 @@ function AppointmentPopover({
                 padding: '4px 8px',
               }}
             >
-              {cancelling ? 'Removing…' : 'Remove block'}
+              {cancelling
+                ? 'Removing…'
+                : orphanAppt
+                  ? 'Remove appointment'
+                  : 'Remove block'}
             </button>
           </div>
         )}
 
         {confirmRemove && (
           <ConfirmDialog
-            title="Remove this block?"
-            body={<>Remove this {appt.appointment_type} block?</>}
-            confirmLabel="Remove block"
+            title={orphanAppt ? 'Remove this appointment?' : 'Remove this block?'}
+            body={
+              orphanAppt ? (
+                <>
+                  This {appt.appointment_type} is filed against a client who’s
+                  no longer on file. Remove it from the schedule?
+                </>
+              ) : (
+                <>Remove this {appt.appointment_type} block?</>
+              )
+            }
+            confirmLabel="Remove"
             zIndex={1100}
             busy={cancelling}
             error={removeError}
@@ -2579,6 +2637,7 @@ function AppointmentPopover({
           disabled={busy}
           onClick={() => {
             setArchiveError(null)
+            setArchiveScope('one')
             setConfirmArchive(true)
           }}
           style={{
@@ -2632,9 +2691,69 @@ function AppointmentPopover({
               {appt.appointment_type} from the schedule and all reports. Use
               this for an appointment created by mistake — it won’t count as a
               cancellation.
+              {isSeries && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    display: 'grid',
+                    gap: 8,
+                    paddingTop: 12,
+                    borderTop: '1px solid var(--color-border-subtle)',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: '.72rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '.05em',
+                      color: 'var(--color-muted)',
+                    }}
+                  >
+                    This is a repeating session
+                  </div>
+                  {(
+                    [
+                      ['one', 'This session only'],
+                      ['future', 'This and all later sessions in the series'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <label
+                      key={value}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 9,
+                        cursor: archiving ? 'default' : 'pointer',
+                        fontSize: '.86rem',
+                        color: 'var(--color-text)',
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="archive-scope"
+                        checked={archiveScope === value}
+                        disabled={archiving}
+                        onChange={() => setArchiveScope(value)}
+                        style={{
+                          width: 15,
+                          height: 15,
+                          accentColor: 'var(--color-alert)',
+                          cursor: archiving ? 'default' : 'pointer',
+                        }}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
             </>
           }
-          confirmLabel="Archive"
+          confirmLabel={
+            isSeries && archiveScope === 'future'
+              ? 'Archive series'
+              : 'Archive'
+          }
           zIndex={1100}
           busy={archiving}
           error={archiveError}
@@ -2676,14 +2795,21 @@ function BookingComposer({
     return [...clients, ...uniqueLocal]
   }, [clients, localClients])
 
-  const [clientId, setClientId] = useState(allClients[0]?.id ?? '')
+  // No default client — the EP picks one consciously ("Choose a client…"), so
+  // a booking can't be silently filed against whoever happens to sort first.
+  const [clientId, setClientId] = useState('')
   const [date, setDate] = useState(toIsoDate(startAt))
-  const [time, setTime] = useState(toHhMm(startAt))
-  const [duration, setDuration] = useState(
-    sessionTypes[0]?.default_duration_minutes ?? 60,
+  // Start time is chosen from 15-minute slots; snap the seed instant onto its
+  // quarter so the select always has a matching option.
+  const [time, setTime] = useState(snapToQuarterHhMm(startAt))
+  // Duration is held as a raw string so the field can be cleared and any length
+  // typed freely (not locked to 15-minute spinner steps); it parses to minutes
+  // on use and is validated > 0 on submit. Mirrors the countInput pattern.
+  const [durationInput, setDurationInput] = useState(
+    String(sessionTypes[0]?.default_duration_minutes ?? 60),
   )
+  const duration = Math.max(0, parseInt(durationInput, 10) || 0)
   const [type, setType] = useState(sessionTypes[0]?.name ?? 'Session')
-  const [location, setLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -2783,6 +2909,10 @@ function BookingComposer({
       setError('Pick a client.')
       return
     }
+    if (duration <= 0) {
+      setError('Set a duration of at least 1 minute.')
+      return
+    }
     setError(null)
 
     // Recurring series (P2-14): generate one row per occurrence. Partial
@@ -2801,7 +2931,7 @@ function BookingComposer({
           startAtIsos,
           durationMinutes: duration,
           appointmentType: type,
-          location: location.trim() || null,
+          location: null,
           notes: notes.trim() || null,
           kind: isUnavailable ? 'unavailable' : 'appointment',
         })
@@ -2832,7 +2962,7 @@ function BookingComposer({
         startAtIso: startIso,
         durationMinutes: duration,
         appointmentType: type,
-        location: location.trim() || null,
+        location: null,
         notes: notes.trim() || null,
         kind: isUnavailable ? 'unavailable' : 'appointment',
       })
@@ -2960,8 +3090,17 @@ function BookingComposer({
             </div>
           )}
 
-          {/* Client — appointment-kind only (P1-7); hidden for Unavailable
-              blocks, which have no client. */}
+          {/* Client + Type — the two fields that frame the booking, side by
+              side at the top. Type is full-width for an Unavailable block,
+              which has no client (P1-7). */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isUnavailable ? '1fr' : '1fr 1fr',
+              gap: 12,
+              alignItems: 'start',
+            }}
+          >
           {!isUnavailable && (
           <div>
             <div
@@ -3028,6 +3167,9 @@ function BookingComposer({
                   style={composerInput}
                   required
                 >
+                  <option value="" disabled>
+                    Choose a client…
+                  </option>
                   {allClients.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.first_name} {c.last_name}
@@ -3121,6 +3263,42 @@ function BookingComposer({
           </div>
           )}
 
+          <ComposerField label="Type">
+            <select
+              value={type}
+              onChange={(e) => {
+                const next = e.target.value
+                setType(next)
+                const t = sessionTypes.find((st) => st.name === next)
+                if (t) setDurationInput(String(t.default_duration_minutes))
+              }}
+              style={composerInput}
+            >
+              {sessionTypes.length === 0 && (
+                <option value="Session">Session</option>
+              )}
+              {appointmentTypes.length > 0 && (
+                <optgroup label="Appointment">
+                  {appointmentTypes.map((t) => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {unavailableTypes.length > 0 && (
+                <optgroup label="Unavailable (no client)">
+                  {unavailableTypes.map((t) => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </ComposerField>
+          </div>
+
           {/* Date + time + duration row */}
           <div
             style={{
@@ -3139,79 +3317,28 @@ function BookingComposer({
               />
             </ComposerField>
             <ComposerField label="Start time" required>
-              <input
-                type="time"
-                step={900}
+              <select
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
                 required
                 style={composerInput}
-              />
+              >
+                {TIME_SLOTS.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
             </ComposerField>
             <ComposerField label="Duration (min)" required>
               <input
                 type="number"
-                step={15}
-                min={15}
+                inputMode="numeric"
+                min={1}
                 max={480}
-                value={duration}
-                onChange={(e) =>
-                  setDuration(parseInt(e.target.value, 10) || 0)
-                }
+                value={durationInput}
+                onChange={(e) => setDurationInput(e.target.value)}
                 required
-                style={composerInput}
-              />
-            </ComposerField>
-          </div>
-
-          {/* Type + location */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 12,
-            }}
-          >
-            <ComposerField label="Type">
-              <select
-                value={type}
-                onChange={(e) => {
-                  const next = e.target.value
-                  setType(next)
-                  const t = sessionTypes.find((st) => st.name === next)
-                  if (t) setDuration(t.default_duration_minutes)
-                }}
-                style={composerInput}
-              >
-                {sessionTypes.length === 0 && (
-                  <option value="Session">Session</option>
-                )}
-                {appointmentTypes.length > 0 && (
-                  <optgroup label="Appointment">
-                    {appointmentTypes.map((t) => (
-                      <option key={t.id} value={t.name}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {unavailableTypes.length > 0 && (
-                  <optgroup label="Unavailable (no client)">
-                    {unavailableTypes.map((t) => (
-                      <option key={t.id} value={t.name}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </ComposerField>
-            <ComposerField label="Location">
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Studio / Clinic / Online"
                 style={composerInput}
               />
             </ComposerField>
@@ -3998,11 +4125,37 @@ function combineDateTime(dateIso: string, hhmm: string): Date {
   return new Date(y!, (m ?? 1) - 1, d ?? 1, h ?? 0, min ?? 0, 0, 0)
 }
 
-function toHhMm(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(
-    d.getMinutes(),
+/**
+ * Round an instant to its nearest quarter-hour, as "HH:mm". The booking
+ * composer offers start times only on 15-minute slots, so the seed instant
+ * (which may carry stray minutes when opened from the "Book appointment"
+ * button rather than a grid slot) is snapped to a slot that exists in the list.
+ */
+function snapToQuarterHhMm(d: Date): string {
+  const snapped = Math.round((d.getHours() * 60 + d.getMinutes()) / 15) * 15
+  const clamped = Math.min(23 * 60 + 45, Math.max(0, snapped))
+  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(
+    clamped % 60,
   ).padStart(2, '0')}`
 }
+
+/**
+ * Every 15-minute start-time slot across the day — value "HH:mm" (24h, what the
+ * composer stores) with a 12-hour label for display ("12:00 PM"). Full-day
+ * coverage so no valid start time is unreachable for an early/late block.
+ */
+const TIME_SLOTS: { value: string; label: string }[] = Array.from(
+  { length: 24 * 4 },
+  (_, i) => {
+    const h = Math.floor(i / 4)
+    const m = (i % 4) * 15
+    const value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+    const period = h < 12 ? 'AM' : 'PM'
+    const h12 = h % 12 === 0 ? 12 : h % 12
+    const label = `${h12}:${String(m).padStart(2, '0')} ${period}`
+    return { value, label }
+  },
+)
 
 /* ====================== Recurrence (P2-14) ====================== */
 
