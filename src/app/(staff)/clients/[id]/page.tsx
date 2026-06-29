@@ -94,7 +94,7 @@ export default async function ClientProfilePage({
       .maybeSingle(),
     supabase
       .from('client_medical_history')
-      .select('id, condition, severity, notes, is_active, diagnosis_date')
+      .select('id, condition, notes, is_active, diagnosis_date, show_on_header')
       .eq('client_id', id)
       .is('deleted_at', null)
       .order('is_active', { ascending: false })

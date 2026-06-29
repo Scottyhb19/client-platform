@@ -72,10 +72,11 @@ export type ProfileCategory = {
 export type ProfileCondition = {
   id: string
   condition: string
-  severity: number | null
   notes: string | null
   is_active: boolean
   diagnosis_date: string | null
+  /** Profile "Tag / No-tag": whether this condition shows on the client header. */
+  show_on_header: boolean
 }
 
 export type ProfileMedication = {
@@ -461,12 +462,15 @@ function ClientHeader({
   onFlags: () => void
 }) {
   const fullName = `${client.first_name} ${client.last_name}`
-  // CN-11 — the header shows two active conditions; any overflow gets a
-  // "+N more" affordance instead of silent truncation. Clicking it lands
-  // on the Details tab, where the full list lives (CN-6 panel).
-  const activeConditions = conditions.filter((c) => c.is_active)
-  const headerConditions = activeConditions.slice(0, 2)
-  const moreConditions = activeConditions.length - headerConditions.length
+  // CN-11 — the header shows the first two active conditions the EP has
+  // Tagged (show_on_header); any overflow gets a "+N more" affordance instead
+  // of silent truncation. Clicking it lands on the Profile tab, where the full
+  // list lives (CN-6 panel). Un-tagged conditions never appear here.
+  const headerCandidates = conditions.filter(
+    (c) => c.is_active && c.show_on_header,
+  )
+  const headerConditions = headerCandidates.slice(0, 2)
+  const moreConditions = headerCandidates.length - headerConditions.length
   const router = useRouter()
   const [isOpening, startOpenThread] = useTransition()
   const [openError, setOpenError] = useState<string | null>(null)
@@ -631,7 +635,6 @@ function ClientHeader({
               {headerConditions.map((c) => (
                 <span key={c.id} className="tag flag">
                   {c.condition}
-                  {c.severity ? ` — severity ${c.severity}` : ''}
                 </span>
               ))}
               {moreConditions > 0 && (

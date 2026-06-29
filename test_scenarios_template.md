@@ -922,3 +922,45 @@ overflow menu (`profile-ui.tsx`). No schema change.
   smaller muted body style beneath the name. Copy steers it to neutral context
   ("why this isn't currently a concern"), explicitly **not** contraindications or
   precautions — those are flagged in the clinical-notes layer, never stored here.
+
+---
+
+## Profile rework — medical-history Tag / No-tag header control (commit 3, schema, 2026-06-29)
+
+Context: the medical-history **severity** field is retired and replaced by a
+per-condition **Tag / No-tag** choice that decides whether a condition appears
+as a chip on the client's sticky header. Persisted in
+`client_medical_history.show_on_header` (migration `20260629160000`, default
+true). The `severity` column is left dormant in the DB (removed from all UI /
+types / queries). No new RLS or audit surface.
+
+### TAG-1 — The dialog offers Tag / No-tag (default Tag), not severity
+- **Pass:** Add/Edit condition shows a **Header tag** dropdown with **Tag**
+  (default on add) / **No tag** — and **no Severity** field. Editing an existing
+  condition pre-selects its stored value.
+
+### TAG-2 — Tag controls header inclusion
+- **Setup:** Two active conditions, one **Tag**, one **No tag**.
+- **Pass:** The sticky header chips show only the **Tagged** active condition;
+  the No-tag one never appears there (but both still render in the Medical
+  history card). Switching the second to **Tag** makes it appear; switching the
+  first to **No tag** removes its chip.
+
+### TAG-3 — Header cap still applies to tagged conditions
+- **Setup:** Three+ active **Tagged** conditions.
+- **Pass:** The header shows the first two as chips plus a **"+N more"**
+  affordance (clicking lands on the Profile tab). Un-tagged conditions are not
+  counted in N.
+
+### TAG-4 — Severity is gone from the UI, header chips carry no severity text
+- **Pass:** No "Severity N" appears on a medical-history row, in the dialog, or
+  appended to a header chip (chips read just the condition name). Existing rows
+  keep their dormant `severity` value in the DB but it is never read; new rows
+  default `show_on_header=true` (Tagged).
+
+### TAG-5 — Migration is additive and safe
+- **Pass:** `show_on_header` is `NOT NULL DEFAULT true`; pushing it does not
+  break the deployed frontend (which doesn't select it), and every existing
+  condition defaults to Tagged, so the header looks unchanged until an EP
+  un-tags one. pgTAP 19 still passes unchanged (it inserts `severity`, which
+  remains a valid column).

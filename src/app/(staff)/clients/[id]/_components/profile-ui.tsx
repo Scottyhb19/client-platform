@@ -276,7 +276,7 @@ export function ProfileRow({
   name: string
   /** Optional one-line neutral context note (smaller, muted). */
   contextNote?: string | null
-  /** Optional secondary meta line (e.g. medical-history severity / diagnosed). */
+  /** Optional secondary meta line (e.g. medical-history diagnosed date). */
   meta?: React.ReactNode
   subdued?: boolean
   busy?: boolean

@@ -33,22 +33,24 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  *
  * All writes are staff-only via requireRole + the table's RLS policies
  * (Pattern A staff-only SELECT since CN-2; INSERT/UPDATE staff-only since
- * v1). Validation mirrors the DB CHECKs (condition 1–500 chars; severity
- * 1–5; diagnosis_date 1900-01-01..today per cmh_diagnosis_date_sane).
+ * v1). Validation mirrors the DB CHECKs (condition 1–500 chars; diagnosis_date
+ * 1900-01-01..today per cmh_diagnosis_date_sane). The retired severity field is
+ * replaced by show_on_header (the Profile Tag / No-tag header control).
  */
 
 export type MedicalConditionInput = {
   condition: string
   /** 'YYYY-MM-DD' or '' for none. */
   diagnosisDate: string
-  severity: number | null
+  /** Profile "Tag / No-tag": show this condition on the client header. */
+  showOnHeader: boolean
   notes: string
 }
 
 type Validated = {
   condition: string
   diagnosis_date: string | null
-  severity: number | null
+  show_on_header: boolean
   notes: string | null
 }
 
@@ -73,24 +75,12 @@ function validateConditionInput(
     diagnosisDate = rawDate
   }
 
-  let severity: number | null = null
-  if (input.severity !== null && input.severity !== undefined) {
-    if (
-      !Number.isInteger(input.severity) ||
-      input.severity < 1 ||
-      input.severity > 5
-    ) {
-      return { error: 'Severity must be a whole number from 1 to 5.' }
-    }
-    severity = input.severity
-  }
-
   const notes = input.notes.trim()
   return {
     ok: {
       condition,
       diagnosis_date: diagnosisDate,
-      severity,
+      show_on_header: input.showOnHeader,
       notes: notes.length > 0 ? notes : null,
     },
   }

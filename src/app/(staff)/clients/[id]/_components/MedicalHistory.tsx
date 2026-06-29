@@ -202,14 +202,9 @@ function ConditionRow({
   onToggleActive: () => void
   onArchive: () => void
 }) {
-  const metaText = [
-    condition.severity ? `Severity ${condition.severity}` : null,
-    condition.diagnosis_date
-      ? `diagnosed ${formatShortDate(condition.diagnosis_date)}`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const metaText = condition.diagnosis_date
+    ? `diagnosed ${formatShortDate(condition.diagnosis_date)}`
+    : ''
 
   // Progressive disclosure: actions live in the hover/focus overflow menu.
   // Only Archive is red, and only here in the menu.
@@ -272,8 +267,8 @@ function ConditionDialog({
   const [diagnosisDate, setDiagnosisDate] = useState(
     condition?.diagnosis_date ?? '',
   )
-  const [severity, setSeverity] = useState<string>(
-    condition?.severity ? String(condition.severity) : '',
+  const [showOnHeader, setShowOnHeader] = useState<boolean>(
+    condition ? condition.show_on_header : true,
   )
   const [notes, setNotes] = useState(condition?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
@@ -290,7 +285,7 @@ function ConditionDialog({
       const fields = {
         condition: name,
         diagnosisDate,
-        severity: severity === '' ? null : Number(severity),
+        showOnHeader,
         notes,
       }
       const res = condition
@@ -382,21 +377,17 @@ function ConditionDialog({
               style={inputStyle}
             />
           </div>
-          <div style={{ width: 130 }}>
-            <FieldLabel htmlFor="condition-severity">Severity</FieldLabel>
+          <div style={{ width: 140 }}>
+            <FieldLabel htmlFor="condition-header-tag">Header tag</FieldLabel>
             <select
-              id="condition-severity"
-              value={severity}
-              onChange={(e) => setSeverity(e.target.value)}
+              id="condition-header-tag"
+              value={showOnHeader ? 'tag' : 'no-tag'}
+              onChange={(e) => setShowOnHeader(e.target.value === 'tag')}
               disabled={isSaving}
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
-              <option value="">None</option>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={String(n)}>
-                  {n}
-                </option>
-              ))}
+              <option value="tag">Tag</option>
+              <option value="no-tag">No tag</option>
             </select>
           </div>
         </div>

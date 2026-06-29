@@ -747,6 +747,7 @@ export type Database = {
           notes: string | null
           organization_id: string
           severity: number | null
+          show_on_header: boolean
           updated_at: string
         }
         Insert: {
@@ -760,6 +761,7 @@ export type Database = {
           notes?: string | null
           organization_id: string
           severity?: number | null
+          show_on_header?: boolean
           updated_at?: string
         }
         Update: {
@@ -773,6 +775,7 @@ export type Database = {
           notes?: string | null
           organization_id?: string
           severity?: number | null
+          show_on_header?: boolean
           updated_at?: string
         }
         Relationships: [
