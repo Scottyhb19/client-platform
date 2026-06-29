@@ -94,10 +94,10 @@ BEGIN
   -- The condition the client must NOT be able to read. notes carries the
   -- practitioner commentary CN-2 exists to wall off.
   INSERT INTO client_medical_history
-    (id, organization_id, client_id, condition, severity, notes, is_active)
+    (id, organization_id, client_id, condition, notes, is_active)
   VALUES (
     cmh_id, org_d, client_row_id,
-    'CN-2 canary condition', 3,
+    'CN-2 canary condition',
     'Practitioner reasoning that must never reach the client.', true
   );
 

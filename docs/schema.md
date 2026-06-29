@@ -113,7 +113,8 @@ The repo contains `client-platform/prisma/schema.prisma` (Prisma + Clerk). That 
 | Table | Purpose |
 |---|---|
 | `clients` | Clinical record for a person in care. May or may not have a linked auth user. |
-| `client_medical_history` | Structured static medical history items (conditions, medications, past surgeries). |
+| `client_medical_history` | Structured static medical history items (conditions, past surgeries). |
+| `client_medications` | Medications a client is on. One row per medication: a required name and an optional one-line context note (no dose/frequency). Staff-only; audit-logged. Clone of `client_medical_history`. |
 | `clinical_notes` | Staff-only clinical notes — template-driven (`content_json`) with the legacy SOAP columns retained for pre-template rows. Progress notes, initial assessments, injury flags, contraindications. Audit-logged. Never visible to clients. See §8.5. |
 | `note_templates` | Per-org note templates. Carries the `note_type` stamped onto notes written from it (CN-3). Hard-deleted by convention; notes denormalise their content so history survives. See §8.5.1. |
 | `note_template_fields` | Ordered typed fields belonging to a template. Cascade-deleted with parent. See §8.5.1. |
@@ -238,6 +239,7 @@ erDiagram
     organizations ||--o{ clients : ""
     clients ||--o{ clinical_notes : ""
     clients ||--o{ client_medical_history : ""
+    clients ||--o{ client_medications : ""
     clients ||--o{ assessments : ""
     assessment_templates ||--o{ assessments : ""
     organizations ||--o{ assessment_templates : ""
@@ -491,6 +493,8 @@ No table is global (shared across orgs). Every taxonomy is seeded per-organizati
 | `clients` | `user_id` | `user_profiles(user_id)` | SET NULL | If a client's portal account is removed, the clinical record remains unlinked but intact. |
 | `client_medical_history` | `client_id` | `clients(id)` | RESTRICT | PHI — hard-delete requires explicit cleanup. |
 | `client_medical_history` | `organization_id` | `organizations(id)` | RESTRICT | — |
+| `client_medications` | `client_id` | `clients(id)` | RESTRICT | PHI — hard-delete requires explicit cleanup. |
+| `client_medications` | `organization_id` | `organizations(id)` | RESTRICT | — |
 | `clinical_notes` | `client_id` | `clients(id)` | RESTRICT | — |
 | `clinical_notes` | `organization_id` | `organizations(id)` | RESTRICT | — |
 | `clinical_notes` | `author_user_id` | `user_profiles(user_id)` | RESTRICT | Don't lose authorship; if staff leaves, soft-delete the profile but keep notes intact. |
@@ -599,8 +603,12 @@ To catch any missed entry: a database-wide `pg_constraint` inspection test (pgTA
 - **DELETE:** staff soft-delete (UPDATE `deleted_at`). Hard DELETE service role only.
 
 #### `client_medical_history`
-- **SELECT:** staff within org; client sees their own (shared with them at intake).
+- **SELECT:** staff within org **only** (Pattern A since CN-2 — the `notes` column carries practitioner reasoning, walled from clients).
 - **INSERT/UPDATE/DELETE:** staff only.
+
+#### `client_medications`
+- **SELECT:** staff within org **only** (Pattern A — a medication and its context note are clinical-adjacent; staff-only is the standing default).
+- **INSERT/UPDATE:** staff only. **DELETE:** denied; archive routes through the `soft_delete_client_medications` SECURITY DEFINER RPC.
 
 #### `clinical_notes`
 - **SELECT:** staff within org **only**. Clients NEVER read from this table. (See §19 open question — this is a deliberate v0.2 revision from v0.1's `visible_to_client` boolean.)
@@ -1196,6 +1204,7 @@ Format: `index | purpose | query served`.
 | `clinical_notes (organization_id, client_id) WHERE note_type='injury_flag' AND flag_resolved_at IS NULL AND deleted_at IS NULL` | Active flags by org | Dashboard needs-attention panel ("injury flags not reviewed in 14 days") |
 | `clinical_notes gin (... gin_trgm_ops)` | EP search | Library lookup |
 | `client_medical_history (client_id)` | Per-client history list | Profile page |
+| `client_medications (client_id) WHERE deleted_at IS NULL` | Per-client medication list | Profile page |
 | `assessment_templates (organization_id)` | List templates | Settings |
 | `assessments (client_id, created_at DESC)` | Per-client assessment history | Profile page |
 
@@ -1337,7 +1346,7 @@ See §8.6 for full DDL.
 
 Tables with triggers (PHI or clinical significance):
 
-`clients`, `client_medical_history`, `clinical_notes`, `assessments`, `programs`, `program_weeks`, `program_days`, `program_exercises`, `sessions`, `exercise_logs`, `set_logs`, `appointments`, `appointment_reminders`, `communications`, `reports`, `report_versions`.
+`clients`, `client_medical_history`, `client_medications`, `clinical_notes`, `assessments`, `programs`, `program_weeks`, `program_days`, `program_exercises`, `sessions`, `exercise_logs`, `set_logs`, `appointments`, `appointment_reminders`, `communications`, `reports`, `report_versions`.
 
 Tables NOT audited via triggers (justification):
 
@@ -1647,6 +1656,7 @@ Per the prompt, every `jsonb` column must justify its variable shape.
 | `user_organization_roles` | ~55 | ~1,500 |
 | `clients` | 200 | 3,000 |
 | `client_medical_history` | ~1,000 | ~15,000 |
+| `client_medications` | ~600 | ~9,000 |
 | `clinical_notes` | ~2,500 | ~40,000 |
 | `exercises` | ~300 | ~1,500 |
 | `programs` | ~1,000 | ~15,000 |

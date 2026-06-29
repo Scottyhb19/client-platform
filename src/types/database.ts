@@ -746,7 +746,6 @@ export type Database = {
           is_active: boolean
           notes: string | null
           organization_id: string
-          severity: number | null
           show_on_header: boolean
           updated_at: string
         }
@@ -760,7 +759,6 @@ export type Database = {
           is_active?: boolean
           notes?: string | null
           organization_id: string
-          severity?: number | null
           show_on_header?: boolean
           updated_at?: string
         }
@@ -774,7 +772,6 @@ export type Database = {
           is_active?: boolean
           notes?: string | null
           organization_id?: string
-          severity?: number | null
           show_on_header?: boolean
           updated_at?: string
         }
