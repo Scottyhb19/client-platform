@@ -764,3 +764,19 @@ module and adding the **vitest** tier with a direct unit test on
 the unavailable path. This is the one remaining gap the reviewer named, now
 written. Adding vitest is the project's first JS test tier (pure logic only;
 DB stays pgTAP, UI stays the operator browser pass).
+
+## 11. Sign-off — round-three reopen (RO-1..RO-8)
+
+- **Date signed off:** 2026-06-30
+- **Reviewer:** claude.ai project chat (schedule round-three review)
+- **Decision:** **Closed**
+
+Round-three reopen (RO-1..RO-8) signed off 2026-06-30 after three review passes.
+RO-6 routing regression closed by extracting `removalActionForAppointment` to a
+pure dependency-free module with a direct **vitest** unit test asserting a
+null-client appointment routes to `archive` (first JS test tier in the project).
+RO-5 duration ceiling enforced at DB via the `appointments_duration_bound` CHECK
+plus product clamp 1–480 in both server actions. Role-gating owner+staff
+confirmed deliberate and asserted at pgTAP `48` #11. Full scheduling suite green:
+pgTAP `26`/`27`/`28`/`29`/`48`/`49`/`50` plus vitest `appointment-removal` 3/3.
+Migrations `20260630130000` and `20260630140000` both additive and live-validated.
