@@ -992,6 +992,11 @@ types / queries). No new RLS or audit surface.
 - **Pass:** Its "Remove appointment" archives the row (it disappears). A genuine
   Unavailable block still shows "Unavailable · not client-visible" and removes
   via its own path.
+- **Unit (vitest):** `appointment-removal.test.ts` — `removalActionForAppointment`
+  routes a null-client appointment to `archive` (not the unavailable path); an
+  unavailable block to `remove-unavailable`. (`npm run test`.)
+- **DB/RLS:** pgTAP `49` — orphan archives via `archive_appointment`;
+  `soft_delete_unavailable_block` raises `no_data_found` on it (4/4).
 
 ### SCHED-RO-7 — Archive this occurrence and all future ones
 - **Setup:** A recurring series booked after the recurrence_group_id migration.

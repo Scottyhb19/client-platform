@@ -711,19 +711,19 @@ master; applied to the live DB before this frontend change deploys.
 The first sign-off pass was returned with two blocking gaps and one question.
 All three are now resolved.
 
-- **RO-6 now has a regression test (was: manual confirmation only).** The
-  reviewer's point stands — the live defect deserved a guard more than RO-7's
-  deferred one did. The classification is extracted to a pure, exported function
-  `removalActionForKind(kind)` (routes on KIND, never client-absence), and the
-  root cause is locked by **pgTAP `49_orphan_appointment_removal` (4/4 live)**:
-  a soft-deleted client is invisible under staff RLS (the null join is real),
-  the orphan row is still `kind=appointment`, `archive_appointment` removes it,
-  and `soft_delete_unavailable_block` raises `no_data_found` on it (the old
-  buggy route). No JS test runner exists in the project (pgTAP + browser are the
-  tiers), so the literal one-line client function is guarded by isolation +
-  this server-contract test rather than a unit test; adding a JS runner for
-  pure-function unit tests is a separate, conscious infra decision (noted, not
-  slipped into this commit).
+- **RO-6 now has a unit test on the routing decision (second-pass fix).** The
+  reviewer was right that pgTAP `49` tests the wrong layer — it proves the two
+  *RPCs* behave, but the bug was the popover *routing* a null-client appointment
+  to the unavailable RPC, and pgTAP can't reach a TS function. So: the routing
+  is moved to a dependency-free module [`_lib/appointment-removal.ts`](../../src/app/(staff)/schedule/_lib/appointment-removal.ts)
+  as `removalActionForAppointment(appt)` (routes on KIND; `client` is in the
+  signature only to make its irrelevance explicit + testable), and a **JS test
+  tier (vitest)** was added with a direct unit test
+  [`appointment-removal.test.ts`](../../src/app/(staff)/schedule/_lib/appointment-removal.test.ts)
+  (**3/3**): a null-client appointment → `archive` (the exact defect), a normal
+  appointment → `archive`, an unavailable block → `remove-unavailable`. Refactor
+  the popover now and this test fails. pgTAP `49` (4/4) stays as the
+  complementary lock on the two server destinations the route points at.
 - **RO-5 duration now has a server + DB guard (was: client-side only).** The
   reviewer is correct that `appointments` has an authenticated INSERT policy, so
   the form cap was bypassable by a crafted request. `end_at > start_at` already
@@ -746,8 +746,21 @@ All three are now resolved.
   test `48` #1, which explicitly asserts the earlier occurrence is *kept*. There
   is no `= anchor` bound anywhere — the `>=` was misread.
 
-**Updated test evidence.** Code hygiene clean (type-check / lint / build). pgTAP
-live: `26` 16/16, `27` 6/6, `28` 3/3, `29` 4/4, `48` **11/11** (now incl. staff
-role-gating), `49` **4/4** (RO-6 root cause), `50` **3/3** (duration ceiling).
-**Second migration** `20260630140000_appointment_duration_bound.sql` — additive
-CHECK, validated against live data (0 violators).
+**Updated test evidence.** Code hygiene clean (type-check / lint / build).
+**vitest** (new JS unit tier) `appointment-removal.test.ts` **3/3** — the RO-6
+routing decision tested directly. pgTAP live: `26` 16/16, `27` 6/6, `28` 3/3,
+`29` 4/4, `48` **11/11** (now incl. staff role-gating), `49` **4/4** (RO-6
+server contract), `50` **3/3** (duration ceiling). **Second migration**
+`20260630140000_appointment_duration_bound.sql` — additive CHECK, validated
+against live data (0 violators).
+
+### Review follow-up #2 (2026-06-30) — routing unit test
+
+The second sign-off pass conceded RO-5/role-gating but held RO-6: pgTAP `49`
+tests the RPCs, not the TS routing function, so a popover refactor could
+regress the bug with `49` still green. Closed by extracting the route to a pure
+module and adding the **vitest** tier with a direct unit test on
+`removalActionForAppointment` — a null-client appointment asserts `archive`, not
+the unavailable path. This is the one remaining gap the reviewer named, now
+written. Adding vitest is the project's first JS test tier (pure logic only;
+DB stays pgTAP, UI stays the operator browser pass).
