@@ -51,3 +51,22 @@ Enumerated every runtime reader of `RESEND_API_KEY` (grep of the repo, `src/` + 
 ### Lesson (for the next rotation)
 
 A secret rotation must enumerate **every** store, not just `.env.local`/Vercel. The Edge Function has its own Supabase secret set (`supabase secrets list`) that nothing else updates. Add "update the Edge Function secret set" to `runbooks/rotate-a-secret.md` for any secret the EF reads (`RESEND_API_KEY`, `CRON_SHARED_SECRET`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`), and run the synthetic send check (`runbooks/deploy-an-edge-function.md`) after rotating an EF-read secret.
+
+## 2026-07-02 — SUPABASE_SERVICE_ROLE_KEY migrated to the new API keys; legacy disabled
+
+**Reason:** The legacy `service_role` key appeared in a chat transcript (Beta-entry hardening gate — highest priority, since it bypasses RLS). Supabase removed legacy-key rotation (2025+), so neutralising it required migrating every client onto the new publishable/secret API keys and then disabling the legacy keys. This closes the gate item.
+
+### What was done
+
+- **Confirmed empirically** (throwaway test script, supabase-js `2.103.3` — the app's version) that `sb_secret` bypasses RLS with plain `createClient(url, key)`. The docs' "secret keys can't go on `Authorization: Bearer`" warning did **not** bite this project — the gateway honours the `apikey` header regardless. So **no client-factory code change was needed**; it was a value swap.
+- **Worker** (`send-appointment-reminders` EF): now reads `REMINDER_SERVICE_KEY` (=sb_secret) with a fallback to the injected legacy key; supabase-js bumped `2.50.0`→`2.103.3`; redeployed (commit `c6168a8`). Verified: synthetic reminder `status='sent'` via the live cron path.
+- **App**: swapped `SUPABASE_SERVICE_ROLE_KEY`→`sb_secret` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`→`sb_publishable` in **Vercel (all environments) + `.env.local`**. No code change. Forced a fresh production build (git push) so the `NEXT_PUBLIC` publishable value re-baked into the client bundle.
+- **Verified**: service key bypasses RLS locally; publishable accepted for reads + login locally; production login in a **private window with legacy disabled**; reminder EF sends with legacy disabled (both `status='sent'`).
+- **Disabled** the legacy anon + service_role keys (Supabase → API Keys → "Legacy anon, service_role" tab → "Disable JWT-based API keys"). The leaked legacy `service_role` JWT is now rejected by the gateway.
+
+### Notes
+
+- The anon key is public (not itself a secret), but had to move to `sb_publishable` because the "Disable JWT-based API keys" button disables both legacy keys together.
+- The EF's platform-injected legacy `SUPABASE_SERVICE_ROLE_KEY` is now dead; the EF runs on `REMINDER_SERVICE_KEY`, read first.
+- **Rollback** (if ever needed): re-enable the legacy keys in the Supabase dashboard (instant, one click).
+- A same-day detour first mis-blamed the new key for non-sending reminders that were actually a **pre-existing cron bug** (the pg_cron job's `net.http_post` URL held the `YOUR-PROJECT` placeholder host → DNS failure → the EF was never invoked). Diagnosed and fixed separately; the new key was never the problem.

@@ -25,9 +25,10 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 - **Stored where:**
   - Next.js runtime: Vercel env vars (server-only; Production / Preview / Development).
   - Local dev: `.env.local` (gitignored; never committed — verified in the 2026-05-15 diagnostic via `git log --all --diff-filter=A`).
-  - Edge Function: **platform-injected by the Supabase Edge runtime** — not operator-set there (function header comment, `index.ts:16-18`). Same underlying project key, so rotating the project key affects both surfaces at once.
+  - Edge Function: as of 2026-07-02 the EF reads `REMINDER_SERVICE_KEY` (an operator-set `sb_secret` value in its Supabase secret set), falling back to the platform-injected legacy key — which is now **disabled**. So the EF runs entirely on `REMINDER_SERVICE_KEY`.
+- **Key type:** as of 2026-07-02 this is a new-format `sb_secret_…` API key (was a legacy `eyJ…` service_role JWT). The legacy JWT keys are disabled.
 - **Rotation procedure:** [`runbooks/rotate-a-secret.md`](runbooks/rotate-a-secret.md)
-- **Last rotated:** Not recorded. `secrets-rotation-log.md` documents only `RESEND_API_KEY` and `CRON_SHARED_SECRET` (2026-05-17). Whether the service-role key has been rotated since it sat in `.env.local` is **not determinable from code or the rotation log** — the 2026-05-15 diagnostic lists it as an open external-confirmation item (#6). Flagged for stakeholder confirmation, not asserted either way.
+- **Last rotated / migrated:** **2026-07-02** — migrated from the legacy `service_role` JWT to a new `sb_secret` API key (Vercel all-envs + `.env.local`; EF via `REMINDER_SERVICE_KEY`), and the **legacy keys were disabled** in Supabase, so the leaked legacy `service_role` JWT is now rejected by the gateway. See `secrets-rotation-log.md` (2026-07-02 entry).
 - **Rotation frequency:** No scheduled cadence; rotate on suspicion of exposure.
 
 ### `RESEND_API_KEY`

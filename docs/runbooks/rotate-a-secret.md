@@ -54,8 +54,17 @@ This secret lives in **two places** that must both change. Between updating plac
 
 ## SUPABASE_SERVICE_ROLE_KEY
 
-**TODO — procedure not yet documented.**
+**Procedure run 2026-07-02** (legacy → new API keys, then disable legacy). Supabase **removed** legacy-key rotation (you can no longer regenerate the legacy anon/service_role/JWT secret). A leaked legacy `service_role` key is neutralised by migrating clients to the new `sb_secret`/`sb_publishable` API keys and then **disabling** the legacy keys — the gateway then rejects them. It is a **value swap, not a code change**: the new secret key works with supabase-js's default `createClient(url, key)` (the docs' "secret keys can't go on `Authorization: Bearer`" warning did not bite this project — the gateway honours the `apikey` header regardless).
 
-This has never been exercised for this project and no procedure exists in the codebase, commits, or rotation log. Do **not** follow invented steps. What is known in principle (verify against current Supabase documentation before attempting): the service-role key is regenerated from the Supabase dashboard (Project Settings → API); the Vercel `SUPABASE_SERVICE_ROLE_KEY` env var would need updating; the Edge runtime auto-injects this key so no manual Edge update is expected; the same project key backs both surfaces, so cutover is global and likely causes a brief elevated-privilege outage if mis-sequenced.
+**Steps** (new-everywhere-and-verified, THEN disable legacy — never disable first):
 
-Before attempting, resolve **diagnostic external-confirm item #6** and see `docs/secrets-inventory.md` → `SUPABASE_SERVICE_ROLE_KEY` ("Last rotated: Not recorded"). Tracked in the README backlog ("SUPABASE_SERVICE_ROLE_KEY rotation").
+1. Get a secret key: Supabase → Settings → API Keys → "Publishable and secret API keys" → Secret keys (`sb_secret_…`). The publishable key (`sb_publishable_…`) is the anon replacement.
+2. **Prove the key works first** — a throwaway `node` script using the app's supabase-js: `createClient(url, sb_secret)`, count an RLS-protected table, expect rows (bypasses RLS = service-role works). Pass the key as a CLI arg locally; never let it enter a chat/transcript.
+3. **Worker (EF):** `send-appointment-reminders` reads `REMINDER_SERVICE_KEY` (=sb_secret) first, with a fallback to the injected legacy key during cutover. `supabase secrets set REMINDER_SERVICE_KEY=sb_secret_…`; make sure the EF's supabase-js import is `sb_`-aware (≥ the app's version — the old `2.50.0` is too old); redeploy; run the **Cron-path send check** (`deploy-an-edge-function.md`).
+4. **App:** swap the *values* (keep the variable NAMES) in **Vercel (all environments) + `.env.local`** — `SUPABASE_SERVICE_ROLE_KEY`→`sb_secret_…`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`→`sb_publishable_…`. No code change. Trigger a **fresh** production build (a `NEXT_PUBLIC_` value only re-bakes on a clean build; a cached redeploy won't pick it up — a `git push` to master forces one).
+5. **Verify BEFORE disabling.** Local: service key bypasses RLS; publishable accepted for reads + a bogus login returns "Invalid login credentials" (= key accepted, account just doesn't exist). Prod: log in in a **private/incognito window** (forces the publishable path, no cached session).
+6. **Disable legacy:** Supabase → API Keys → "Legacy anon, service_role" tab → **Disable JWT-based API keys** (one toggle, both keys). Re-test prod login + EF send with legacy off. The leaked legacy `service_role` JWT is now rejected.
+
+**Rollback:** re-enable the legacy keys in the dashboard (instant, one click). They stay valid until deliberately disabled — which is why disable is the last step.
+
+**Note:** the anon key is public and not itself a rotation item, but it must migrate to `sb_publishable` too because the disable toggle covers both legacy keys at once.
