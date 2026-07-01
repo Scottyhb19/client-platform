@@ -1066,3 +1066,32 @@ properties of the committed migration; REM-CRON-2/3 are the operator-apply gate.
   `SELECT length(decrypted_secret) FROM vault.decrypted_secrets WHERE name='cron_shared_secret';`
   returns the token length (not null, no permission error) once seeded — proving
   the `postgres` role the tick runs as can read it, before the live job is cut over.
+
+---
+
+## Performance — function/database region co-location (Pass 2, promoted 2026-07-01)
+
+Context: Vercel functions defaulted to `iad1` (US East) while the Supabase DB and
+the AU users are in Sydney (`ap-southeast-2`), so every authenticated navigation
+paid 5–6 sequential cross-Pacific query round-trips (~200 ms each) — the dominant
+interaction-lag cause in `docs/perf/baseline-2026-06-26.md`. Fixed by pinning the
+function region to `syd1` via `vercel.json` (commit `339eacd`), promoted to
+production 2026-07-01. This criterion guards the regression (a deploy reverting to
+a non-Sydney region, or a query path that re-introduces a cross-region hop).
+
+### PERF-REGION-1 — A DB-touching route pays no cross-region query tax on syd1
+- **Setup:** A `syd1` deployment (`vercel.json` → `"regions": ["syd1"]`). Probe a
+  no-DB route (`/login`) and a DB-touching route (`/i/<uuid>`) back-to-back,
+  several times, from any single location (the requester→compute hop is common to
+  both routes and cancels in the delta — valid even when run from outside Australia).
+- **Measure:** `delta = TTFB(DB-touching) − TTFB(no-DB)`.
+- **Pass:** `x-vercel-id` shows the compute region as **`syd1`** (`…::syd1::…`),
+  **and** the delta is **near-zero — within network noise (≈ ±50–90 ms, often
+  negative)** — not the ~0.65–0.85 s cross-Pacific tax an `iad1` build shows.
+  Evidence (`docs/perf/baseline-2026-06-26.md` §11): before (`iad1`) ~0.75 s;
+  after (`syd1`) ~0.00 s, preview-proven and production-verified 2026-07-01.
+- **Scope note (residual, NOT covered here):** an *authenticated* DB route may
+  still show an Edge-middleware residual (auth re-verified against Sydney every
+  request; middleware isn't region-pinned). That's a separate, unmeasured pass —
+  see `docs/polish/perf-middleware-residual.md`. This criterion covers the
+  per-query DB tax only.
