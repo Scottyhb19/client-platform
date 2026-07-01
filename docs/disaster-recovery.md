@@ -1,6 +1,6 @@
 # Disaster recovery — backup restore drill
 
-**Status:** drill not yet exercised (see run log). This is a **Beta-entry hardening gate** item (CLAUDE.md): before real friends-and-family data lands, a backup must be *proven restorable* — not merely "backups are enabled."
+**Status:** **blocked on plan — operator confirmed Free tier 2026-07-02.** The "Restore to a New Project" drill requires Supabase **Pro+** with physical backups; it is not available on Free, and this machine has no local Postgres tools for the download-and-restore alternative. **Prerequisite before this gate can be met: upgrade to Pro and enable physical backups** (this is also the go-live "PITR" item in `go-live-checklist.md`). This is a documented dependency, **not** a skip — do not treat the gate as met until the drill actually runs post-upgrade. This is a **Beta-entry hardening gate** item (CLAUDE.md): before real friends-and-family data lands, a backup must be *proven restorable* — not merely "backups are enabled."
 
 **Why this exists.** "Backups exist" and "we have restored from one" are different claims. A backup you have never restored is a backup you do not know works. This drill restores a real backup to a **throwaway project** (non-destructive to production), confirms the data is intact, and records the result.
 
