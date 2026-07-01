@@ -10,6 +10,8 @@ Follow-up to the syd1 region fix (`docs/perf/baseline-2026-06-26.md`, promoted t
 
 Do **not** implement the local-JWT auth change while on Hobby unless a re-trigger fires and Pro isn't chosen; if it is ever pursued it runs the full polish protocol + external auth review.
 
+*Indexed in `docs/go-live-checklist.md` §8 — per CLAUDE.md, the checklist (not this polish doc) is where these re-triggers actually fire.*
+
 ## What the syd1 fix already removed
 Serverless/SSR functions now run in `syd1`, co-located with the Sydney database. The per-query cross-Pacific tax collapsed from ~0.75s to ~0s (verified in prod). Every server-side DB round-trip is now local (~2–5ms).
 
