@@ -28,7 +28,7 @@ The free tier is acceptable only while no real data exists. The following are Pr
 - **G-3** — HIBP leaked-password protection. Pro-gated; confirmed locked on the free tier (verified 2026-06-10, `auth-onboarding-client.md` C-7 — the toggle cannot be enabled at all below Pro). Enable at Pro cutover.
 - **G-4** — 30-day refresh-token lifetime. Pro-gated. Set and record at Pro cutover.
 - **Client session duration (open question 1, `auth-onboarding-client.md`)** — never formally resolved; current state is 30-day uniform across roles. Decide deliberately at Pro cutover, in the same dashboard visit as G-4 (master brief §4.2 contemplated shorter client sessions for shared devices).
-- First DR drill is run on the newly-upgraded Pro project as the final pre-launch step (named in `schema.md` and `slos.md`).
+- First DR drill is run on the newly-upgraded Pro project as the final pre-launch step (named in `schema.md` and `slos.md`). **Drill procedure now written — `docs/disaster-recovery.md` (the "Restore to a New Project" recipe + a verification census + teardown).** Confirmed 2026-07-02 the project is still on **Free**, so the drill is **blocked until this Pro upgrade** — a documented dependency, not a skip. Do not mark the DR gate met until the drill actually runs post-upgrade and its result is logged in `disaster-recovery.md`.
 
 **Gate:** Pro upgrade is done before first real data; G-3 and G-4 are set on the upgraded project and their state recorded in their owning documents at that time.
 
