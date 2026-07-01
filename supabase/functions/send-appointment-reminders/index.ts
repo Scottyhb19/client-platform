@@ -13,10 +13,14 @@
 // never sees them.
 //
 // Service role: required because RLS denies authenticated SELECT on
-// appointment_reminders (see 20260420102600 line 1136). The service role
-// key is provided via Supabase Secrets — the env vars below come from the
-// platform automatically (SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY).
-// RESEND_API_KEY must be set explicitly via:
+// appointment_reminders (see 20260420102600 line 1136). Elevated DB access
+// uses a Supabase secret API key (sb_secret_...) read from REMINDER_SERVICE_KEY,
+// falling back to the platform-injected legacy SUPABASE_SERVICE_ROLE_KEY during
+// the legacy-key migration cutover (see docs/secrets-rotation-log.md). Once the
+// legacy JWT-based keys are disabled, only REMINDER_SERVICE_KEY remains live.
+// SUPABASE_URL is injected by the platform automatically.
+// REMINDER_SERVICE_KEY and RESEND_API_KEY must be set explicitly via:
+//   supabase secrets set REMINDER_SERVICE_KEY=sb_secret_...
 //   supabase secrets set RESEND_API_KEY=re_...
 //
 // Deploy:
@@ -39,7 +43,7 @@
 //   );
 // ============================================================================
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.0'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.103.3'
 
 interface ReminderRow {
   id: string
@@ -92,7 +96,14 @@ Deno.serve(async (req) => {
   if (denied) return denied
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  // Prefer the explicitly-set secret API key (sb_secret_...) over the
+  // platform-injected legacy service_role JWT. The ?? fallback keeps the
+  // function working during cutover, before REMINDER_SERVICE_KEY is set;
+  // after the legacy JWT-based keys are disabled, only the first arm resolves.
+  const serviceKey =
+    Deno.env.get('REMINDER_SERVICE_KEY') ??
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ??
+    ''
   const resendKey = Deno.env.get('RESEND_API_KEY') ?? ''
   const fromAddress = Deno.env.get('EMAIL_FROM')
   if (!fromAddress) {
