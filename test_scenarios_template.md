@@ -1095,3 +1095,32 @@ a non-Sydney region, or a query path that re-introduces a cross-region hop).
   request; middleware isn't region-pinned). That's a separate, unmeasured pass —
   see `docs/polish/perf-middleware-residual.md`. This criterion covers the
   per-query DB tax only.
+
+---
+
+## Client portal — bilateral milestone fits phone width (bug fix, 2026-07-02)
+
+Context: the portal Reports → **Data** tab overflowed on phone widths. A bilateral
+(Left/Right) milestone rendered two side-by-side boxes (`1fr 1fr`), each holding a
+`1fr auto 1fr` baseline→latest grid. Inside the ~315px portal column that crushed
+each endpoint to ~34px — wrapping the date to 3–4 lines and overflowing the box on
+≤375px screens. Fixed by switching the bilateral grid to
+`repeat(auto-fit, minmax(220px, 1fr))` so the two sides **stack** when the
+container can't give each ≥220px (`MilestoneChart.tsx`, commit `39267c1`).
+CSS-only; no schema, no shared date-helper change; the wider staff publish-preview
+dialog keeps its side-by-side view.
+
+### CP-MS-1 — Bilateral force card stacks and fits on a 375px portal
+- **Setup:** Client portal → Reports → Data tab, on a 375px-wide viewport, with a
+  published bilateral test that has 3-digit values (e.g. a knee isometric peak-force
+  card, `190 N` / `680 N`).
+- **Pass:** Left and Right render **stacked** (Left above Right), each full card
+  width. Each endpoint's value + date sit on 1–2 lines — no 3–4-line date wrap —
+  and nothing clips or scrolls horizontally past the screen edge.
+
+### CP-MS-2 — Wider container keeps side-by-side (no staff-preview regression)
+- **Setup:** Staff → a client → Reports → publish a milestone test; view the
+  publish-dialog client preview on desktop.
+- **Pass:** The bilateral sides render **side-by-side** (the dialog is wider than
+  the 220px-per-side threshold). Unilateral metrics are unaffected in both surfaces
+  (they never used this grid).
