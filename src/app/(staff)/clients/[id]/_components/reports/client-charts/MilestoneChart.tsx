@@ -77,7 +77,15 @@ export function MilestoneChart({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
+          // auto-fit + a per-side minimum: two sides sit side-by-side only
+          // when the container can give each ≥220px; below that (every
+          // phone-width portal column — inner ≈315–420px) the sides stack
+          // vertically so each baseline→latest comparison gets the full
+          // width. Prevents the value+date from being crushed into a
+          // ~34px track, which forced the date to wrap to 3–4 lines and
+          // overflowed the box on ≤375px screens. The staff publish-
+          // preview dialog is wider, so it keeps the side-by-side view.
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: 12,
         }}
       >
