@@ -1,6 +1,14 @@
 # Perf — Step 5 residual (auth middleware) — gap analysis
 
-Follow-up to the syd1 region fix (`docs/perf/baseline-2026-06-26.md`, promoted to production 2026-07-01). Pass 1 named a residual for "a later pass"; this doc audits it and designs the fix. **Status: audit + gap list only — NOT implemented. The primary fix is a security surface (auth) and per CLAUDE.md must be approved before implementation and cannot ship without the external auth review gate.**
+Follow-up to the syd1 region fix (`docs/perf/baseline-2026-06-26.md`, promoted to production 2026-07-01). Pass 1 named a residual for "a later pass"; this doc audits it and designs the fix. **Status (2026-07-01): residual MEASURED and confirmed real (~200–250 ms per authenticated request); DECISION recorded below — accepted for the friends-and-family beta with re-triggers. Not implemented: the fix is operator-gated (Vercel Pro billing, or enabling asymmetric JWT keys + the external auth-review gate). Per CLAUDE.md a security-surface change cannot ship without approval + external review.**
+
+## Decision (2026-07-01) — accepted with re-triggers
+**Accepted** for the current Hobby friends-and-family beta (no paying clients). The residual is real but modest (~200–250 ms per authenticated navigation) and the dominant per-query cost is already removed by the syd1 move. **Re-triggers that reopen it:**
+- **The Vercel Pro / commercial-use move** — Pro runs Edge middleware in `syd1` regions, fixing this residual with *no* auth-code change. Do it then (it's the clean fix, and you'll be on Pro anyway for commercial use).
+- **Any reported slowness on authenticated navigation** before that.
+- **Paying-client onboarding** (the hard rule) — revisit within that gate.
+
+Do **not** implement the local-JWT auth change while on Hobby unless a re-trigger fires and Pro isn't chosen; if it is ever pursued it runs the full polish protocol + external auth review.
 
 ## What the syd1 fix already removed
 Serverless/SSR functions now run in `syd1`, co-located with the Sydney database. The per-query cross-Pacific tax collapsed from ~0.75s to ~0s (verified in prod). Every server-side DB round-trip is now local (~2–5ms).
