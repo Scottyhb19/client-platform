@@ -37,18 +37,27 @@
 
 This secret lives in **two places** that must both change. Between updating place 1 and place 2 the cron caller is rejected (401) — keep the gap short. The Edge Function fails **closed**: an unset secret returns 500, a mismatched bearer returns 401 (`index.ts:192-206`, commit `701041c`).
 
-**Steps**
+**Steps** (current — assumes the Vault migration `20260701120000_appointment_reminders_cron_to_vault.sql` is applied, so the cron reads the token from Vault each tick):
 
 1. Generate: `openssl rand -base64 32`. Store in the password manager.
 2. Supabase Edge secret: `supabase secrets set CRON_SHARED_SECRET=<value>`.
-3. pg_cron `job_id 1` carries the bearer token as an **inline literal** in its `net.http_post(...)` command (not Vault — known tech-debt, see backlog). Update it via `cron.alter_job()` to embed the new token. Do this immediately after step 2.
+3. Vault secret (the value the cron reads each tick). Do this immediately after step 2:
+   ```sql
+   SELECT vault.update_secret(
+     (SELECT id FROM vault.secrets WHERE name = 'cron_shared_secret'),
+     '<value>'
+   );
+   ```
+   The next 5-minute tick picks it up automatically — no `cron.alter_job`, and the token never enters `cron.job.command`.
 4. Verify (below).
+
+**Pre-migration fallback** — only if `20260701120000` is NOT yet applied (the live job still carries an inline-literal token). Update the embedded token directly, immediately after step 2: `SELECT cron.alter_job(job_id := (SELECT jobid FROM cron.job WHERE jobname='appointment-reminders-5min'), command := <command with the new token inlined>);`. Then apply the Vault migration per `deploy-an-edge-function.md` so future rotations are Vault-only and the token leaves the command.
 
 **Verification**
 
-- `check-cron-health.md` → `cron.job_run_details` shows `status='succeeded'` on the next 5-minute tick after the change. The 2026-05-17 rotation confirmed via 10 consecutive succeeded ticks (00:30–01:15 UTC) — `secrets-rotation-log.md`.
+- `check-cron-health.md` → `cron.job_run_details` shows `status='succeeded'` on the next 5-minute tick. The 2026-05-17 rotation confirmed via 10 consecutive succeeded ticks (00:30–01:15 UTC) — `secrets-rotation-log.md`. **But `succeeded` only means `net.http_post` queued** — a 401 from a mismatched token is invisible there. Confirm a *real* send with the **Cron-path send check** in [`deploy-an-edge-function.md`](deploy-an-edge-function.md) (assert a synthetic reminder reaches `status='sent'`).
 
-**Rollback:** re-apply the previous token to both the Edge secret and `cron.alter_job()`. If the previous value was not retained (the 2026-05-17 entry notes old values are not kept), generate a fresh one and repeat — there is no dependency on the old value.
+**Rollback:** re-apply the previous token to both the Edge secret and the Vault secret (`vault.update_secret`). If the previous value was not retained (the 2026-05-17 entry notes old values are not kept), generate a fresh one and repeat — there is no dependency on the old value.
 
 ---
 
