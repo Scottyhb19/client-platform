@@ -1013,3 +1013,56 @@ types / queries). No new RLS or audit surface.
 ### SCHED-RO-8 — Month header tracks the date strip live
 - **Pass:** Scrolling the date rolodex updates the month header as the centred
   date crosses a month boundary, not only when scrolling stops.
+
+---
+
+## Appointment reminders — pg_cron path + Vault token (2026-07-01)
+
+Context: the `appointment-reminders-5min` pg_cron job (job_id 1) was found on
+2026-07-01 to have never invoked the Edge Function — its `net.http_post` URL
+held the placeholder host `YOUR-PROJECT.supabase.co`, so pg_net failed every
+tick with `Couldn't resolve host name` while `job_run_details.status` read
+`succeeded`. The job is now defined in a tracked migration
+(`20260701120000_appointment_reminders_cron_to_vault.sql`) with a reviewed URL
+literal, and its bearer token moved to Supabase Vault. REM-CRON-1/4/5 are
+properties of the committed migration; REM-CRON-2/3 are the operator-apply gate.
+
+### REM-CRON-1 — Cron command carries a reviewed URL and no token literal
+- **Action:** `SELECT (regexp_match(command,'https?://[^'']+'))[1] AS url, command FROM cron.job WHERE jobname='appointment-reminders-5min';`
+- **Pass:** `url` is exactly
+  `https://azjllcsffixswiigjqhj.supabase.co/functions/v1/send-appointment-reminders`
+  (no `YOUR-PROJECT`, no `<function-url>`). The command contains the substring
+  `vault.decrypted_secrets` and **no** inline bearer token (the text after
+  `'Bearer '` is a `SELECT … FROM vault.decrypted_secrets` subquery, not a value).
+
+### REM-CRON-2 — A reminder actually delivers *through the cron*, not just direct curl
+- **Setup:** Vault secret `cron_shared_secret` seeded with the same value as the
+  Edge `CRON_SHARED_SECRET`. Plant + re-time a due synthetic reminder per the
+  Cron-path send check (`deploy-an-edge-function.md`).
+- **Action:** Do **nothing** — wait for the next ≤5-min tick. No manual curl.
+- **Pass:** The reminder row flips to `status='sent'` with a non-null
+  `provider_message_id`. `net._http_response` shows no
+  `error_msg='Couldn't resolve host name'`. (Direct-curl success is **not**
+  sufficient — that is the blind spot this scenario exists to cover.)
+
+### REM-CRON-3 — Rotating the Vault secret rotates cron auth with no command change
+- **Setup:** Capture `command` from `cron.job` before rotation.
+- **Action:** Rotate per `rotate-a-secret.md` → CRON_SHARED_SECRET: set the new
+  value in both the Edge secret and Vault (`vault.update_secret`).
+- **Pass:** A post-rotation Cron-path send check reaches `status='sent'`, and
+  `cron.job.command` is byte-identical to the pre-rotation capture (rotation
+  touched only Vault and the Edge secret — never `cron.alter_job`).
+
+### REM-CRON-4 — Migration is idempotent (alter-in-place vs schedule)
+- **Pass:** Re-applying the migration when the job exists ALTERs it in place —
+  `jobname` unchanged, schedule still `*/5 * * * *`, exactly **one** row in
+  `cron.job` with that name (no duplicate). On a fresh database with no such
+  job, it is SCHEDULEd. The job is matched by `jobname`, not a hard-coded jobid.
+
+### REM-CRON-5 — Apply is safe before the Vault secret is seeded; pre-flight gates go-live
+- **Pass:** Applying the migration with no `cron_shared_secret` in Vault does
+  **not** error at apply time (the subquery is stored as text, evaluated only at
+  tick time). The go-live pre-flight
+  `SELECT length(decrypted_secret) FROM vault.decrypted_secrets WHERE name='cron_shared_secret';`
+  returns the token length (not null, no permission error) once seeded — proving
+  the `postgres` role the tick runs as can read it, before the live job is cut over.

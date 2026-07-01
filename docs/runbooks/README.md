@@ -22,7 +22,7 @@ This is a planning artefact, not a commitment. Items here are observed gaps, not
 ### Suggested runbooks (repo-derived)
 
 1. Add a pgTAP test asserting direct cross-tenant SELECT/UPDATE is blocked (diagnostic CRITICAL #5 — bare-table test absent).
-2. Migrate the inline pg_cron `CRON_SHARED_SECRET` literal (job_id 1) to Supabase Vault (rotation-log Follow-up; `docs/polish/client-portal-booking.md:168`).
+2. ~~Migrate the inline pg_cron `CRON_SHARED_SECRET` literal (job_id 1) to Supabase Vault.~~ **Migration written 2026-07-01** — `supabase/migrations/20260701120000_appointment_reminders_cron_to_vault.sql` moves the token to Vault and captures the job in a tracked migration with a **reviewed URL literal** (which would have prevented the 2026-07-01 placeholder-host incident; the URL is not secret — only the inline token had blocked the migration). **Pending operator apply**: one-time Vault seed → pre-flight → `db push` → Cron-path send check, per `deploy-an-edge-function.md` → "Durable fix — the job is now a tracked migration". Fully closes once verified on prod. (Original refs: rotation-log Follow-up; `docs/polish/client-portal-booking.md:168`.)
 3. Verify a Resend sending domain (SPF/DKIM/DMARC) and cut `EMAIL_FROM` over from the sandbox sender (diagnostic CRITICAL #1).
 4. Onboard a friends-and-family beta tester end-to-end (invite → `/i` token gate → `/welcome` → portal).
 5. Restore the database from Supabase PITR (confirm Pro tier + window first) (slos.md / incident-response.md, dashboard-only).

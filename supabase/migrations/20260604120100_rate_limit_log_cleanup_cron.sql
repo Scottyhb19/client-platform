@@ -20,20 +20,19 @@
 -- Cron-tracking state — read this if you grep `supabase/migrations` for
 -- "cron".
 -- ============================================================================
--- This is the FIRST pg_cron job defined in a tracked migration on this
+-- This was the FIRST pg_cron job defined in a tracked migration on this
 -- project. The pre-existing `appointment-reminders-5min` job (job_id 1,
--- schedule `*/5 * * * *`, deployed 2026-05-12) was scheduled directly
--- via the Supabase SQL Editor and is NOT defined in any migration file.
--- Inspection of `cron.job` will show both jobs after this migration
--- runs; only this one appears in the migration history.
+-- schedule `*/5 * * * *`, deployed 2026-05-12) was originally scheduled
+-- directly via the Supabase SQL Editor and was NOT defined in any
+-- migration file.
 --
--- Until appointment-reminders-5min is also captured in a tracked
--- migration, `supabase/migrations` is not the complete source of truth
--- for pg_cron jobs on this project. See
--- `docs/runbooks/deploy-an-edge-function.md` for the SQL-Editor path
--- used to schedule the appointment job, and `docs/runbooks/README.md`
--- backlog item #2 for the inline-literal Vault migration that touches
--- the same job.
+-- UPDATE 2026-07-01: appointment-reminders-5min is now captured in a
+-- tracked migration too — `20260701120000_appointment_reminders_cron_to_vault.sql`
+-- — which also moved its bearer token to Supabase Vault (closing README
+-- backlog #2). With that, `supabase/migrations` IS the source of truth
+-- for both pg_cron jobs on this project. The appointment job's apply
+-- procedure (one-time Vault seeding + the Cron-path send check) lives in
+-- `docs/runbooks/deploy-an-edge-function.md`.
 --
 -- ============================================================================
 -- Idempotency
