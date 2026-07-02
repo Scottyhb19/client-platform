@@ -27,6 +27,10 @@ interface ExerciseFormProps {
     prev: ExerciseFormState,
     formData: FormData,
   ) => Promise<ExerciseFormState>
+  /** Internal path to return to after save/Cancel — already validated by
+   *  the page (safeInternalPath); the action re-validates the submitted
+   *  copy. Set when the form is launched from the session builder. */
+  returnTo?: string
 }
 
 export function ExerciseForm({
@@ -36,6 +40,7 @@ export function ExerciseForm({
   metricUnits,
   initialValues,
   action,
+  returnTo,
 }: ExerciseFormProps) {
   const [state, formAction, pending] = useActionState<
     ExerciseFormState,
@@ -78,6 +83,7 @@ export function ExerciseForm({
 
   return (
     <form action={formAction} style={{ display: 'grid', gap: 18 }}>
+      {returnTo && <input type="hidden" name="returnTo" value={returnTo} />}
       {state.error && (
         <div
           role="alert"
@@ -323,7 +329,7 @@ export function ExerciseForm({
           paddingTop: 4,
         }}
       >
-        <Link href="/library" className="btn outline">
+        <Link href={returnTo ?? '/library'} className="btn outline">
           Cancel
         </Link>
         <button type="submit" className="btn primary" disabled={pending}>

@@ -28,6 +28,24 @@ export const initialExerciseFormState: ExerciseFormState = {
   fieldErrors: {},
 }
 
+/**
+ * Validate a ?returnTo= value as an internal app path — the create-exercise
+ * flow launched from the session builder returns there after save. Anything
+ * that isn't a single-leading-slash path is rejected: "https://…" is an
+ * absolute URL, "//host" is protocol-relative, and "/\host" is a browser
+ * quirk equivalent to it. Validated on BOTH ends (page render and server
+ * action) — the hidden form field is client-tamperable.
+ */
+export function safeInternalPath(
+  raw: string | null | undefined,
+): string | null {
+  if (!raw) return null
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) {
+    return null
+  }
+  return raw
+}
+
 export type Pattern = { id: string; name: string }
 export type Tag = { id: string; name: string }
 export type MetricUnit = { code: string; display_label: string }

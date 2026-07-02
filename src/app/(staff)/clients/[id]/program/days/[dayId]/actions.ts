@@ -600,6 +600,82 @@ export async function updateProgramExerciseSetAction(
 }
 
 /**
+ * Column autofill (dogfooding capture 2026-07-03): a value committed into
+ * one set's Volume or Load cell FOLLOWS DOWNWARD — into every cell BELOW
+ * the edited set (set_number greater) that is empty or still holds the
+ * edited cell's previous value. Sets above the edited one never move.
+ *
+ * Downward-only is what makes ascending/descending sequences enterable
+ * top-down (owner refinement, 2026-07-03): seeded 8/8/8 → edit set 2 to 6
+ * → 8/6/6 → edit set 3 to 4 → 8/6/4. A whole-column follow would drag
+ * set 1 (still matching the previous 8) along and make 8/6/4 unreachable.
+ * Editing set 1 remains the change-the-whole-column gesture. A below-cell
+ * customised to a DIFFERENT value never moves: wave loading survives.
+ *
+ * The follow conditions are checked server-side (IS NULL, = previous),
+ * never against the caller's view of the column — single-cell saves don't
+ * revalidate, so the screen is often stale, and a stale screen must not
+ * be able to overwrite a sibling's saved value.
+ */
+export type AutofillableSetField = 'reps' | 'optional_value'
+
+export async function autofillProgramExerciseSetColumnAction(
+  clientId: string,
+  dayId: string,
+  programExerciseId: string,
+  field: AutofillableSetField,
+  value: string,
+  previousValue: string | null,
+  /** set_number of the edited set — only rows strictly below it follow.
+   *  Client-supplied (the cell knows its row); a tampered value can only
+   *  mis-scope the caller's own org's autofill, RLS holds the boundary. */
+  belowSetNumber: number,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  // Server actions are network-callable — re-check the column name at
+  // runtime, same posture as EDITABLE_SET_FIELDS above.
+  if (field !== 'reps' && field !== 'optional_value') {
+    return { error: 'Invalid column.' }
+  }
+  if (!Number.isFinite(belowSetNumber)) {
+    return { error: 'Invalid set number.' }
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') return { error: null }
+
+  const patch: ProgramExerciseSetPatch = { [field]: trimmed }
+  const supabase = await createSupabaseServerClient()
+
+  // Two targeted UPDATEs rather than one .or() filter: .is()/.eq() take
+  // arbitrary values safely, while .or()'s filter string would need
+  // PostgREST quote-escaping for free-text reps like `8 e/s`.
+  const { error: fillErr } = await supabase
+    .from('program_exercise_sets')
+    .update(patch)
+    .eq('program_exercise_id', programExerciseId)
+    .is('deleted_at', null)
+    .gt('set_number', belowSetNumber)
+    .is(field, null)
+  if (fillErr) return { error: `Autofill failed: ${fillErr.message}` }
+
+  const prev = (previousValue ?? '').trim()
+  if (prev !== '' && prev !== trimmed) {
+    const { error: followErr } = await supabase
+      .from('program_exercise_sets')
+      .update(patch)
+      .eq('program_exercise_id', programExerciseId)
+      .is('deleted_at', null)
+      .gt('set_number', belowSetNumber)
+      .eq(field, prev)
+    if (followErr) return { error: `Autofill failed: ${followErr.message}` }
+  }
+
+  revalidatePath(`/clients/${clientId}/program/days/${dayId}`)
+  return { error: null }
+}
+
+/**
  * Add a new set row to a program_exercise. Stepper "+" — copies the last
  * live set's values so quick set-count adjustments inherit the EP's
  * prescription rather than starting blank (Q2 sign-off, 2026-05-07).

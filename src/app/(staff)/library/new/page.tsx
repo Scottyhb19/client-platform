@@ -3,10 +3,21 @@ import { ArrowLeft } from 'lucide-react'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { ExerciseForm } from '../_components/ExerciseForm'
 import { createExerciseAction } from '../actions'
+import { safeInternalPath } from '../types'
 
 export const dynamic = 'force-dynamic'
 
-export default async function NewExercisePage() {
+export default async function NewExercisePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ returnTo?: string }>
+}) {
+  // Launched from the session builder's Library tab, ?returnTo= carries
+  // the builder path — back arrow, Cancel, and the post-save redirect all
+  // honour it so the EP lands back mid-flow, not in the library.
+  const { returnTo: rawReturnTo } = await searchParams
+  const returnTo = safeInternalPath(rawReturnTo)
+
   const supabase = await createSupabaseServerClient()
 
   const [{ data: patterns }, { data: tags }, { data: metricUnits }] =
@@ -40,8 +51,8 @@ export default async function NewExercisePage() {
         }}
       >
         <Link
-          href="/library"
-          aria-label="Back to exercise library"
+          href={returnTo ?? '/library'}
+          aria-label={returnTo ? 'Back' : 'Back to exercise library'}
           style={{
             color: 'var(--color-text-light)',
             padding: 6,
@@ -91,6 +102,7 @@ export default async function NewExercisePage() {
         tags={tags ?? []}
         metricUnits={metricUnits ?? []}
         action={createExerciseAction}
+        returnTo={returnTo ?? undefined}
       />
     </div>
   )

@@ -39,6 +39,7 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   addProgramExerciseSetAction,
   addSectionTitleAction,
+  autofillProgramExerciseSetColumnAction,
   groupAcrossActionBarAction,
   moveProgramExerciseAction,
   removeProgramExerciseAction,
@@ -50,6 +51,7 @@ import {
   updateProgramExerciseRepMetricAction,
   updateProgramExerciseSetAction,
   updateSectionTitleAction,
+  type AutofillableSetField,
   type InsertSlot,
   type ProgramExercisePatch,
   type ProgramExerciseSetPatch,
@@ -1552,6 +1554,48 @@ function SetTable({
   // the bulk updateProgramExerciseRepMetricAction, same as the load metric).
   const columnRepMetric = pe.prescriptionSets[0]?.rep_metric ?? ''
 
+  const [, startTransition] = useTransition()
+
+  // Column autofill: a committed value follows DOWNWARD — into the cells
+  // below the edited set that are empty or still hold the edited cell's
+  // previous value. Sets above never move (that's what makes 8/6/4
+  // enterable top-down), and a below-cell customised to a different value
+  // never moves either. This props-based check only skips the round-trip
+  // when nothing below could follow at last render; the authoritative
+  // below / empty / matches-previous filters run server-side, so a stale
+  // view can never overwrite a sibling's saved value — the worst
+  // staleness does is leave a sibling unfollowed.
+  function handleCellCommitted(
+    setId: string,
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+  ) {
+    const edited = pe.prescriptionSets.find((s) => s.id === setId)
+    if (!edited) return
+    const followable = pe.prescriptionSets.some((s) => {
+      if (s.set_number <= edited.set_number) return false
+      const sibling = s[field] ?? ''
+      return sibling === '' || sibling === previousValue
+    })
+    if (!followable) return
+    startTransition(async () => {
+      const res = await autofillProgramExerciseSetColumnAction(
+        clientId,
+        dayId,
+        pe.id,
+        field,
+        value,
+        previousValue,
+        edited.set_number,
+      )
+      // Best-effort sugar: on failure the sibling cells simply keep their
+      // current values (the pre-autofill behaviour) — nothing the EP typed
+      // is lost, so no error UI beyond the console.
+      if (res.error) console.error(res.error)
+    })
+  }
+
   return (
     <div
       style={{
@@ -1577,13 +1621,24 @@ function SetTable({
       />
 
       {pe.prescriptionSets.map((set) => (
-        <SetRow key={set.id} set={set} />
+        <SetRow key={set.id} set={set} onCommitted={handleCellCommitted} />
       ))}
     </div>
   )
 }
 
-function SetRow({ set }: { set: PrescriptionSet }) {
+function SetRow({
+  set,
+  onCommitted,
+}: {
+  set: PrescriptionSet
+  onCommitted: (
+    setId: string,
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+  ) => void
+}) {
   return (
     <>
       <div
@@ -1606,12 +1661,18 @@ function SetRow({ set }: { set: PrescriptionSet }) {
         field="reps"
         initialValue={set.reps ?? ''}
         placeholder="—"
+        onCommitted={(field, value, previous) =>
+          onCommitted(set.id, field, value, previous)
+        }
       />
       <SetCell
         setId={set.id}
         field="optional_value"
         initialValue={set.optional_value ?? ''}
         placeholder="—"
+        onCommitted={(field, value, previous) =>
+          onCommitted(set.id, field, value, previous)
+        }
       />
     </>
   )
@@ -1622,13 +1683,34 @@ function SetCell({
   field,
   initialValue,
   placeholder,
+  onCommitted,
 }: {
   setId: string
-  field: keyof ProgramExerciseSetPatch
+  field: AutofillableSetField
   initialValue: string
   placeholder?: string
+  /** Fires after a successful save of a non-empty value — column autofill.
+   *  previousValue is the server value the edit replaced, so the action
+   *  can carry along siblings still holding it. */
+  onCommitted?: (
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+  ) => void
 }) {
   const [value, setValue] = useState(initialValue)
+  // Last server value this cell knows — moves on its OWN successful save.
+  // Single-cell saves keep the prop stale on purpose (no revalidate), so
+  // after a save this deliberately runs ahead of initialValue.
+  const [serverValue, setServerValue] = useState(initialValue)
+  // The prop value this cell last reconciled with. Only a CHANGE in the
+  // prop (a genuine revalidate — e.g. a sibling's autofill) is server
+  // news; prop ≠ serverValue alone is not, it's the normal stale-prop
+  // state after an own save. Comparing against serverValue here was the
+  // 2026-07-03 revert bug: an own save made the stale prop look like
+  // fresh data and snapped the cell back to its pre-edit value.
+  const [lastSeenProp, setLastSeenProp] = useState(initialValue)
+  const [focused, setFocused] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
   // Phase I §2.16: bumped on each successful save. Re-keyed SaveTick
   // remounts and the keyframe runs once. No setTimeout, no cleanup.
@@ -1636,9 +1718,32 @@ function SetCell({
   const [, startTransition] = useTransition()
   const empty = value.trim() === ''
 
+  if (initialValue !== lastSeenProp) {
+    if (initialValue === serverValue) {
+      // The revalidate caught up with this cell's own save — resync the
+      // baseline, nothing to adopt.
+      setLastSeenProp(initialValue)
+    } else if (
+      !focused &&
+      status === 'idle' &&
+      value === serverValue &&
+      serverValue === lastSeenProp
+    ) {
+      // Genuine refresh over an untouched cell (no own save since the
+      // last sync) — adopt it, e.g. a sibling's autofill filled this cell.
+      setLastSeenProp(initialValue)
+      setServerValue(initialValue)
+      setValue(initialValue)
+    }
+    // Otherwise hold: the cell is focused (re-checked on the blur render)
+    // or has its own newer save in flight relative to this payload — a
+    // stale payload must never overwrite what the EP just did.
+  }
+
   function handleBlur() {
-    if (value === initialValue) return
+    if (value === serverValue) return
     const trimmed = value.trim()
+    const previous = serverValue
     const patch: ProgramExerciseSetPatch = {
       [field]: trimmed === '' ? null : trimmed,
     }
@@ -1649,11 +1754,16 @@ function SetCell({
         // G-8: never leave a local value the database doesn't hold —
         // revert to the last-known server value and flag the cell. The
         // border clears on the next keystroke.
-        setValue(initialValue)
+        setValue(previous)
         setStatus('error')
       } else {
         setStatus('idle')
+        // Normalise display to what was saved so the dirty check stays
+        // meaningful (" 8 " saved as "8").
+        setValue(trimmed)
+        setServerValue(trimmed)
         setSavedAt((n) => n + 1)
+        if (trimmed !== '') onCommitted?.(field, trimmed, previous)
       }
     })
   }
@@ -1673,7 +1783,11 @@ function SetCell({
           setValue(e.target.value)
           if (status === 'error') setStatus('idle')
         }}
-        onBlur={handleBlur}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false)
+          handleBlur()
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
         }}

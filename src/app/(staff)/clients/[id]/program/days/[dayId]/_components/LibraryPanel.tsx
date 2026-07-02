@@ -293,10 +293,14 @@ export function LibraryPanel({
 
         {/* Bottom-of-list create CTA — brief §6.6 / exercise-library G-11
             rider. Suppressed alongside the grid's own empty-library state,
-            which carries its own create CTA. */}
+            which carries its own create CTA. returnTo brings the EP back
+            to this builder after the save instead of dumping them in the
+            library (dogfooding capture 2026-07-03). */}
         {options.length > 0 && (
           <Link
-            href="/library/new"
+            href={`/library/new?returnTo=${encodeURIComponent(
+              `/clients/${clientId}/program/days/${dayId}`,
+            )}`}
             style={{
               display: 'flex',
               alignItems: 'center',

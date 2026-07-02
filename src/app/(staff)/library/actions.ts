@@ -5,7 +5,11 @@ import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { isVolumeMetric } from '@/lib/prescription/volume-units'
-import type { ExerciseFormEcho, ExerciseFormState } from './types'
+import {
+  safeInternalPath,
+  type ExerciseFormEcho,
+  type ExerciseFormState,
+} from './types'
 
 /**
  * Create an exercise in the caller's organization, plus optional tag
@@ -76,6 +80,15 @@ export async function createExerciseAction(
   }
 
   revalidatePath('/library')
+
+  // Launched from the session builder (returnTo in the form): land the EP
+  // back in the builder with the new exercise pickable, not in the
+  // library. Re-validated server-side — the hidden field is tamperable.
+  const returnTo = safeInternalPath(nullable(formData.get('returnTo')))
+  if (returnTo) {
+    revalidatePath(returnTo)
+    redirect(returnTo)
+  }
   redirect('/library')
 }
 

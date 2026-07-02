@@ -1239,3 +1239,122 @@ DB behaviour machine-gated by pgTAP `55` (8/8 on live); these are the browser pa
   remain cancelled (the confirm dialog says so — re-book manually). If another
   live client has since been invited with the same email, Restore is refused with
   the humane conflict message instead of a raw database error.
+
+---
+
+## Staff session builder — column autofill for set values (UX papercut, 2026-07-03)
+
+Context: prescribing or changing a value set-by-set dragged. Now a value
+committed (blur/Enter) into a Volume or Load cell **follows downward** —
+into every cell **below** the edited set that is empty **or still holds the
+edited cell's previous value**, via `autofillProgramExerciseSetColumnAction`
+(bulk UPDATEs gated `set_number >` / `IS NULL` / `= previous` **server-side**,
+immune to the stale-props window left by single-cell autosaves). Sets above
+the edited one never move — that's what makes ascending/descending sequences
+enterable top-down (owner refinement 2026-07-03: a whole-column follow made
+8/6/4 unreachable, since editing set 2 dragged set 1's matching 8 along). A
+below-cell customised to a *different* value never moves — wave loading
+survives. This covers the defaults-seeded case: an exercise added from the
+library arrives with every set holding the exercise's default reps (per-set
+fan-out in `insert_program_exercise_at`), so editing **set 1** of a uniform
+8/8/8 column changes the whole column. Sibling cells adopt the followed value
+from the revalidated day payload only when untouched (unfocused, idle,
+undirtied, no own save pending against a stale prop). Design line: sensible
+defaults — reduce repetitive data entry. No migration, no new table surface
+(same RLS-scoped `program_exercise_sets` UPDATE path as the per-cell save).
+
+### SB-AF-1 — First value fills the column downward
+- **Setup:** An exercise whose Volume/Load cells are all empty (e.g. one whose
+  library defaults carry no reps), 3+ sets. Type `8` into set 1's Volume cell
+  and press Enter (or click away).
+- **Pass:** Sets 2 and 3's Volume cells fill with `8` (after the save
+  round-trip, each showing the value without being touched). The Load column
+  stays empty — autofill is per-column.
+
+### SB-AF-2 — Editing set 1 of a uniform (defaults-seeded) column changes the column
+- **Setup:** Add an exercise from the library so all sets arrive seeded with the
+  same default reps (e.g. 8/8/8). Change set 1's Volume cell to `10` and commit.
+- **Pass:** Sets 2 and 3 follow to `10` — final column 10/10/10. (The
+  2026-07-03 report: "changing the reps should change the other sets".)
+
+### SB-AF-3 — A descending sequence entered top-down (sets above never move)
+- **Setup:** Seeded 8/8/8. Change set 2 to `6` and commit; then change set 3 to
+  `4` and commit.
+- **Pass:** After the first commit the column reads 8/6/6 — set 3 followed,
+  set 1 did NOT (it sits above the edited set, even though it matches the
+  previous `8`). After the second commit: 8/6/4. (Owner refinement 2026-07-03 —
+  under the whole-column rule this sequence was unreachable.)
+
+### SB-AF-4 — A customised below-value never moves (wave loading survives)
+- **Setup:** Load column set to 60/65/70 (each typed individually). Change set 1
+  to `62` and commit. Then clear set 3, and change set 1 to `64`.
+- **Pass:** First commit: sets 2 and 3 hold 65/70 — only set 1 changes (their
+  values differ from set 1's previous `60`, so they don't follow). Second
+  commit: set 2 still holds 65; set 3 (now empty) fills with `64`.
+
+### SB-AF-5 — An own edit sticks — never reverts (regression, 2026-07-03)
+- **Setup:** Any cell holding a saved value (seeded or typed). Change it and
+  commit; also try several rapid edit→Enter cycles on the same cell.
+- **Pass:** The cell keeps the new value after the save tick — it never snaps
+  back to the previous value. (The first-cut adoption logic misread the
+  deliberately-stale prop after an own save as fresh server data and reverted
+  the edit.)
+
+### SB-AF-6 — A cell mid-edit never moves under the EP
+- **Setup:** All cells empty. Type `8` into set 1's Volume cell, press Enter, and
+  immediately click into set 2's Volume cell and type `12` before the autofill
+  lands.
+- **Pass:** Set 2 shows `12` (the in-flight edit wins locally; blur saves `12`
+  over the autofilled value). Set 3 fills with `8`. Final column: 8 / 12 / 8.
+
+### SB-AF-7 — Clearing a cell does not cascade
+- **Setup:** A fully-filled column. Clear set 2's Volume cell and commit.
+- **Pass:** Only set 2 empties; sets 1 and 3 keep their values. (Autofill fires
+  on non-empty commits only.)
+
+### SB-AF-8 — Portal sees the followed prescription
+- **Setup:** After SB-AF-3, open the session on the client portal.
+- **Pass:** The three sets show 8 / 6 / 4 — the follows landed in
+  `program_exercise_sets` rows, not just the staff UI.
+
+---
+
+## Staff session builder — create-exercise returns to the builder (UX papercut, 2026-07-03)
+
+Context: the builder's Library-tab "Create New Exercise" CTA sent the EP to
+`/library/new`, and the save redirected to `/library` — dumping them out of
+the session they were building. The CTA now carries
+`?returnTo=/clients/{id}/program/days/{dayId}`; the page, the form's Cancel,
+and `createExerciseAction`'s post-save redirect all honour it. `returnTo` is
+validated as an internal single-leading-slash path on **both** ends
+(`safeInternalPath` — page render and server action), so a tampered value
+(`https://…`, `//host`, `/\host`) falls back to `/library` rather than
+open-redirecting. The library's own create flow (no `returnTo`) is unchanged.
+
+### SB-CX-1 — Save returns to the builder with the exercise pickable
+- **Setup:** In a session builder day, right panel → Library tab → "Create New
+  Exercise". Fill in a name and save.
+- **Pass:** Lands back on the same builder day (not `/library`); searching the
+  Library tab finds the new exercise, and picking it adds it to the day.
+
+### SB-CX-2 — Cancel and the back arrow also return to the builder
+- **Setup:** Same entry path; on `/library/new` click Cancel (then repeat via the
+  header back arrow).
+- **Pass:** Both land back on the builder day. Nothing was created.
+
+### SB-CX-3 — The library's own create flow is unchanged
+- **Setup:** Library → "New exercise" (no returnTo) → save; separately, Cancel.
+- **Pass:** Both return to `/library`, exactly as before.
+
+### SB-CX-4 — A tampered returnTo never leaves the app
+- **Setup:** Manually open `/library/new?returnTo=https://example.com` (and
+  `//example.com`); save a valid exercise.
+- **Pass:** The back arrow/Cancel point at `/library` and the save redirects to
+  `/library` — an external or protocol-relative target is never followed.
+
+### SB-CX-5 — A validation error keeps the return path
+- **Setup:** From the builder CTA, submit the form with an invalid YouTube URL,
+  fix the error, save.
+- **Pass:** The inline error round-trip preserves what was typed (existing echo
+  behaviour) AND the eventual save still returns to the builder — the hidden
+  `returnTo` survives the error re-render.
