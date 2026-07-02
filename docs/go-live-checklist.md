@@ -1,6 +1,6 @@
 # Go-Live Checklist — project-wide pre-launch gate (Gate 3 deliverable)
 
-**Status:** open. No item here is closed.
+**Status (2026-07-03):** open on exactly one beta-gating item — the §1 Supabase Pro upgrade + DR drill sitting. Closed: §2 (secrets), §4 (SECURITY DEFINER sweep), §4b (anon table grants), §5 (non-prod target). Standing/armed: §3 (two of three confirmed; post-reset behaviour triggers at first practitioner onboarding), §5b (render-tier decision), §6 (re-run rule), §7 (re-run at Pro cutover). §8 items are paying-client-gated or feature-triggered pointers, not beta gates.
 
 **What this is.** The named dev-to-production transition gate referenced by `schema.md` and `slos.md` as the Gate 3 deliverable. It is the project-wide gate that must be walked before the first real user — including any friends-and-family beta tester — creates data.
 
