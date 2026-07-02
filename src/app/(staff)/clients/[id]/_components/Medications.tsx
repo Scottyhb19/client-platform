@@ -36,9 +36,12 @@ import type { ProfileMedication } from './ClientProfile'
 export function MedicationsPanel({
   clientId,
   medications,
+  readOnly = false,
 }: {
   clientId: string
   medications: ProfileMedication[]
+  /** CN-7: archived client — list renders, every mutating affordance hidden. */
+  readOnly?: boolean
 }) {
   const router = useRouter()
   const [dialog, setDialog] = useState<
@@ -75,15 +78,17 @@ export function MedicationsPanel({
     <ProfileCard
       title="Medications"
       action={
-        <button
-          type="button"
-          className="btn ghost"
-          aria-label="Add medication"
-          onClick={() => setDialog({ mode: 'add' })}
-          style={{ padding: 6 }}
-        >
-          <Plus size={14} aria-hidden />
-        </button>
+        readOnly ? undefined : (
+          <button
+            type="button"
+            className="btn ghost"
+            aria-label="Add medication"
+            onClick={() => setDialog({ mode: 'add' })}
+            style={{ padding: 6 }}
+          >
+            <Plus size={14} aria-hidden />
+          </button>
+        )
       }
     >
       {active.length === 0 && ceased.length === 0 ? (
@@ -104,6 +109,7 @@ export function MedicationsPanel({
               key={m.id}
               medication={m}
               busy={pendingId === m.id}
+              readOnly={readOnly}
               onEdit={() => setDialog({ mode: 'edit', medication: m })}
               onToggleActive={() =>
                 run(m.id, () => setMedicationActiveAction(m.id, false))
@@ -129,6 +135,7 @@ export function MedicationsPanel({
                   medication={m}
                   subdued
                   busy={pendingId === m.id}
+                  readOnly={readOnly}
                   onEdit={() => setDialog({ mode: 'edit', medication: m })}
                   onToggleActive={() =>
                     run(m.id, () => setMedicationActiveAction(m.id, true))
@@ -188,6 +195,7 @@ function MedicationRow({
   medication,
   subdued,
   busy,
+  readOnly,
   onEdit,
   onToggleActive,
   onArchive,
@@ -195,27 +203,31 @@ function MedicationRow({
   medication: ProfileMedication
   subdued?: boolean
   busy: boolean
+  readOnly?: boolean
   onEdit: () => void
   onToggleActive: () => void
   onArchive: () => void
 }) {
-  // Only Archive is red, and only here in the menu.
-  const menuItems: OverflowItem[] = [
-    { key: 'edit', label: 'Edit', disabled: busy, onSelect: onEdit },
-    {
-      key: 'toggle',
-      label: medication.is_active ? 'Mark ceased' : 'Reactivate',
-      disabled: busy,
-      onSelect: onToggleActive,
-    },
-    {
-      key: 'archive',
-      label: 'Archive',
-      tone: 'alert',
-      disabled: busy,
-      onSelect: onArchive,
-    },
-  ]
+  // Only Archive is red, and only here in the menu. CN-7: read-only rows
+  // carry no menu at all (ProfileRow skips it for an empty array).
+  const menuItems: OverflowItem[] = readOnly
+    ? []
+    : [
+        { key: 'edit', label: 'Edit', disabled: busy, onSelect: onEdit },
+        {
+          key: 'toggle',
+          label: medication.is_active ? 'Mark ceased' : 'Reactivate',
+          disabled: busy,
+          onSelect: onToggleActive,
+        },
+        {
+          key: 'archive',
+          label: 'Archive',
+          tone: 'alert',
+          disabled: busy,
+          onSelect: onArchive,
+        },
+      ]
 
   return (
     <ProfileRow

@@ -61,6 +61,8 @@ interface ReportsTabProps {
   lastUsedBattery: LastUsedBatteryHint | null
   testHistory: ClientTestHistory
   publications: PublicationRow[]
+  /** CN-7: archived client — history stays readable, test entry is withdrawn. */
+  readOnly?: boolean
 }
 
 export function ReportsTab({
@@ -71,6 +73,7 @@ export function ReportsTab({
   lastUsedBattery,
   testHistory,
   publications,
+  readOnly = false,
 }: ReportsTabProps) {
   const router = useRouter()
   const history = testHistory ?? { tests: [], categories: [], sessions: [] }
@@ -154,14 +157,16 @@ export function ReportsTab({
               <GitCompare size={14} aria-hidden /> Compare sessions
             </button>
           )}
-          <button
-            type="button"
-            className="btn outline"
-            onClick={() => setOpen(true)}
-            style={{ fontSize: '.82rem' }}
-          >
-            <Plus size={14} aria-hidden /> Record test
-          </button>
+          {!readOnly && (
+            <button
+              type="button"
+              className="btn outline"
+              onClick={() => setOpen(true)}
+              style={{ fontSize: '.82rem' }}
+            >
+              <Plus size={14} aria-hidden /> Record test
+            </button>
+          )}
         </div>
       </header>
 

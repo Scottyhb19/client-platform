@@ -32,9 +32,12 @@ import type { ProfileCondition } from './ClientProfile'
 export function MedicalHistoryPanel({
   clientId,
   conditions,
+  readOnly = false,
 }: {
   clientId: string
   conditions: ProfileCondition[]
+  /** CN-7: archived client — list renders, every mutating affordance hidden. */
+  readOnly?: boolean
 }) {
   const router = useRouter()
   const [dialog, setDialog] = useState<
@@ -78,15 +81,17 @@ export function MedicalHistoryPanel({
     <ProfileCard
       title="Medical history"
       action={
-        <button
-          type="button"
-          className="btn ghost"
-          aria-label="Add condition"
-          onClick={() => setDialog({ mode: 'add' })}
-          style={{ padding: 6 }}
-        >
-          <Plus size={14} aria-hidden />
-        </button>
+        readOnly ? undefined : (
+          <button
+            type="button"
+            className="btn ghost"
+            aria-label="Add condition"
+            onClick={() => setDialog({ mode: 'add' })}
+            style={{ padding: 6 }}
+          >
+            <Plus size={14} aria-hidden />
+          </button>
+        )
       }
     >
       {active.length === 0 && inactive.length === 0 ? (
@@ -107,6 +112,7 @@ export function MedicalHistoryPanel({
               key={c.id}
               condition={c}
               busy={pendingId === c.id}
+              readOnly={readOnly}
               onEdit={() => setDialog({ mode: 'edit', condition: c })}
               onToggleActive={() =>
                 run(c.id, () => setMedicalConditionActiveAction(c.id, false))
@@ -132,6 +138,7 @@ export function MedicalHistoryPanel({
                   condition={c}
                   subdued
                   busy={pendingId === c.id}
+                  readOnly={readOnly}
                   onEdit={() => setDialog({ mode: 'edit', condition: c })}
                   onToggleActive={() =>
                     run(c.id, () => setMedicalConditionActiveAction(c.id, true))
@@ -191,6 +198,7 @@ function ConditionRow({
   condition,
   subdued,
   busy,
+  readOnly,
   onEdit,
   onToggleActive,
   onArchive,
@@ -198,6 +206,7 @@ function ConditionRow({
   condition: ProfileCondition
   subdued?: boolean
   busy: boolean
+  readOnly?: boolean
   onEdit: () => void
   onToggleActive: () => void
   onArchive: () => void
@@ -207,23 +216,26 @@ function ConditionRow({
     : ''
 
   // Progressive disclosure: actions live in the hover/focus overflow menu.
-  // Only Archive is red, and only here in the menu.
-  const menuItems: OverflowItem[] = [
-    { key: 'edit', label: 'Edit', disabled: busy, onSelect: onEdit },
-    {
-      key: 'toggle',
-      label: condition.is_active ? 'Mark resolved' : 'Reactivate',
-      disabled: busy,
-      onSelect: onToggleActive,
-    },
-    {
-      key: 'archive',
-      label: 'Archive',
-      tone: 'alert',
-      disabled: busy,
-      onSelect: onArchive,
-    },
-  ]
+  // Only Archive is red, and only here in the menu. CN-7: read-only rows
+  // carry no menu at all (ProfileRow skips it for an empty array).
+  const menuItems: OverflowItem[] = readOnly
+    ? []
+    : [
+        { key: 'edit', label: 'Edit', disabled: busy, onSelect: onEdit },
+        {
+          key: 'toggle',
+          label: condition.is_active ? 'Mark resolved' : 'Reactivate',
+          disabled: busy,
+          onSelect: onToggleActive,
+        },
+        {
+          key: 'archive',
+          label: 'Archive',
+          tone: 'alert',
+          disabled: busy,
+          onSelect: onArchive,
+        },
+      ]
 
   return (
     <ProfileRow

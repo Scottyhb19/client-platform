@@ -22,12 +22,13 @@ export type ClientRow = {
   category_name: string | null
 }
 
-type Filter = 'all' | 'active' | 'invited'
+type Filter = 'all' | 'active' | 'invited' | 'archived'
 
 const FILTERS: Array<{ key: Filter; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'active', label: 'Active' },
   { key: 'invited', label: 'New' },
+  { key: 'archived', label: 'Archived' },
 ]
 
 interface ClientsListProps {
@@ -42,6 +43,10 @@ export function ClientsList({ clients }: ClientsListProps) {
     const q = query.trim().toLowerCase()
     return clients.filter((c) => {
       const status = statusFor(c)
+      // CN-7: archived clients live behind their own chip — the default
+      // views show the working caseload only (progressive disclosure).
+      if (filter === 'archived' && status !== 'archived') return false
+      if (filter !== 'archived' && status === 'archived') return false
       if (filter === 'active' && status !== 'active') return false
       if (filter === 'invited' && status !== 'invited') return false
       if (!q) return true
@@ -138,7 +143,14 @@ function ClientRowCard({
 }) {
   const [hovered, setHovered] = useState(false)
   const status = statusFor(client)
-  const subtitle = client.category_name ?? client.email
+  const subtitle =
+    status === 'archived' && client.archived_at
+      ? `Archived ${new Date(client.archived_at).toLocaleDateString('en-AU', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })}`
+      : (client.category_name ?? client.email)
 
   return (
     <Link
@@ -255,7 +267,9 @@ function EmptyState({
         fontSize: '.88rem',
       }}
     >
-      No clients match the {filter === 'active' ? 'Active' : 'New'} filter.
+      {filter === 'archived'
+        ? 'No archived clients. Archived records stay here for the retention period.'
+        : `No clients match the ${filter === 'active' ? 'Active' : 'New'} filter.`}
     </div>
   )
 }

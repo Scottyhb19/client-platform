@@ -55,9 +55,11 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024
 interface FilesTabProps {
   clientId: string
   files: ClientFile[]
+  /** CN-7: archived client — files stay downloadable, upload/delete withdrawn. */
+  readOnly?: boolean
 }
 
-export function FilesTab({ clientId, files }: FilesTabProps) {
+export function FilesTab({ clientId, files, readOnly = false }: FilesTabProps) {
   const router = useRouter()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [filter, setFilter] = useState<FilterKey>('all')
@@ -176,25 +178,30 @@ export function FilesTab({ clientId, files }: FilesTabProps) {
 
   return (
     <div
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      onDragEnter={readOnly ? undefined : handleDragEnter}
+      onDragLeave={readOnly ? undefined : handleDragLeave}
+      onDragOver={readOnly ? undefined : handleDragOver}
+      onDrop={readOnly ? undefined : handleDrop}
       style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
     >
-      {/* Hidden picker — opened by the Upload button or the drop zone click */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        onChange={handleFilePicked}
-        style={{ display: 'none' }}
-      />
+      {/* Hidden picker — opened by the Upload button or the drop zone click.
+          CN-7: withdrawn entirely on an archived record. */}
+      {!readOnly && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFilePicked}
+          style={{ display: 'none' }}
+        />
+      )}
 
       {/* Drop zone */}
-      <DropZone
-        isActive={isDragging}
-        onPickClick={openPicker}
-      />
+      {!readOnly && (
+        <DropZone
+          isActive={isDragging}
+          onPickClick={openPicker}
+        />
+      )}
 
       {bannerError && (
         <div
@@ -299,6 +306,7 @@ export function FilesTab({ clientId, files }: FilesTabProps) {
               <FileRow
                 key={file.id}
                 file={file}
+                readOnly={readOnly}
                 onDelete={() => setDeleteTarget(file)}
                 onDownloadError={(msg) => setBannerError(msg)}
               />
@@ -498,10 +506,12 @@ function FileListHeader() {
 
 function FileRow({
   file,
+  readOnly = false,
   onDelete,
   onDownloadError,
 }: {
   file: ClientFile
+  readOnly?: boolean
   onDelete: () => void
   onDownloadError: (msg: string) => void
 }) {
@@ -595,9 +605,11 @@ function FileRow({
         >
           <Download size={15} aria-hidden />
         </RowAction>
-        <RowAction label="Delete" onClick={onDelete} danger>
-          <Trash2 size={15} aria-hidden />
-        </RowAction>
+        {!readOnly && (
+          <RowAction label="Delete" onClick={onDelete} danger>
+            <Trash2 size={15} aria-hidden />
+          </RowAction>
+        )}
       </div>
     </li>
   )

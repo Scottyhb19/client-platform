@@ -90,7 +90,9 @@ export default async function ClientProfilePage({
          category:client_categories(name)`,
       )
       .eq('id', id)
-      .is('deleted_at', null)
+      // CN-7: deliberately NO deleted_at filter — the profile is the staff
+      // surface where an archived record stays readable (brief §7.2, policy
+      // 20260702190000). statusFor() flips the page to read-only below.
       .maybeSingle(),
     supabase
       .from('client_medical_history')
@@ -287,8 +289,13 @@ export default async function ClientProfilePage({
     created_at: client.created_at,
     category_id: client.category_id,
     category_name: client.category?.name ?? null,
+    archived_at: client.archived_at,
     version: client.version,
   }
+
+  // CN-7: an archived record renders read-only — banner + Restore in the
+  // profile; every mutating affordance withdrawn (and server-guarded).
+  const readOnly = statusKind === 'archived'
 
   // Resolve which active block the Program tab summarises: the one
   // containing today, else the most recent past one (shared rule with the
@@ -513,6 +520,7 @@ export default async function ClientProfilePage({
       completions={completions}
       statusLabel={statusLabel}
       statusKind={statusKind}
+      readOnly={readOnly}
       canResendInvite={canResendInvite}
       lastInviteSentAt={lastInviteSentAt}
       noteTemplates={noteTemplates}

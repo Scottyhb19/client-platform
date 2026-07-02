@@ -13,6 +13,10 @@ export const dynamic = 'force-dynamic'
 export default async function ClientsPage() {
   const supabase = await createSupabaseServerClient()
 
+  // CN-7: deliberately archived-INCLUSIVE — this list and the profile are
+  // the two staff surfaces that read archived rows (the "Archived" filter
+  // chip reveals them; the default view stays live-only in ClientsList).
+  // Every other staff surface keeps an explicit live-only filter (P0-2).
   const { data, error } = await supabase
     .from('clients')
     .select(
@@ -20,7 +24,6 @@ export default async function ClientsPage() {
        onboarded_at, archived_at, created_at,
        category:client_categories(name)`,
     )
-    .is('deleted_at', null)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -39,8 +42,11 @@ export default async function ClientsPage() {
     category_name: c.category?.name ?? null,
   }))
 
-  const total = clients.length
-  const newCount = clients.filter((c) => !c.onboarded_at).length
+  // Header counts describe the working (live) caseload — archived rows are
+  // reachable via the filter chip but never inflate the numbers.
+  const live = clients.filter((c) => !c.archived_at)
+  const total = live.length
+  const newCount = live.filter((c) => !c.onboarded_at).length
 
   return (
     <div className="page">

@@ -281,6 +281,7 @@ export function ProfileRow({
   subdued?: boolean
   busy?: boolean
   menuLabel: string
+  /** CN-7: empty array = read-only row — no overflow menu renders at all. */
   menuItems: OverflowItem[]
 }) {
   const [hovered, setHovered] = useState(false)
@@ -330,12 +331,14 @@ export function ProfileRow({
           </div>
         )}
       </div>
-      <RowOverflowMenu
-        ariaLabel={menuLabel}
-        items={menuItems}
-        busy={busy}
-        visible={revealed}
-      />
+      {menuItems.length > 0 && (
+        <RowOverflowMenu
+          ariaLabel={menuLabel}
+          items={menuItems}
+          busy={busy}
+          visible={revealed}
+        />
+      )}
     </div>
   )
 }

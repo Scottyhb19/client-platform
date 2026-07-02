@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 import { getOrCreateThreadAction } from '../../../messages/actions'
-import { archiveClientAction } from '../actions'
+import { archiveClientAction, restoreClientAction } from '../actions'
+import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 import {
   ChevronDown,
   ChevronRight,
@@ -59,6 +60,8 @@ export type ProfileClient = {
   created_at: string
   category_id: string | null
   category_name: string | null
+  /** CN-7: set when the client is archived — drives the read-only banner. */
+  archived_at: string | null
   /** OCC token for the CN-5 details edit flow. */
   version: number
 }
@@ -241,6 +244,8 @@ interface ClientProfileProps {
   completions: ProfileCompletion[]
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
+  /** CN-7: archived clients render the whole record read-only. */
+  readOnly: boolean
   canResendInvite: boolean
   lastInviteSentAt: string | null
   noteTemplates: ProfileNoteTemplate[]
@@ -307,6 +312,7 @@ export function ClientProfile({
   completions,
   statusLabel,
   statusKind,
+  readOnly,
   canResendInvite,
   lastInviteSentAt,
   noteTemplates,
@@ -355,7 +361,8 @@ export function ClientProfile({
         conditions={conditions}
         statusLabel={statusLabel}
         statusKind={statusKind}
-        canResendInvite={canResendInvite}
+        readOnly={readOnly}
+        canResendInvite={canResendInvite && !readOnly}
         lastInviteSentAt={lastInviteSentAt}
         tab={tab}
         onTab={setTab}
@@ -363,7 +370,7 @@ export function ClientProfile({
         onFlags={() => setFlagDialogOpen(true)}
       />
 
-      {flagDialogOpen && (
+      {flagDialogOpen && !readOnly && (
         <FlagDialog
           clientId={client.id}
           flags={activeFlags}
@@ -372,9 +379,18 @@ export function ClientProfile({
       )}
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 32px 60px' }}>
+        {readOnly && (
+          <ArchivedBanner
+            clientId={client.id}
+            fullName={`${client.first_name} ${client.last_name}`}
+            archivedAt={client.archived_at}
+          />
+        )}
         <FlagBanners
           flags={activeFlags}
-          onManage={() => setFlagDialogOpen(true)}
+          onManage={() => {
+            if (!readOnly) setFlagDialogOpen(true)
+          }}
         />
         {tab === 'details' && (
           <DetailsTab
@@ -382,6 +398,7 @@ export function ClientProfile({
             categories={categories}
             conditions={conditions}
             medications={medications}
+            readOnly={readOnly}
           />
         )}
         {tab === 'notes' && (
@@ -392,11 +409,12 @@ export function ClientProfile({
             appointments={appointments}
             reports={reports}
             lastTemplateId={lastTemplateId}
-            initialOpenCreate={initialOpenCreate}
+            initialOpenCreate={initialOpenCreate && !readOnly}
             initialAppointmentId={initialAppointmentId}
             testCatalog={testCatalog}
             testBatteries={testBatteries}
             lastUsedBattery={lastUsedBattery}
+            readOnly={readOnly}
           />
         )}
         {tab === 'bookings' && <BookingsTab appointments={appointments} />}
@@ -405,6 +423,7 @@ export function ClientProfile({
             clientId={client.id}
             program={program}
             completions={completions}
+            readOnly={readOnly}
           />
         )}
         {tab === 'reports' && (
@@ -416,10 +435,15 @@ export function ClientProfile({
             lastUsedBattery={lastUsedBattery}
             testHistory={testHistory}
             publications={publications}
+            readOnly={readOnly}
           />
         )}
         {tab === 'files' && (
-          <FilesTabComponent clientId={client.id} files={files} />
+          <FilesTabComponent
+            clientId={client.id}
+            files={files}
+            readOnly={readOnly}
+          />
         )}
       </div>
     </div>
@@ -447,6 +471,7 @@ function ClientHeader({
   conditions,
   statusLabel,
   statusKind,
+  readOnly,
   canResendInvite,
   lastInviteSentAt,
   tab,
@@ -458,6 +483,7 @@ function ClientHeader({
   conditions: ProfileCondition[]
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
+  readOnly: boolean
   canResendInvite: boolean
   lastInviteSentAt: string | null
   tab: Tab
@@ -581,45 +607,52 @@ function ClientHeader({
               >
                 {fullName}
               </h1>
-              <IconGhost
-                label={isOpening ? 'Opening thread…' : `Message ${fullName}`}
-                onClick={handleOpenThread}
-                disabled={isOpening}
-              >
-                <MessageCircle size={16} aria-hidden />
-              </IconGhost>
-              <IconGhost
-                label={`Email ${fullName}`}
-                href={`mailto:${client.email}`}
-              >
-                <Mail size={16} aria-hidden />
-              </IconGhost>
-              <IconGhost
-                label={hasActiveFlags ? 'Manage flags' : 'Add flag'}
-                onClick={onFlags}
-              >
-                {/* CN-4: the flag reads red while an injury flag or
-                    contraindication is active — the operator-directed
-                    signal that there is something to manage. */}
-                <Flag
-                  size={16}
-                  aria-hidden
-                  style={
-                    hasActiveFlags
-                      ? {
-                          color: 'var(--color-alert)',
-                          fill: 'rgba(214,64,69,0.15)',
-                        }
-                      : undefined
-                  }
-                />
-              </IconGhost>
-              <IconGhost
-                label="Archive client"
-                onClick={() => setArchiveOpen(true)}
-              >
-                <MoreHorizontal size={16} aria-hidden />
-              </IconGhost>
+              {/* CN-7: an archived record renders read-only — the action
+                  icons (message / email / flags / archive) are withdrawn;
+                  the ArchivedBanner below the header owns Restore. */}
+              {!readOnly && (
+                <>
+                  <IconGhost
+                    label={isOpening ? 'Opening thread…' : `Message ${fullName}`}
+                    onClick={handleOpenThread}
+                    disabled={isOpening}
+                  >
+                    <MessageCircle size={16} aria-hidden />
+                  </IconGhost>
+                  <IconGhost
+                    label={`Email ${fullName}`}
+                    href={`mailto:${client.email}`}
+                  >
+                    <Mail size={16} aria-hidden />
+                  </IconGhost>
+                  <IconGhost
+                    label={hasActiveFlags ? 'Manage flags' : 'Add flag'}
+                    onClick={onFlags}
+                  >
+                    {/* CN-4: the flag reads red while an injury flag or
+                        contraindication is active — the operator-directed
+                        signal that there is something to manage. */}
+                    <Flag
+                      size={16}
+                      aria-hidden
+                      style={
+                        hasActiveFlags
+                          ? {
+                              color: 'var(--color-alert)',
+                              fill: 'rgba(214,64,69,0.15)',
+                            }
+                          : undefined
+                      }
+                    />
+                  </IconGhost>
+                  <IconGhost
+                    label="Archive client"
+                    onClick={() => setArchiveOpen(true)}
+                  >
+                    <MoreHorizontal size={16} aria-hidden />
+                  </IconGhost>
+                </>
+              )}
             </div>
 
             <div
@@ -735,6 +768,100 @@ function ClientHeader({
           onConfirm={handleArchive}
           isArchiving={isArchiving}
           error={archiveError}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * CN-7 — the archived-record banner. Owns the one affordance an archived
+ * profile keeps: Restore. Deliberately quiet (muted border + wash, not the
+ * red left-border pattern — that stays reserved for clinical flags).
+ */
+function ArchivedBanner({
+  clientId,
+  fullName,
+  archivedAt,
+}: {
+  clientId: string
+  fullName: string
+  archivedAt: string | null
+}) {
+  const router = useRouter()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [isRestoring, startRestore] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  const dateLabel = archivedAt ? formatShortDate(archivedAt) : null
+
+  function handleRestore() {
+    if (isRestoring) return
+    setError(null)
+    startRestore(async () => {
+      const res = await restoreClientAction(clientId)
+      if (res.error) {
+        setError(res.error)
+        return
+      }
+      setConfirmOpen(false)
+      router.refresh()
+    })
+  }
+
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '12px 16px',
+        marginBottom: 18,
+        background: 'var(--color-card)',
+        border: '1px solid var(--color-border-subtle)',
+        borderRadius: 10,
+      }}
+    >
+      <div style={{ flex: 1, fontSize: '.86rem', color: 'var(--color-text-light)', lineHeight: 1.5 }}>
+        <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>
+          Archived{dateLabel ? ` ${dateLabel}` : ''} — this record is read-only.
+        </span>{' '}
+        The full history stays available for the retention period. Restore the
+        client to make changes or book sessions.
+      </div>
+      <button
+        type="button"
+        className="btn outline"
+        onClick={() => setConfirmOpen(true)}
+        disabled={isRestoring}
+        style={{ fontSize: '.8rem', padding: '7px 14px', whiteSpace: 'nowrap' }}
+      >
+        {isRestoring ? 'Restoring…' : 'Restore client'}
+      </button>
+
+      {error && (
+        <div
+          role="alert"
+          style={{ fontSize: '.78rem', color: 'var(--color-alert)', maxWidth: 320 }}
+        >
+          {error}
+        </div>
+      )}
+
+      {confirmOpen && (
+        <ConfirmDialog
+          title={`Restore ${fullName}?`}
+          body="The client returns to the active list and their record becomes editable again. Appointments cancelled at archive time stay cancelled — re-book anything that should go ahead."
+          confirmLabel="Restore client"
+          tone="primary"
+          onCancel={() => {
+            if (!isRestoring) {
+              setConfirmOpen(false)
+              setError(null)
+            }
+          }}
+          onConfirm={handleRestore}
         />
       )}
     </div>
@@ -928,11 +1055,13 @@ function DetailsTab({
   categories,
   conditions,
   medications,
+  readOnly,
 }: {
   client: ProfileClient
   categories: ProfileCategory[]
   conditions: ProfileCondition[]
   medications: ProfileMedication[]
+  readOnly: boolean
 }) {
   // CN-5 — the Contact panel's "Edit details" opens this. Goals have their
   // own dialog (GoalsEditDialog) so the two edits are kept separate.
@@ -961,11 +1090,13 @@ function DetailsTab({
       <ProfileCard
         title="Contact"
         action={
-          <GhostBtn
-            icon={<Edit3 size={14} />}
-            label="Edit details"
-            onClick={() => setEditOpen(true)}
-          />
+          readOnly ? undefined : (
+            <GhostBtn
+              icon={<Edit3 size={14} />}
+              label="Edit details"
+              onClick={() => setEditOpen(true)}
+            />
+          )
         }
       >
         <div
@@ -1002,11 +1133,13 @@ function DetailsTab({
         <ProfileCard
           title="Goals"
           action={
-            <GhostBtn
-              icon={<Edit3 size={14} />}
-              label="Edit goals"
-              onClick={() => setGoalsEditOpen(true)}
-            />
+            readOnly ? undefined : (
+              <GhostBtn
+                icon={<Edit3 size={14} />}
+                label="Edit goals"
+                onClick={() => setGoalsEditOpen(true)}
+              />
+            )
           }
         >
           {goalsList.length === 0 ? (
@@ -1047,9 +1180,17 @@ function DetailsTab({
           )}
         </ProfileCard>
 
-        <MedicalHistoryPanel clientId={client.id} conditions={conditions} />
+        <MedicalHistoryPanel
+          clientId={client.id}
+          conditions={conditions}
+          readOnly={readOnly}
+        />
 
-        <MedicationsPanel clientId={client.id} medications={medications} />
+        <MedicationsPanel
+          clientId={client.id}
+          medications={medications}
+          readOnly={readOnly}
+        />
       </div>
 
       {editOpen && (
@@ -1130,26 +1271,33 @@ function ProgramTab({
   clientId,
   program,
   completions,
+  readOnly,
 }: {
   clientId: string
   program: ProfileProgramSummary | null
   completions: ProfileCompletion[]
+  readOnly: boolean
 }) {
   // No active program — keep the existing empty-state full-width.
   // The Recent completions panel would feel orphaned without a
   // program above it, so collapse to single column.
+  // CN-7: the calendar/builder links are withdrawn on an archived record —
+  // those surfaces are prescription tools (and their loaders are live-only,
+  // so the links would 404). Completions history below stays readable.
   if (!program) {
     return (
       <Panel
         title="Program"
         action={
-          <Link
-            href={`/clients/${clientId}/program`}
-            className="btn primary"
-            style={{ fontSize: '.78rem', padding: '6px 12px' }}
-          >
-            Open calendar
-          </Link>
+          readOnly ? undefined : (
+            <Link
+              href={`/clients/${clientId}/program`}
+              className="btn primary"
+              style={{ fontSize: '.78rem', padding: '6px 12px' }}
+            >
+              Open calendar
+            </Link>
+          )
         }
       >
         <div
@@ -1178,17 +1326,19 @@ function ProgramTab({
               maxWidth: 460,
             }}
           >
-            Start a training block for this client — pick a duration and a
-            day-of-week split. The Session Builder then lets you fill in
-            exercises day by day.
+            {readOnly
+              ? 'No program was active when this client was archived.'
+              : 'Start a training block for this client — pick a duration and a day-of-week split. The Session Builder then lets you fill in exercises day by day.'}
           </p>
-          <Link
-            href={`/clients/${clientId}/program/new`}
-            className="btn primary"
-          >
-            <Plus size={14} aria-hidden />
-            Start first training block
-          </Link>
+          {!readOnly && (
+            <Link
+              href={`/clients/${clientId}/program/new`}
+              className="btn primary"
+            >
+              <Plus size={14} aria-hidden />
+              Start first training block
+            </Link>
+          )}
         </div>
       </Panel>
     )
@@ -1222,23 +1372,25 @@ function ProgramTab({
           currentLabel ? ` · ${currentLabel}` : ''
         }`}
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Link
-              href={`/clients/${clientId}/program/new`}
-              className="btn outline"
-              style={{ fontSize: '.78rem', padding: '6px 12px' }}
-            >
-              <Plus size={13} aria-hidden />
-              New training block
-            </Link>
-            <Link
-              href={`/clients/${clientId}/program`}
-              className="btn primary"
-              style={{ fontSize: '.78rem', padding: '6px 12px' }}
-            >
-              Open calendar
-            </Link>
-          </div>
+          readOnly ? undefined : (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link
+                href={`/clients/${clientId}/program/new`}
+                className="btn outline"
+                style={{ fontSize: '.78rem', padding: '6px 12px' }}
+              >
+                <Plus size={13} aria-hidden />
+                New training block
+              </Link>
+              <Link
+                href={`/clients/${clientId}/program`}
+                className="btn primary"
+                style={{ fontSize: '.78rem', padding: '6px 12px' }}
+              >
+                Open calendar
+              </Link>
+            </div>
+          )
         }
       >
         <div

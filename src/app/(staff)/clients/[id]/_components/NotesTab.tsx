@@ -82,6 +82,8 @@ interface NotesTabProps {
   testCatalog: CatalogCategory[]
   testBatteries: BatteryRow[]
   lastUsedBattery: LastUsedBatteryHint | null
+  /** CN-7: archived client — the feed stays readable, composing/editing is withdrawn. */
+  readOnly?: boolean
 }
 
 /**
@@ -111,6 +113,7 @@ export function NotesTab({
   testCatalog,
   testBatteries,
   lastUsedBattery,
+  readOnly = false,
 }: NotesTabProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -244,7 +247,7 @@ export function NotesTab({
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {leftMode.kind === 'idle' && (
+        {leftMode.kind === 'idle' && !readOnly && (
           <button
             type="button"
             onClick={handleStartCreate}
@@ -259,6 +262,18 @@ export function NotesTab({
             <Plus size={14} aria-hidden />
             Create New Note
           </button>
+        )}
+        {leftMode.kind === 'idle' && readOnly && (
+          <div
+            style={{
+              fontSize: '.86rem',
+              color: 'var(--color-text-light)',
+              lineHeight: 1.6,
+            }}
+          >
+            This record is archived — notes are read-only. Open any note from
+            the Previous list to read it.
+          </div>
         )}
         {leftMode.kind === 'create' && (
           <NoteForm
@@ -308,6 +323,7 @@ export function NotesTab({
 
       <SideRail
         clientId={clientId}
+        readOnly={readOnly}
         tab={sidebarTab}
         onTabChange={(t) => {
           setSidebarTab(t)
@@ -1373,6 +1389,7 @@ function NoteFieldInput({
 
 function SideRail({
   clientId,
+  readOnly = false,
   tab,
   onTabChange,
   view,
@@ -1388,6 +1405,7 @@ function SideRail({
   onCancelCopy,
 }: {
   clientId: string
+  readOnly?: boolean
   tab: SidebarTab
   onTabChange: (t: SidebarTab) => void
   view: SidebarView
@@ -1468,6 +1486,7 @@ function SideRail({
             templates={templates}
             onOpen={(noteId) => onView({ kind: 'reading', noteId })}
             clientId={clientId}
+            readOnly={readOnly}
             copyMode={copyMode}
             copyTemplateId={copyTemplateId}
             onCopyFromNote={onCopyFromNote}
@@ -1479,6 +1498,7 @@ function SideRail({
             appointments={appointments}
             templates={templates}
             clientId={clientId}
+            readOnly={readOnly}
             onBack={() => onView({ kind: 'list' })}
             onEdit={() => onStartEdit(view.noteId)}
           />
@@ -1568,6 +1588,7 @@ function PreviousNotesList({
   copyMode,
   copyTemplateId,
   onCopyFromNote,
+  readOnly = false,
 }: {
   notes: ProfileNote[]
   appointments: ProfileAppointment[]
@@ -1577,6 +1598,7 @@ function PreviousNotesList({
   copyMode: boolean
   copyTemplateId: string | null
   onCopyFromNote: (noteId: string) => void
+  readOnly?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
@@ -1749,6 +1771,7 @@ function PreviousNotesList({
                   templates={templates}
                   onOpen={() => onOpen(n.id)}
                   clientId={clientId}
+                  readOnly={readOnly}
                   copyMode={copyMode}
                   copyEligible={copyMode && n.template_id === copyTemplateId}
                   onCopy={() => onCopyFromNote(n.id)}
@@ -1777,6 +1800,7 @@ function PreviousNotesList({
                   templates={templates}
                   onOpen={() => onOpen(n.id)}
                   clientId={clientId}
+                  readOnly={readOnly}
                   copyMode={copyMode}
                   copyEligible={copyMode && n.template_id === copyTemplateId}
                   onCopy={() => onCopyFromNote(n.id)}
@@ -1822,6 +1846,7 @@ function NoteRow({
   templates,
   onOpen,
   clientId,
+  readOnly = false,
   copyMode,
   copyEligible,
   onCopy,
@@ -1832,6 +1857,7 @@ function NoteRow({
   templates: ProfileNoteTemplate[]
   onOpen: () => void
   clientId: string
+  readOnly?: boolean
   copyMode: boolean
   copyEligible: boolean
   onCopy: () => void
@@ -1938,7 +1964,7 @@ function NoteRow({
             —
           </span>
         )
-      ) : (
+      ) : readOnly ? null : (
         <div style={{ display: 'flex', alignItems: 'flex-start' }}>
           <ArchiveButton note={note} />
           <PinToggle note={note} clientId={clientId} onError={onActionError} />
@@ -2144,6 +2170,7 @@ function NoteReader({
   appointments,
   templates,
   clientId,
+  readOnly = false,
   onBack,
   onEdit,
 }: {
@@ -2151,6 +2178,7 @@ function NoteReader({
   appointments: ProfileAppointment[]
   templates: ProfileNoteTemplate[]
   clientId: string
+  readOnly?: boolean
   onBack: () => void
   onEdit: () => void
 }) {
@@ -2234,15 +2262,17 @@ function NoteReader({
         >
           {date}
         </div>
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label="Edit note"
-          title="Edit"
-          style={iconButtonStyle}
-        >
-          <Edit3 size={13} aria-hidden />
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label="Edit note"
+            title="Edit"
+            style={iconButtonStyle}
+          >
+            <Edit3 size={13} aria-hidden />
+          </button>
+        )}
         <a
           href={`/clients/${clientId}/notes/${note.id}/print`}
           target="_blank"
