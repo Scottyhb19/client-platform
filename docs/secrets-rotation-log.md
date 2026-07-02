@@ -44,9 +44,9 @@ Enumerated every runtime reader of `RESEND_API_KEY` (grep of the repo, `src/` + 
 
 `src/lib/env/required-env.ts` lists the name only (startup validation), it does not read the value. **No third consumer exists.** Both stores now hold the current key. Sweep complete.
 
-### Still open (operator hygiene — dashboard action, not doable from this machine)
+### Closed 2026-07-03 — operator dashboard confirmation (was: still open)
 
-- **Revoke the stale pre-rotation `RESEND_API_KEY` in the Resend dashboard.** The 2026-05-17 entry above records the old key as revoked; the 401 the EF hit is consistent with that (a revoked key returns 401). Confirm in Resend → API Keys that only the current key is active and delete any stale key. This is the last residual of the §9 deferred "stale Resend key revocation" item.
+- **Confirmed in Resend → API Keys: exactly one active key, created 2026-05-17** — the current rotated key. No stale pre-rotation key remains (consistent with the 2026-05-17 entry recording it revoked, and with the 401 the EF hit while still holding it). This closes the last residual of the §9 deferred "stale Resend key revocation" item; `go-live-checklist.md` §2 updated same day.
 
 ### Lesson (for the next rotation)
 
