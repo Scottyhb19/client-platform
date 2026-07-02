@@ -213,3 +213,36 @@ must be documented before it is enabled in the friends-and-family beta.
 **Why deferred:** Phase 1 is a hand-typed note. The drug→effect knowledge base and
 the draft-and-confirm flow are net-new AI surface, out of scope for the schema-only
 profile rework. Logged, not built (dogfooding-loop feature-wish discipline).
+
+---
+
+## Schedule popover — "Archived" signal on an archived client's (cancelled) sessions
+
+**Surfaced:** 2026-07-03, operator dogfooding straight after the CN-7 ship. Archive
+a client → their future sessions are cancelled (CN-7 P1-5 cascade) → the cancelled
+session's schedule popover renders **normally**, name resolved, with no signal the
+client is archived. Click-through lands on the archived profile, which correctly
+shows read-only — so nothing is broken, but the popover itself is silent about
+archived state.
+
+**Triage.** The name resolving is a *designed* CN-7 outcome, not a bug — the
+read-site classification (`docs/polish/archived-client-access.md` §read-sites,
+rows 16–18) deliberately let archived names RESOLVE in schedule embeds to fix the
+old null-client rendering ("Client no longer on file"). No named design-philosophy
+line clearly fails: progressive disclosure is arguably satisfied (archived state is
+one tap away on the profile). Per the dogfooding-loop discipline — feels-off
+without a named line = **feature-wish, logged not built**.
+
+**Idea.** A small "Archived" tag in the schedule popover (and/or dimmed styling)
+when the appointment's client carries `archived_at` — data is already in the
+embed's reach; UI-only, no schema.
+
+**Rider when picked up:** update scenario SCHED-RO-6's UI setup line in
+`test_scenarios_template.md` at the same time — its "popover shows 'Client no
+longer on file'" premise is pre-CN-7 stale (operator-observed 2026-07-03: the name
+now resolves). The DB line was already synced (commit 5d863c6); the UI line
+should follow whatever the popover decision is, browser-verified.
+
+**Re-trigger:** the first time the operator (or the EP collaborator) actually
+misreads a schedule row because the archived state wasn't visible — or any
+schedule-surface polish pass, whichever first.
