@@ -103,7 +103,7 @@ export default async function ClientProfilePage({
       .order('created_at', { ascending: false }),
     supabase
       .from('client_medications')
-      .select('id, name, context_note, is_active')
+      .select('id, name, context_note, is_active, version')
       .eq('client_id', id)
       .is('deleted_at', null)
       .order('is_active', { ascending: false })

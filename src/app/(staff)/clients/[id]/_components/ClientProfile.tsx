@@ -86,6 +86,8 @@ export type ProfileMedication = {
   name: string
   context_note: string | null
   is_active: boolean
+  /** Last-read version, threaded through for OCC (schema.md §12). */
+  version: number
 }
 
 export type ProfileNoteContentField = {

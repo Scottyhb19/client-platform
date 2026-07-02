@@ -16,11 +16,15 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  *     through the soft_delete_client_medications SECURITY DEFINER RPC; a bare
  *     UPDATE would 42501 against the SELECT policy's deleted_at IS NULL filter.
  *
- * No OCC version column on the table (unlike client_medical_history, which
- * gained one in 20260702120000 when its CN-6 deferred item fired) — edits
- * are last-write-wins, accepted at f&f scale for short structured rows. If
- * medication rows start being co-edited in practice, apply the same §12
- * pattern here.
+ * Concurrency: OCC via the version column (migration 20260702180000 —
+ * parity with CN-6's 20260702120000, since client_medications carries the
+ * identical last-write-wins property the two-staff beta made a live clobber
+ * window). updateMedicationAction includes the last-read version in its
+ * UPDATE WHERE clause; a concurrent write matches zero rows and surfaces a
+ * conflict, mirroring client_medical_history / clinical_notes. The is_active
+ * toggle and archive stay versionless deliberately: both write a single
+ * field whose intent is unambiguous, so refusing them on an unrelated
+ * concurrent edit would be friction without protection.
  *
  * All writes are staff-only via requireRole + the table's RLS policies
  * (Pattern A staff-only). Validation mirrors the DB CHECK (name 1–200 chars);
@@ -102,7 +106,7 @@ export async function createMedicationAction(
 }
 
 export async function updateMedicationAction(
-  input: MedicationInput & { medicationId: string },
+  input: MedicationInput & { medicationId: string; version: number },
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
 
@@ -112,14 +116,24 @@ export async function updateMedicationAction(
   const found = await lookupMedicationForWrite(input.medicationId)
   if ('error' in found) return { error: found.error }
 
+  // OCC: refuse the write if version moved underneath us. The trigger
+  // bumps version on every UPDATE, so the next read will see the new one.
   const supabase = await createSupabaseServerClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('client_medications')
     .update(validated.ok)
     .eq('id', input.medicationId)
+    .eq('version', input.version)
+    .select('id')
 
   if (error) {
     return { error: `Could not save medication: ${error.message}` }
+  }
+  if (!updated || updated.length === 0) {
+    return {
+      error:
+        'Someone else edited this medication while you were typing. Reload the page and try again.',
+    }
   }
 
   revalidatePath(`/clients/${found.clientId}`)

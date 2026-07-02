@@ -809,6 +809,7 @@ export type Database = {
           name: string
           organization_id: string
           updated_at: string
+          version: number
         }
         Insert: {
           client_id: string
@@ -820,6 +821,7 @@ export type Database = {
           name: string
           organization_id: string
           updated_at?: string
+          version?: number
         }
         Update: {
           client_id?: string
@@ -831,6 +833,7 @@ export type Database = {
           name?: string
           organization_id?: string
           updated_at?: string
+          version?: number
         }
         Relationships: [
           {

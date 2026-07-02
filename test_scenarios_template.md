@@ -1150,6 +1150,31 @@ keys its UPDATE on the last-read version. Machine-gated by pgTAP
 
 ---
 
+## Client profile — medication concurrent edits don't clobber (§12 parity, 2026-07-02)
+
+Context: `client_medications` is a direct clone of `client_medical_history` and
+carried the identical last-write-wins property — no OCC `version` column, and an
+UPDATE policy that admits every owner/staff member of the org — so two staff editing
+the same medication silently clobbered each other, a live exposure in the two-staff
+beta. Rather than re-affirm the earlier "short structured rows" acceptance, the CN-6
+§12 pattern was applied for parity (go-live checklist §8): migration `20260702180000`
+added `version` + `bump_version_and_touch()` (replacing the plain touch trigger), and
+`updateMedicationAction` now keys its UPDATE on the last-read version. Machine-gated by
+pgTAP `55_cmed_occ_version.sql` (4/4 on live); this scenario is the browser-level pass.
+
+### MED-OCC-1 — Stale medication edit is refused, not silently lost
+- **Setup:** Staff → a client → Profile tab, Medications card. Open the same
+  medication's Edit dialog in two browser tabs (same or different staff accounts). In
+  tab A, change the medication name (or context note) and Save (succeeds). In tab B —
+  still holding the pre-edit form — change something else and Save.
+- **Pass:** Tab B's save is **refused** with "Someone else edited this medication
+  while you were typing. Reload the page and try again." — it does not overwrite tab
+  A's edit. After a reload, tab B sees tab A's value and can edit normally. Mark ceased
+  / Reactivate and Archive remain versionless by design (single-field verbs) and still
+  work regardless of a concurrent name edit.
+
+---
+
 ## Messaging — client→EP email is queued, observable, and debounced (P1-1c closure, 2026-07-02)
 
 Context: the new-message email to the EP was a best-effort post-response send with

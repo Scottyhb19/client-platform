@@ -1481,6 +1481,7 @@ Tables where two staff members can reasonably edit the same record concurrently 
 - `assessments`
 - `clients` (rare but possible during intake editing)
 - `client_medical_history` (added 2026-07-02, migration `20260702120000` — the CN-6 deferred item, activated by the two-staff beta; pgTAP `51`)
+- `client_medications` (added 2026-07-02, migration `20260702180000` — parity with CN-6; the sibling clone carried the identical last-write-wins property; pgTAP `55`)
 
 ### 12.1 Pattern
 

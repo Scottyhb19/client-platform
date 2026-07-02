@@ -261,6 +261,7 @@ function MedicationDialog({
       const res = medication
         ? await updateMedicationAction({
             medicationId: medication.id,
+            version: medication.version,
             ...fields,
           })
         : await createMedicationAction({ clientId, ...fields })
