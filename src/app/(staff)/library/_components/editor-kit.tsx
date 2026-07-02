@@ -57,6 +57,9 @@ export type PrescriptionSet = {
 }
 export type MetricUnit = { code: string; display_label: string }
 
+/** The two per-set value columns the downward autofill applies to. */
+export type AutofillableSetField = 'reps' | 'optional_value'
+
 /* ====================== Save-status reporter ======================
  * Autosave is silent except for the per-field green tick, which left the EP
  * unsure their work had persisted before leaving the page. A shared counter
@@ -339,6 +342,7 @@ export function SetTable({
   onValueCommit,
   onRepMetricCommit,
   onMetricCommit,
+  onAutofill,
 }: {
   sets: PrescriptionSet[]
   metricUnits: MetricUnit[]
@@ -346,9 +350,46 @@ export function SetTable({
   onValueCommit: (setId: string, next: string | null) => Promise<SaveResult>
   onRepMetricCommit: (next: string | null) => Promise<SaveResult>
   onMetricCommit: (next: string | null) => Promise<SaveResult>
+  /** Consumer's bulk column-autofill action (fills below the edited set,
+   *  server-side guards) — see the SessionBuilder rule this clones. */
+  onAutofill: (
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+    belowSetNumber: number,
+  ) => Promise<SaveResult>
 }) {
   const columnMetric = sets[0]?.optional_metric ?? ''
   const columnRepMetric = sets[0]?.rep_metric ?? ''
+  const run = useSaveRun()
+  const [, startTransition] = useTransition()
+
+  // Column autofill — the session builder's downward follow-the-value rule
+  // cloned onto the kit grid: a committed value follows into the cells
+  // BELOW the edited set that are empty or still hold its previous value;
+  // sets above and customised values never move (so 8/6/4 enters top-down
+  // and wave loading survives). This props check only skips the round-trip
+  // when nothing below could follow; the authoritative below / empty /
+  // matches-previous filters run server-side in the consumer's action.
+  function handleCellCommitted(
+    setNumber: number,
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+  ) {
+    const followable = sets.some((s) => {
+      if (s.set_number <= setNumber) return false
+      const sibling = s[field] ?? ''
+      return sibling === '' || sibling === previousValue
+    })
+    if (!followable) return
+    startTransition(async () => {
+      // Through run() so the save pill covers the fill like any autosave.
+      // On failure the sibling cells simply keep their current values —
+      // nothing the EP typed is lost.
+      await run(onAutofill(field, value, previousValue, setNumber))
+    })
+  }
 
   return (
     <div
@@ -376,6 +417,9 @@ export function SetTable({
           set={set}
           onRepsCommit={(next) => onRepsCommit(set.id, next)}
           onValueCommit={(next) => onValueCommit(set.id, next)}
+          onCommitted={(field, value, previous) =>
+            handleCellCommitted(set.set_number, field, value, previous)
+          }
         />
       ))}
     </div>
@@ -386,10 +430,16 @@ function SetRow({
   set,
   onRepsCommit,
   onValueCommit,
+  onCommitted,
 }: {
   set: PrescriptionSet
   onRepsCommit: (next: string | null) => Promise<SaveResult>
   onValueCommit: (next: string | null) => Promise<SaveResult>
+  onCommitted: (
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+  ) => void
 }) {
   return (
     <>
@@ -412,11 +462,15 @@ function SetRow({
         initialValue={set.reps ?? ''}
         placeholder="—"
         onCommit={onRepsCommit}
+        onCommitted={(value, previous) => onCommitted('reps', value, previous)}
       />
       <SetCell
         initialValue={set.optional_value ?? ''}
         placeholder="—"
         onCommit={onValueCommit}
+        onCommitted={(value, previous) =>
+          onCommitted('optional_value', value, previous)
+        }
       />
     </>
   )
@@ -432,31 +486,74 @@ export function SetCell({
   initialValue,
   placeholder,
   onCommit,
+  onCommitted,
 }: {
   initialValue: string
   placeholder?: string
   onCommit: (next: string | null) => Promise<SaveResult>
+  /** Fires after a successful save of a non-empty value — column autofill.
+   *  previousValue is the server value the edit replaced. */
+  onCommitted?: (value: string, previousValue: string) => void
 }) {
   const [value, setValue] = useState(initialValue)
+  // Last server value this cell knows — moves on its OWN successful save,
+  // running ahead of the prop until the revalidated payload arrives.
+  const [serverValue, setServerValue] = useState(initialValue)
+  // The prop value this cell last reconciled with. Only a CHANGE in the
+  // prop (a revalidate — an own save landing, or a sibling's autofill) is
+  // server news; prop ≠ serverValue alone is the normal stale window after
+  // an own save. Keying adoption on serverValue instead was the
+  // SessionBuilder revert bug (2026-07-03) — keep this clone in sync with
+  // the builder's SetCell.
+  const [lastSeenProp, setLastSeenProp] = useState(initialValue)
+  const [focused, setFocused] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'error'>('idle')
   const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
   const run = useSaveRun()
   const empty = value.trim() === ''
 
+  if (initialValue !== lastSeenProp) {
+    if (initialValue === serverValue) {
+      // The revalidate caught up with this cell's own save — resync the
+      // baseline, nothing to adopt.
+      setLastSeenProp(initialValue)
+    } else if (
+      !focused &&
+      status === 'idle' &&
+      value === serverValue &&
+      serverValue === lastSeenProp
+    ) {
+      // Genuine refresh over an untouched cell (no own save since the
+      // last sync) — adopt it, e.g. a sibling's autofill filled this cell.
+      setLastSeenProp(initialValue)
+      setServerValue(initialValue)
+      setValue(initialValue)
+    }
+    // Otherwise hold: the cell is focused (re-checked on the blur render)
+    // or has its own newer save relative to this payload — a stale payload
+    // must never overwrite what the EP just did.
+  }
+
   function handleBlur() {
-    if (value === initialValue) return
+    if (value === serverValue) return
     const trimmed = value.trim()
+    const previous = serverValue
     const next = trimmed === '' ? null : trimmed
     setStatus('saving')
     startTransition(async () => {
       const res = await run(onCommit(next))
       if (res.error) {
-        setValue(initialValue)
+        setValue(previous)
         setStatus('error')
       } else {
         setStatus('idle')
+        // Normalise display to what was saved so the dirty check stays
+        // meaningful (" 8 " saved as "8").
+        setValue(trimmed)
+        setServerValue(trimmed)
         setSavedAt((n) => n + 1)
+        if (trimmed !== '') onCommitted?.(trimmed, previous)
       }
     })
   }
@@ -476,7 +573,11 @@ export function SetCell({
           setValue(e.target.value)
           if (status === 'error') setStatus('idle')
         }}
-        onBlur={handleBlur}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          setFocused(false)
+          handleBlur()
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
         }}

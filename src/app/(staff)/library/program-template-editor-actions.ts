@@ -337,6 +337,58 @@ export async function updateTemplateSetAction(
   return { error: null }
 }
 
+/**
+ * Column autofill — the session builder's downward follow-the-value rule
+ * cloned onto program-template sets (parity capture 2026-07-03). See
+ * autofillSessionSetColumnAction / autofillProgramExerciseSetColumnAction.
+ */
+export async function autofillTemplateSetColumnAction(
+  templateId: string,
+  templateExerciseId: string,
+  field: 'reps' | 'optional_value',
+  value: string,
+  previousValue: string | null,
+  belowSetNumber: number,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  if (field !== 'reps' && field !== 'optional_value') {
+    return { error: 'Invalid column.' }
+  }
+  if (!Number.isFinite(belowSetNumber)) {
+    return { error: 'Invalid set number.' }
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') return { error: null }
+
+  const patch: TemplateSetPatch = { [field]: trimmed }
+  const supabase = await createSupabaseServerClient()
+
+  const { error: fillErr } = await supabase
+    .from('template_exercise_sets')
+    .update(patch)
+    .eq('template_exercise_id', templateExerciseId)
+    .is('deleted_at', null)
+    .gt('set_number', belowSetNumber)
+    .is(field, null)
+  if (fillErr) return { error: `Autofill failed: ${fillErr.message}` }
+
+  const prev = (previousValue ?? '').trim()
+  if (prev !== '' && prev !== trimmed) {
+    const { error: followErr } = await supabase
+      .from('template_exercise_sets')
+      .update(patch)
+      .eq('template_exercise_id', templateExerciseId)
+      .is('deleted_at', null)
+      .gt('set_number', belowSetNumber)
+      .eq(field, prev)
+    if (followErr) return { error: `Autofill failed: ${followErr.message}` }
+  }
+
+  revalidate(templateId)
+  return { error: null }
+}
+
 export async function addTemplateSetAction(
   templateId: string,
   templateExerciseId: string,

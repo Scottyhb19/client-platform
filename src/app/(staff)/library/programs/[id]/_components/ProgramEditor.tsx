@@ -36,6 +36,7 @@ import {
   addTemplateDayAction,
   addTemplateExerciseAction,
   addTemplateSetAction,
+  autofillTemplateSetColumnAction,
   deleteTemplateDayAction,
   duplicateTemplateDayAction,
   groupTemplateAcrossAction,
@@ -147,6 +148,8 @@ export function ProgramEditor({
       ungroup: (exId) => ungroupTemplateExerciseAction(template.id, exId),
       updateExercise: (exId, patch) => updateTemplateExerciseAction(template.id, exId, patch),
       updateSet: (setId, patch) => updateTemplateSetAction(template.id, setId, patch),
+      autofillSetColumn: (exId, field, value, previous, below) =>
+        autofillTemplateSetColumnAction(template.id, exId, field, value, previous, below),
       addSet: (exId) => addTemplateSetAction(template.id, exId),
       removeSet: (setId) => removeTemplateSetAction(template.id, setId),
       updateRepMetric: (exId, next) => updateTemplateRepMetricAction(template.id, exId, next),

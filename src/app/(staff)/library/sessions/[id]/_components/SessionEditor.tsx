@@ -21,6 +21,7 @@ import {
   addSessionExerciseAction,
   addSessionSectionTitleAction,
   addSessionSetAction,
+  autofillSessionSetColumnAction,
   groupSessionAcrossAction,
   moveSessionExerciseAction,
   removeSessionExerciseAction,
@@ -124,6 +125,15 @@ export function SessionEditor({
         updateSessionExerciseAction(session.id, exerciseId, patch),
       updateSet: (setId, patch) =>
         updateSessionSetAction(session.id, setId, patch),
+      autofillSetColumn: (exerciseId, field, value, previous, below) =>
+        autofillSessionSetColumnAction(
+          session.id,
+          exerciseId,
+          field,
+          value,
+          previous,
+          below,
+        ),
       addSet: (exerciseId) => addSessionSetAction(session.id, exerciseId),
       removeSet: (setId) => removeSessionSetAction(session.id, setId),
       updateRepMetric: (exerciseId, next) =>

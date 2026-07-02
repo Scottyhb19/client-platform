@@ -44,6 +44,7 @@ import {
   SortableCardShell,
   SpineLetter,
   useSaveRun,
+  type AutofillableSetField,
   type SaveResult,
   BORDER,
   FAINT,
@@ -138,6 +139,16 @@ export type DayEditorActions = {
     patch: DayExercisePatch,
   ) => Promise<SaveResult>
   updateSet: (setId: string, patch: DaySetPatch) => Promise<SaveResult>
+  /** Downward column autofill (the session builder's follow-the-value
+   *  rule): fill the exercise's sets BELOW belowSetNumber that are empty
+   *  or still hold previousValue. Server-side guards in the consumer. */
+  autofillSetColumn: (
+    exerciseId: string,
+    field: AutofillableSetField,
+    value: string,
+    previousValue: string,
+    belowSetNumber: number,
+  ) => Promise<SaveResult>
   addSet: (exerciseId: string) => Promise<SaveResult>
   removeSet: (setId: string) => Promise<SaveResult>
   updateRepMetric: (
@@ -992,6 +1003,15 @@ function DayExerciseBody({
             actions.updateRepMetric(exercise.id, next)
           }
           onMetricCommit={(next) => actions.updateMetric(exercise.id, next)}
+          onAutofill={(field, value, previous, below) =>
+            actions.autofillSetColumn(
+              exercise.id,
+              field,
+              value,
+              previous,
+              below,
+            )
+          }
         />
         <SetStepper
           count={exercise.sets.length}

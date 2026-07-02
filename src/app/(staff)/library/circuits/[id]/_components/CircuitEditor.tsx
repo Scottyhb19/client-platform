@@ -24,6 +24,7 @@ import {
 } from '@dnd-kit/sortable'
 import {
   addCircuitExerciseSetAction,
+  autofillCircuitSetColumnAction,
   moveCircuitExerciseAction,
   removeCircuitExerciseAction,
   removeCircuitExerciseSetAction,
@@ -693,6 +694,16 @@ function ExerciseBody({
           }
           onMetricCommit={(next) =>
             updateCircuitExerciseMetricAction(circuitId, exercise.id, next)
+          }
+          onAutofill={(field, value, previous, below) =>
+            autofillCircuitSetColumnAction(
+              circuitId,
+              exercise.id,
+              field,
+              value,
+              previous,
+              below,
+            )
           }
         />
         <SetStepper

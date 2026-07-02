@@ -279,6 +279,60 @@ export async function updateCircuitExerciseSetAction(
   return { error: null }
 }
 
+/**
+ * Column autofill — the session builder's downward follow-the-value rule
+ * cloned onto circuit sets (parity capture 2026-07-03). See
+ * autofillSessionSetColumnAction / autofillProgramExerciseSetColumnAction.
+ */
+export async function autofillCircuitSetColumnAction(
+  circuitId: string,
+  circuitExerciseId: string,
+  field: 'reps' | 'optional_value',
+  value: string,
+  previousValue: string | null,
+  belowSetNumber: number,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  if (field !== 'reps' && field !== 'optional_value') {
+    return { error: 'Invalid column.' }
+  }
+  if (!Number.isFinite(belowSetNumber)) {
+    return { error: 'Invalid set number.' }
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') return { error: null }
+
+  const patch: { reps?: string | null; optional_value?: string | null } = {
+    [field]: trimmed,
+  }
+  const supabase = await createSupabaseServerClient()
+
+  const { error: fillErr } = await supabase
+    .from('circuit_exercise_sets')
+    .update(patch)
+    .eq('circuit_exercise_id', circuitExerciseId)
+    .is('deleted_at', null)
+    .gt('set_number', belowSetNumber)
+    .is(field, null)
+  if (fillErr) return { error: `Autofill failed: ${fillErr.message}` }
+
+  const prev = (previousValue ?? '').trim()
+  if (prev !== '' && prev !== trimmed) {
+    const { error: followErr } = await supabase
+      .from('circuit_exercise_sets')
+      .update(patch)
+      .eq('circuit_exercise_id', circuitExerciseId)
+      .is('deleted_at', null)
+      .gt('set_number', belowSetNumber)
+      .eq(field, prev)
+    if (followErr) return { error: `Autofill failed: ${followErr.message}` }
+  }
+
+  revalidatePath(`/library/circuits/${circuitId}`)
+  return { error: null }
+}
+
 /** Add a set to a circuit exercise, copying the last live set's values. */
 export async function addCircuitExerciseSetAction(
   circuitId: string,

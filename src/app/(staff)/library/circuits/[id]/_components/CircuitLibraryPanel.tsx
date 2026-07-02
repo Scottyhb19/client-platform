@@ -179,10 +179,13 @@ export function CircuitLibraryPanel({
           dense
         />
 
-        {/* Bottom-of-list create CTA — mirrors the builder's panel. */}
+        {/* Bottom-of-list create CTA — mirrors the builder's panel,
+            returnTo included, so the save lands back in this editor. */}
         {options.length > 0 && (
           <Link
-            href="/library/new"
+            href={`/library/new?returnTo=${encodeURIComponent(
+              `/library/circuits/${circuitId}`,
+            )}`}
             style={{
               display: 'flex',
               alignItems: 'center',

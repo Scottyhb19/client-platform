@@ -1358,3 +1358,50 @@ open-redirecting. The library's own create flow (no `returnTo`) is unchanged.
 - **Pass:** The inline error round-trip preserves what was typed (existing echo
   behaviour) AND the eventual save still returns to the builder — the hidden
   `returnTo` survives the error re-render.
+
+---
+
+## Library editors — set-grid autofill + create-exercise return parity (2026-07-03)
+
+Context: the three in-Library editors (session template `/library/sessions/[id]`,
+program template day `/library/programs/[id]`, circuit `/library/circuits/[id]`)
+share the cloned editor-kit set grid; they now get the SAME downward
+follow-the-value column autofill as the session builder (see that section for
+the full rule), wired per-storage — `autofillSessionSetColumnAction` /
+`autofillTemplateSetColumnAction` / `autofillCircuitSetColumnAction` over
+`session_template_exercise_sets` / `template_exercise_sets` /
+`circuit_exercise_sets`, each with the server-side `set_number >` / `IS NULL` /
+`= previous` guards and each revalidating its own editor path. The kit's
+`SetCell` carries the builder's `lastSeenProp` adoption (own edits never
+revert; untouched siblings adopt the fill). Autofill runs through the
+editors' `run()` so the save-status pill covers it. The `DayEditorActions`
+contract makes `autofillSetColumn` required — a future consumer cannot
+silently ship without it. Separately, the editors' library-panel "Create New
+Exercise" CTAs now carry `?returnTo=` (DayLibraryPanel via `usePathname`,
+CircuitLibraryPanel via its `circuitId`), landing the EP back in the editor
+after save/Cancel instead of `/library`. No migration, no new table surface.
+
+### LIB-AF-1 — Autofill parity in the session-template editor
+- **Setup:** `/library/sessions/[id]`, an exercise with a seeded/uniform Volume
+  column (e.g. 8/8/8) and 3+ sets.
+- **Pass:** The SB-AF matrix holds: set 1 → `10` sweeps below (10/10/10);
+  set 2 → `6` gives 10/6/6 (set 1 never moves); a below-cell customised to a
+  different value holds; the edited cell never reverts; the save pill ticks
+  through the fill.
+
+### LIB-AF-2 — Autofill parity in the program-template day editor
+- **Setup:** `/library/programs/[id]`, expand a day; same column shapes.
+- **Pass:** Same matrix as LIB-AF-1, on `template_exercise_sets`.
+
+### LIB-AF-3 — Autofill parity in the circuit editor
+- **Setup:** `/library/circuits/[id]`; same column shapes.
+- **Pass:** Same matrix as LIB-AF-1, on `circuit_exercise_sets`.
+
+### LIB-CX-1 — Create-exercise from an editor returns to that editor
+- **Setup:** From each of the three editors' Library panel → "Create New
+  Exercise" → save; separately Cancel and the back arrow.
+- **Pass:** All land back on the originating editor page, and the new exercise
+  is findable in that panel's list. (Program editor: the template page is
+  restored; the expanded-day state is client-side, so the day re-collapses —
+  accepted.) The standalone library create flow (no returnTo) still returns
+  to `/library`.

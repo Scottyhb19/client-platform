@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Plus, X } from 'lucide-react'
 import { SearchInput } from './SearchInput'
@@ -58,6 +58,10 @@ export function DayLibraryPanel({
   const [, startTransition] = useTransition()
   const router = useRouter()
   const run = useSaveRun()
+  // The hosting editor's path (a session or program-template editor) — the
+  // create-exercise CTA returns here after the save instead of dumping the
+  // EP in the library (parity with the session builder's panel).
+  const pathname = usePathname()
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -248,7 +252,7 @@ export function DayLibraryPanel({
 
         {options.length > 0 && (
           <Link
-            href="/library/new"
+            href={`/library/new?returnTo=${encodeURIComponent(pathname)}`}
             style={{
               display: 'flex',
               alignItems: 'center',

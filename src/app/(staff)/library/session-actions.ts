@@ -359,6 +359,62 @@ export async function updateSessionSetAction(
   return { error: null }
 }
 
+/**
+ * Column autofill — the session builder's downward follow-the-value rule
+ * cloned onto session-template sets (parity capture 2026-07-03): a
+ * committed value follows into the cells BELOW the edited set that are
+ * empty or still hold its previous value; sets above and customised
+ * values never move (8/6/4 enters top-down, wave loading survives). The
+ * guards run server-side — see autofillProgramExerciseSetColumnAction
+ * (clients/[id]/program/days/[dayId]/actions.ts) for the full rationale.
+ */
+export async function autofillSessionSetColumnAction(
+  sessionId: string,
+  sessionExerciseId: string,
+  field: 'reps' | 'optional_value',
+  value: string,
+  previousValue: string | null,
+  belowSetNumber: number,
+): Promise<{ error: string | null }> {
+  await requireRole(['owner', 'staff'])
+
+  if (field !== 'reps' && field !== 'optional_value') {
+    return { error: 'Invalid column.' }
+  }
+  if (!Number.isFinite(belowSetNumber)) {
+    return { error: 'Invalid set number.' }
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') return { error: null }
+
+  const patch: SessionSetPatch = { [field]: trimmed }
+  const supabase = await createSupabaseServerClient()
+
+  const { error: fillErr } = await supabase
+    .from('session_template_exercise_sets')
+    .update(patch)
+    .eq('session_template_exercise_id', sessionExerciseId)
+    .is('deleted_at', null)
+    .gt('set_number', belowSetNumber)
+    .is(field, null)
+  if (fillErr) return { error: `Autofill failed: ${fillErr.message}` }
+
+  const prev = (previousValue ?? '').trim()
+  if (prev !== '' && prev !== trimmed) {
+    const { error: followErr } = await supabase
+      .from('session_template_exercise_sets')
+      .update(patch)
+      .eq('session_template_exercise_id', sessionExerciseId)
+      .is('deleted_at', null)
+      .gt('set_number', belowSetNumber)
+      .eq(field, prev)
+    if (followErr) return { error: `Autofill failed: ${followErr.message}` }
+  }
+
+  revalidatePath(`/library/sessions/${sessionId}`)
+  return { error: null }
+}
+
 /** Stepper "+" — copy the last live set's values (so a quick count bump
  * inherits the prescription). Mirrors addProgramExerciseSetAction. */
 export async function addSessionSetAction(
