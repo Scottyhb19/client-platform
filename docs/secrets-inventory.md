@@ -59,6 +59,15 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 - **Last rotated:** **2026-05-17.** Old value not retained (acceptable — rotation invalidates it); new value via `openssl rand -base64 32`, stored in password manager; updated in Supabase Edge Function secrets and pg_cron `job_id 1` via `cron.alter_job()`; verified by 10 consecutive successful pg_cron runs at 5-min intervals 00:30–01:15 UTC 2026-05-17. Source: [`secrets-rotation-log.md`](secrets-rotation-log.md). Reason: pasted in a chat transcript during deploy (diagnostic Finding #4).
 - **Rotation frequency:** No scheduled cadence; rotate on suspicion of exposure.
 
+### `STAGING_DB_PASSWORD` (+ assembled `STAGING_DB_URL`)
+
+- **Purpose:** Postgres password for the **staging** project `odyssey-staging` (`fbtfzlgvnivgwydlijka`) — the non-prod test target (`go-live-checklist.md` §5). `STAGING_DB_URL` is the assembled session-pooler connection string built from it.
+- **Used in:** `scripts/run-pgtap-staging.sh` (reads the ref only; the Management API channel needs no password) and the `--db-url` commands in [`runbooks/use-the-staging-project.md`](runbooks/use-the-staging-project.md).
+- **Stored where:** `.env.local` only (gitignored). Not in Vercel, not in Edge Function secrets — staging has no app or functions pointing at it.
+- **Stakes:** LOW — staging must never hold real client data (see the runbook's rollback note), so exposure is not a data event. It is still kept out of chat transcripts and commits on principle.
+- **Rotation procedure:** Supabase dashboard → `odyssey-staging` → Settings → Database → reset password; update `.env.local` (`STAGING_DB_PASSWORD` + rebuild `STAGING_DB_URL`).
+- **Set:** 2026-07-03 (project creation).
+
 ---
 
 ## Section 2 — Public values — not secrets, listed for completeness

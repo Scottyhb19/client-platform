@@ -12,6 +12,7 @@ Operational procedures for OdysseyHQ. Each runbook is self-contained and follows
 - [`recover-stuck-client-onboarding.md`](recover-stuck-client-onboarding.md) — Operator procedure for a client reporting they signed in to the portal and saw "Not authorized". Distinguishes the two C-1 R-5 sub-states (membership-never-created vs JWT-stale) and clears each. Compensating control for the C-1 R-5 sub-case where the in-flow FinishSetup recovery was bypassed or never ran.
 - [`verify-invite-prefetch.md`](verify-invite-prefetch.md) — Verify the `/i/[id]` anti-prefetch invite gate stops a real mail-client link-prefetcher from consuming the one-time invite token before the human taps (C-14 / F-14), via `scripts/c14-prefetch-test.mjs` + a real mailbox. Cadence: on any invite/gate-flow change, and before onboarding any paying clinical client (including an enterprise Safe Links mailbox).
 - [`deploy-the-app.md`](deploy-the-app.md) — Deploy the Next.js app (push to master = production deploy) and verify it: pre-push build gate, `/api/health` config check on every deploy, plus the staff-login-path and poison-cookie harnesses after auth-surface changes. Standing defence against the env/config failure class behind both 2026-06-10 incidents.
+- [`use-the-staging-project.md`](use-the-staging-project.md) — Point `db push`/`db query`/the pgTAP suite at the `odyssey-staging` project (never re-linking the repo from prod): wake-from-pause, migration sync, `scripts/run-pgtap-staging.sh`, the fresh-rebuild order (pg_cron/pg_net + test-helpers-before-AND-after-push), and the `db reset` destructive-rehearsal drill. Closes go-live-checklist §5.
 
 ## Not yet written
 
@@ -26,7 +27,7 @@ This is a planning artefact, not a commitment. Items here are observed gaps, not
 3. Verify a Resend sending domain (SPF/DKIM/DMARC) and cut `EMAIL_FROM` over from the sandbox sender (diagnostic CRITICAL #1).
 4. Onboard a friends-and-family beta tester end-to-end (invite → `/i` token gate → `/welcome` → portal).
 5. Restore the database from Supabase PITR (confirm Pro tier + window first) (slos.md / incident-response.md, dashboard-only).
-6. Run the pgTAP suite against remote Supabase with no local Docker (memory-noted constraint).
+6. ~~Run the pgTAP suite against remote Supabase with no local Docker (memory-noted constraint).~~ **CLOSED 2026-07-03** — `use-the-staging-project.md` + `scripts/run-pgtap-staging.sh` (staging), and the established `db query --linked -f` runner (prod).
 7. Apply a schema migration: migration file → `db push` → `gen types` → verify (standing process).
 8. ~~Post-deploy production smoke checklist (diagnostic Section 4 — none exists).~~ **CLOSED 2026-06-11** — `deploy-the-app.md` above.
 9. Document email delivery health (Resend dashboard checks, bounce handling, sandbox vs verified domain delivery).
