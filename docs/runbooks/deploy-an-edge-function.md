@@ -171,6 +171,19 @@ The root cause on 2026-07-01 was **process, not code**: the job was hand-typed i
 
 After this lands, **rotating `CRON_SHARED_SECRET` changes** — you update the Vault secret, not the cron command. See [`rotate-a-secret.md`](rotate-a-secret.md) → CRON_SHARED_SECRET.
 
+### Second worker — `send-message-notifications` (messaging P1-1c, deployed 2026-07-02)
+
+The client→EP new-message email worker mirrors the reminder worker end to end: same `CRON_SHARED_SECRET` bearer gate, same project-level Edge secret set (**no new secrets** — it reads `REMINDER_SERVICE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_APP_URL`), same Vault-token cron shape. Its job (`message-notifications-5min`, `*/5 * * * *`) is a **tracked migration from birth** — [`supabase/migrations/20260702150000_message_notifications_cron.sql`](../../supabase/migrations/20260702150000_message_notifications_cron.sql) — reusing the existing `cron_shared_secret` Vault entry (nothing new to seed). Queue table + enqueue trigger: `20260702140000`; DB behaviour locked by pgTAP `53_message_notification_queue.sql`.
+
+**Synthetic send check (STANDING — run after every (re)deploy of `send-message-notifications`).** Same assert-on-the-body rule: expect `succeeded ≥ 1`; `{succeeded:0, failed:N}` under HTTP 200 is a FAIL. Validated live 2026-07-02 (`{"processed":1,"succeeded":1,...}`, row `sent` with a Resend `provider_message_id`, sink `delivered@resend.dev`).
+
+1. **Set up** an ephemeral org (fixed `ef53c0de-…` UUIDs) with a client-sent unread message and a manually planted `message_notifications` row whose `recipient_user_id` is a fixture auth user with email `delivered@resend.dev`. ⚠️ **Two validated gotchas:** (a) the message must be `sender_role='client'` **and unread** or the worker's honesty gate retires the row as `cancelled` (`thread read before send`) instead of sending; (b) a hand-inserted minimal `auth.users` row breaks GoTrue's `admin.getUserById` (NULL token varchar columns) → the worker records `failed / recipient has no auth email`. Patch the fixture user first: set the token/`email_change`/`phone_change` varchar columns to `''` and stamp `email_confirmed_at`.
+2. **Invoke** via the same `net.http_post` + Vault-token shape the cron runs (from `supabase db query --linked` — the token never leaves the DB), or wait for a ≤5-min tick for the cron-path variant.
+3. **Assert on the body**: `succeeded ≥ 1`, and the queue row reads `status='sent'` with `provider_message_id` populated.
+4. **Tear down** leaf→root: `message_notifications` → `messages` → `message_threads` → `clients` → `audit_log` (org-scoped) → `organizations` → `auth.users` (`delivered@resend.dev`). No `user_organization_roles` rows are created, so the last-owner invariant is not in play. Census afterwards: all seven counts zero.
+
+**Rollback**: same shape as the reminder worker — redeploy prior source, or `SELECT cron.unschedule('message-notifications-5min');`.
+
 **Rollback**
 
 - `supabase functions deploy` always ships the current working copy. To roll back, restore the prior source and redeploy: `git checkout <prev-sha> -- supabase/functions/send-appointment-reminders && supabase functions deploy send-appointment-reminders`.

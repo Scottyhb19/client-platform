@@ -1078,6 +1078,18 @@ This prevents even the service role from writing synthetic audit log entries via
 
 ---
 
+### 4.29 `message_notifications`
+
+**Pattern:** ops-queue posture (mirrors `appointment_reminders`) — staff-org SELECT only; all API writes denied.
+
+**Plain English:** the queue for client→EP new-message notification emails (messaging P1-1c queue+cron upgrade, 2026-07-02). Staff/owner can read their org's rows (so a future EP-facing failure surface can render them); clients see nothing; **no API role can INSERT/UPDATE/DELETE** (`WITH CHECK (false)` / `USING (false)`). The only writers are the `message_notification_enqueue()` SECURITY DEFINER trigger on `messages` (enqueue, definer-only grants from birth) and the `send-message-notifications` Edge Function via the service key (drain / status flips). No audit trigger, same as `appointment_reminders` — operational metadata, not clinical record; the email itself carries the client's first name only, never message content.
+
+**SQL:** migration `20260702140000_message_notification_queue.sql` (table + RLS + trigger) + `20260702150000` (Vault-token cron job).
+
+**Tests:** `53_message_notification_queue.sql` (8 assertions) — enqueue on first unread (1), debounce (2), staff-sender no-enqueue (3), client sees zero rows (4), owner control (5), trigger-function grant tripwires (6-7), full read→sent→re-enqueue cycle (8).
+
+---
+
 ## 5. Direct DELETE vs soft-delete policy
 
 Every table that holds PHI or clinical-adjacent data has its RLS DELETE policy set to `USING (false)`. The path to remove such a row is:

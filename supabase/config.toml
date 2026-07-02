@@ -77,3 +77,8 @@ inspector_port = 8083
 # would break the pg_cron → net.http_post → function path.
 [functions.send-appointment-reminders]
 verify_jwt = false
+
+# Same posture for the message-notification worker (P1-1c queue+cron) — same
+# shared-secret gate, same cron caller. Must be false BEFORE first deploy.
+[functions.send-message-notifications]
+verify_jwt = false

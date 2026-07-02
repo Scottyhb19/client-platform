@@ -243,3 +243,21 @@ Gap list approved by the operator 2026-06-18 (the five §0.1 questions resolved)
 - **P1-1(b) web push** — *Re-trigger:* email + in-app shown insufficient in beta, or operator wants desktop OS notifications.
 - **P1-2 live realtime two-session probe** — run with the first f&f test accounts.
 - **P2-2 thread-restore distinguishability** — *Re-trigger:* a thread-level archive action is added.
+
+---
+
+## 7. Deferred-item closures (post-sign-off)
+
+### P1-1(c) email send-failure observability — CLOSED 2026-07-02 (queue+cron shipped)
+
+The re-trigger ("before identifiable client health data enters") is the friends-and-family beta start itself, so this was closed as pre-Pro-upgrade work. Shipped exactly as the deferral prescribed — the §9 reminder posture, end to end:
+
+- **Queue:** `message_notifications` (migration `20260702140000`) — one row per (first-unread client message, org-owner recipient); status `scheduled/sent/failed/cancelled`, `provider_message_id`, `retry_count` 0–5, partial-unique pending index per (thread, recipient). RLS: staff-org SELECT only, all API writes denied (documented `rls-policies.md` §4.29).
+- **Enqueue:** the `message_notification_enqueue()` SECURITY DEFINER trigger on `messages` — atomic with the client's INSERT, replacing the best-effort `after()` block in `sendClientMessageAction` (which could be lost post-response and whose failures were unobservable). This restores the gap-doc's original DB-trigger recommendation now that the queue makes outcomes durable. **Debounce semantics unchanged** (first-unread per thread; `read_at` is the debounce) and the email still carries the client's first name only — no message body, ever. Definer-only grants from birth (§4 sweep posture).
+- **Worker:** `send-message-notifications` Edge Function (deployed 2026-07-02; `verify_jwt=false` set in config.toml before first deploy) — drains due rows every 5 minutes, retries transient failures (network/429/5xx) up to 5 ticks, fails terminally on 4xx, and retires rows as `cancelled` if the EP read the thread before the tick (honesty gate — never email about an already-read thread). **No new secrets** — same project-level Edge set as the reminder worker. The former `src/lib/email/send-message-notification.ts` + `templates/message-notification.ts` are deleted; the template is inlined in the EF as the canonical copy (the §9 P2-7 no-second-copy lesson).
+- **Cron:** `message-notifications-5min` (migration `20260702150000`) — tracked-migration-from-birth, reviewed-literal URL, bearer read from the existing `cron_shared_secret` Vault entry per tick. Deploy-before-schedule ordering held (no 404 window).
+- **Verification, all on live 2026-07-02:** pgTAP `53_message_notification_queue.sql` 8/8 (enqueue, debounce, staff-no-enqueue, RLS both directions, grant tripwires, full read→sent→re-enqueue cycle); pgTAP `34` re-ran 17/17 (messaging suite undisturbed); cron job present (jobid 3) and a Vault-token invoke returned HTTP 200; **the standing synthetic send check passed with `succeeded:1`** — a planted queue row reached `status='sent'` with a Resend `provider_message_id`, sink `delivered@resend.dev`, ephemeral fixture fully torn down (zero-residue census). The check (with its two validated gotchas) is now a standing section in `runbooks/deploy-an-edge-function.md`. `tsc` + `next build` green.
+- **Bonus finding, recorded:** the synthetic check first *failed honestly* (`failed:1`, reason `recipient has no auth email`) because a hand-inserted minimal `auth.users` fixture row breaks GoTrue's `admin.getUserById` — the exact class of silent-before, observable-now failure this item exists to surface. Real users (dashboard/API-created) are unaffected.
+- **Residual, deliberately kept:** enqueue-failure itself (the trigger raising) would fail the client's message INSERT loudly rather than silently dropping the notification — fail-loud was chosen over fail-open since message send + notification enqueue share the transaction.
+
+Gate pointer updated in `docs/go-live-checklist.md` §8. Scenario MSG-NQ-1 added to `test_scenarios_template.md`.
