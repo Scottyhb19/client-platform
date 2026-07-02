@@ -6,18 +6,25 @@ SET search_path TO public, extensions, pg_temp;
 -- 49_orphan_appointment_removal
 -- ============================================================================
 -- Why: regression guard for RO-6 — the bug that triggered the round-three
--- reopen. An appointment whose client was since soft-deleted comes back from
--- the schedule query with a NULL client join (RLS hides the deleted client),
--- so the popover used to mis-classify it as an Unavailable block and route its
--- Remove to soft_delete_unavailable_block — which is scoped to kind='unavailable'
--- and therefore raised no_data_found, leaving the row stuck ("won't delete").
+-- reopen. At the time, an appointment whose client was since soft-deleted came
+-- back from the schedule query with a NULL client join (staff RLS then hid
+-- archived clients), so the popover mis-classified it as an Unavailable block
+-- and routed its Remove to soft_delete_unavailable_block — which is scoped to
+-- kind='unavailable' and therefore raised no_data_found, leaving the row stuck
+-- ("won't delete").
 --
 -- The fix routes on KIND, not on client-absence (removalActionForKind in
--- WeekView.tsx). This file locks the data + both server destinations that fix
--- depends on, at the layer where a runner exists:
+-- WeekView.tsx). CN-7 (migration 20260702190000_archived_client_access) later
+-- made archived clients VISIBLE to staff, which dissolves the archival cause
+-- of the null join — but kind-routing stays the guard (a null join can still
+-- arise from other causes, and client-absence must never drive the routing).
+-- Assertion 1 was updated 2026-07-03 from the pre-CN-7 posture (invisible) to
+-- the CN-7 posture (visible) — caught by the first full-suite staging run;
+-- the CN-7 pass re-ran 17/38/46/54/56 but missed this file. pgTAP 56 is the
+-- primary CN-7 tripwire; assertion 1 here is the cross-check from this angle.
 --
---   1. the soft-deleted client is invisible under the staff's RLS → the null
---      client join the bug hinged on is real (classification: client-absent)
+--   1. the archived client REMAINS visible under staff RLS (CN-7) → the RO-6
+--      null-join cause is gone at the source
 --   2. the orphan row's kind is still 'appointment' → kind is the source of
 --      truth, not the client join
 --   3. archive_appointment removes the orphan → the CORRECT route works
@@ -66,8 +73,8 @@ BEGIN
     (v_orph1, v_org, v_client, v_staff, '2026-05-04T00:00:00Z', '2026-05-04T01:00:00Z', 'confirmed', 'in_clinic', now()),
     (v_orph2, v_org, v_client, v_staff, '2026-05-05T00:00:00Z', '2026-05-05T01:00:00Z', 'confirmed', 'in_clinic', now());
 
-  -- 1. Under the staff's RLS, the soft-deleted client is not selectable → the
-  --    schedule query's client join comes back null for these rows.
+  -- 1. Under the staff's RLS, the archived client stays selectable (CN-7) →
+  --    the schedule query's client join resolves for these rows.
   PERFORM public._test_set_jwt(v_staff, v_org, 'owner');
   SET LOCAL ROLE authenticated;
   SELECT count(*) INTO v_visible FROM clients WHERE id = v_client;
@@ -95,8 +102,8 @@ END $$;
 -- ----------------------------------------------------------------------------
 INSERT INTO _tap (n, line)
 SELECT 1, string_agg(l, E'\n') FROM ok(
-  (SELECT v FROM _r WHERE k = 'deleted_client_visible') = '0',
-  '1: a soft-deleted client is invisible under staff RLS (the null client join is real)'
+  (SELECT v FROM _r WHERE k = 'deleted_client_visible') = '1',
+  '1: an archived client stays visible under staff RLS (CN-7 — the RO-6 null-join cause is dissolved)'
 ) AS l;
 
 INSERT INTO _tap (n, line)

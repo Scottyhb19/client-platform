@@ -997,6 +997,9 @@ types / queries). No new RLS or audit surface.
   unavailable block to `remove-unavailable`. (`npm run test`.)
 - **DB/RLS:** pgTAP `49` — orphan archives via `archive_appointment`;
   `soft_delete_unavailable_block` raises `no_data_found` on it (4/4).
+  Assertion 1 updated 2026-07-03 to the CN-7 posture (archived client stays
+  visible to staff, migration `20260702190000`) — the pre-CN-7 "invisible"
+  assertion had gone stale; caught by the first full-suite staging run.
 
 ### SCHED-RO-7 — Archive this occurrence and all future ones
 - **Setup:** A recurring series booked after the recurrence_group_id migration.
