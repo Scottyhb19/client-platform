@@ -20,28 +20,27 @@ SET search_path TO public, extensions, pg_temp;
 --          AND public.user_role() IN ('owner','staff'))
 -- A same-org client-role caller satisfies the org half but fails the role half
 -- -> the USING clause hides the row -> UPDATE affects 0 rows. An anon caller
--- matches no clients policy at all (every clients policy is TO authenticated)
--- -> 0 rows, given clients keeps the Supabase default table grant for anon
--- (no migration revokes anon on the table; RLS is the gate).
+-- is now denied one layer EARLIER: migration 20260702170000 (go-live §4b)
+-- revoked anon's default table grants across public, so anon DML raises
+-- 42501 at the grant layer before RLS is even consulted. (This file's
+-- original header pre-wrote exactly this contingency; the historical
+-- pre-4b behaviour was a 0-row UPDATE through the absent-policy path.)
 --
 -- Assertions (3):
 --   1. client-role UPDATE of an own-org client (the overdue_followed_up_at
 --      column) affects 0 rows  — the role predicate.
---   2. anon UPDATE of the same client affects 0 rows  — the no-policy case.
+--   2. anon UPDATE of the same client raises 42501 — the grant-layer denial
+--      (post-4b; was the 0-row no-policy case before 20260702170000).
 --   3. anti-trivial control: a staff caller in the same org CAN UPDATE that
 --      client (1 row), proving 1-2 are real role/anon denial and not a locked
 --      or absent fixture.
 --
--- ANON IDIOM — NEW TO THIS SUITE, VERIFY ON FIRST RUN. There is no
--- _test_set_jwt(...,'anon'): anon is a Postgres role, not a JWT claim. So
--- assertion 2 uses `SET LOCAL ROLE anon`, the direct analog of the
--- `SET LOCAL ROLE authenticated` the other tests use (no invented helper). It
--- assumes anon retains the Supabase default table grant on clients — confirmed
--- against the migrations (only function-level REVOKE ... FROM anon exists; no
--- table-level revoke), so the absent anon policy yields a 0-row UPDATE. IF anon
--- has somehow lost the table grant, the UPDATE raises 42501 instead and
--- assertion 2 must become throws_ok('42501', NULL::text, '...'). Confirm the
--- 0-row outcome on the first prod run before locking sign-off.
+-- ANON IDIOM. There is no _test_set_jwt(...,'anon'): anon is a Postgres
+-- role, not a JWT claim. So assertion 2 uses `SET LOCAL ROLE anon`, the
+-- direct analog of the `SET LOCAL ROLE authenticated` the other tests use.
+-- Post-4b, the assertion is throws_ok('42501') run under the anon role;
+-- companion suite 54_anon_table_grants.sql holds the platform-wide dynamic
+-- zero-anon-grants tripwire.
 --
 -- Run discipline: BEGIN/ROLLBACK so fixtures never persist. The _tap temp table
 -- surfaces all three TAP lines in one editor grid (same mechanism as
@@ -56,14 +55,14 @@ BEGIN;
 SELECT plan(3);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
-GRANT INSERT, SELECT ON _tap TO authenticated;
+-- anon needs _tap because assertion 2's throws_ok line is captured while the
+-- session is dropped to the anon role.
+GRANT INSERT, SELECT ON _tap TO authenticated, anon;
 
 -- _probe carries each UPDATE's row-count out of a data-modifying CTE (a
--- data-modifying WITH cannot be nested inside is()'s scalar-subquery arg). It
--- is also granted to anon because assertion 2 records its count while the
--- session is dropped to the anon role.
+-- data-modifying WITH cannot be nested inside is()'s scalar-subquery arg).
 CREATE TEMP TABLE _probe (k text PRIMARY KEY, v int NOT NULL) ON COMMIT DROP;
-GRANT INSERT, SELECT ON _probe TO authenticated, anon;
+GRANT INSERT, SELECT ON _probe TO authenticated;
 
 
 -- ----------------------------------------------------------------------------
@@ -129,30 +128,25 @@ INSERT INTO _tap (n, line) VALUES (1, (
 
 
 -- ----------------------------------------------------------------------------
--- Test 2 (no-policy / anon): an anon caller cannot UPDATE clients. VERIFY anon
--- spoofing on first run (see header). The UPDATE + count are recorded under the
--- anon role; the assertion machinery then runs back under the owner session.
+-- Test 2 (grant-layer / anon): an anon caller cannot UPDATE clients — post-4b
+-- (20260702170000) the denial is 42501 at the grant layer, raised before RLS
+-- is consulted. throws_ok runs its SQL under the current role, so the line is
+-- captured while the session is dropped to anon (_tap is anon-granted above).
 -- ----------------------------------------------------------------------------
 RESET ROLE;                       -- back to the owner (postgres) session
 SELECT public._test_clear_jwt();  -- anon is unauthenticated — drop the claims
 SET LOCAL ROLE anon;
 
-WITH u AS (
-  UPDATE clients SET overdue_followed_up_at = now()
-  WHERE id = (SELECT client_a FROM _ids)
-  RETURNING 1
-)
-INSERT INTO _probe (k, v) SELECT 'update_rows_anon', count(*)::int FROM u;
-
-RESET ROLE;                       -- privileged role to run is() / write _tap
-
 INSERT INTO _tap (n, line) VALUES (2, (
-  SELECT string_agg(l, E'\n') FROM is(
-    (SELECT v FROM _probe WHERE k = 'update_rows_anon'),
-    0,
-    'write isolation: anon UPDATE of clients affects 0 rows'
+  SELECT string_agg(l, E'\n') FROM throws_ok(
+    'UPDATE clients SET overdue_followed_up_at = now() WHERE id = (SELECT client_a FROM _ids)',
+    '42501',
+    NULL,
+    'write isolation: anon UPDATE of clients raises 42501 (grant-layer denial, post-4b)'
   ) AS l
 ));
+
+RESET ROLE;                       -- privileged role for the remaining tests
 
 
 -- ----------------------------------------------------------------------------
