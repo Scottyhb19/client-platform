@@ -891,3 +891,16 @@ The reviewer green-lit the section Closing commit with three non-blocking, beta-
 The named-not-actioned thread — **open question 1, client session duration** — is recorded at `go-live-checklist.md` §1 to be decided deliberately at Pro cutover, in the same dashboard visit as G-4.
 
 **Auth and Onboarding (client) is formally closed.** CLAUDE.md's Active section advances to polish-pass order item 3 — Client profile and clinical notes.
+
+---
+
+## Deferred-item closures (post-sign-off)
+
+### `client_accept_invite` anon-EXECUTE — verified and revoked, 2026-07-02
+
+The platform-wide §4 sweep (`docs/go-live-checklist.md`) held this function open pending one question: **is it ever called pre-authentication?** (A blind revoke could have broken the invite-accept flow.) Verification, 2026-07-02, by code enumeration:
+
+- The **sole runtime caller** is `setPasswordAndAcceptAction` (`src/app/welcome/actions.ts`), which runs **after** the magic-link callback has established a session — it calls `auth.getUser()` and `updateUser()` (both session-requiring) *before* the RPC. Every other repo reference (`FinishSetup.tsx`, `src/lib/clients/invite.ts`, staff `actions.ts`, rate-limit lib) is a comment.
+- The RPC body itself raises `Not authenticated` when `auth.uid()` is null (in-body guard, the load-bearing protection during the open window).
+
+**Answer: never pre-auth → anon revoke safe.** Migration `20260702130000` revoked anon EXECUTE (authenticated retained — the welcome flow's role), alongside the rest of the §4 candidate bucket (`create_organization_with_owner`, `staff_create_client_invite`, and the audit-infra internals to definer-only). pgTAP `52_onboarding_audit_rpc_grants.sql` (14/14 on live, 2026-07-02) is the regression tripwire; pgTAP `51` re-ran green post-revoke, proving audited authenticated writes (the `log_audit_event` → `audit_resolve_org_id` chain) are unaffected. With this, the §4 sweep's candidate bucket is **fully discharged** — no open anon-EXECUTE items remain anywhere in the sweep.
