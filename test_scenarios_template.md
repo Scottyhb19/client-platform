@@ -1124,3 +1124,51 @@ dialog keeps its side-by-side view.
 - **Pass:** The bilateral sides render **side-by-side** (the dialog is wider than
   the 220px-per-side threshold). Unilateral metrics are unaffected in both surfaces
   (they never used this grid).
+
+---
+
+## Client profile — medical-history concurrent edits don't clobber (CN-6 closure, 2026-07-02)
+
+Context: `client_medical_history` had no OCC `version` column and its UPDATE policy
+admits every owner/staff member of the org, so two staff editing the same condition
+silently clobbered each other — a live exposure in the two-staff beta (go-live
+checklist §8, CN-6 deferred item). Migration `20260702120000` added the §12 pattern
+(`version` + `bump_version_and_touch()`), and `updateMedicalConditionAction` now
+keys its UPDATE on the last-read version. Machine-gated by pgTAP
+`51_cmh_occ_version.sql` (4/4 on live); this scenario is the browser-level pass.
+
+### CP-OCC-1 — Stale medical-history edit is refused, not silently lost
+- **Setup:** Staff → a client → Details tab. Open the same condition's Edit dialog
+  in two browser tabs (same or different staff accounts). In tab A, change the
+  condition text and Save (succeeds). In tab B — still holding the pre-edit form —
+  change something else and Save.
+- **Pass:** Tab B's save is **refused** with "Someone else edited this condition
+  while you were typing. Reload the page and try again." — it does not overwrite
+  tab A's edit. After a reload, tab B sees tab A's text and can edit normally.
+  Mark resolved / Reactivate and Archive remain versionless by design (single-field
+  verbs) and still work regardless of a concurrent text edit.
+
+---
+
+## Messaging — client→EP email is queued, observable, and debounced (P1-1c closure, 2026-07-02)
+
+Context: the new-message email to the EP was a best-effort post-response send with
+unobservable failures. It now runs on the §9 reminder posture: the client's message
+INSERT fires the `message_notification_enqueue` trigger (migration `20260702140000`)
+→ `message_notifications` queue row → the `send-message-notifications` Edge Function
+drains it on the 5-minute cron (`20260702150000`) with retry and a recorded
+sent/failed outcome. DB behaviour machine-gated by pgTAP `53` (8/8 on live); the
+send path verified by the standing synthetic check (`succeeded:1`, runbook
+`deploy-an-edge-function.md`).
+
+### MSG-NQ-1 — First unread client message emails the EP within ~5 minutes, once
+- **Setup:** A client (portal) sends a message to a thread the EP has fully read.
+  The client then sends two more messages before the EP opens the app.
+- **Pass:** The EP receives **exactly one** "New message from {first name}" email
+  within ~5 minutes of the first message (no body content in the email, first name
+  only). No further email arrives for the second and third messages. After the EP
+  reads the thread and the client messages again, one new email arrives for the new
+  cycle. In staff-side data (or SQL), the queue row for the cycle reads
+  `status='sent'` with a `provider_message_id`; a Resend outage instead leaves
+  `retry_count` climbing and, past 5 retries, `status='failed'` with a
+  `failure_reason` — never a silent drop.
