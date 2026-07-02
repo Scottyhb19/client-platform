@@ -416,13 +416,15 @@ $$;
 
 ### 4.4 `clients`
 
-**Pattern:** Mostly Pattern B, with client UPDATE explicitly denied at the RLS layer.
+**Pattern:** Mostly Pattern B, with client UPDATE explicitly denied at the RLS layer, plus a second ADDITIVE staff-only SELECT policy for archived rows (CN-7, 2026-07-02).
 
 **Plain English:**
-- **SELECT** — staff see all clients in their org; a client sees only their own row.
+- **SELECT** — TWO policies that OR together. The original: staff see all LIVE clients in their org; a client sees only their own LIVE row. The CN-7 addition (`"staff select archived clients in own org"`, migration `20260702190000`, brief §7.2): staff/owner ALSO see their org's ARCHIVED rows (`deleted_at IS NOT NULL`) — archived records stay queryable. The client arm was deliberately not widened: an archived client cannot read their own row, so the portal lockout is preserved. Net invariant: **staff see all org rows, clients see only their own live row.** Fail-closed: both policies carry the org + role predicates independently; dropping either only narrows access. Consequence for application code: staff surfaces that want live-only rows must filter explicitly (`.is('deleted_at', null)`) — the P0-2 classification in `polish/archived-client-access.md` §6 covers every read site; the deliberately archived-inclusive surfaces are the client list (Archived chip) and the read-only profile.
 - **INSERT** — staff only, within their org.
-- **UPDATE** — staff only. Clients cannot UPDATE `clients` directly; any self-service profile field edits go through a server action using service role, which validates the field allowlist (phone, emergency contact).
-- **DELETE** — denied; staff soft-delete via UPDATE.
+- **UPDATE** — staff only. Clients cannot UPDATE `clients` directly; any self-service profile field edits go through a server action using service role, which validates the field allowlist (phone, emergency contact). Archived-record read-only-ness is enforced at the application layer (`src/lib/clients/archive-guard.ts` + explicit `.is('deleted_at', null)` on write chains), NOT at RLS — a named residual with a paying-client-era upgrade path (BEFORE UPDATE trigger).
+- **DELETE** — denied; staff soft-delete via the `soft_delete_client` RPC (which since `20260702190000` also cancels the client's future appointments; reminders cascade-cancel).
+
+**Tests:** `55_archived_client_access.sql` (8/8 on live) — staff-reads-archived, archived-client self-read denial, cross-org denial on archived rows, live-policy control, anon 42501, archive-cancels-future + reminder cascade, restore round trip. Plus 17 / 46 / 54 as regression canaries.
 
 **SQL:**
 ```sql

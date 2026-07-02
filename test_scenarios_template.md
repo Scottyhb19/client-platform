@@ -1197,3 +1197,42 @@ send path verified by the standing synthetic check (`succeeded:1`, runbook
   `status='sent'` with a `provider_message_id`; a Resend outage instead leaves
   `retry_count` climbing and, past 5 retries, `status='failed'` with a
   `failure_reason` — never a silent drop.
+
+---
+
+## Archived-client record access (CN-7, 2026-07-02)
+
+Context: brief §7.2 — archived records stay queryable. Migration `20260702190000`
+added the additive staff-only archived-read policy and made `soft_delete_client`
+cancel the client's future appointments; the client list gained an Archived chip,
+the profile renders archived records read-only with a Restore affordance, and
+every client-scoped mutating server action is guarded (`archive-guard.ts`).
+DB behaviour machine-gated by pgTAP `55` (8/8 on live); these are the browser pass.
+
+### CP-ARC-1 — Archiving a client hides them from working views but never loses the record
+- **Setup:** Staff → a client with notes, conditions and a FUTURE confirmed
+  appointment → Archive (header overflow → confirm).
+- **Pass:** Redirects to Clientele; the client is absent from All/Active/New and
+  from the dashboard, schedule pickers and library picker — but appears under the
+  **Archived** chip with their archive date. Their future appointment reads
+  **cancelled** on the schedule (history rows untouched), and no reminder email
+  ever sends for it (`appointment_reminders` row `cancelled`).
+
+### CP-ARC-2 — The archived profile is fully readable and truly read-only
+- **Setup:** Clientele → Archived chip → open the archived client.
+- **Pass:** The profile renders (no 404): banner "Archived {date} — this record is
+  read-only" with a **Restore client** button; status tag reads Archived. Every tab
+  opens and shows its history (Details, Notes incl. Export PDF, Bookings, Program
+  completions, Reports history, Files downloads) but NO mutating affordance exists
+  anywhere — no edit/add buttons, no note composer, no row menus, no upload, no
+  delete, no Record test, no builder links, no header message/flag/archive icons.
+  Any direct server-action call (stale tab) is refused with "This client is
+  archived — their record is read-only."
+
+### CP-ARC-3 — Restore brings the client back; cancelled bookings stay cancelled
+- **Setup:** On the archived profile, Restore client → confirm.
+- **Pass:** The profile returns to its editable state (banner gone, actions back);
+  the client reappears in the live list. Appointments cancelled at archive time
+  remain cancelled (the confirm dialog says so — re-book manually). If another
+  live client has since been invited with the same email, Restore is refused with
+  the humane conflict message instead of a raw database error.
