@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
@@ -88,6 +89,11 @@ function validateConditionInput(
  * RLS-gated row lookup. Missing, cross-org, and archived rows all surface
  * identically as not-found — and the human error beats the silent zero-row
  * no-op a blocked UPDATE would otherwise produce.
+ *
+ * CN-7 (P1-4): the PARENT client's archive state is checked too — since
+ * 20260702190000 staff can read archived clients, so their child rows are
+ * reachable for writes unless every write path refuses here. Archived
+ * records are read-only.
  */
 async function lookupConditionForWrite(
   conditionId: string,
@@ -102,6 +108,10 @@ async function lookupConditionForWrite(
   if (!row) {
     return { error: 'Condition not found in your practice.' }
   }
+
+  const live = await assertClientLive(supabase, row.client_id)
+  if (live.error) return { error: live.error }
+
   return { clientId: row.client_id }
 }
 
@@ -114,6 +124,9 @@ export async function createMedicalConditionAction(
   if ('error' in validated) return { error: validated.error }
 
   const supabase = await createSupabaseServerClient()
+
+  const live = await assertClientLive(supabase, input.clientId)
+  if (live.error) return { error: live.error }
   const { error } = await supabase.from('client_medical_history').insert({
     organization_id: organizationId,
     client_id: input.clientId,

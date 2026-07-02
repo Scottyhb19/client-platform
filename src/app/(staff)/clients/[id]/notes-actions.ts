@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
@@ -133,6 +134,10 @@ export async function createClinicalNoteAction(
 
   const supabase = await createSupabaseServerClient()
 
+  // CN-7 (P1-4): archived clients are read-only — no new notes.
+  const live = await assertClientLive(supabase, input.clientId)
+  if (live.error) return { error: live.error, id: null }
+
   // CN-3: the template decides the note_type. An "Initial assessment"
   // template stamps initial_assessment; everything else defaults to
   // progress_note. Flag types can't come through here — the
@@ -241,6 +246,10 @@ export async function archiveClinicalNoteAction(
     }
   }
 
+  // CN-7 (P1-4): archived clients are read-only — no note archival either.
+  const live = await assertClientLive(supabase, note.client_id)
+  if (live.error) return { error: live.error }
+
   const { error } = await supabase.rpc('soft_delete_clinical_note', {
     p_id: noteId,
   })
@@ -276,6 +285,10 @@ export async function toggleClinicalNotePinAction(
 
   if (lookupError) return { error: `Could not find note: ${lookupError.message}` }
   if (!note) return { error: 'Note not found.' }
+
+  // CN-7 (P1-4): archived clients are read-only — pin state included.
+  const live = await assertClientLive(supabase, note.client_id)
+  if (live.error) return { error: live.error }
 
   const { error } = await supabase
     .from('clinical_notes')
@@ -324,11 +337,15 @@ export async function updateClinicalNoteAction(
   // Non-flag notes re-stamp from the chosen template, same as create.
   const { data: current } = await supabase
     .from('clinical_notes')
-    .select('id, note_type')
+    .select('id, note_type, client_id')
     .eq('id', input.noteId)
     .is('deleted_at', null)
     .maybeSingle()
   if (!current) return { error: 'Note not found.' }
+
+  // CN-7 (P1-4): archived clients are read-only — no note edits.
+  const live = await assertClientLive(supabase, current.client_id)
+  if (live.error) return { error: live.error }
 
   const isFlagNote =
     current.note_type === 'injury_flag' ||
@@ -462,6 +479,10 @@ export async function createClinicalFlagAction(
 
   const supabase = await createSupabaseServerClient()
 
+  // CN-7 (P1-4): archived clients are read-only — no new flags.
+  const liveFlag = await assertClientLive(supabase, input.clientId)
+  if (liveFlag.error) return { error: liveFlag.error, id: null }
+
   // content_json must be non-null (clinical_notes_content_present); an
   // empty fields array is the honest shape for a flag with no extra note.
   const content: ContentJson = {
@@ -534,6 +555,13 @@ async function lookupFlagForWrite(
         'Only the practitioner who created this flag can change it.',
     }
   }
+
+  // CN-7 (P1-4): archived clients are read-only — the whole flag lifecycle
+  // (resolve / mark reviewed / edit) is refused for an archived client's
+  // record; this shared precondition covers all three actions.
+  const live = await assertClientLive(supabase, note.client_id)
+  if (live.error) return { error: live.error }
+
   return { error: null, note }
 }
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
+import { ARCHIVED_CLIENT_MESSAGE } from '@/lib/clients/archive-guard'
 import { sendInviteForClient } from '@/lib/clients/invite'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -63,6 +64,44 @@ export async function archiveClientAction(
   revalidatePath('/clients')
   revalidatePath(`/clients/${clientId}`)
   redirect('/clients')
+}
+
+/**
+ * CN-7 (P1-3) — un-archive a client from the read-only archived profile.
+ *
+ * Routes through the restore_client SECURITY DEFINER RPC (20260429130000),
+ * which clears deleted_at + archived_at and refuses with a clear raise when
+ * a DIFFERENT live client has since claimed the same email (the
+ * unique-active index released the address at archive time). That raise is
+ * mapped to humane copy here. Cancelled appointments deliberately stay
+ * cancelled — the slot may have been re-booked; re-booking is a human
+ * decision (docs/polish/archived-client-access.md).
+ */
+export async function restoreClientAction(
+  clientId: string,
+): Promise<{ error: string | null }> {
+  const { organizationId, role } = await requireRole(['owner', 'staff'])
+
+  const supabase = await createSupabaseServerClient()
+  const { error } = await supabase.rpc('restore_client', { p_id: clientId })
+
+  if (error) {
+    if (error.message.toLowerCase().includes('already uses the email')) {
+      return {
+        error:
+          'Cannot restore: another active client now uses this email address. Change that client’s email first, then restore.',
+      }
+    }
+    return { error: `Couldn't restore client: ${error.message}` }
+  }
+
+  console.info(
+    `[restore] client=${clientId} by=${role} org=${organizationId} at=${new Date().toISOString()}`,
+  )
+
+  revalidatePath('/clients')
+  revalidatePath(`/clients/${clientId}`)
+  return { error: null }
 }
 
 export type UpdateClientDetailsInput = {
@@ -141,17 +180,22 @@ export async function updateClientDetailsAction(
 
   const supabase = await createSupabaseServerClient()
 
-  // RLS-gated read: missing, cross-org, and archived clients all surface
-  // identically as not-found. Carries user_id + current names for the
+  // RLS-gated read: missing and cross-org clients surface identically as
+  // not-found. Archived clients are READABLE by staff since 20260702190000
+  // (CN-7) — so the archive state is checked explicitly and refused with
+  // the read-only message. Carries user_id + current names for the
   // portal-sync decision and version for the OCC pre-check.
   const { data: target } = await supabase
     .from('clients')
-    .select('id, version, user_id, first_name, last_name')
+    .select('id, version, user_id, first_name, last_name, deleted_at')
     .eq('id', input.clientId)
     .maybeSingle()
 
   if (!target) {
     return { error: 'Client not found in your practice.' }
+  }
+  if (target.deleted_at) {
+    return { error: ARCHIVED_CLIENT_MESSAGE }
   }
   if (target.version !== input.version) {
     return { error: OCC_CONFLICT_MESSAGE }
@@ -174,6 +218,7 @@ export async function updateClientDetailsAction(
     })
     .eq('id', input.clientId)
     .eq('version', input.version)
+    .is('deleted_at', null)
     .select('id')
 
   if (updateErr) {
@@ -226,12 +271,15 @@ export async function updateClientGoalsAction(input: {
 
   const { data: target } = await supabase
     .from('clients')
-    .select('id, version')
+    .select('id, version, deleted_at')
     .eq('id', input.clientId)
     .maybeSingle()
 
   if (!target) {
     return { error: 'Client not found in your practice.' }
+  }
+  if (target.deleted_at) {
+    return { error: ARCHIVED_CLIENT_MESSAGE }
   }
   if (target.version !== input.version) {
     return { error: OCC_CONFLICT_MESSAGE }
@@ -243,6 +291,7 @@ export async function updateClientGoalsAction(input: {
     .update({ goals: trimmed.length > 0 ? trimmed : null })
     .eq('id', input.clientId)
     .eq('version', input.version)
+    .is('deleted_at', null)
     .select('id')
 
   if (updateErr) {
@@ -274,8 +323,10 @@ export async function updateClientGoalsAction(input: {
  * surface (R-4), retained deliberately so a future RLS regression cannot
  * silently open a cross-org resend. Do NOT remove it as dead code.
  *
- * No deleted_at gate: archived clients are filtered by the SELECT policy
- * and surface as not-found above, so the gate would be unreachable.
+ * deleted_at gate: since 20260702190000 (CN-7) staff CAN read archived
+ * clients, so the archived case no longer surfaces as not-found — it is
+ * refused explicitly with the read-only message (no invites to archived
+ * clients).
  *
  * The send itself (rate-gate, link generation, token, Resend send, and the
  * invited_at refresh that lands the audit_log row via the audit_clients
@@ -290,12 +341,17 @@ export async function resendInviteAction(
   const supabase = await createSupabaseServerClient()
   const { data: target } = await supabase
     .from('clients')
-    .select('id, organization_id, user_id, invited_at, email, first_name')
+    .select(
+      'id, organization_id, user_id, invited_at, email, first_name, deleted_at',
+    )
     .eq('id', clientId)
     .maybeSingle()
 
   if (!target) {
     return { error: 'Client not found in your practice.' }
+  }
+  if (target.deleted_at) {
+    return { error: ARCHIVED_CLIENT_MESSAGE }
   }
 
   // Defense-in-depth on the cross-tenant surface — redundant under the

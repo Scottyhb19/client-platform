@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
@@ -78,6 +79,12 @@ async function lookupMedicationForWrite(
   if (!row) {
     return { error: 'Medication not found in your practice.' }
   }
+
+  // CN-7 (P1-4): archived clients are staff-readable since 20260702190000,
+  // so the parent's archive state gates every write path — read-only record.
+  const live = await assertClientLive(supabase, row.client_id)
+  if (live.error) return { error: live.error }
+
   return { clientId: row.client_id }
 }
 
@@ -90,6 +97,10 @@ export async function createMedicationAction(
   if ('error' in validated) return { error: validated.error }
 
   const supabase = await createSupabaseServerClient()
+
+  const live = await assertClientLive(supabase, input.clientId)
+  if (live.error) return { error: live.error }
+
   const { error } = await supabase.from('client_medications').insert({
     organization_id: organizationId,
     client_id: input.clientId,

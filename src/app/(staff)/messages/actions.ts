@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { MESSAGE_BODY_MAX } from '@/lib/messages/types'
 
@@ -17,6 +18,13 @@ export async function getOrCreateThreadAction(
 ): Promise<Result<{ threadId: string }>> {
   const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
+
+  // CN-7 (P1-4): archived clients are read-only — no new conversations.
+  // (Their existing thread is archived in lockstep by the cascade trigger,
+  // so without this guard the lookup below would miss it and INSERT a
+  // duplicate live thread for an archived client.)
+  const live = await assertClientLive(supabase, clientId)
+  if (live.error) return { data: null, error: live.error }
 
   const existing = await supabase
     .from('message_threads')
