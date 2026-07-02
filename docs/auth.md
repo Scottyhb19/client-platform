@@ -419,7 +419,7 @@ Patterns we never use. Each is listed with the reason, so the next engineer does
 | Supabase service role key in any client-side bundle | Full RLS bypass from a browser is game over | Service role only in server actions / route handlers |
 | Manual JWT parsing in application code (`jsonwebtoken`, `jose`) | Verification easy to get wrong; we already have `supabase.auth.getUser()` | Always use `supabase.auth.getUser()` |
 | Trust `supabase.auth.getSession()` for identity decisions | `getSession()` reads the cookie without re-verification | `supabase.auth.getUser()` re-verifies against the auth server |
-| Persisting a refresh token in localStorage | Vulnerable to XSS | HTTP-only cookies (Supabase default) |
+| Persisting a refresh token in localStorage | Vulnerable to XSS | `@supabase/ssr` chunked cookies (SameSite=Lax). **Corrected 2026-07-02:** these are *not* HttpOnly — `@supabase/ssr`'s default is `httpOnly: false`, deliberately, because the browser client (`createSupabaseBrowserClient`, e.g. the C-1 FinishSetup recovery) must read them; do NOT flip it. XSS token-theft is mitigated by React escaping + no service key client-side, CSRF by SameSite=Lax + Next server-action origin checks + single-use rotating refresh tokens (rotation behaviourally verified on live 2026-07-02, go-live checklist §3). Flag for the external auth review. |
 | Custom password-strength rules bolted onto Supabase | Divergence from Supabase's flow means bugs | Supabase password policy configuration only |
 | Writing our own "remember me" logic | Supabase refresh tokens do this | Use the SDK |
 | Querying `auth.users` from application code | Auth schema is Supabase's; we never reach into it | Query `public.user_profiles` |

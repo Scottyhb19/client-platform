@@ -261,3 +261,14 @@ The re-trigger ("before identifiable client health data enters") is the friends-
 - **Residual, deliberately kept:** enqueue-failure itself (the trigger raising) would fail the client's message INSERT loudly rather than silently dropping the notification — fail-loud was chosen over fail-open since message send + notification enqueue share the transaction.
 
 Gate pointer updated in `docs/go-live-checklist.md` §8. Scenario MSG-NQ-1 added to `test_scenarios_template.md`.
+
+### P1-2 live realtime two-session probe — CLOSED 2026-07-02 (run ahead of its trigger)
+
+The re-trigger was "the first f&f test accounts"; the probe was run early with ephemeral accounts instead, as pre-paywall hardening. A Node two-session probe (admin-created, mail-free, staff-role-only fixtures — no last-owner-invariant interaction; staff-sender messages — no P1-1c enqueue rows) executed the exact P1-2 property on the live project:
+
+- A staff subscriber in org B opened a real websocket authenticated with their own JWT (`realtime.setAuth`), subscribed to `postgres_changes` INSERT on `public.messages`, and reached `SUBSCRIBED`.
+- A **foreign-org insert delivered zero events** over a 5-second window (`foreign_events_before_control: 0`, `foreign_thread_delivered: false`).
+- The **positive control delivered** (`own_thread_delivered: true`) — the subscriber received its own org''s insert on the same channel, so the foreign zero is WALRUS RLS-gating, not a dead socket.
+- Full teardown ran leaf→root with a zero-residue census (orgs/threads all 0).
+
+Result: **PASS.** postgres_changes delivery is confirmed gated by the subscriber''s SELECT RLS on live, completing the pgTAP-34 + setup-verification chain with the live behavioural half. The probe script was ephemeral (deleted after the run); its design is recorded here — recreate from this description if a re-run is ever needed (e.g. after a realtime infrastructure change or an RLS rework on the messaging tables).
