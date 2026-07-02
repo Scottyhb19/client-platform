@@ -32,7 +32,7 @@
 --   appointments — the slot may have been re-booked; re-booking is a human
 --   decision (recorded in the gap doc).
 --
--- pgTAP 55_archived_client_access.sql locks all of it; 17/38/46/54 re-run
+-- pgTAP 56_archived_client_access.sql locks all of it; 17/38/46/54 re-run
 -- as regression canaries (this migration touches RLS → the §6 rule fires).
 -- ============================================================================
 

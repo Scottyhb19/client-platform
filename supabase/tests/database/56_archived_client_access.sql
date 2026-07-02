@@ -3,7 +3,7 @@
 SET search_path TO public, extensions, pg_temp;
 
 -- ============================================================================
--- 55_archived_client_access
+-- 56_archived_client_access
 -- ============================================================================
 -- Locks in migration 20260702180000 — CN-7 P0-1 (the additive staff-only
 -- archived-read policy) and P1-5 (soft_delete_client v2 cancels the client's

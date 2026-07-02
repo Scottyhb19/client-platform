@@ -424,7 +424,7 @@ $$;
 - **UPDATE** — staff only. Clients cannot UPDATE `clients` directly; any self-service profile field edits go through a server action using service role, which validates the field allowlist (phone, emergency contact). Archived-record read-only-ness is enforced at the application layer (`src/lib/clients/archive-guard.ts` + explicit `.is('deleted_at', null)` on write chains), NOT at RLS — a named residual with a paying-client-era upgrade path (BEFORE UPDATE trigger).
 - **DELETE** — denied; staff soft-delete via the `soft_delete_client` RPC (which since `20260702190000` also cancels the client's future appointments; reminders cascade-cancel).
 
-**Tests:** `55_archived_client_access.sql` (8/8 on live) — staff-reads-archived, archived-client self-read denial, cross-org denial on archived rows, live-policy control, anon 42501, archive-cancels-future + reminder cascade, restore round trip. Plus 17 / 46 / 54 as regression canaries.
+**Tests:** `56_archived_client_access.sql` (8/8 on live) — staff-reads-archived, archived-client self-read denial, cross-org denial on archived rows, live-policy control, anon 42501, archive-cancels-future + reminder cascade, restore round trip. Plus 17 / 46 / 54 as regression canaries.
 
 **SQL:**
 ```sql
