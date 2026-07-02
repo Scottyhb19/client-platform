@@ -77,6 +77,8 @@ export type ProfileCondition = {
   diagnosis_date: string | null
   /** Profile "Tag / No-tag": whether this condition shows on the client header. */
   show_on_header: boolean
+  /** Last-read version, threaded through for OCC (schema.md §12). */
+  version: number
 }
 
 export type ProfileMedication = {

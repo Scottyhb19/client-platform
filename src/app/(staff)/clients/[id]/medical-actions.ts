@@ -20,16 +20,14 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  *     (20260611130100) — a bare UPDATE would 42501 against the SELECT
  *     policy's deleted_at IS NULL filter.
  *
- * Concurrency: the table carries no OCC version column (unlike clients and
- * clinical_notes — recon finding, 2026-06-11). Edits are last-write-wins,
- * accepted for the build because condition rows are short structured facts
- * that are rarely co-edited. NOTE (corrected 2026-06-11): the beta already
- * runs two staff (operator + EP collaborator) and the UPDATE policy admits
- * both with no author lock, so the clobber window is live now — not "single
- * practitioner" as an earlier draft of this comment claimed. The fix when
- * warranted is an additive version column + the existing
- * bump_version_and_touch() trigger plus a version check here; indexed as a
- * now-active item in docs/go-live-checklist.md §8.
+ * Concurrency: OCC via the version column (migration 20260702120000,
+ * closing the CN-6 deferred item — the two-staff beta made last-write-wins
+ * a live clobber window). updateMedicalConditionAction includes the
+ * last-read version in its UPDATE WHERE clause; a concurrent write matches
+ * zero rows and surfaces a conflict, mirroring clinical_notes. The
+ * is_active toggle and archive stay versionless deliberately: both write a
+ * single field whose intent is unambiguous, so refusing them on an
+ * unrelated concurrent edit would be friction without protection.
  *
  * All writes are staff-only via requireRole + the table's RLS policies
  * (Pattern A staff-only SELECT since CN-2; INSERT/UPDATE staff-only since
@@ -132,7 +130,7 @@ export async function createMedicalConditionAction(
 }
 
 export async function updateMedicalConditionAction(
-  input: MedicalConditionInput & { conditionId: string },
+  input: MedicalConditionInput & { conditionId: string; version: number },
 ): Promise<{ error: string | null }> {
   await requireRole(['owner', 'staff'])
 
@@ -142,14 +140,24 @@ export async function updateMedicalConditionAction(
   const found = await lookupConditionForWrite(input.conditionId)
   if ('error' in found) return { error: found.error }
 
+  // OCC: refuse the write if version moved underneath us. The trigger
+  // bumps version on every UPDATE, so the next read will see the new one.
   const supabase = await createSupabaseServerClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('client_medical_history')
     .update(validated.ok)
     .eq('id', input.conditionId)
+    .eq('version', input.version)
+    .select('id')
 
   if (error) {
     return { error: `Could not save condition: ${error.message}` }
+  }
+  if (!updated || updated.length === 0) {
+    return {
+      error:
+        'Someone else edited this condition while you were typing. Reload the page and try again.',
+    }
   }
 
   revalidatePath(`/clients/${found.clientId}`)

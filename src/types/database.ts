@@ -751,6 +751,7 @@ export type Database = {
           organization_id: string
           show_on_header: boolean
           updated_at: string
+          version: number
         }
         Insert: {
           client_id: string
@@ -764,6 +765,7 @@ export type Database = {
           organization_id: string
           show_on_header?: boolean
           updated_at?: string
+          version?: number
         }
         Update: {
           client_id?: string
@@ -777,6 +779,7 @@ export type Database = {
           organization_id?: string
           show_on_header?: boolean
           updated_at?: string
+          version?: number
         }
         Relationships: [
           {
@@ -1681,6 +1684,89 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      message_notifications: {
+        Row: {
+          created_at: string
+          failed_at: string | null
+          failure_reason: string | null
+          id: string
+          message_id: string
+          organization_id: string
+          provider: string
+          provider_message_id: string | null
+          recipient_user_id: string
+          retry_count: number
+          scheduled_for: string
+          sent_at: string | null
+          status: string
+          thread_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          failed_at?: string | null
+          failure_reason?: string | null
+          id?: string
+          message_id: string
+          organization_id: string
+          provider?: string
+          provider_message_id?: string | null
+          recipient_user_id: string
+          retry_count?: number
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string
+          thread_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          failed_at?: string | null
+          failure_reason?: string | null
+          id?: string
+          message_id?: string
+          organization_id?: string
+          provider?: string
+          provider_message_id?: string | null
+          recipient_user_id?: string
+          retry_count?: number
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string
+          thread_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_notifications_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_notifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_notifications_recipient_user_id_fkey"
+            columns: ["recipient_user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "message_notifications_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "message_threads"
             referencedColumns: ["id"]
           },
         ]

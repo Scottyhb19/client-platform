@@ -477,5 +477,21 @@ Fifteen of sixteen gaps closed; CN-7 deferred with its trigger indexed in `go-li
 
 5. **`clients.user_id` column-restriction indirection.** The staff UPDATE policy has no column-level restriction, so a compromised staff session could repoint `user_id` and use `sync_client_profile_name` to overwrite another user's display name. Pre-existing property; bounded harm. **Re-trigger: if a column-level policy or a `user_id`-mutation guard trigger is ever warranted.** Logged in `rls-policies.md` §4.4, not represented as closed.
 
+---
+
+## Deferred-item closures (post-sign-off)
+
+### Sign-off deferred item 3 — `client_medical_history` last-write-wins — CLOSED 2026-07-02
+
+The now-active trigger (two-staff beta) fired the item; closed exactly as prescribed in the deferral text, as pre-Pro-upgrade work while the pre-launch advantages still hold.
+
+- **Migration `20260702120000_cmh_occ_version.sql`** — additive `version integer NOT NULL DEFAULT 1` + the shared `bump_version_and_touch()` trigger (`cmh_bump_version`), replacing the plain `cmh_touch_updated_at` touch trigger (the bump function also touches `updated_at`, so keeping both would double-fire). Mirrors `clients`/`clinical_notes`; schema.md §12 table list updated. Applied to the live project via `supabase db push`, clean; types regenerated (3-line diff, the new column).
+- **`updateMedicalConditionAction`** now includes the last-read version in its UPDATE WHERE clause (`.eq('version', input.version).select('id')`); zero rows returns the same conflict copy as clinical notes ("Someone else edited this condition while you were typing…"). `version` threads loader → `ProfileCondition` → edit dialog.
+- **Scope decision:** the `is_active` toggle (Mark resolved / Reactivate) and archive stay versionless deliberately — both write a single field whose intent is unambiguous, so refusing them on an unrelated concurrent edit would be friction without protection. This matches the deferral text, which named `updateMedicalConditionAction` only.
+- **Verification:** pgTAP `supabase/tests/database/51_cmh_occ_version.sql` — 4/4 green on live under a real staff JWT session (current-version UPDATE matches 1 row; trigger bumps to 2; stale-version UPDATE matches 0 rows; first writer's value survives). `tsc --noEmit` green. Render tier accepted at F&F per go-live-checklist §5b; the conflict-copy paint rides the operator's next browser pass.
+- **Adjacent finding, NOT absorbed (scope discipline):** `client_medications` (added 2026-06-29) carries the identical last-write-wins property, documented in its action header as accepted at f&f scale. Left as-is; its header now points at the §12 pattern if co-editing surfaces in practice.
+
+Gate pointer updated in `docs/go-live-checklist.md` §8 (CN-6 entry marked closed, pointing here). Scenario CP-OCC-1 added to `test_scenarios_template.md`.
+
 **Client profile and clinical notes is formally closed (with deferred items).** CLAUDE.md's Active section advances to polish-pass order item 4 — Exercise library.
 

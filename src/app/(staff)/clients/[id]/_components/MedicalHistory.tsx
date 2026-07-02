@@ -291,6 +291,7 @@ function ConditionDialog({
       const res = condition
         ? await updateMedicalConditionAction({
             conditionId: condition.id,
+            version: condition.version,
             ...fields,
           })
         : await createMedicalConditionAction({ clientId, ...fields })

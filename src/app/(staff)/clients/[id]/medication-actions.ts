@@ -16,8 +16,11 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  *     through the soft_delete_client_medications SECURITY DEFINER RPC; a bare
  *     UPDATE would 42501 against the SELECT policy's deleted_at IS NULL filter.
  *
- * No OCC version column on the table (same as client_medical_history) —
- * edits are last-write-wins, accepted at f&f scale for short structured rows.
+ * No OCC version column on the table (unlike client_medical_history, which
+ * gained one in 20260702120000 when its CN-6 deferred item fired) — edits
+ * are last-write-wins, accepted at f&f scale for short structured rows. If
+ * medication rows start being co-edited in practice, apply the same §12
+ * pattern here.
  *
  * All writes are staff-only via requireRole + the table's RLS policies
  * (Pattern A staff-only). Validation mirrors the DB CHECK (name 1–200 chars);
