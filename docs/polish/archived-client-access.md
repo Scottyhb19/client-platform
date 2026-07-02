@@ -1,6 +1,6 @@
 # Archived-client record access (CN-7) — gap analysis
 
-**Status: BUILT + BROWSER-VERIFIED — closing commit at §7, awaiting the reviewer sign-off ritual.** The §4 gap list and all three §5 recommendations (Q1 Option A, Q2 cancel-future in scope, Q3 restore in scope) were operator-approved 2026-07-02 in-session, with one explicit lens on Q1: confirm the additive policy is safe long-term (answer recorded in §5/Q1 — fail-closed by construction, decouples access control from UX filtering, the two named long-term costs are the P0-2 convention and app-layer write immutability). **Operator browser verification of CP-ARC-1..3 is complete (2026-07-02);** the full pgTAP battery (9 suites / 95 assertions), the scoped lint (exit 0), and the live-DB residue census are all green — evidence in §7. All that remains is the documentary reviewer sign-off in the claude.ai chat.
+**Status: BUILT + BROWSER-VERIFIED — closing commit at §7, awaiting the reviewer sign-off ritual.** The §4 gap list and all three §5 recommendations (Q1 Option A, Q2 cancel-future in scope, Q3 restore in scope) were operator-approved 2026-07-02 in-session, with one explicit lens on Q1: confirm the additive policy is safe long-term (answer recorded in §5/Q1 — fail-closed by construction, decouples access control from UX filtering, the two named long-term costs are the P0-2 convention and app-layer write immutability). **Operator browser verification of CP-ARC-1..3 is complete (2026-07-02);** the full pgTAP battery (9 suites / 95 assertions), the scoped lint (exit 0), and the live-DB residue census are all green — evidence in §7. **Reviewer returned five close-or-accept items (no hard blockers); all resolved in §8** — including a real gap the reviewer's enumeration-discipline push surfaced (six client-child write actions became reachable when the profile started rendering for archived clients — now guarded). All that remains is the documentary reviewer sign-off in the claude.ai chat.
 
 **Provenance.** This is CN-7 — deferred item 1 of the Client profile and clinical notes sign-off (`polish/client-profile-clinical-notes.md`, 2026-06-11) and a standing §8 pointer in `docs/go-live-checklist.md`. Trigger: *before the first real client archive, or before any paying clinical client, whichever comes first.* The trigger is armed behaviourally — the archive action is one click on the live client profile today. Because this adds a **new way to read client health data** (a new security surface), it re-enters the full polish-pass protocol per CLAUDE.md's dogfooding-loop rule rather than shipping as a quick fix. This doc is protocol steps 1–4; step 5 is the operator's approval of §4 below.
 
@@ -75,7 +75,7 @@ Master brief §7.2: **archived records must remain queryable.** Clinical records
 
 ## 6. P0-2 read-site classification (built 2026-07-02)
 
-Every `.from(''clients'')` occurrence in `src\` was enumerated and classified before the policy landed. Findings: **almost the entire staff surface already filtered live-only explicitly** — the §11 dashboard pass had even excluded `archived_at` — so the audited blast radius reduced to four action lookups. Portal/client-role reads are untouched by design (the client policy arm did not change), and service-role reads bypass policies entirely.
+Every `.from('clients')` occurrence in `src\` was enumerated and classified before the policy landed. Findings: **almost the entire staff surface already filtered live-only explicitly** — the §11 dashboard pass had even excluded `archived_at` — so the audited blast radius reduced to four action lookups. Portal/client-role reads are untouched by design (the client policy arm did not change), and service-role reads bypass policies entirely.
 
 | Class | Sites | Action taken |
 |---|---|---|
@@ -91,31 +91,117 @@ Every `.from(''clients'')` occurrence in `src\` was enumerated and classified be
 - **P0-1** — migration `20260702190000_archived_client_access.sql`: the additive `"staff select archived clients in own org"` SELECT policy (org + role + `deleted_at IS NOT NULL`; client self-read arm untouched → portal lockout preserved). *(Numbering note: originally authored as `…180000` and renumbered after a live timestamp collision with the parallel `cmed_occ_version` session — the memory-documented silent-skip failure mode, caught by `migration list` + a live probe before any drift; the foreign migration file was adopted into master so local matches remote.)*
 - **P0-2** — the classification above; four action lookups gained explicit guards; two surfaces made deliberately archived-inclusive.
 - **P1-1** — Clientele list: `Archived` filter chip (default views exclude archived; archived rows show their archive date; empty-state copy).
-- **P1-2** — read-only profile: the 404 became a render. Quiet `ArchivedBanner` (muted card, NOT the red clinical-flag pattern) with archive date + Restore; header action icons withdrawn; `statusFor`''s dead ''Archived'' branch is live; every mutating affordance suppressed across Details (contact/goals edits, condition + medication add/menus via `ProfileRow` empty-menu support), Notes (composer, rail edit/archive/pin — Export PDF kept), Program (calendar/builder links; honest empty-state copy), Reports (Record test withdrawn; history + Compare kept), Files (upload zone/picker/drag + delete withdrawn; Download kept). Bookings tab was already display-only.
+- **P1-2** — read-only profile: the 404 became a render. Quiet `ArchivedBanner` (muted card, NOT the red clinical-flag pattern) with archive date + Restore; header action icons withdrawn; `statusFor`'s dead 'Archived' branch is live; every mutating affordance suppressed across Details (contact/goals edits, condition + medication add/menus via `ProfileRow` empty-menu support), Notes (composer, rail edit/archive/pin — Export PDF kept), Program (calendar/builder links; honest empty-state copy), Reports (Record test withdrawn; history + Compare kept), Files (upload zone/picker/drag + delete withdrawn; Download kept). Bookings tab was already display-only.
 - **P1-3** — Restore: `restoreClientAction` → the existing `restore_client` RPC; the email-conflict raise mapped to humane copy; ConfirmDialog notes that cancelled bookings stay cancelled.
 - **P1-4** — `src/lib/clients/archive-guard.ts` (`assertClientLive` + `ARCHIVED_CLIENT_MESSAGE`) wired into: client details/goals/resend-invite, medical-history ×4 (create + the shared lookup), medications ×4 (same), clinical notes ×8 (create, update, archive, pin, flag create + the shared flag lookup covering resolve/review/edit), staff `getOrCreateThreadAction` (which would otherwise mint a duplicate live thread past the archived one).
-- **P1-5** — `soft_delete_client` v2 (same migration): archiving cancels the client''s future `pending/confirmed` appointments (`cancelled_by_role=''staff''`, reason recorded); the `appointment_manage_reminder` trigger cascade-cancels each queued reminder. Restore deliberately does NOT resurrect bookings.
+- **P1-5** — `soft_delete_client` v2 (same migration): archiving cancels the client's future `pending/confirmed` appointments (`cancelled_by_role='staff'`, reason recorded); the `appointment_manage_reminder` trigger cascade-cancels each queued reminder. Restore deliberately does NOT resurrect bookings.
 - **P2-1** — satisfied by P0-2 (dashboard sidebar/search sources are explicitly live-only).
 - **P2-4** — `rls-policies.md` §4.4 updated; scenarios CP-ARC-1..3 added; go-live §8 pointer updated.
 
 **Acceptance tests run and results (all on live, 2026-07-02).**
 
-- **pgTAP — full merged-tree battery, 9 suites / 95 assertions, 0 failures.** Run after the rebase composed this section with the parallel `client_medications` OCC session, so this is the whole day''s DB surface proven together, not just the CN-7 slice:
-  - `56_archived_client_access` **8/8** (staff-reads-archived; archived client''s own login sees zero rows; foreign-org staff zero; live-policy control; anon 42501; archive cancels appointment `cancelled/staff`; reminder cascade `cancelled`; restore round-trip with booking staying cancelled).
-  - Regression canaries green: `17_cross_tenant_isolation` **8/8** (§6 rule — RLS touched), `38_soft_delete_restore_grants` **38/38** (load-bearing here — proves the `CREATE OR REPLACE` of `soft_delete_client` v2 did NOT disturb the soft-delete/restore family''s anon-revoked / authenticated-retained grant posture), `46_clients_update_role_anon_denial` **3/3**, `54_anon_table_grants` **8/8**.
+- **pgTAP — full merged-tree battery, 9 suites / 95 assertions, 0 failures.** Run after the rebase composed this section with the parallel `client_medications` OCC session, so this is the whole day's DB surface proven together, not just the CN-7 slice:
+  - `56_archived_client_access` **8/8** (staff-reads-archived; archived client's own login sees zero rows; foreign-org staff zero; live-policy control; anon 42501; archive cancels appointment `cancelled/staff`; reminder cascade `cancelled`; restore round-trip with booking staying cancelled).
+  - Regression canaries green: `17_cross_tenant_isolation` **8/8** (§6 rule — RLS touched), `38_soft_delete_restore_grants` **38/38** (load-bearing here — proves the `CREATE OR REPLACE` of `soft_delete_client` v2 did NOT disturb the soft-delete/restore family's anon-revoked / authenticated-retained grant posture), `46_clients_update_role_anon_denial` **3/3**, `54_anon_table_grants` **8/8**.
   - Same-day batch also re-confirmed green: `51_cmh_occ_version` 4/4, `52_onboarding_audit_rpc_grants` 14/14, `53_message_notification_queue` 8/8, `55_cmed_occ_version` 4/4.
-- **SQL-editor / live-DB hygiene.** Every pgTAP file runs `BEGIN … ROLLBACK`, so no fixtures persist; the ephemeral probes (synthetic send-check, realtime two-session) had explicit leaf→root teardown. Post-work residue census on live: **6 live clients + 1 pre-existing archived** (the operator''s real keeper accounts, unchanged from the morning pre-flight), **0 test auth users, 0 orphan `message_notifications` rows**, and the only `test/verify`-slugged org is `[VERIFY] auth-config probe org` — the by-design persistent inert memberless verification org (Variant 3, `verify-auth-config.mjs`), not residue.
+- **SQL-editor / live-DB hygiene.** Every pgTAP file runs `BEGIN … ROLLBACK`, so no fixtures persist; the ephemeral probes (synthetic send-check, realtime two-session) had explicit leaf→root teardown. Post-work residue census on live: **6 live clients + 1 pre-existing archived** (the operator's real keeper accounts, unchanged from the morning pre-flight), **0 test auth users, 0 orphan `message_notifications` rows**, and the only `test/verify`-slugged org is `[VERIFY] auth-config probe org` — the by-design persistent inert memberless verification org (Variant 3, `verify-auth-config.mjs`), not residue.
 - **Code hygiene.** All 16 CN-7-touched files swept: **no** `console.log/warn/debug`, `any`/`as any`, `@ts-ignore`/`@ts-expect-error`, `debugger`, `TODO`/`FIXME`, or newly-introduced `eslint-disable`. The only added `console.*` is the `[restore]` audit-trail line in `actions.ts`, which mirrors the pre-existing `[archive]` / `[resend-invite]` convention verbatim (intentional, not debug). `npx eslint` scoped to the 16 files **exit 0**; `tsc --noEmit` clean; `next build` green.
 - **Browser verification — COMPLETE (operator, 2026-07-02).** Scenarios **CP-ARC-1, CP-ARC-2, CP-ARC-3 all confirmed passing** on a live authenticated staff session: archiving hides the client from working views (present only under the Archived chip) and cancels their future booking; the archived profile renders fully readable and truly read-only with the banner + Restore; Restore returns the client to the live list with cancelled bookings staying cancelled. This discharges the render tier directly for this section (stronger than the §5b `type-check`+`build`+pgTAP acceptance) — the operator *is* the smoke test and ran the matrix.
 
-**Deferred, with re-triggers.**
-- **Message history on the archived profile (FM-8)** — NOT rendered: the thread is archived in lockstep and the staff thread policy stays live-only (an archived-thread read arm would surface archived threads in the inbox without its own filter pass). Messages remain in the DB, audit-logged, SQL-producible. *Re-trigger: the operator needs an archived client''s comms history in-app.*
-- **Publish/unpublish affordances inside ReportsTab''s deeper views** — the Record-test entry is withdrawn but publication toggles inside BatteryView/CategoryDetail are not individually gated (server actions for publications are testing-module-owned and not archive-guarded). *Re-trigger: first real archived client with test history, or the testing-module''s next pass.*
-- **P2-3 — archived client''s portal end-state** — still the pre-existing behaviour (auth succeeds, clients-dependent reads come back empty). *Re-trigger: the first real archived f&f user.*
-- **DB-level write immutability for archived records** — the guard is app-layer by design (P1-4 rationale); the raw-PostgREST-write residual by a staff credential is accepted and named. *Re-trigger: paying-client era (a BEFORE UPDATE trigger is the upgrade path).*
+**Deferred, with re-triggers** (updated at the reviewer follow-up — see §8).
+- **Message history on the archived profile (FM-8)** — NOT rendered: the thread is archived in lockstep and the staff thread policy stays live-only. Messages remain in the DB, audit-logged, and operator-producible via a support path — but that is not "the practitioner can produce the clinical record" in-app. *Re-trigger re-labelled to the compliance boundary (FU-3): **before the first paying clinical client** (the hard-rule threshold, where AHPRA/APP record-production legally bites and message content may be part of the record). No longer a convenience trigger.*
+- ~~**Publish/unpublish affordances inside ReportsTab's deeper views**~~ — **RETIRED (FU-2): now guarded, not deferred.** `publishTestAction` + `unpublishPublicationAction` gained `assertClientLive`, alongside the four other newly-guarded testing/files write actions.
+- **P2-3 — archived client's portal end-state** — still the pre-existing behaviour (auth succeeds, clients-dependent reads come back empty). *Re-trigger: the first real archived f&f user.*
+- **DB-level write immutability for archived records** — the guard is app-layer by design (P1-4 rationale); the residual (a raw-PostgREST write by a staff credential, or a direct force-book of an archived client through the schedule action layer) is accepted and named. *Re-trigger: paying-client era (a BEFORE UPDATE trigger is the upgrade path).*
 
-**Premortem accounting.** Mitigated: FM-1/FM-5 (P0-1 + pgTAP 56), FM-2 (P0-2 — found largely pre-mitigated by prior sections'' explicit filters), FM-3 (P1-4, app-layer strength with named residual), FM-4 (P1-5 + test 56 #6/#7), FM-6 (P1-3 humane copy; P2-2 verified — the thread cascade un-archives on restore, bookings stay cancelled by design). Accepted: FM-7 (P2-3 deferred), FM-8 (comms history deferred, above).
+**Premortem accounting.** Mitigated: FM-1/FM-5 (P0-1 + pgTAP 56), FM-2 (P0-2 — found largely pre-mitigated by prior sections' explicit filters), FM-3 (P1-4, app-layer strength with named residual), FM-4 (P1-5 + test 56 #6/#7), FM-6 (P1-3 humane copy; P2-2 verified — the thread cascade un-archives on restore, bookings stay cancelled by design). Accepted: FM-7 (P2-3 deferred), FM-8 (comms history deferred, above).
 
-*Per the sign-off ritual: Claude Code''s work ends here. The section closes when this closing commit is reviewed in the operator''s claude.ai project chat and the sign-off is recorded below.*
+*Per the sign-off ritual: Claude Code's work ends here. The section closes when this closing commit is reviewed in the operator's claude.ai project chat and the sign-off is recorded below.*
 
 **Numbering note.** The suite file was authored as `55_archived_client_access.sql`; the parallel client_medications OCC session claimed `55_cmed_occ_version.sql` on master in the same window, so this section's test is **`56_archived_client_access.sql`** (renumbered at rebase, re-run 8/8 on live post-rename). Same-day collision class as the migration-timestamp note in P0-1.
+
+---
+
+## 8. Reviewer follow-up (2026-07-02) — enumeration discipline + two verifications
+
+Reviewer (claude.ai project chat) returned five items to close-or-accept before sign-off. None were hard blockers; two (P0-2, P1-4) demanded demonstrated enumeration rather than claimed groupings, and the P1-4 push surfaced a **real gap** — six client-child write actions that became reachable when the profile started rendering for archived clients. All five are resolved below.
+
+### FU-1 — P0-2: the read sites, individually enumerated (was grouped)
+
+The "23 files" in §2 is a *file* count; several files carry multiple `.from('clients')` occurrences (dashboard ~8, schedule ~3), so the occurrence-level enumeration is ~34 rows. Every one, classified:
+
+| # | file:line | op | session | live-only filter? | purpose |
+|---|---|---|---|---|---|
+| 1 | `clients/page.tsx:16` | select | staff | **NO — archived-inclusive by design** | Clientele list (Archived chip) |
+| 2 | `clients/[id]/page.tsx:84` | select | staff | **NO — archived-inclusive by design** | profile loader (read-only render) |
+| 3 | `clients/[id]/actions.ts:37` | select | staff | archive-aware (idempotent) | archive lookup |
+| 4 | `clients/[id]/actions.ts:148` | select | staff | **guarded (P1-4)** + `.is(deleted_at,null)` on UPDATE | details update |
+| 5 | `clients/[id]/actions.ts:228` | select | staff | **guarded (P1-4)** + `.is(deleted_at,null)` on UPDATE | goals update |
+| 6 | `clients/[id]/actions.ts:291` | select | staff | **guarded (P1-4)** | resend invite |
+| 7 | `dashboard/page.tsx:103` | select | staff | YES `deleted_at`+`archived_at` | active clients list |
+| 8 | `dashboard/page.tsx:110` | select | staff | YES `deleted_at`+`archived_at` | new-clients (14d) |
+| 9 | `dashboard/page.tsx:119` | embed appts→clients | staff | YES (parent) | today's sessions |
+| 10 | `dashboard/page.tsx:133` | embed sessions→clients | staff | YES (parent) | recent completions |
+| 11 | `dashboard/page.tsx:158` | embed programs→clients | staff | YES (parent) | active programs |
+| 12 | `dashboard/page.tsx:169` | embed notes→clients | staff | YES (parent) | flagged notes |
+| 13 | `dashboard/page.tsx:230` | embed appts→clients | staff | YES (parent) | reconciliation list |
+| 14 | `dashboard/actions.ts:30` | update | staff | YES `.is(deleted_at,null)` | acknowledge overdue |
+| 15 | `schedule/page.tsx:149` | select | staff | YES `deleted_at`+`archived_at` | booking client picker |
+| 16 | `schedule/page.tsx:140` | embed appts→clients | staff | YES (parent) | schedule grid rows |
+| 17 | `schedule/actions.ts:114` | embed appts→clients | staff | YES (parent) | booking-confirm email |
+| 18 | `schedule/actions.ts:170` | embed appts→clients | staff | YES (parent) | reschedule email |
+| 19 | `library/page.tsx:68` | select | staff | YES `deleted_at`+`archived_at` | template client picker |
+| 20 | `analytics/page.tsx:34` | select | staff | YES `.is(deleted_at,null)` | analytics client list |
+| 21 | `clients/new/actions.ts:99` | insert | staff | N/A (new row) | invite create |
+| 22 | `clients/[id]/program/page.tsx:61` | select | staff | YES → `notFound()` for archived | program calendar header |
+| 23 | `clients/[id]/program/new/page.tsx:20` | select | staff | YES → `notFound()` for archived | program-new header |
+| 24 | `clients/[id]/program/days/[dayId]/page.tsx:78` | select | staff | YES → `notFound()` for archived | session-builder header |
+| 25 | `clients/[id]/files-actions.ts:123` | select | staff | YES `.is(deleted_at,null)` (upload fails closed) | upload org check |
+| 26 | `i/[id]/page.tsx:69` | select | **service-role** | N/A (bypasses RLS) | invite-gate name |
+| 27 | `lib/clients/invite.ts:153` | update | **service-role** | N/A (invited_at bump) | invite send timestamp |
+| 28 | `portal/layout.tsx:60` | select | client | YES `.is(deleted_at,null)` | portal auth gate |
+| 29 | `portal/page.tsx:43` | select | client | YES `.is(deleted_at,null)` | portal home self-row |
+| 30 | `portal/you/page.tsx:20` | select | client | YES `.is(deleted_at,null)` | portal profile self-row |
+| 31 | `portal/session/[dayId]/page.tsx:56` | select | client | YES `.is(deleted_at,null)` | portal session name |
+| 32 | `portal/reports/page.tsx:33` | select | client | YES `.is(deleted_at,null)` | portal reports self-row |
+| 33 | `welcome/page.tsx:68` | select | client | YES `.is(deleted_at,null)` | onboarding existing-client check |
+| 34 | `welcome/install/page.tsx:54` | select | client | YES `.is(deleted_at,null)` | install greeting |
+
+**The reviewer's three named-unconfirmed sites, resolved:** analytics (#20) — explicit `.is(deleted_at,null)`, archived excluded from counts; invite email-uniqueness (the `clients/new/actions.ts` cross-staff check feeding #21) — reads `user_organization_roles`, not `clients`, so it is unaffected by the archived-read policy, and the uniqueness that matters (the `(org, lower(email))` partial index) *deliberately* releases the email on archive so a client can be re-invited (restore then guards the conflict); library picker (#19) — explicit `deleted_at`+`archived_at`. **FM-2 is demonstrated closed, not accepted:** every staff surface except the two intentional CN-7 read surfaces (#1, #2) filters live-only, and those two never inflate counts (the list header counts live only; the profile is single-client).
+
+### FU-2 — P1-4: the write actions, complete set (six real gaps found + fixed)
+
+The reviewer was right that the original guard list was a *sample*. The profile now **renders** for archived clients, which made the Reports and Files tab write actions reachable through the action layer — a worse class than the accepted raw-PostgREST residual. Full enumeration of every client-child write action:
+
+| write action | file | status |
+|---|---|---|
+| details / goals / resend-invite | `clients/[id]/actions.ts` | guarded (original) |
+| medical-history create + edit/resolve/archive | `medical-actions.ts` | guarded (original, ×4 via shared lookup) |
+| medications create + edit/cease/archive | `medication-actions.ts` | guarded (original, ×4) |
+| clinical notes + flags (create/update/archive/pin/resolve/review) | `notes-actions.ts` | guarded (original, ×8) |
+| staff thread create | `messages/actions.ts` (`getOrCreateThread`) | guarded (original) |
+| staff message send **via clientId** | `messages/actions.ts` (`sendStaffMessage`) | guarded (routes through `getOrCreateThread`) |
+| staff message send **via direct threadId** | `messages/actions.ts` | gated: archived thread is cascade-archived + live-only SELECT policy → id unreachable |
+| **file delete** | `files-actions.ts` (`deleteClientFile`) | **GUARD ADDED (FU-2)** — was reachable, unguarded |
+| **test-session capture** | `test-actions.ts` (`createTestSession`) | **GUARD ADDED (FU-2)** |
+| **test-session soft-delete** | `test-actions.ts` (`softDeleteTestSession`) | **GUARD ADDED (FU-2)** |
+| **session battery tag** | `test-actions.ts` (`setSessionBattery`) | **GUARD ADDED (FU-2)** |
+| **publish test** | `publish-actions.ts` (`publishTest`) | **GUARD ADDED (FU-2)** |
+| **unpublish publication** | `publish-actions.ts` (`unpublishPublication`) | **GUARD ADDED (FU-2)** |
+| file upload | `files-actions.ts` (`uploadClientFile`) | fails closed via its live-only client lookup (unchanged) |
+| program builder writes (day/exercise/set) | `program/**/actions.ts` | page-gated: all three program pages `notFound()` for archived (rows #22–24) — builder never loads |
+| appointment booking | schedule surface | picker-gated: schedule client picker filters `deleted_at`+`archived_at` (#15); a direct force-book is the same named residual class as raw-PostgREST |
+
+Net: **six guards added** (`deleteClientFileAction`, `createTestSessionAction`, `softDeleteTestSessionAction`, `setSessionBatteryAction`, `publishTestAction`, `unpublishPublicationAction`), each `assertClientLive` at the top of the mutating path. This **retires the earlier "ReportsTab deep publish affordances" deferral** — those are now guarded, not deferred. `tsc` + scoped `eslint` (exit 0) green on all three touched files. The residual is now honestly bounded to: raw-PostgREST writes by a staff credential, and a direct force-book of an archived client via the schedule action layer (both accepted; paying-client-era DB-trigger upgrade path).
+
+### FU-3 — FM-8 re-trigger re-labelled to the compliance boundary
+
+The old re-trigger ("the operator needs an archived client's comms history in-app") was a *convenience* trigger, mismatched to §1's AHPRA/APP retention obligation. "SQL-producible by the developer" is not "the practitioner can produce the clinical record." **Re-labelled:** the message-history-on-archived-profile gap is deferred **until before the first paying clinical client (the hard-rule threshold)** — the point at which the obligation to *produce the complete clinical record on request* legally bites and message content may be deemed part of it. At f&f scope the compensating controls hold (messages retained, audit-logged, producible by the operator via a support path); the gate now fires at the compliance boundary, not on convenience. Recorded in the §7 Deferred list and `go-live-checklist.md` §8.
+
+### FU-4 — role parity verified (not asserted)
+
+Live enum probe: `user_role` = **`owner, staff, client`** — exactly three, no third staff-type (reception/clinician) role. The archived policy admits `owner/staff`, identical to the live policy's staff arm; `client` is excluded (portal lockout). No live-but-not-archived asymmetry is possible. Confirmed on live 2026-07-02.
+
+### FU-5 — reminder-state completeness verified (not asserted)
+
+Live enum probe: `appointment_status` = **`pending, confirmed, cancelled, completed, no_show`**. The `appointment_manage_reminder` trigger generates a reminder for **exactly `pending, confirmed`** (it cancels for every other state). `soft_delete_client` v2 cancels exactly `status IN ('pending','confirmed')` — a precise match to the reminder-generating set. The other three states carry no live reminder, so none survives archive to re-open FM-4. Confirmed on live 2026-07-02.
