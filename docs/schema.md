@@ -604,11 +604,11 @@ To catch any missed entry: a database-wide `pg_constraint` inspection test (pgTA
 
 #### `client_medical_history`
 - **SELECT:** staff within org **only** (Pattern A since CN-2 — the `notes` column carries practitioner reasoning, walled from clients).
-- **INSERT/UPDATE/DELETE:** staff only.
+- **INSERT/UPDATE/DELETE:** staff only; UPDATE with optimistic concurrency via `version` column (§12, since CN-6).
 
 #### `client_medications`
 - **SELECT:** staff within org **only** (Pattern A — a medication and its context note are clinical-adjacent; staff-only is the standing default).
-- **INSERT/UPDATE:** staff only. **DELETE:** denied; archive routes through the `soft_delete_client_medications` SECURITY DEFINER RPC.
+- **INSERT/UPDATE:** staff only; UPDATE with optimistic concurrency via `version` column (§12, parity with CN-6). **DELETE:** denied; archive routes through the `soft_delete_client_medications` SECURITY DEFINER RPC.
 
 #### `clinical_notes`
 - **SELECT:** staff within org **only**. Clients NEVER read from this table. (See §19 open question — this is a deliberate v0.2 revision from v0.1's `visible_to_client` boolean.)
