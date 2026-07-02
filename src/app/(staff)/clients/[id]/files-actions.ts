@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
@@ -206,6 +207,12 @@ export async function deleteClientFileAction(
   if (row.organization_id !== organizationId) {
     return { error: 'Not authorised to delete this file.' }
   }
+
+  // CN-7 (P1-4): the archived profile now RENDERS (read-only), so the Files
+  // tab — and this delete action — became reachable for an archived client.
+  // Block it. (Upload already fails closed via its live-only client lookup.)
+  const live = await assertClientLive(supabase, row.client_id)
+  if (live.error) return { error: live.error }
 
   // Delete the row first. If we deleted the object first and the row delete
   // failed, we'd have an unreferenceable row pointing at a missing object.

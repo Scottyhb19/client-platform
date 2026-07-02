@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import {
   loadActiveBatteries,
@@ -73,6 +74,11 @@ export async function createTestSessionAction(
 ): Promise<CreateTestSessionResult> {
   const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
+
+  // CN-7 (P1-4): the archived profile renders its Reports tab read-only, so
+  // this capture action is reachable for an archived client — refuse it.
+  const live = await assertClientLive(supabase, input.clientId)
+  if (live.error) return { data: null, error: live.error }
 
   // Empty-body guard.
   if (!Array.isArray(input.results) || input.results.length === 0) {
@@ -204,6 +210,10 @@ export async function softDeleteTestSessionAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
+  // CN-7 (P1-4): archived record is read-only — no test-session deletion.
+  const live = await assertClientLive(supabase, clientId)
+  if (live.error) return { data: null, error: live.error }
+
   const { error } = await supabase.rpc('soft_delete_test_session', {
     p_id: sessionId,
   })
@@ -289,6 +299,10 @@ export async function setSessionBatteryAction(input: {
 }): Promise<{ ok: true; error: null } | { ok: false; error: string }> {
   const { organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
+
+  // CN-7 (P1-4): archived record is read-only — no retroactive battery tag.
+  const live = await assertClientLive(supabase, input.clientId)
+  if (live.error) return { ok: false, error: live.error }
 
   // Defence in depth — if a non-null battery id is supplied, confirm it
   // belongs to the caller's org and is live. RLS would block a

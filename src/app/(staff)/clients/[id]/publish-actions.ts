@@ -27,6 +27,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { assertClientLive } from '@/lib/clients/archive-guard'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 const FRAMING_TEXT_MAX = 280
@@ -53,6 +54,10 @@ export async function publishTestAction(args: {
 
   const { userId, organizationId } = await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
+
+  // CN-7 (P1-4): archived record is read-only — no new publications.
+  const live = await assertClientLive(supabase, args.clientId)
+  if (live.error) return { data: null, error: live.error }
 
   const trimmed =
     args.framingText !== null && args.framingText.trim() !== ''
@@ -106,6 +111,10 @@ export async function unpublishPublicationAction(args: {
 }): Promise<UnpublishPublicationResult> {
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
+
+  // CN-7 (P1-4): archived record is read-only — no unpublish either.
+  const live = await assertClientLive(supabase, args.clientId)
+  if (live.error) return { data: null, error: live.error }
 
   const { error } = await supabase.rpc('soft_delete_client_publication', {
     p_id: args.publicationId,
