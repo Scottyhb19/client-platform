@@ -3,6 +3,7 @@ import { Filter, Edit3 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { MessageRow, SenderRole } from '@/lib/messages/types'
+import { categoryToneFor } from '../clients/_lib/client-helpers'
 import { Inbox } from './_components/Inbox'
 
 interface PageProps {
@@ -19,16 +20,25 @@ export default async function MessagesPage({ searchParams }: PageProps) {
   // !inner on clients drops threads whose client is soft-deleted (the clients
   // SELECT policy filters deleted_at IS NULL). Without this, archiving a
   // client leaves an orphan thread with a null embed → blank name + "?" avatar.
-  const { data: threadsRaw } = await supabase
-    .from('message_threads')
-    .select(
-      'id, client_id, last_message_at, last_message_preview, last_message_sender_role, clients!inner(first_name, last_name, email, phone, dob)',
-    )
-    .is('deleted_at', null)
-    .order('last_message_at', { ascending: false, nullsFirst: false })
-    .limit(100)
+  const [{ data: threadsRaw }, { data: categoryRows }] = await Promise.all([
+    supabase
+      .from('message_threads')
+      .select(
+        'id, client_id, last_message_at, last_message_preview, last_message_sender_role, clients!inner(first_name, last_name, email, phone, dob, category_id)',
+      )
+      .is('deleted_at', null)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(100),
+    // Category order drives the thread avatar tones (categoryToneFor).
+    supabase
+      .from('client_categories')
+      .select('id')
+      .is('deleted_at', null)
+      .order('sort_order'),
+  ])
 
   const threads = threadsRaw ?? []
+  const categoryIds = (categoryRows ?? []).map((c) => c.id)
 
   // Per-thread unread count of client→staff messages, computed once.
   const unreadByThread = new Map<string, number>()
@@ -106,6 +116,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
             email: t.clients?.email ?? '',
             phone: t.clients?.phone ?? null,
             dob: t.clients?.dob ?? null,
+            tone: categoryToneFor(t.clients?.category_id, categoryIds),
             lastMessageAt: t.last_message_at,
             lastMessagePreview: t.last_message_preview,
             // CHECK constraint guarantees one of these two values, but the

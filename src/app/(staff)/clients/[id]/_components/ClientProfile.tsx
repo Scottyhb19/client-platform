@@ -19,7 +19,11 @@ import {
 } from 'lucide-react'
 import type { Database } from '@/types/database'
 import { formatShortDate } from '@/lib/format-date'
-import { initialsFor, toneFor } from '../../_lib/client-helpers'
+import {
+  categoryToneFor,
+  initialsFor,
+  type AvatarTone,
+} from '../../_lib/client-helpers'
 import { SessionExerciseSummary } from '../../../_components/SessionExerciseSummary'
 import { NotesTab } from './NotesTab'
 import { EditClientDetailsDialog, GoalsEditDialog } from './EditClientDetails'
@@ -358,6 +362,10 @@ export function ClientProfile({
     <div style={{ background: 'var(--color-surface)', minHeight: '100%' }}>
       <ClientHeader
         client={client}
+        tone={categoryToneFor(
+          client.category_id,
+          categories.map((c) => c.id),
+        )}
         conditions={conditions}
         statusLabel={statusLabel}
         statusKind={statusKind}
@@ -468,6 +476,7 @@ function flagNoteText(n: ProfileNote): string {
 
 function ClientHeader({
   client,
+  tone,
   conditions,
   statusLabel,
   statusKind,
@@ -480,6 +489,8 @@ function ClientHeader({
   onFlags,
 }: {
   client: ProfileClient
+  /** Client-category avatar tone (categoryToneFor), resolved by the parent. */
+  tone: AvatarTone
   conditions: ProfileCondition[]
   statusLabel: 'Active' | 'New' | 'Archived'
   statusKind: 'active' | 'new' | 'archived'
@@ -581,7 +592,7 @@ function ClientHeader({
           }}
         >
           <span
-            className={`avatar ${toneFor(client.id)}`}
+            className={`avatar ${tone}`}
             style={{ width: 64, height: 64, fontSize: 22 }}
           >
             {initialsFor(client.first_name, client.last_name)}

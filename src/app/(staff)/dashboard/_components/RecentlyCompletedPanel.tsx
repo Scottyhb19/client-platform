@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import {
   initialsFor,
-  toneFor,
+  type AvatarTone,
 } from '../../clients/_lib/client-helpers'
 import { SessionExerciseSummary } from '../../_components/SessionExerciseSummary'
 import type { ProfileCompletionExercise } from '../../clients/[id]/_components/ClientProfile'
@@ -15,6 +15,7 @@ export type DashboardCompletion = {
   client_id: string
   client_first_name: string
   client_last_name: string
+  client_tone: AvatarTone
   // From program_days; null when the parent program_day was soft-deleted.
   day_label: string
   scheduled_date: string | null
@@ -164,7 +165,7 @@ function CompletionRow({
           }}
         >
           <span
-            className={`avatar ${toneFor(completion.client_id)}`}
+            className={`avatar ${completion.client_tone}`}
             style={{ width: 32, height: 32, fontSize: 32 * 0.38 }}
           >
             {initialsFor(

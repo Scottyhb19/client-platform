@@ -10,6 +10,7 @@ import {
   type ViewMode,
 } from './_components/WeekView'
 import type { StaffMember } from './_components/PractitionerSidebar'
+import { categoryToneFor } from '../clients/_lib/client-helpers'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,13 +132,14 @@ export default async function SchedulePage({
     { data, error },
     { data: clientRows },
     { data: sessionTypeRows },
+    { data: categoryRows },
   ] = await Promise.all([
     supabase
       .from('appointments')
       .select(
         `id, start_at, end_at, appointment_type, status, kind, location, notes,
          staff_user_id, created_by_role, cancelled_by_role, recurrence_group_id,
-         client:clients(id, first_name, last_name,
+         client:clients(id, first_name, last_name, category_id,
            category:client_categories(name))`,
       )
       .gte('start_at', weekStartInstant.toISOString())
@@ -159,9 +161,17 @@ export default async function SchedulePage({
       .select('id, name, color, sort_order, kind, default_duration_minutes')
       .is('deleted_at', null)
       .order('sort_order'),
+    // Category order drives the popover avatar tone (categoryToneFor).
+    supabase
+      .from('client_categories')
+      .select('id')
+      .is('deleted_at', null)
+      .order('sort_order'),
   ])
 
   if (error) throw new Error(`Load appointments: ${error.message}`)
+
+  const categoryIds = (categoryRows ?? []).map((c) => c.id)
 
   const clients: BookingClient[] = (clientRows ?? []).map((c) => ({
     id: c.id,
@@ -193,6 +203,7 @@ export default async function SchedulePage({
             first_name: a.client.first_name,
             last_name: a.client.last_name,
             category_name: a.client.category?.name ?? null,
+            tone: categoryToneFor(a.client.category_id, categoryIds),
           }
         : null,
     }))

@@ -1405,3 +1405,66 @@ after save/Cancel instead of `/library`. No migration, no new table surface.
   restored; the expanded-day state is client-side, so the day re-collapses —
   accepted.) The standalone library create flow (no returnTo) still returns
   to `/library`.
+
+---
+
+## Clientele — category-coloured initials avatars (2026-07-03)
+
+Context: client initials bubbles previously took a random tone seeded from
+the client UUID — a pool that included the practitioner green and the
+clinical-flag red, and the colour meant nothing. Operator rule: a client's
+bubble colour now encodes their **clientele category** (`client_categories`
+— seeded defaults Athlete / Rehab / Lifestyle / Golf / Osteoporosis /
+Neurological), via `categoryToneFor()` in `clients/_lib/client-helpers.ts`:
+one hue per category in the org's `sort_order` — blue / plum / teal /
+violet / amber / bronze (globals.css `.avatar.b/.p/.t/.v/.a/.br`), wrapping
+past six categories. Green stays reserved for the practitioner's own avatar
+(TopBar / portal thread) and red for clinical flags — neither is in the
+category palette. Uncategorised clients and unknown category ids render
+neutral grey. The tone is resolved server-side and passed down on every
+surface: Clientele list, client profile header, program calendar header,
+dashboard Recently-completed AND needs-attention rows (operator follow-up
+2026-07-03: attention avatars are identity-coloured like everywhere else —
+the urgency signal lives on the row's tag chip, which keeps its semantic
+tones, and on the stat cards), messages inbox (list + thread head + side
+panel), and the schedule appointment popover. Contact (referral network)
+avatars stay neutral grey — practitioners are not colour-coded. The old
+`toneFor(id)` seeded helper is deleted. Same follow-up swapped the stat-card
+tones: "Need attention" count is RED when > 0 (act now) and "Programs
+ending" is AMBER when > 0 (plan ahead) — previously the reverse. Pure
+presentation + query projection: no migration, no new security surface.
+
+### CL-AV-1 — Client bubbles match their category everywhere
+- **Setup:** Six clients, one per seeded category, plus one with no
+  category. Visit `/clients`, a client profile, that client's program
+  calendar, `/dashboard` (with a recent completion AND a needs-attention
+  row), `/messages` (a thread per client), and a schedule appointment
+  popover.
+- **Pass:** On every surface — including the needs-attention rows — the
+  same client shows the same colour; the six categories are six visibly
+  different colours; the no-category client is neutral grey; no client
+  bubble is the practitioner green or the clinical-flag red. A flagged
+  client's attention row still signals via its red "Flag" tag chip, not
+  the avatar. The TopBar practitioner avatar stays green.
+
+### CL-AV-2 — Category changes and edge cases follow the rule
+- **Setup:** Change a client's category on the profile (CN-5 edit) and
+  reload; separately add a 7th category in Settings and assign it.
+- **Pass:** The bubble tracks the new category after reload (no stale
+  seeded colour); a 7th+ category wraps to reuse the palette from the
+  start (documented, accepted); deleting a category returns its clients
+  to neutral grey.
+
+### CL-AV-3 — Contacts stay neutral
+- **Setup:** `/contacts` with contacts across several groups.
+- **Pass:** Every referral-network bubble is the neutral grey `avatar n`
+  regardless of group; no group colour-coding on practitioners.
+
+### CL-AV-4 — Stat-card urgency colours
+- **Setup:** `/dashboard` with at least one needs-attention row and one
+  program ending inside 7 days; then a state with both counts at zero.
+- **Pass:** "Need attention" renders its number in the alert red
+  (`--color-alert`) when > 0; "Programs ending" renders in the warning
+  amber (`--color-warning`) when > 0; both fall back to neutral charcoal
+  at zero. (Operator rule: red = act now, amber = plan ahead — deliberately
+  swapped from the original mapping.)

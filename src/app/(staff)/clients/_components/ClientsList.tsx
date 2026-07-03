@@ -5,8 +5,8 @@ import { useMemo, useState } from 'react'
 import { ChevronRight, Plus, Search } from 'lucide-react'
 import {
   initialsFor,
-  toneFor,
   statusFor,
+  type AvatarTone,
   type ClientStatus,
 } from '../_lib/client-helpers'
 
@@ -20,6 +20,7 @@ export type ClientRow = {
   onboarded_at: string | null
   archived_at: string | null
   category_name: string | null
+  tone: AvatarTone
 }
 
 type Filter = 'all' | 'active' | 'invited' | 'archived'
@@ -171,7 +172,7 @@ function ClientRowCard({
       }}
     >
       <span
-        className={`avatar ${toneFor(client.id)}`}
+        className={`avatar ${client.tone}`}
         style={{ width: 36, height: 36, fontSize: 36 * 0.38 }}
       >
         {initialsFor(client.first_name, client.last_name)}

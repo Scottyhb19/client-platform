@@ -9,7 +9,11 @@ import {
   addDaysToIsoDate,
   hourInTimeZone,
 } from '@/lib/dates'
-import { initialsFor } from '../clients/_lib/client-helpers'
+import {
+  categoryToneFor,
+  initialsFor,
+  type AvatarTone,
+} from '../clients/_lib/client-helpers'
 import {
   RecentlyCompletedPanel,
   type DashboardCompletion,
@@ -98,11 +102,12 @@ export default async function DashboardPage() {
     { data: upcomingProgramDayRows },
     { data: pastApptRows },
     { data: notedApptRows },
+    { data: categoryRows },
   ] = await Promise.all([
     supabase
       .from('clients')
       .select(
-        'id, first_name, last_name, invited_at, onboarded_at, created_at, overdue_followed_up_at',
+        'id, first_name, last_name, invited_at, onboarded_at, created_at, overdue_followed_up_at, category_id',
       )
       .is('deleted_at', null)
       .is('archived_at', null),
@@ -130,7 +135,7 @@ export default async function DashboardPage() {
       .from('sessions')
       .select(
         `id, completed_at, session_rpe,
-         client:clients(id, first_name, last_name, archived_at),
+         client:clients(id, first_name, last_name, archived_at, category_id),
          program_day:program_days(day_label, scheduled_date),
          exercise_logs(
            id, program_exercise_id,
@@ -242,7 +247,27 @@ export default async function DashboardPage() {
       .select('appointment_id')
       .not('appointment_id', 'is', null)
       .is('deleted_at', null),
+    // Category order drives the recently-completed avatar tones
+    // (categoryToneFor) — same ordering as the Clientele list.
+    supabase
+      .from('client_categories')
+      .select('id')
+      .is('deleted_at', null)
+      .order('sort_order'),
   ])
+
+  const categoryIds = (categoryRows ?? []).map((c) => c.id)
+
+  // Client-category avatar tones for the attention rows — identity colour,
+  // consistent with every other client bubble. Every attention client is a
+  // live non-archived client, so activeClients covers them all; misses fall
+  // back to neutral inside buildAttentionList.
+  const toneByClientId = new Map<string, AvatarTone>(
+    (activeClients ?? []).map((c) => [
+      c.id,
+      categoryToneFor(c.category_id, categoryIds),
+    ]),
+  )
 
   // ── Derived lookups ────────────────────────────────────────────────────
   type ProgramRow = {
@@ -423,6 +448,7 @@ export default async function DashboardPage() {
     lastApptMsByClient,
     upcomingProgramDayClientIds,
     reconcileAppts,
+    toneByClientId,
     nowMs: now.getTime(),
     tenDaysAgoMs: tenDaysAgo.getTime(),
     tenDaysAgoIso,
@@ -446,6 +472,7 @@ export default async function DashboardPage() {
       first_name: string
       last_name: string
       archived_at: string | null
+      category_id: string | null
     } | null
     program_day: { day_label: string; scheduled_date: string } | null
     exercise_logs:
@@ -512,6 +539,7 @@ export default async function DashboardPage() {
         client_id: row.client!.id,
         client_first_name: row.client!.first_name,
         client_last_name: row.client!.last_name,
+        client_tone: categoryToneFor(row.client!.category_id, categoryIds),
         day_label: row.program_day?.day_label ?? 'Ad-hoc',
         scheduled_date: row.program_day?.scheduled_date ?? null,
         completed_at: row.completed_at,
@@ -574,13 +602,15 @@ export default async function DashboardPage() {
             newThisWeek > 0 ? `${newThisWeek} new this week` : 'Steady state'
           }
         />
+        {/* Operator rule 2026-07-03: attention = red (act now), programs
+            ending = amber (plan ahead) — swapped from the original mapping. */}
         <StatCard
           value={String(attentionRowCount)}
           label="Need attention"
           detail={
             attentionRowCount === 0 ? 'All clear' : 'See the panel below'
           }
-          tone={attentionRowCount > 0 ? 'warning' : 'neutral'}
+          tone={attentionRowCount > 0 ? 'danger' : 'neutral'}
         />
         <StatCard
           value={String(programsEndingCount)}
@@ -590,7 +620,7 @@ export default async function DashboardPage() {
               ? 'None ending this week'
               : 'Plan the next block'
           }
-          tone={programsEndingCount > 0 ? 'danger' : 'neutral'}
+          tone={programsEndingCount > 0 ? 'warning' : 'neutral'}
         />
       </div>
 
@@ -806,6 +836,7 @@ function buildAttentionList({
   lastApptMsByClient,
   upcomingProgramDayClientIds,
   reconcileAppts,
+  toneByClientId,
   nowMs,
   tenDaysAgoMs,
   tenDaysAgoIso,
@@ -832,6 +863,7 @@ function buildAttentionList({
   lastApptMsByClient: Map<string, number>
   upcomingProgramDayClientIds: Set<string>
   reconcileAppts: ReconcileAppt[]
+  toneByClientId: Map<string, AvatarTone>
   nowMs: number
   tenDaysAgoMs: number
   tenDaysAgoIso: string
@@ -839,7 +871,10 @@ function buildAttentionList({
   todayIso: string
   todayPlus7Iso: string
 }): { adherence: AttentionItem[]; admin: AttentionItem[] } {
-  const candidates: AttentionItem[] = []
+  // Candidates are built without the avatar tone; it is stamped once at the
+  // end from toneByClientId, so no push site can drift from the category rule.
+  type Candidate = Omit<AttentionItem, 'avatarTone'>
+  const candidates: Candidate[] = []
 
   // Flag (red) — active injury flag / contraindication unreviewed > 14 days.
   for (const n of flaggedNotes) {
@@ -1113,7 +1148,7 @@ function buildAttentionList({
     }
     g.sessions.push({ id: a.id, when: a.when, dateIso: a.dateIso, typeLabel })
   }
-  const reconcileItems: AttentionItem[] = [...reconcileGroups.values()]
+  const reconcileItems: Candidate[] = [...reconcileGroups.values()]
     .sort((a, b) => a.sessions[0]!.dateIso.localeCompare(b.sessions[0]!.dateIso))
     .map((g) => {
       const oldest = g.sessions[0]!
@@ -1144,7 +1179,7 @@ function buildAttentionList({
   // `candidates`; reconcile rows are already grouped per (client × type) above
   // and append to the admin group as-is, so a client can show an attendance row
   // AND a note row alongside any flag.
-  const byKey = new Map<string, AttentionItem>()
+  const byKey = new Map<string, Candidate>()
   for (const it of candidates) {
     const key = `${it.clientId}:${DOMAIN[it.tone]}`
     const existing = byKey.get(key)
@@ -1153,16 +1188,22 @@ function buildAttentionList({
     }
   }
   const deduped = [...byKey.values()]
-  const byPriority = (a: AttentionItem, b: AttentionItem) =>
-    a.priority - b.priority
+  const byPriority = (a: Candidate, b: Candidate) => a.priority - b.priority
+  const withTone = (it: Candidate): AttentionItem => ({
+    ...it,
+    avatarTone: toneByClientId.get(it.clientId) ?? 'n',
+  })
   return {
     adherence: deduped
       .filter((it) => DOMAIN[it.tone] === 'adherence')
-      .sort(byPriority),
+      .sort(byPriority)
+      .map(withTone),
     admin: [
       ...deduped.filter((it) => DOMAIN[it.tone] === 'admin'),
       ...reconcileItems,
-    ].sort(byPriority),
+    ]
+      .sort(byPriority)
+      .map(withTone),
   }
 }
 

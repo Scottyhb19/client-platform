@@ -3,7 +3,16 @@
  * list and the client profile.
  */
 
-export type AvatarTone = 'g' | 'r' | 'a' | 'n'
+export type AvatarTone =
+  | 'g'
+  | 'r'
+  | 'a'
+  | 'n'
+  | 'b'
+  | 'p'
+  | 't'
+  | 'v'
+  | 'br'
 
 export function initialsFor(firstName: string, lastName: string): string {
   const f = (firstName ?? '').trim()
@@ -14,14 +23,22 @@ export function initialsFor(firstName: string, lastName: string): string {
 }
 
 /**
- * Stable avatar tone derived from the client id (UUID). Keeps the row
- * colour consistent across renders without needing a tone column.
+ * Client-category avatar palette (operator rule, 2026-07-03): a client's
+ * bubble colour encodes their clientele category, one hue per category in
+ * the org's sort_order — never the practitioner green ('g') and never the
+ * clinical-flag red ('r'). Wraps past six categories; uncategorised clients
+ * and unknown category ids stay neutral grey.
  */
-export function toneFor(id: string): AvatarTone {
-  const tones: AvatarTone[] = ['g', 'r', 'a', 'n']
-  let sum = 0
-  for (let i = 0; i < id.length; i++) sum += id.charCodeAt(i)
-  return tones[sum % tones.length]
+export const CATEGORY_TONES: AvatarTone[] = ['b', 'p', 't', 'v', 'a', 'br']
+
+export function categoryToneFor(
+  categoryId: string | null | undefined,
+  orderedCategoryIds: string[],
+): AvatarTone {
+  if (!categoryId) return 'n'
+  const i = orderedCategoryIds.indexOf(categoryId)
+  if (i === -1) return 'n'
+  return CATEGORY_TONES[i % CATEGORY_TONES.length]
 }
 
 export type ClientStatus = 'invited' | 'active' | 'archived'

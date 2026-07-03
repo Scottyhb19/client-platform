@@ -11,6 +11,7 @@ import {
   type SenderRole,
 } from '@/lib/messages/types'
 import { markThreadReadAction, sendStaffMessageAction } from '../actions'
+import type { AvatarTone } from '../../clients/_lib/client-helpers'
 
 export interface ThreadSummary {
   id: string
@@ -24,6 +25,8 @@ export interface ThreadSummary {
   lastMessagePreview: string | null
   lastMessageSenderRole: SenderRole | null
   unreadCount: number
+  /** Client-category avatar tone, resolved server-side (categoryToneFor). */
+  tone: AvatarTone
 }
 
 interface InboxProps {
@@ -32,14 +35,6 @@ interface InboxProps {
   initialMessages: MessageRow[]
   currentUserId: string
   organizationId: string
-}
-
-const AVATAR_TONES: Array<'g' | 'r' | 'a' | 'n'> = ['g', 'r', 'a', 'n']
-
-function avatarTone(seed: string): 'g' | 'r' | 'a' | 'n' {
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  return AVATAR_TONES[h % AVATAR_TONES.length]
 }
 
 function initials(first: string, last: string): string {
@@ -366,7 +361,7 @@ function ThreadList({
           </div>
         ) : (
           filtered.map((t) => {
-            const tone = avatarTone(t.clientId)
+            const tone = t.tone
             const isActive = t.id === activeThreadId
             const isUnread = t.unreadCount > 0
             const params = new URLSearchParams(searchParams?.toString() ?? '')
@@ -428,7 +423,7 @@ function ThreadPane({
   isSending: boolean
   error: string | null
 }) {
-  const tone = avatarTone(thread.clientId)
+  const tone = thread.tone
   const counterClass =
     draft.length > MESSAGE_BODY_MAX
       ? 'thread-pane__counter error'
@@ -575,7 +570,7 @@ function ThreadPane({
 }
 
 function SidePanel({ thread }: { thread: ThreadSummary }) {
-  const tone = avatarTone(thread.clientId)
+  const tone = thread.tone
   const age = ageFromDob(thread.dob)
   return (
     <aside className="inbox-side">

@@ -9,8 +9,8 @@ import { resolveCurrentBlock } from '@/lib/programs/current-block'
 import { loadCatalog, loadTestHistoryForClient } from '@/lib/testing/loaders'
 import type { ClientTestHistory } from '@/lib/testing/loader-types'
 import {
+  categoryToneFor,
   initialsFor,
-  toneFor,
 } from '../../_lib/client-helpers'
 import { MonthCalendar } from './_components/MonthCalendar'
 import type {
@@ -57,18 +57,32 @@ export default async function ClientProgramPage({
   const panelOpen = panel === 'notes'
   const supabase = await createSupabaseServerClient()
 
-  const { data: client, error: clientErr } = await supabase
-    .from('clients')
-    .select(
-      `id, first_name, last_name,
-       category:client_categories(name)`,
-    )
-    .eq('id', id)
-    .is('deleted_at', null)
-    .maybeSingle()
+  const [{ data: client, error: clientErr }, { data: categoryRows }] =
+    await Promise.all([
+      supabase
+        .from('clients')
+        .select(
+          `id, first_name, last_name, category_id,
+           category:client_categories(name)`,
+        )
+        .eq('id', id)
+        .is('deleted_at', null)
+        .maybeSingle(),
+      // Category order drives the avatar tone (categoryToneFor).
+      supabase
+        .from('client_categories')
+        .select('id')
+        .is('deleted_at', null)
+        .order('sort_order'),
+    ])
 
   if (clientErr) throw new Error(`Load client: ${clientErr.message}`)
   if (!client) notFound()
+
+  const avatarTone = categoryToneFor(
+    client.category_id,
+    (categoryRows ?? []).map((c) => c.id),
+  )
 
   // All active programs for this client. D-PROG-002 lifted the
   // single-active-per-client rule; back-to-back blocks coexist as long
@@ -374,7 +388,7 @@ export default async function ClientProgramPage({
           <ArrowLeft size={18} aria-hidden />
         </Link>
         <span
-          className={`avatar ${toneFor(client.id)}`}
+          className={`avatar ${avatarTone}`}
           style={{ width: 44, height: 44, fontSize: 44 * 0.38 }}
         >
           {initialsFor(client.first_name, client.last_name)}

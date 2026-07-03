@@ -19,6 +19,9 @@ export type AttentionTone =
 export type AttentionItem = {
   clientId: string
   avatar: string
+  /** Client-category avatar tone (categoryToneFor) — identity, not urgency.
+      Urgency lives on the tag chip (`tag ${tone}`) and the stat cards. */
+  avatarTone: AvatarTone
   firstName: string
   lastName: string
   tone: AttentionTone
@@ -154,8 +157,7 @@ function AttentionGroup({
 
 function AttentionRow({ it }: { it: AttentionItem }) {
   const [showSessions, setShowSessions] = useState(false)
-  const variant: AvatarTone =
-    it.tone === 'flag' ? 'r' : it.tone === 'new' ? 'n' : 'a'
+  const variant: AvatarTone = it.avatarTone
   const sessions = it.sessions ?? []
   // >1 unactioned session of this type → one row whose "Open" opens a per-client
   // modal listing them all (operator request); 1 → render inline with a direct

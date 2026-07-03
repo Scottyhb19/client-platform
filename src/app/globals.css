@@ -575,6 +575,25 @@ body {
 .avatar.n {
   background: linear-gradient(135deg, #555, #888);
 }
+/* Client-category tones — one hue per clientele category in sort_order
+   (see categoryToneFor in clients/_lib/client-helpers.ts). Green stays
+   reserved for the practitioner's own avatar and red for clinical flags —
+   neither appears in this set; uncategorised clients keep .n. */
+.avatar.b {
+  background: linear-gradient(135deg, #1e3a5f, #4a7fb5);
+}
+.avatar.p {
+  background: linear-gradient(135deg, #5e2a44, #a85480);
+}
+.avatar.t {
+  background: linear-gradient(135deg, #0e4a52, #2f9aa8);
+}
+.avatar.v {
+  background: linear-gradient(135deg, #43295e, #7e5db5);
+}
+.avatar.br {
+  background: linear-gradient(135deg, #5e452a, #b08a4a);
+}
 
 /* Schedule date rolodex — hide the scrollbar but keep it scrollable. */
 .rolodex-scroll::-webkit-scrollbar {

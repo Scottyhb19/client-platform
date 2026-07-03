@@ -31,7 +31,6 @@ import {
 } from 'lucide-react'
 import {
   initialsFor,
-  toneFor,
   type AvatarTone,
 } from '../../clients/_lib/client-helpers'
 import {
@@ -85,6 +84,8 @@ export type Appointment = {
     first_name: string
     last_name: string
     category_name: string | null
+    /** Client-category avatar tone, resolved server-side (categoryToneFor). */
+    tone: AvatarTone
   } | null
 }
 
@@ -2364,7 +2365,7 @@ function AppointmentPopover({
     )
   }
 
-  const tone = toneFor(c.id)
+  const tone = c.tone
 
   return (
     <div
