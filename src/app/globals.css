@@ -318,7 +318,7 @@ body {
   gap: 6px;
   cursor: pointer;
   text-decoration: none;
-  line-height: 1.4;
+  line-height: 1.1;
 }
 .btn.primary {
   background: var(--color-primary);
@@ -593,6 +593,132 @@ body {
 }
 .avatar.br {
   background: linear-gradient(135deg, #5e452a, #b08a4a);
+}
+
+/* --- Clinical-note rich text --- */
+/* The writing box is a pixel-twin of AutoTextarea (same border, radius,
+   background, type); the formatting controls sit as a quiet icon row
+   BENEATH the box — no toolbar chrome, no shadows. */
+.rich-editor.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.rich-editor-content {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 7px;
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.1;
+  color: var(--color-text);
+  outline: none;
+  min-height: inherit;
+}
+.rich-editor-placeholder {
+  position: absolute;
+  top: 10px;
+  left: 13px;
+  right: 13px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.1;
+  color: var(--color-muted);
+  pointer-events: none;
+}
+.rich-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 2px 0;
+}
+.rich-editor-toolbtn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 0;
+}
+.rich-editor-toolbtn:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text);
+}
+.rich-editor-toolbtn.on {
+  background: var(--color-surface-2);
+  color: var(--color-charcoal);
+}
+.rich-editor-toolbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: var(--color-muted);
+}
+.rich-editor-toolbar-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--color-border-subtle);
+  margin: 0 4px;
+}
+/* Shared display rules for editor content and rendered notes. Paragraphs
+   carry NO margin so Enter reads as a plain newline, and rich text sets
+   its own line-height (operator feel call 2026-07-04: a touch tighter
+   than the old textarea's 1.5) — legacy plain-text notes never get these
+   rules, so they keep their original spacing. A blank line is an empty
+   paragraph (two Enters), which the reader gives one line of height to
+   match what the editor shows. */
+.rich-editor-content p,
+.rich-text p {
+  margin: 0;
+  line-height: 1.1;
+}
+.rich-text li {
+  line-height: 1.1;
+}
+.rich-text p:empty {
+  min-height: 1.1em;
+}
+/* Tailwind's preflight zeroes list-style globally, so restore the markers
+   explicitly on note lists (otherwise a bullet/numbered list just reads as
+   an indent). Nested lists get the conventional disc→circle→square and
+   decimal→lower-alpha steps. */
+.rich-editor-content ul,
+.rich-text ul {
+  margin: 0 0 0.45em;
+  padding-left: 1.4em;
+  list-style: disc outside;
+}
+.rich-editor-content ol,
+.rich-text ol {
+  margin: 0 0 0.45em;
+  padding-left: 1.5em;
+  list-style: decimal outside;
+}
+.rich-editor-content ul ul,
+.rich-text ul ul {
+  list-style-type: circle;
+}
+.rich-editor-content ul ul ul,
+.rich-text ul ul ul {
+  list-style-type: square;
+}
+.rich-editor-content ol ol,
+.rich-text ol ol {
+  list-style-type: lower-alpha;
+}
+.rich-editor-content li,
+.rich-text li {
+  margin: 0.1em 0;
+}
+.rich-editor-content li p,
+.rich-text li p {
+  margin: 0;
 }
 
 /* Schedule date rolodex — hide the scrollbar but keep it scrollable. */

@@ -26,6 +26,7 @@
 import { useState } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { formatShortDate } from '@/lib/format-date'
+import { RichText } from '@/components/RichText'
 import type { Database } from '@/types/database'
 
 type NoteType = Database['public']['Enums']['note_type']
@@ -427,16 +428,14 @@ function NoteReader({
                 >
                   {f.label}
                 </div>
-                <div
+                <RichText
+                  value={f.value}
                   style={{
                     fontSize: '.84rem',
                     color: 'var(--color-text)',
-                    whiteSpace: 'pre-wrap',
                     lineHeight: 1.55,
                   }}
-                >
-                  {f.value}
-                </div>
+                />
               </div>
             ))}
           </div>

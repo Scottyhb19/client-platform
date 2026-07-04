@@ -1468,3 +1468,62 @@ presentation + query projection: no migration, no new security surface.
   amber (`--color-warning`) when > 0; both fall back to neutral charcoal
   at zero. (Operator rule: red = act now, amber = plan ahead — deliberately
   swapped from the original mapping.)
+
+---
+
+## Clinical notes — rich-text formatting (2026-07-04)
+
+Context: note-field content and template starter text move from plain
+textareas to a rich-text editor (TipTap; new `RichTextEditor` /
+`RichText` components) supporting bold / italic / underline, bullet +
+numbered lists, Shift+Enter soft breaks and Tab list indenting — nothing
+else (design-system restraint; the schema IS the grammar). Values are
+stored as an HTML subset inside the existing columns
+(`clinical_notes.content_json.fields[].value`,
+`note_template_fields.default_value`) — no migration. Every write passes
+the server-side allowlist sanitiser (`src/lib/rich-text-server.ts`:
+p/br/strong/em/u/ul/ol/li, zero attributes) — the XSS boundary that makes
+the readers' HTML injection safe. Legacy plain-text notes coexist:
+`isRichHtml()` (matches only a leading `<p|ul|ol`) routes them down the
+old pre-wrap path, and text like "<5/10 pain" is never misread as markup.
+Read sites converted: profile Notes reader, session-builder /
+program-calendar rail (NotesPanel), print view. Editor sites: note form
+fields + Settings template starter text. Sanitiser attack cases (script,
+onerror, javascript: href, event attrs, style) verified stripped via
+direct module test 2026-07-04.
+
+### CN-RT-1 — Formatting round-trips through save and every reader
+- **Setup:** Write a note with bold, italic, underline, a bullet list, a
+  numbered list, and a Shift+Enter line break; save; view it in the
+  profile reader, the session-builder Notes rail, the calendar side
+  panel, and the print view.
+- **Pass:** All formatting renders identically on all four surfaces; the
+  print/PDF output keeps the lists and emphasis.
+
+### CN-RT-2 — Hostile markup never survives a save
+- **Setup:** Via devtools/direct action call, save a note value containing
+  `<script>`, an `onerror` image, a `javascript:` link and inline styles.
+- **Pass:** The stored value contains none of them — only allowlisted
+  tags with no attributes; the note renders as plain readable text.
+
+### CN-RT-3 — Legacy plain-text notes are untouched
+- **Setup:** View a pre-existing plain-text note (incl. one whose text
+  starts with "<", e.g. "<5/10 pain"); then edit and re-save it.
+- **Pass:** Unedited legacy notes render exactly as before (line breaks
+  preserved, no markup leakage); opening one in the editor shows its text
+  with line breaks intact; re-saving converts it to rich text without
+  visual change.
+
+### CN-RT-4 — Template starter text carries formatting
+- **Setup:** In Settings → note templates, give a field formatted starter
+  text (list + bold); create a new note from that template.
+- **Pass:** The note form's field opens pre-filled with the same
+  formatting, editable; saving keeps it.
+
+### CN-RT-5 — Empty rich content is empty
+- **Setup:** Open a note form, click into a field, apply bold, type
+  nothing, try to save; separately clear a template starter text to
+  blank formatting only.
+- **Pass:** The empty-note guard still fires ("Fill in at least one
+  field"); the cleared starter text stores NULL, and new notes from that
+  template open blank — no invisible `<p></p>` remnants anywhere.

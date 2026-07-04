@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
 import { assertClientLive } from '@/lib/clients/archive-guard'
+import { sanitizeRichTextValue } from '@/lib/rich-text-server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
@@ -75,7 +76,9 @@ function sanitizeFields(raw: NoteFieldValue[]): NoteFieldValue[] {
     .map((f) => ({
       label: f.label.trim(),
       type: ALLOWED_TYPES.includes(f.type) ? f.type : ('long_text' as FieldType),
-      value: f.value.trim(),
+      // XSS boundary: rich-text HTML is allowlist-sanitised (and collapsed
+      // to '' when it has no visible text); plain text passes through.
+      value: sanitizeRichTextValue(f.value),
     }))
     .filter((f) => f.label.length > 0)
 }

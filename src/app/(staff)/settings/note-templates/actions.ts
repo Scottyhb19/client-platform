@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { requireRole } from '@/lib/auth/require-role'
+import { sanitizeRichTextValue } from '@/lib/rich-text-server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Database } from '@/types/database'
 
@@ -203,10 +204,11 @@ export async function updateNoteTemplateFieldAction(
   const normalized = normalizeLabel(label)
   if (!normalized.ok) return { error: normalized.error }
 
-  // Empty string → NULL so we don't store visually-blank rows that still
-  // pre-populate notes with whitespace.
-  const trimmed = defaultValue.trim()
-  const default_value = trimmed.length === 0 ? null : trimmed
+  // XSS boundary: rich-text HTML is allowlist-sanitised. Empty (including
+  // markup with no visible text) → NULL so we don't store visually-blank
+  // rows that still pre-populate notes with whitespace.
+  const cleaned = sanitizeRichTextValue(defaultValue)
+  const default_value = cleaned.length === 0 ? null : cleaned
 
   const supabase = await createSupabaseServerClient()
   const { error } = await supabase

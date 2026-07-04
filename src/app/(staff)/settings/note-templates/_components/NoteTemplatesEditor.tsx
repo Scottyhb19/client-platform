@@ -11,7 +11,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import { AutoTextarea } from '@/components/AutoTextarea'
+import { RichTextEditor } from '@/components/RichTextEditor'
 import {
   addNoteTemplateFieldAction,
   createNoteTemplateAction,
@@ -719,7 +719,7 @@ function FieldBlock({
           onDelete={onDelete}
         />
       </div>
-      <AutoTextarea
+      <RichTextEditor
         value={defaultValue}
         onChange={setDefaultValue}
         onBlur={() => commit(label, defaultValue)}

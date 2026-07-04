@@ -26,7 +26,8 @@ import {
   Search,
   X,
 } from 'lucide-react'
-import { AutoTextarea } from '@/components/AutoTextarea'
+import { RichTextEditor } from '@/components/RichTextEditor'
+import { RichText } from '@/components/RichText'
 import { formatShortDate } from '@/lib/format-date'
 import {
   clearNoteDraft,
@@ -1371,7 +1372,7 @@ function NoteFieldInput({
       >
         {label}
       </label>
-      <AutoTextarea
+      <RichTextEditor
         value={value}
         onChange={onChange}
         disabled={disabled}
@@ -2332,16 +2333,14 @@ function NoteReader({
                 >
                   {f.label}
                 </div>
-                <div
+                <RichText
+                  value={f.value}
                   style={{
                     fontSize: '.84rem',
                     color: 'var(--color-text)',
-                    whiteSpace: 'pre-wrap',
                     lineHeight: 1.55,
                   }}
-                >
-                  {f.value}
-                </div>
+                />
               </div>
             ))}
           </div>

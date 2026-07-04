@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
+import { RichText } from '@/components/RichText'
 import type { Database } from '@/types/database'
 import { PrintTrigger } from './PrintTrigger'
 
@@ -175,7 +176,9 @@ export default async function PrintNotePage({
           fields.map((f, idx) => (
             <div key={idx} className="print-field">
               <div className="print-field-label">{f.label}</div>
-              <div className="print-field-value">{f.value}</div>
+              <div className="print-field-value">
+                <RichText value={f.value} />
+              </div>
             </div>
           ))
         ) : (
