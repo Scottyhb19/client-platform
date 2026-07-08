@@ -1,6 +1,6 @@
 # Secrets Inventory
 
-**Last updated:** 2026-05-18
+**Last updated:** 2026-07-09
 **Audited at commit:** `ff42cff` (latest landed at write-time). Most file:line citations were authored at `0a29535`; the Build Prompt #2 code phase (`1656859`, `8780e7c`, `63b6942`, `ff42cff`) shifted some line numbers — notably the EMAIL_FROM paths in `client.ts` and the reminder Edge Function — so treat cited line numbers as approximate, not exact. Re-audit and bump this reference whenever a commit touches a path cited in this file.
 **Companion documents:**
 - Rotation history → [`secrets-rotation-log.md`](secrets-rotation-log.md)
@@ -18,17 +18,20 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 
 ### `SUPABASE_SERVICE_ROLE_KEY`
 
-- **Purpose:** Server-only Supabase key that bypasses Row-Level Security; used by the small set of Server Actions / Route Handlers that legitimately need elevated access, and by the reminder Edge Function.
+> **Gateway-disable verified — Supabase dashboard, 2026-07-09.** The legacy anon and `service_role` keys are **disabled at the gateway**, verified on the Supabase dashboard Legacy API Keys tab on 2026-07-09 (its control reads "re-enable service keys" — i.e. they are in the disabled state). The distinction that matters: **disabled, not revoked.** The JWT signing secret has **not been revoked**, so the disable is **one-click reversible** — the leaked legacy `service_role` JWT is **neutralised, not destroyed**. Revoking the JWT signing secret is a **logged follow-up**, gated on first confirming no server-side consumer still rides a legacy JWT. (Separately, the DR backup-restore drill remains pending the Supabase Pro upgrade — the last open Beta-entry gate item.)
+
+- **Purpose:** Server-only Supabase key that bypasses Row-Level Security; used by the small set of Server Actions / Route Handlers that legitimately need elevated access, and by the reminder + message-notification Edge Functions.
 - **Used in:**
   - `src/lib/supabase/server.ts:59` (Next.js server client, service-role variant)
   - `supabase/functions/send-appointment-reminders/index.ts:81` (Edge Function — see "Stored where")
+  - `supabase/functions/send-message-notifications/index.ts:70-71` (message-notification Edge Function, via `REMINDER_SERVICE_KEY` with the legacy key as fallback — added 2026-07-02)
 - **Stored where:**
   - Next.js runtime: Vercel env vars (server-only; Production / Preview / Development).
   - Local dev: `.env.local` (gitignored; never committed — verified in the 2026-05-15 diagnostic via `git log --all --diff-filter=A`).
   - Edge Function: as of 2026-07-02 the EF reads `REMINDER_SERVICE_KEY` (an operator-set `sb_secret` value in its Supabase secret set), falling back to the platform-injected legacy key — which is now **disabled**. So the EF runs entirely on `REMINDER_SERVICE_KEY`.
 - **Key type:** as of 2026-07-02 this is a new-format `sb_secret_…` API key (was a legacy `eyJ…` service_role JWT). The legacy JWT keys are disabled.
 - **Rotation procedure:** [`runbooks/rotate-a-secret.md`](runbooks/rotate-a-secret.md)
-- **Last rotated / migrated:** **2026-07-02** — migrated from the legacy `service_role` JWT to a new `sb_secret` API key (Vercel all-envs + `.env.local`; EF via `REMINDER_SERVICE_KEY`), and the **legacy keys were disabled** in Supabase, so the leaked legacy `service_role` JWT is now rejected by the gateway. See `secrets-rotation-log.md` (2026-07-02 entry).
+- **Last rotated / migrated:** **2026-07-02** — migrated from the legacy `service_role` JWT to a new `sb_secret` API key (Vercel all-envs + `.env.local`; EF via `REMINDER_SERVICE_KEY`), and the **legacy keys were disabled** in Supabase — **disabled at the gateway, verified via the Supabase dashboard on 2026-07-09** (disabled, not revoked; see the note above). The leaked legacy `service_role` JWT is thereby **neutralised, not destroyed**. See `secrets-rotation-log.md` (2026-07-02 entry).
 - **Rotation frequency:** No scheduled cadence; rotate on suspicion of exposure.
 
 ### `RESEND_API_KEY`
@@ -37,6 +40,7 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 - **Used in:**
   - `src/lib/email/client.ts:15` (Next.js email client)
   - `supabase/functions/send-appointment-reminders/index.ts:82` (reminder Edge Function)
+  - `supabase/functions/send-message-notifications/index.ts:73` (message-notification Edge Function — added 2026-07-02)
 - **Stored where:**
   - Next.js runtime: Vercel env vars (Production / Preview / Development) — per the 2026-05-17 rotation log entry.
   - Edge Function: Supabase Edge Function secrets (`supabase secrets set RESEND_API_KEY=...`, per `index.ts:19-20`).
@@ -51,6 +55,7 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 - **Purpose:** Bearer token the pg_cron caller presents to the `send-appointment-reminders` Edge Function. The function **fails closed** if it is unset (post-Finding-#3 fix, commit `701041c` — `authorizeCronRequest`, `index.ts:192-206`).
 - **Used in:**
   - `supabase/functions/send-appointment-reminders/index.ts:76` (read), `:192-206` (enforcement)
+  - `supabase/functions/send-message-notifications/index.ts:64` (message-notification Edge Function — reads + enforces the same bearer; added 2026-07-02)
   - `supabase/config.toml:74` (comment reference only)
 - **Stored where (two places — both must be updated on rotation):**
   - Supabase Edge Function secrets.

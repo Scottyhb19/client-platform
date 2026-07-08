@@ -1,6 +1,6 @@
 # Runbook — Rotate a secret
 
-> Procedure reconstructed from: `docs/secrets-rotation-log.md` (2026-05-17 entry), `supabase/functions/send-appointment-reminders/index.ts:19-20` & `:192-206`, commits `701041c` (fail-closed cron auth), `fc3c38b` (diagnostic + rotation log added), `667a509`→`798bfd9` (rotation-log repair). **`SUPABASE_SERVICE_ROLE_KEY` rotation is NOT evidenced anywhere — that section is an explicit TODO.**
+> Procedure reconstructed from: `docs/secrets-rotation-log.md` (2026-05-17 entry), `supabase/functions/send-appointment-reminders/index.ts:19-20` & `:192-206`, commits `701041c` (fail-closed cron auth), `fc3c38b` (diagnostic + rotation log added), `667a509`→`798bfd9` (rotation-log repair). The **`SUPABASE_SERVICE_ROLE_KEY`** section below documents the 2026-07-02 legacy→new-key migration (`secrets-rotation-log.md` 2026-07-02 entry); its legacy-key **gateway-disable is verified** — the legacy anon + `service_role` keys are disabled at the gateway (Supabase dashboard, 2026-07-09). **Disabled, not revoked** — the JWT signing secret is intact, so the disable is one-click reversible and the leaked key is neutralised, not destroyed; the JWT-secret revoke is a logged follow-up gated on confirming no server-side consumer still rides a legacy JWT.
 
 **Purpose:** Rotate a leaked or suspected-leaked secret with no outage and a verifiable cutover.
 
