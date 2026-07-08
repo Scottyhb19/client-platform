@@ -1527,3 +1527,29 @@ direct module test 2026-07-04.
 - **Pass:** The empty-note guard still fires ("Fill in at least one
   field"); the cleared starter text stores NULL, and new notes from that
   template open blank — no invisible `<p></p>` remnants anywhere.
+
+## Security — SECURITY DEFINER grant hygiene (2026-07-09)
+
+Locks migration `20260709130000` (health-check P2-1 / P2-2). Four SECURITY
+DEFINER functions stayed anon-EXECUTEable because the earlier revoke idiom did
+not match the surviving grant path: `circuit_exercise_enforce_exercise_org()` and
+`session_template_exercise_enforce_exercise_org()` kept anon via a **PUBLIC**
+grant (their `REVOKE … FROM anon` hit a grant that did not exist);
+`sync_client_profile_name(uuid)` kept anon via an **explicit anon** grant (its
+`REVOKE … FROM PUBLIC` was a no-op); `handle_new_auth_user()` held **both** and was
+never revoked. The fix revokes `FROM anon, PUBLIC` on all four.
+
+### SEC-REVOKE-1 — anon EXECUTE removed from all four revoke-idiom leftovers
+- **Setup:** After applying `20260709130000`, run a live grant probe against
+  `circuit_exercise_enforce_exercise_org()`,
+  `session_template_exercise_enforce_exercise_org()`,
+  `sync_client_profile_name(uuid)`, and `handle_new_auth_user()`:
+  `has_function_privilege('anon', oid, 'EXECUTE')` plus an `aclexplode(proacl)`
+  scan for a PUBLIC (`grantee = 0`, i.e. `=X`) or `anon`-role EXECUTE entry.
+- **Pass:** All four return anon EXECUTE = **false**, with **no** surviving PUBLIC
+  (`=X`) or explicit-anon proacl entry. `authenticated` is **retained** on
+  `sync_client_profile_name` (a staff RPC that needs it); the three trigger
+  functions keep their inert `authenticated`/`service_role` grants. Signup is
+  unaffected — `handle_new_auth_user` fires as a trigger regardless of EXECUTE
+  grants (checked at CREATE TRIGGER time), verified by the fixture-driven user
+  creation in the full pgTAP suite still passing.

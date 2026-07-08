@@ -1,0 +1,70 @@
+-- ============================================================================
+-- 20260709130000_revoke_public_and_anon_execute_leftovers
+-- ============================================================================
+-- Health-check P2-1 / P2-2 (docs/health-check-2026-07-09.md, Area 2). Four
+-- SECURITY DEFINER functions are still anon-EXECUTEable at runtime despite
+-- anon-removal attempts (or never having been swept), because the revoke idiom
+-- did not match the surviving grant path. A live ACL probe (2026-07-09,
+-- aclexplode over pg_proc.proacl) established that they do NOT share one shape —
+-- so a single "REVOKE FROM PUBLIC" for all would silently miss the ones whose
+-- anon reaches EXECUTE via an explicit anon grant:
+--
+--   circuit_exercise_enforce_exercise_org()            proacl: {=X, ..., authenticated, service_role}
+--   session_template_exercise_enforce_exercise_org()   anon reaches EXECUTE via the PUBLIC grant (=X);
+--                                                       NO explicit anon grant. Their creating migrations
+--                                                       (20260624100000:151 / 20260624130000:152) did
+--                                                       REVOKE ... FROM anon — removing a grant that did
+--                                                       not exist — so the PUBLIC grant survived.
+--
+--   sync_client_profile_name(uuid)                     proacl: {..., anon, authenticated, service_role} (no =X)
+--                                                       anon reaches EXECUTE via an EXPLICIT anon grant;
+--                                                       PUBLIC was already revoked. Its migration
+--                                                       (20260611130000:79) did REVOKE ... FROM PUBLIC,
+--                                                       leaving the explicit anon grant.
+--
+--   handle_new_auth_user()                             proacl: {=X, ..., anon, ...} — holds BOTH the
+--                                                       PUBLIC grant AND an explicit anon grant; never
+--                                                       revoked. Confirmed INERT before folding in: it is
+--                                                       a trigger function wired FOR EACH ROW EXECUTE
+--                                                       FUNCTION on auth.users (20260420100200:106), is
+--                                                       not RPC-callable, and has no direct caller in
+--                                                       migrations or src (only comments reference the
+--                                                       'Pending' placeholder it inserts). A trigger's
+--                                                       EXECUTE grant is checked at CREATE TRIGGER time,
+--                                                       not fire time, so revoking anon + PUBLIC is pure
+--                                                       hygiene and cannot affect signup.
+--
+-- This migration revokes FROM anon, PUBLIC on all four — the robust idiom that
+-- removes anon-reachability regardless of which path granted it (each half is a
+-- no-op for the path already clear). authenticated is RETAINED where it is
+-- legitimately needed: sync_client_profile_name is a staff RPC that needs it; the
+-- three trigger functions do not use grants at all (EXECUTE on a trigger function
+-- is checked at CREATE TRIGGER time, not fire time), so their retained
+-- authenticated/service_role grants are inert and left untouched (minimal change,
+-- matching the sibling treatment).
+--
+-- Risk is low: three are trigger functions not RPC-callable; sync_client_profile_name
+-- is guarded in-body (raises 42501 unless caller is owner/staff of the client's org)
+-- and re-reads the name from the clients row, so an anon call already no-ops. This
+-- closes the §4-sweep posture gap; it is not an open hole.
+--
+-- Acceptance (per the operator's stated acceptance for this item — inert triggers +
+-- a guarded no-op, so a live grant re-probe, not a pgTAP suite):
+--   * live re-probe shows anon EXECUTE = false and no surviving PUBLIC (=X) or anon
+--     proacl entry on all FOUR functions; authenticated retained on
+--     sync_client_profile_name;
+--   * scenario SEC-REVOKE-1 (covering all four) added to test_scenarios_template.md.
+-- ============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.circuit_exercise_enforce_exercise_org()          FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.session_template_exercise_enforce_exercise_org() FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.sync_client_profile_name(uuid)                   FROM anon, PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.handle_new_auth_user()                           FROM anon, PUBLIC;
+
+-- ============================================================================
+-- REVERSAL (do NOT run unless intentionally restoring anon-reachability):
+--   GRANT EXECUTE ON FUNCTION public.circuit_exercise_enforce_exercise_org()          TO anon;
+--   GRANT EXECUTE ON FUNCTION public.session_template_exercise_enforce_exercise_org() TO anon;
+--   GRANT EXECUTE ON FUNCTION public.sync_client_profile_name(uuid)                   TO anon;
+--   GRANT EXECUTE ON FUNCTION public.handle_new_auth_user()                           TO anon;
+-- ============================================================================
