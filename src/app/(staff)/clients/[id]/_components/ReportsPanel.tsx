@@ -50,10 +50,10 @@ import type {
 import type { Side } from '@/lib/testing/types'
 import { pickBaseline } from './reports/helpers'
 
-const INK = '#1E1A18'
-const MUTED = '#78746F'
-const FAINT = '#9C9690'
-const BORDER = '#E2DDD7'
+const INK = 'var(--color-primary)'
+const MUTED = 'var(--color-muted)'
+const FAINT = 'var(--color-text-faint)'
+const BORDER = 'var(--color-border-hairline)'
 
 const PIN_KEY_PREFIX = 'odyssey:rail-pins:'
 
@@ -449,7 +449,7 @@ function RailTestCard({
       style={{
         border: `1px solid ${BORDER}`,
         borderRadius: 8,
-        background: '#fff',
+        background: 'var(--color-card)',
         padding: '10px 12px',
         minWidth: 0,
       }}
@@ -538,7 +538,7 @@ function ComparisonToggle({
       style={{
         display: 'inline-flex',
         gap: 0,
-        background: '#EDE8E2',
+        background: 'var(--color-surface-2)',
         borderRadius: 999,
         padding: 2,
         flexShrink: 0,
@@ -573,7 +573,7 @@ function ToggleSegment({
       onClick={onClick}
       aria-pressed={active}
       style={{
-        background: active ? '#fff' : 'transparent',
+        background: active ? 'var(--color-card)' : 'transparent',
         border: 'none',
         padding: '3px 9px',
         borderRadius: 999,

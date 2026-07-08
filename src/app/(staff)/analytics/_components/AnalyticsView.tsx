@@ -72,7 +72,7 @@ export function AnalyticsView({
                 style={{
                   padding: '6px 12px',
                   border: 'none',
-                  background: range === r ? '#fff' : 'transparent',
+                  background: range === r ? 'var(--color-card)' : 'transparent',
                   boxShadow:
                     range === r ? '0 1px 3px rgba(0,0,0,.06)' : 'none',
                   borderRadius: 5,
@@ -393,7 +393,7 @@ function OverviewTab({
           data={
             dailyCounts.map(() => Math.max(1, avgDuration || 1))
           }
-          colour="#E8A317"
+          colour="var(--color-warning)"
           staticLine
         />
         <SparkCard
@@ -747,7 +747,7 @@ function HBar({
       <div
         style={{
           height: 5,
-          background: '#F0EBE5',
+          background: 'var(--color-grid-line)',
           borderRadius: 2,
           overflow: 'hidden',
         }}
@@ -776,7 +776,7 @@ function WeeklyBarChart({ data }: { data: number[] }) {
           gap: 6,
           height: 160,
           padding: '0 0 12px',
-          borderBottom: '1px solid #F0EBE5',
+          borderBottom: '1px solid var(--color-grid-line)',
         }}
       >
         {data.map((v, i) => (
@@ -975,6 +975,6 @@ const typeColours = [
   'var(--color-primary)',
   'var(--color-accent)',
   'var(--color-alert)',
-  '#E8A317',
-  '#78746F',
+  'var(--color-warning)',
+  'var(--color-muted)',
 ]
