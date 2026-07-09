@@ -1614,11 +1614,15 @@ function CompletionRow({
         )}
       </div>
       {canExpand && isExpanded && (
+        // Warm surface inset so the white exercise tiles read as cards on a
+        // canvas — the same figure/ground the dashboard expander gives them.
         <div
           style={{
             marginTop: 10,
-            paddingTop: 10,
-            borderTop: '1px solid var(--color-border-hairline)',
+            padding: 10,
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border-hairline)',
+            borderRadius: 'var(--radius-card-dense)',
           }}
         >
           <SessionExerciseSummary exercises={completion.exercises} />

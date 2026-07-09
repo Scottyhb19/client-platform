@@ -1553,3 +1553,38 @@ never revoked. The fix revokes `FROM anon, PUBLIC` on all four.
   unaffected — `handle_new_auth_user` fires as a trigger regardless of EXECUTE
   grants (checked at CREATE TRIGGER time), verified by the fixture-driven user
   creation in the full pgTAP suite still passing.
+
+## UI — Completed-session tiles + panel canvas (2026-07-09)
+
+The client-profile Program tab's `<Panel>` chrome (`.panel` / `.panel-head` /
+`.panel-title`) never made it from the `dashboard.html` prototype into
+`globals.css`, so the "Program" and "Recent completions" panels had been
+rendering as unstyled naked divs. Ported into `globals.css` as a card-equivalent
+container. Separately, the shared `SessionExerciseSummary` (the completed-session
+expander used on both the profile `CompletionsPanel` and the dashboard
+`RecentlyCompletedPanel`) was re-treated: each exercise is a white card tile
+(header / hairline / set grid) with an accent-green-tinted sequence badge —
+sanctioned completion + sequence-bubble green, the same treatment as `.tag.new`
+and the logger's done-card tint — sitting on a warm surface canvas both
+expanders now provide.
+
+### UI-COMP-1 — Profile Program-tab panels are styled cards
+- **Setup:** Open `/clients/[id]?tab=program` for a client with an active program.
+- **Pass:** Both the "Program …" panel and the "Recent completions" panel render
+  as white cards — hairline border, 14px radius, the standard card shadow, and a
+  hairline-divided head whose title is Barlow Condensed 700. No naked/borderless
+  panel; no body-font title.
+
+### UI-COMP-2 — Completed-session expander renders as tiles with accent badges
+- **Setup:** On the same Program tab, expand a completed-session row (one with
+  ≥1 logged set); then open `/dashboard` and expand a "Recently completed" row.
+- **Pass:** In both places the summary renders one white card tile per exercise
+  on a warm surface inset: a header (green-tinted A / A1 / B badge + exercise
+  name), a hairline, then the set grid (set # · result · RPE). The RPE pill stays
+  neutral (never green). Load/reps/RPE align down the columns. The two surfaces
+  read identically.
+
+### UI-COMP-3 — Zero-set exercise still reads honestly
+- **Setup:** Expand a session where one exercise logged no sets while others did.
+- **Pass:** That exercise's tile shows its header then a hairline-divided
+  "No sets logged" in muted italic — not an empty or broken tile.

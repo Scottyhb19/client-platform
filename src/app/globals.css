@@ -368,6 +368,39 @@ body {
   transform: translateY(-1px);
 }
 
+/* --- Panel ---
+   Card-equivalent container used by the client-profile Program + Files tabs
+   through the <Panel> helper (a titled card with a hairline-divided head).
+   These three classes existed only in the dashboard.html prototype and were
+   never carried into the app, so the Program tab's panels had been rendering
+   as unstyled naked divs. Mirrors the .card treatment (same warm two-shadow
+   lift) and the RecentlyCompletedPanel header, so a titled panel and a plain
+   card read as the same object. */
+.panel {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  /* Mirrors .card's two-shadow warm lift. */
+  box-shadow: 0 1px 2px rgba(35, 31, 32, 0.04),
+    0 4px 14px rgba(35, 31, 32, 0.05);
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+.panel-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--color-primary);
+}
+
 /* --- Tags / chips / badges --- */
 .tag {
   font-size: 0.68rem;

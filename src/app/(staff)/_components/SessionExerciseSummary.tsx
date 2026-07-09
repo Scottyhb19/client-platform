@@ -15,14 +15,22 @@ interface SessionExerciseSummaryProps {
  *   - the client profile Program-tab completions rail (CompletionsPanel)
  *   - the dashboard "Recently completed" expander (RecentlyCompletedPanel)
  *
- * §11 P2-7 redesign: each exercise's sets sit in a soft tinted block with
- * content-sized, column-aligned cells (set #, result, RPE) so load/reps/RPE
- * read *down* the sets at a glance, and the result and its RPE stay close
- * together instead of being thrown to opposite edges by a stretched column.
- * Type hierarchy carries the meaning — the weight is the prominent number,
- * the unit is lighter — so it reads as a summary, not a spreadsheet. RPE is a
- * neutral pill (never green; green is reserved for completion). Tuned to read
- * well at both the wide dashboard expander and the narrow profile rail.
+ * Each exercise renders as a self-contained white card tile — a header row
+ * (sequence badge + name) over a hairline-divided set grid with content-sized,
+ * column-aligned cells (set #, result, RPE) so load/reps/RPE read *down* the
+ * sets at a glance, and the result and its RPE stay close together instead of
+ * being thrown to opposite edges by a stretched column. Type hierarchy carries
+ * the meaning — the weight is the prominent number, the unit is lighter — so it
+ * reads as a summary, not a spreadsheet.
+ *
+ * Colour: the sequence badge is accent-green-tinted (same treatment as the
+ * `.tag.new` atom). Green is sanctioned here on two counts — it is a completed
+ * session (a success state) and the badge is a sequence bubble — so the tiles
+ * carry the same quiet "done" identity the in-session logger gives a finished
+ * exercise card (--session-card-done). RPE stays a neutral pill (never green;
+ * green marks completion, not effort). The tiles are white so they sit as cards
+ * on the warm surface canvas both expanders provide — identical read on the
+ * wide dashboard expander and the narrow profile rail.
  *
  * Rendering rules:
  *   - Exercises ordered by `sort_order` (already sorted by the loader).
@@ -46,7 +54,7 @@ export function SessionExerciseSummary({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 8,
       }}
     >
       {rows.map((e) => (
@@ -103,14 +111,23 @@ function withSequenceLetters(
 }
 
 function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
+  const hasSets = exercise.sets.length > 0
   return (
-    <div>
+    <div
+      style={{
+        background: 'var(--color-card)',
+        border: '1px solid var(--color-border-hairline)',
+        borderRadius: 'var(--radius-card-dense)',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header — accent-tinted sequence badge + exercise name. */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          marginBottom: 7,
+          gap: 9,
+          padding: '9px 12px',
         }}
       >
         <span
@@ -119,8 +136,8 @@ function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
             fontWeight: 700,
             fontSize: '.72rem',
             letterSpacing: '.02em',
-            color: 'var(--color-charcoal)',
-            background: 'var(--color-surface-2)',
+            color: 'var(--color-accent)',
+            background: 'var(--color-accent-soft)',
             borderRadius: 'var(--radius-button)',
             padding: '2px 7px',
           }}
@@ -138,37 +155,43 @@ function ExerciseBlock({ exercise }: { exercise: ExerciseRow }) {
           {exercise.exercise_name}
         </span>
       </div>
-      {exercise.sets.length === 0 ? (
+      {/* Sets — hairline-divided from the header, sitting directly on the
+          tile (no nested box); the grid is content-sized so the columns
+          align down the sets. */}
+      {hasSets ? (
         <div
           style={{
-            marginLeft: 2,
+            borderTop: '1px solid var(--color-border-hairline)',
+            padding: '9px 12px 10px',
+          }}
+        >
+          <div
+            style={{
+              width: 'fit-content',
+              maxWidth: '100%',
+              display: 'inline-grid',
+              gridTemplateColumns: 'auto auto auto',
+              columnGap: 16,
+              rowGap: 6,
+              alignItems: 'baseline',
+            }}
+          >
+            {exercise.sets.map((s) => (
+              <SetCells key={s.set_number} set={s} />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            borderTop: '1px solid var(--color-border-hairline)',
+            padding: '8px 12px 9px',
             fontSize: '.76rem',
             color: 'var(--color-muted)',
             fontStyle: 'italic',
           }}
         >
           No sets logged
-        </div>
-      ) : (
-        <div
-          style={{
-            marginLeft: 2,
-            width: 'fit-content',
-            maxWidth: '100%',
-            display: 'inline-grid',
-            gridTemplateColumns: 'auto auto auto',
-            columnGap: 18,
-            rowGap: 7,
-            alignItems: 'baseline',
-            background: 'var(--color-surface)',
-            border: '1px solid var(--color-border-hairline)',
-            borderRadius: 'var(--radius-card-dense)',
-            padding: '10px 14px',
-          }}
-        >
-          {exercise.sets.map((s) => (
-            <SetCells key={s.set_number} set={s} />
-          ))}
         </div>
       )}
     </div>
