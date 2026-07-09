@@ -6,11 +6,11 @@ import { RegisterSW } from './_components/RegisterSW'
 import { TimezoneSync } from './_components/TimezoneSync'
 
 export const metadata: Metadata = {
-  title: 'Odyssey',
+  title: 'OdysseyHQ.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    title: 'Odyssey',
+    title: 'OdysseyHQ.',
     statusBarStyle: 'default',
   },
   icons: {
