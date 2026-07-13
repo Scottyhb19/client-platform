@@ -27,10 +27,13 @@ export const dynamic = 'force-dynamic'
  */
 export default async function ProgramTemplateEditorPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ day?: string }>
 }) {
   const { id } = await params
+  const { day: dayParam } = await searchParams
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
@@ -143,6 +146,14 @@ export default async function ProgramTemplateEditorPage({
     name: st.name,
   }))
 
+  // ?day= names the template day to open on load — set by the
+  // create-exercise round trip so the EP returns to the day they were
+  // building. Validated against the template's real days; junk → ignored.
+  const initialExpandedDayId =
+    dayParam && weeks.some((w) => w.days.some((d) => d.id === dayParam))
+      ? dayParam
+      : null
+
   return (
     <div className="page" style={{ maxWidth: 1320 }}>
       <ProgramEditor
@@ -152,6 +163,7 @@ export default async function ProgramTemplateEditorPage({
         exerciseTags={exerciseTags}
         metricUnits={metricUnits}
         sectionTitles={sectionTitles}
+        initialExpandedDayId={initialExpandedDayId}
       />
     </div>
   )

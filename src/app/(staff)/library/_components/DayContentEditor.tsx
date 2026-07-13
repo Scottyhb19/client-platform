@@ -173,6 +173,7 @@ export function DayContentEditor({
   metricUnits,
   sectionTitles,
   actions,
+  createReturnTo,
 }: {
   exercises: DayEditorExercise[]
   library: LibraryExercise[]
@@ -181,6 +182,10 @@ export function DayContentEditor({
   metricUnits: MetricUnitOption[]
   sectionTitles: SectionTitleOption[]
   actions: DayEditorActions
+  /** Passed through to the library panel's create-exercise CTA — see
+   *  DayLibraryPanel. Only the program-template editor needs it (multi-day
+   *  container); single-day consumers rely on the pathname default. */
+  createReturnTo?: string
 }) {
   const router = useRouter()
   const run = useSaveRun()
@@ -339,6 +344,7 @@ export function DayContentEditor({
           movementPatterns={movementPatterns}
           exerciseTags={exerciseTags}
           onAdd={actions.addExercise}
+          createReturnTo={createReturnTo}
         />
       </aside>
     </div>

@@ -185,7 +185,7 @@ export function ExerciseForm({
           <Field
             name="default_reps"
             label="Reps"
-            placeholder="8 e/s"
+            placeholder="8-12"
             defaultValue={d.default_reps}
           />
           <div>

@@ -35,6 +35,7 @@ export function DayLibraryPanel({
   movementPatterns,
   exerciseTags,
   onAdd,
+  createReturnTo,
 }: {
   options: LibraryExercise[]
   insertSlot: InsertSlot | null
@@ -44,6 +45,11 @@ export function DayLibraryPanel({
   movementPatterns: { id: string; name: string }[]
   exerciseTags: { id: string; name: string }[]
   onAdd: (exerciseId: string, slot: InsertSlot) => Promise<SaveResult>
+  /** Override for the create-exercise CTA's returnTo (defaults to the
+   *  hosting page's pathname). The program-template editor passes
+   *  `?day=<template_day_id>` so the create action knows which of the
+   *  template's days to append the new exercise to. */
+  createReturnTo?: string
 }) {
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<string | null>(null)
@@ -252,7 +258,7 @@ export function DayLibraryPanel({
 
         {options.length > 0 && (
           <Link
-            href={`/library/new?returnTo=${encodeURIComponent(pathname)}`}
+            href={`/library/new?returnTo=${encodeURIComponent(createReturnTo ?? pathname)}`}
             style={{
               display: 'flex',
               alignItems: 'center',

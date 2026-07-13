@@ -267,7 +267,7 @@ const sepStyle: React.CSSProperties = {
  * Render the set's result with type hierarchy:
  *   weight + reps  → "80kg × 5"  (kg lighter, × the U+00D7 sign)
  *   reps only      → "5 reps"
- *   optional only  → "60s" / "8 e/s" (the EP's free-typed optional value)
+ *   optional only  → "60s" / "6-8" (the EP's free-typed optional value)
  *   everything     → "80kg × 5" then the optional value appended
  *   nothing logged → "—"
  */

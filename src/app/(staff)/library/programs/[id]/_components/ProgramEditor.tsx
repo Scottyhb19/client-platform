@@ -108,6 +108,7 @@ export function ProgramEditor({
   exerciseTags,
   metricUnits,
   sectionTitles,
+  initialExpandedDayId = null,
 }: {
   template: EditorTemplate
   library: LibraryExercise[]
@@ -115,11 +116,18 @@ export function ProgramEditor({
   exerciseTags: { id: string; name: string }[]
   metricUnits: MetricUnitOption[]
   sectionTitles: SectionTitleOption[]
+  /** Day to open on first render — the create-exercise round trip returns
+   *  with ?day= so the EP lands with the day (and its new exercise) visible
+   *  instead of an all-collapsed template. Page-validated against the
+   *  template's real days. */
+  initialExpandedDayId?: string | null
 }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [nameError, setNameError] = useState<string | null>(null)
-  const [expandedDayId, setExpandedDayId] = useState<string | null>(null)
+  const [expandedDayId, setExpandedDayId] = useState<string | null>(
+    initialExpandedDayId,
+  )
   const { value: saveValue, run } = useSaveStatus()
 
   function saveName(value: string) {
@@ -674,6 +682,9 @@ function DayRow({
           metricUnits={metricUnits}
           sectionTitles={sectionTitles}
           actions={dayActionsFor(day.id)}
+          // ?day= lets the create-exercise action append to THIS day and
+          // lets the editor re-expand it on return (initialExpandedDayId).
+          createReturnTo={`/library/programs/${templateId}?day=${day.id}`}
         />
       )}
     </div>

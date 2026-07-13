@@ -5,11 +5,46 @@ import { redirect } from 'next/navigation'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { isVolumeMetric } from '@/lib/prescription/volume-units'
+import { addExerciseToDayAction } from '@/app/(staff)/clients/[id]/program/days/[dayId]/actions'
+import { addSessionExerciseAction } from './session-actions'
+import { addTemplateExerciseAction } from './program-template-editor-actions'
+import { addExerciseToCircuitAction } from './circuit-actions'
 import {
   safeInternalPath,
   type ExerciseFormEcho,
   type ExerciseFormState,
 } from './types'
+
+/**
+ * Append a just-created exercise to the surface the EP was editing when they
+ * clicked "Create New Exercise" — the returnTo names one of the four
+ * day-editing surfaces, so the new exercise is already in place on return
+ * instead of the EP re-searching the library for it (dogfooding capture
+ * 2026-07-13). Always an append: an armed insert slot is client-side state
+ * that doesn't survive the navigation to /library/new. An unrecognised
+ * returnTo adds nothing and the redirect proceeds as before.
+ */
+async function autoAddForReturnTo(
+  returnTo: string,
+  exerciseId: string,
+): Promise<{ error: string | null }> {
+  const [path, query = ''] = returnTo.split('?')
+  let m = path.match(/^\/clients\/([^/]+)\/program\/days\/([^/]+)$/)
+  if (m) return addExerciseToDayAction(m[1], m[2], exerciseId)
+  m = path.match(/^\/library\/sessions\/([^/]+)$/)
+  if (m) return addSessionExerciseAction(m[1], exerciseId)
+  m = path.match(/^\/library\/programs\/([^/]+)$/)
+  if (m) {
+    // The template editor edits one day at a time, so the pathname alone
+    // can't identify the target — the panel encodes the open day in ?day=.
+    const dayId = new URLSearchParams(query).get('day')
+    if (!dayId) return { error: null }
+    return addTemplateExerciseAction(m[1], dayId, exerciseId)
+  }
+  m = path.match(/^\/library\/circuits\/([^/]+)$/)
+  if (m) return addExerciseToCircuitAction(m[1], exerciseId)
+  return { error: null }
+}
 
 /**
  * Create an exercise in the caller's organization, plus optional tag
@@ -81,12 +116,25 @@ export async function createExerciseAction(
 
   revalidatePath('/library')
 
-  // Launched from the session builder (returnTo in the form): land the EP
-  // back in the builder with the new exercise pickable, not in the
-  // library. Re-validated server-side — the hidden field is tamperable.
+  // Launched from a day-editing surface (returnTo in the form): append the
+  // new exercise to that surface, then land the EP back there with it in
+  // place. Re-validated server-side — the hidden field is tamperable.
   const returnTo = safeInternalPath(nullable(formData.get('returnTo')))
   if (returnTo) {
-    revalidatePath(returnTo)
+    const added = await autoAddForReturnTo(returnTo, exercise.id)
+    if (added.error) {
+      // Mirrors the tag-failure path above: the exercise exists, so stay on
+      // the form with an honest error rather than a silent redirect. The EP
+      // gets back via Cancel; resubmitting would create a duplicate.
+      return {
+        error: `Exercise created, but it couldn't be added where you were working — ${added.error} It's in the library; add it from the panel.`,
+        fieldErrors: {},
+        values: echoFields(formData),
+      }
+    }
+    // Strip any query (?day=…) — revalidatePath wants a bare path; the add
+    // actions above already revalidate their own surfaces.
+    revalidatePath(returnTo.split('?')[0])
     redirect(returnTo)
   }
   redirect('/library')

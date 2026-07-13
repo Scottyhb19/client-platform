@@ -802,7 +802,7 @@ function SetRow({
     prescribed.optionalMetric === 'kg' || prescribed.optionalMetric === 'lb'
       ? prescribed.optionalMetric
       : null
-  // Non-numeric prescriptions (max / AMRAP / "8-12" / "8 e/s") can't seed a
+  // Non-numeric prescriptions (max / AMRAP / "8-12") can't seed a
   // single number — the prescribed text becomes a placeholder hint and the
   // client types the actual achieved value.
   const repsNumeric =

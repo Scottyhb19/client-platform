@@ -82,7 +82,7 @@ export function volumeUnitSuffix(metric: string | null): string {
 
 /**
  * Render a volume value + unit in house voice for cards and summaries:
- *   reps            → "12", "8-12", "8 e/s"   (value as-is — free text)
+ *   reps            → "12", "8-12"            (value as-is — free text)
  *   time_minsec     → "30s" under 90s, "1:30" at/above 90s (when numeric)
  *   distance_m/km/mi→ "20m", "5km", "3mi"
  * Returns null when there is no value to render.

@@ -1618,3 +1618,58 @@ to the root layout so every route carries them; portal layout inherits.
 - **Pass:** The home-screen tile shows the OdysseyHQ icon (green-rimmed "O"
   mark) named "OdysseyHQ." — never a letter "C", never "Client Platform".
   Launching it opens `/portal` standalone (no browser chrome).
+
+## Library — create-from-builder auto-add, e/s retirement, Conditioning (2026-07-13)
+
+Dogfooding batch. (1) The "Create New Exercise" CTA in the four day-editing
+surfaces (client session builder, library session editor, program-template
+editor, circuit editor) already returned the EP to the surface they came from;
+now the just-created exercise is also appended there server-side
+(`createExerciseAction` → `autoAddForReturnTo`), so the EP never re-searches
+for an exercise they created seconds ago. The program-template editor encodes
+the open day in `?day=` (its pathname alone can't identify one) and re-expands
+that day on return. (2) The `e/s` reps notation is retired: the create-form
+placeholder no longer teaches it and a data cleanup stripped it from library
+defaults and all prescription tables (client-logged history is numeric and
+untouched). (3) A 'Conditioning' movement pattern exists in every org and in
+the new-org seed defaults; with the existing 'Field' tag it separates field
+sessions from off-feet conditioning (bike, rower, ski erg, …).
+
+### LIB-AUTOADD-1 — Create from the client session builder lands in the day
+- **Setup:** In a client's session builder, open the Library tab, click
+  "Create New Exercise", fill in a name, save.
+- **Pass:** You land back in the same session builder and the new exercise is
+  the last card in the day (default sets fanned out). No re-search needed.
+
+### LIB-AUTOADD-2 — Create from the program-template editor returns to the open day
+- **Setup:** In a program template with 2+ days, expand a day that is not the
+  first, click the panel's "Create New Exercise", save.
+- **Pass:** You land back on the template with the SAME day expanded and the
+  new exercise appended to it — not an all-collapsed template, and never a
+  different day.
+
+### LIB-AUTOADD-3 — Create from the session editor and the circuit editor
+- **Setup:** Repeat the create flow from a library session editor, then from a
+  circuit editor.
+- **Pass:** In each case the new exercise is appended to the session/circuit
+  on return.
+
+### LIB-AUTOADD-4 — Plain library create is unchanged
+- **Setup:** Create an exercise from `/library` itself (no returnTo).
+- **Pass:** Saves and lands on `/library` as before; the exercise is added to
+  no program/session/circuit.
+
+### LIB-ES-1 — e/s is gone from the form and the data
+- **Setup:** Open the create-exercise form; then search the library for any
+  exercise that previously carried "e/s" reps (e.g. a split squat) and open a
+  program day that prescribed it.
+- **Pass:** The Reps placeholder reads "8-12" (no e/s); no library default and
+  no prescription set renders an "e/s" suffix anywhere (staff builder or
+  client portal logger).
+
+### LIB-COND-1 — Conditioning pattern is available and filters
+- **Setup:** Open Settings → movement patterns, then the library filter chips
+  and a builder Library tab.
+- **Pass:** "Conditioning" appears in all three; selecting the chip filters to
+  conditioning exercises; combining it with the "Field" tag chip separates
+  field work from off-feet conditioning.
