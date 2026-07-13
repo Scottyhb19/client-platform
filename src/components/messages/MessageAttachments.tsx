@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { FileText } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { FileText, X } from 'lucide-react'
 import type { AttachmentView } from '@/lib/messages/types'
 
 function formatBytes(n: number): string {
@@ -15,11 +15,18 @@ function formatBytes(n: number): string {
  * ThreadPane and the portal ClientThread so image/file treatment can never
  * drift between surfaces.
  *
- * Images render inline from the pre-minted signed URL (opens full-size in a
- * new tab on tap). Files render as a quiet chip; the download URL is minted
- * on click via the role-specific action the parent injects, so the link can
- * carry the original filename. If an image URL is missing/expired, it falls
- * back to the file-chip treatment rather than a broken <img>.
+ * SECURITY (reviewer finding (a), 2026-07-13): `storage.objects` mimetype is
+ * caller-controlled — a probe proved a client can store SVG/HTML bytes under
+ * a declared `image/png` Content-Type, and the blob serves back as image/png
+ * with no `X-Content-Type-Options: nosniff`. So we do NOT trust the stored
+ * type for safety. Images render ONLY through <img>, which the browser loads
+ * in "secure static mode": SVG scripts never execute, external subresources
+ * never load, and raster-typed bytes that aren't valid images just fail to
+ * decode (a broken image, never code). Crucially there is NO anchor/new-tab
+ * navigation to the raw signed URL — that top-level-navigation path was the
+ * one place a no-nosniff response could be content-sniffed and executed.
+ * "View larger" is an in-DOM lightbox (same <img>, no navigation). Files
+ * always download (never render inline); the RPC classifies SVG as kind=file.
  */
 export function MessageAttachments({
   attachments,
@@ -30,6 +37,7 @@ export function MessageAttachments({
 }) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<{ url: string; alt: string } | null>(null)
 
   if (attachments.length === 0) return null
 
@@ -43,25 +51,27 @@ export function MessageAttachments({
       setError(res.error ?? 'Could not open attachment.')
       return
     }
-    window.open(res.url, '_blank', 'noopener')
+    // File downloads carry a Content-Disposition: attachment disposition
+    // (minted server-side), so this saves the file rather than rendering it.
+    window.location.href = res.url
   }
 
   return (
     <div className="msg-attachments">
       {attachments.map((a) =>
         a.kind === 'image' && a.url ? (
-          <a
+          <button
             key={a.id}
-            href={a.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="msg-attach-img-link"
+            type="button"
+            className="msg-attach-img-btn"
+            onClick={() => setLightbox({ url: a.url!, alt: a.fileName })}
+            aria-label={`View ${a.fileName}`}
           >
-            {/* Signed URLs point at Supabase storage, not a Next-optimisable
-                source; a plain img is deliberate here. */}
+            {/* Signed URL → Supabase storage (cross-origin from the app).
+                <img> renders in secure static mode; see the file header. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={a.url} alt={a.fileName} className="msg-attach-img" />
-          </a>
+          </button>
         ) : (
           <button
             key={a.id}
@@ -79,6 +89,50 @@ export function MessageAttachments({
         ),
       )}
       {error && <div className="msg-attach-error">{error}</div>}
+      {lightbox && (
+        <Lightbox
+          url={lightbox.url}
+          alt={lightbox.alt}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Full-screen image overlay. Pure in-DOM — same <img>, no navigation, no raw
+ * URL exposed to a top-level context. Esc / tap-outside closes.
+ */
+function Lightbox({
+  url,
+  alt,
+  onClose,
+}: {
+  url: string
+  alt: string
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  return (
+    <div className="msg-lightbox" role="dialog" aria-modal="true" onClick={onClose}>
+      <button type="button" className="msg-lightbox__close" aria-label="Close" onClick={onClose}>
+        <X size={20} aria-hidden />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt={alt}
+        className="msg-lightbox__img"
+        onClick={(e) => e.stopPropagation()}
+      />
     </div>
   )
 }

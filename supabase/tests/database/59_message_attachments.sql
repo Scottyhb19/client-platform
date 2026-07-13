@@ -12,7 +12,7 @@ SET search_path TO public, extensions, pg_temp;
 -- message_attachments table RLS and the send_message_with_attachments()
 -- definer guards (the only attachment write path).
 --
--- Assertions (20), grouped by session:
+-- Assertions (23), grouped by session:
 --   client_a (org_a — the patient; runs FIRST so its policy-gated uploads
 --             are the fixture the later isolation probes fail to see):
 --     1. storage upload to OWN thread path (.jpg) succeeds        (policy)
@@ -43,6 +43,11 @@ SET search_path TO public, extensions, pg_temp;
 --        the body CHECK (23514): the relaxation is attachment-scoped
 --    19. anon has NO EXECUTE on send_message_with_attachments()
 --    20. audit — audit_log captured >=1 message_attachments row for org_a
+--   client_a again (finding (b), thread now archived):
+--    21. archived thread hides the referencing row from the client's own RLS
+--        (the inline-predicate blindspot the exploit relied on)
+--    22. FIX — definer helper sees the row through that blindness → deny
+--    23. control — unreferenced path resolves false → rollback stays permitted
 --
 -- Run discipline: BEGIN/ROLLBACK, _tap buffer, finish() dropped — same as 34.
 -- Fixtures use the JWT-spoof helpers; storage fixtures are created THROUGH
@@ -52,7 +57,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(20);
+SELECT plan(23);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -469,9 +474,72 @@ INSERT INTO _tap (n, line) VALUES (20, (
 ));
 
 
+-- ============================================================================
+-- Tests 21-23 (reviewer finding (b), 2026-07-13): the storage DELETE-orphan
+-- policy must protect a REFERENCED blob even when its thread is ARCHIVED. We
+-- assert the policy's DECISIVE PREDICATE rather than a real DELETE: hosted
+-- Supabase's storage.protect_delete() trigger blocks ALL raw SQL deletes from
+-- storage.objects (the DELETE policy is only ever evaluated on the Storage API
+-- path the browser rollback uses), so a SQL `DELETE ... RETURNING` can't reach
+-- the policy. The policy is `... AND NOT public.message_attachment_path_referenced(name)`,
+-- so the fix reduces to: does that helper still see the referencing row when
+-- the caller's own RLS cannot? Tests 21 (the RLS blindspot is real) + 22 (the
+-- definer helper sees through it) together prove the hole is closed; test 23
+-- proves the rollback path (unreferenced → deletable) stays open.
+--
+-- Setup (owner): archive thread_a so client_a loses SELECT on its attachments.
+-- ============================================================================
+UPDATE message_threads SET deleted_at = now() WHERE id = (SELECT thread_a FROM _ids);
+
+SELECT public._test_set_jwt(
+  (SELECT client_a_user FROM _ids), (SELECT org_a FROM _ids), 'client'
+);
+SET LOCAL ROLE authenticated;
+
+-- Test 21: the RLS blindspot is real — with thread_a archived, client_a's own
+-- RLS-scoped SELECT of the still-existing referencing row returns 0. This is
+-- exactly what an INLINE `NOT EXISTS (SELECT ... FROM message_attachments)`
+-- would have seen, flipping the guard to "orphan" and allowing the delete.
+INSERT INTO _tap (n, line) VALUES (21, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM message_attachments WHERE id = (SELECT attach_a FROM _ids)),
+    0,
+    'finding (b): archived thread hides the referencing row from the client''s own RLS (the inline-predicate blindspot)'
+  ) AS l
+));
+
+-- Test 22 (THE fix): the SECURITY DEFINER helper still reports the path as
+-- referenced despite that blindness, so the DELETE policy computes
+-- NOT true = false and denies. Called in the client's own session.
+INSERT INTO _tap (n, line) VALUES (22, (
+  SELECT string_agg(l, E'\n') FROM is(
+    public.message_attachment_path_referenced(
+      (SELECT org_a FROM _ids)::text || '/' || (SELECT thread_a FROM _ids)::text || '/' || (SELECT attach_a FROM _ids)::text || '.png'
+    ),
+    true,
+    'finding (b) FIX: definer helper sees the referencing row through archived-thread RLS → DELETE policy denies'
+  ) AS l
+));
+
+-- Test 23 (control — rollback path stays open): an unreferenced path resolves
+-- false, so the policy computes NOT false = true and a genuine orphan is
+-- deletable by its uploader.
+INSERT INTO _tap (n, line) VALUES (23, (
+  SELECT string_agg(l, E'\n') FROM is(
+    public.message_attachment_path_referenced(
+      (SELECT org_a FROM _ids)::text || '/' || (SELECT thread_a FROM _ids)::text || '/never-referenced-59.jpg'
+    ),
+    false,
+    'control: unreferenced path resolves false → uploader-orphan rollback still permitted'
+  ) AS l
+));
+
+RESET ROLE;
+
+
 -- ----------------------------------------------------------------------------
--- Surface all twenty captured TAP lines in one grid. finish() intentionally
--- dropped (same pattern as 34); the 20-row plan count is the check.
+-- Surface all captured TAP lines in one grid. finish() intentionally dropped
+-- (same pattern as 34); the 23-row plan count is the check.
 -- ----------------------------------------------------------------------------
 SELECT line FROM _tap ORDER BY n;
 

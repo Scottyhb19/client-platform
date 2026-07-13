@@ -1,6 +1,6 @@
 # Messaging attachments — gap analysis (structural re-entry)
 
-**Status: GO received 2026-07-13 (operator approved the gap list with the recommended §6 answers: 10 MB client photo cap, 4 attachments per message). Implemented same day — every gap below carries a close note; the Closing commit is at the bottom. Held for the operator's browser pass (ATT-1..ATT-8 in `test_scenarios_template.md`) before commit, per the standing verification gate.**
+**Status: GO'd + shipped 2026-07-13 (commit `59e523b`), then RETURNED FOR REVISION by the reviewer on two security findings, both now confirmed and fixed (commit pending). See §8 for the review response. G-1/G-3/G-8 and the composer/render work closed on merit; G-2/G-4 re-opened, hardened, and re-closed with the fixes in §8. Full browser matrix ATT-1..ATT-10 remains the operator's pass.**
 
 Date: 2026-07-13
 Lineage: this is the documented re-trigger in `docs/polish/messaging.md` §5 firing —
@@ -240,3 +240,117 @@ extension blocklist both layers, download disposition for files); FM-F mitigated
 coverage assert); FM-I closed ([Attachment] preview); FM-J mitigated (honest
 inline errors, no lying optimistic bubble); FM-L closed (realtime view fetch).
 FM-G and FM-K accepted as above.
+
+## §8 Reviewer response — two security findings (2026-07-13, RETURNED → fixed)
+
+The reviewer returned the section on two findings, both weighted at the
+notifiable-breach line, and both correctly aimed at the one place the design
+was asserted rather than proven. I verified each empirically/by-logic before
+touching code (per the standing "verify, don't assert" rule), fixed both, and
+locked what can be locked in pgTAP. Fixes shipped in the follow-up commit;
+migration `20260713140000_message_attachment_delete_rls_fix.sql` is live.
+
+### Finding (a) — the stored mimetype is caller-controlled (CONFIRMED)
+
+**The claim.** §3/FM-E said "photos-only enforced at the storage boundary";
+G-2 conceded the storage policy only checks extension and relocated the
+"authoritative" mime check into the RPC reading `metadata->>'mimetype'` from
+`storage.objects`, "never trusted from the caller." The reviewer flagged that
+last clause as unverified.
+
+**Verification (probe, 2026-07-13).** Uploaded 71 bytes of
+`<svg><script>alert(1)</script></svg>` to `message-attachments` with
+`Content-Type: image/png`. Read back: `metadata->>'mimetype'` = **`image/png`**
+— i.e. the storage service records the uploader's declared Content-Type
+verbatim; it does **not** sniff. Fetched a signed URL for it: served
+**`Content-Type: image/png` with no `X-Content-Type-Options: nosniff`**. So the
+reviewer was exactly right: a client can pass the extension policy and the RPC
+mime check with non-image bytes, landing a blob classified `kind='image'`. The
+RPC's mime check is **not** authoritative, and pgTAP could never have caught it
+(the suite inserts `storage.objects` fixtures directly, choosing the mimetype —
+it exercises the predicate, not the storage service's real behaviour).
+
+**Why the DB layer cannot be the fix.** `storage.objects` holds metadata, not
+bytes; plpgsql cannot read the blob body, so no RPC/trigger can content-sniff.
+The authoritative boundary therefore cannot live in the DB. It has to be the
+*render* layer, which the app fully controls and which the client cannot
+bypass (they can only ever view what we serve).
+
+**Fix (render-layer guarantee + send-layer defense-in-depth).**
+1. **`<img>`-only rendering, no navigation to the raw URL.** `MessageAttachments`
+   previously wrapped images in `<a href={signedUrl} target="_blank">` — a
+   top-level navigation to a no-`nosniff` response, the one path a browser
+   could content-sniff and execute. That anchor is **removed**. Images render
+   solely through `<img>`, which browsers load in *secure static mode*: SVG
+   scripts never execute, external subresources never load, and bytes that
+   aren't a valid image just fail to decode (a broken image, never code).
+   "View larger" is now an **in-DOM lightbox** (the same `<img>`, no
+   navigation). This is the actual guarantee and it holds even for a blob
+   crafted via a direct storage+RPC call that skips our UI entirely.
+2. **Serve-type can't execute anyway.** The client RPC allow-list excludes
+   `image/svg+xml`, and staff SVGs are classified `kind='file'` (download,
+   never inline) — so we never serve an `image/svg+xml` response for an inline
+   image; the worst a spoof achieves is SVG bytes under an `image/png` response,
+   which `<img>` will not script.
+3. **Send-time magic-number sniff (defense-in-depth, not the boundary).**
+   `uploadMessageAttachments` now verifies that any file *claiming* a raster
+   type (jpeg/png/webp/gif/heic/heif) actually has that magic number, rejecting
+   "doesn't look like the image it claims to be" before upload. This stops the
+   honest/accidental path and any attacker not hand-crafting the storage call;
+   it is explicitly **not** relied on for safety (a direct storage call bypasses
+   it — which is why #1 exists).
+
+**FM-A/FM-E re-scoped honestly.** "Authoritative mime at the storage/RPC
+boundary" was not achievable and is withdrawn as a claim. The mitigations that
+actually hold: `<img>`-only inline rendering (no raw-URL navigation),
+svg-never-inline, cross-origin serving (signed URLs are on `*.supabase.co`, a
+different origin than the app, so even a hypothetical execution is not
+app-origin), and the send-time sniff. Adversarial scenario **ATT-9** added.
+
+### Finding (b) — the orphan-DELETE predicate ran under the caller's RLS (CONFIRMED)
+
+**The claim.** The storage DELETE-orphan policy guarded the blob with an inline
+`NOT EXISTS (SELECT 1 FROM message_attachments WHERE storage_path = name)`. That
+subquery runs under the *caller's* RLS; the client `message_attachments` SELECT
+policy is scoped to their own **non-archived** thread. So once a thread is
+archived (e.g. the client is archived → `client_cascade_thread_archive`), the
+referencing row is invisible to the client, `NOT EXISTS` flips true, and the
+client could delete a *committed* photo's blob — message + audit row persist,
+blob vanishes, immutability broken for archived threads.
+
+**Verification.** Confirmed by RLS semantics (subqueries in a policy are
+filtered by the referenced table's own RLS for a non-BYPASSRLS role) and locked
+by the pgTAP trio below: test 21 proves the archived-thread row is invisible to
+the client's own SELECT (the blindspot the inline predicate would have hit).
+
+**Fix.** Migration `20260713140000`: a `SECURITY DEFINER` helper
+`message_attachment_path_referenced(text)` resolves "is this path still
+referenced?" bypassing RLS, so it sees referencing rows in archived threads
+too. The DELETE policy now reads `AND NOT public.message_attachment_path_referenced(name)`.
+The helper returns only a boolean (no row data — a negligible oracle, not a
+leak), anon EXECUTE revoked. Note: hosted Supabase's `storage.protect_delete()`
+blocks raw SQL deletes from `storage.objects`, so the DELETE policy is only
+evaluated on the Storage-API path the browser rollback uses; the pgTAP asserts
+the decisive predicate rather than a (blocked) raw delete.
+
+**pgTAP 59 extended to 23** (was 20, all green on live): test 21 (archived
+thread hides the referencing row from the client's RLS), test 22 (the definer
+helper sees it anyway → DELETE denies), test 23 (an unreferenced path resolves
+false → uploader-orphan rollback still permitted). Scenario **ATT-10** added.
+
+### Minor (verified in passing)
+- **Composite FK target uniqueness:** `messages_id_thread_uidx UNIQUE (id, thread_id)`
+  is created in `20260713130000` (id is already PK, so the pair is trivially
+  unique; the explicit unique index is what lets `message_attachments`'
+  composite FK reference it). Present. ✓
+- **Relaxed body CHECK vs NULL:** `messages.body` is `text NOT NULL` (original
+  schema `20260425100000`), so the "unknown-is-pass" concern can't arise — a
+  NULL body is rejected by NOT NULL before the CHECK. ✓
+
+### Net
+G-1, G-3, G-8 and the composer/render work stand as closed on merit. G-2 and
+G-4 are re-closed with the finding-(a) render-layer fix + send sniff and the
+finding-(b) definer-helper migration, pgTAP 59 at 23/23 live and suite 34 at
+17/17. This §8 is written to be pasted back to the reviewer for the re-review;
+the browser matrix ATT-1..ATT-10 (now including the two adversarial scenarios)
+is the operator's pass.

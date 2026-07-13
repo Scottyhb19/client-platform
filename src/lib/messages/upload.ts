@@ -41,6 +41,48 @@ function extensionFor(file: File): string {
 
 export type UploadedAttachment = { storagePath: string; fileName: string }
 
+/** Raster-image Content-Type claims we can verify by magic number. */
+const RASTER_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/heic',
+  'image/heif',
+])
+
+/**
+ * Defense-in-depth against the mime-spoof the reviewer flagged (SVG/HTML bytes
+ * declared as image/png): if a file CLAIMS a raster image type, verify its
+ * leading bytes actually match that family before we upload it. This is not
+ * the security boundary — the storage mimetype is caller-controlled and the
+ * RPC can't read blob bytes, so the real guarantee is <img>-only rendering
+ * (MessageAttachments) — but it stops the honest/accidental path and any
+ * attacker who isn't hand-crafting the storage call, with an honest error
+ * rather than a silently-mislabelled blob. Files that don't claim a raster
+ * type (e.g. a legitimate .svg or .pdf staff attachment) are left alone;
+ * the RPC classifies non-raster images as kind='file' (download, never inline).
+ */
+async function declaredRasterTypeMatchesBytes(file: File): Promise<boolean> {
+  if (!RASTER_IMAGE_TYPES.has(file.type)) return true // not a raster claim — not our check
+  const buf = new Uint8Array(await file.slice(0, 16).arrayBuffer())
+  const b = (i: number) => buf[i]
+  // JPEG FF D8 FF
+  if (b(0) === 0xff && b(1) === 0xd8 && b(2) === 0xff) return file.type === 'image/jpeg'
+  // PNG 89 50 4E 47 0D 0A 1A 0A
+  if (b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4e && b(3) === 0x47) return file.type === 'image/png'
+  // GIF 47 49 46 38
+  if (b(0) === 0x47 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x38) return file.type === 'image/gif'
+  // WEBP: RIFF....WEBP
+  if (b(0) === 0x52 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x46 &&
+      b(8) === 0x57 && b(9) === 0x45 && b(10) === 0x42 && b(11) === 0x50) return file.type === 'image/webp'
+  // HEIC/HEIF: 'ftyp' box at bytes 4-7, brand at 8-11
+  if (b(4) === 0x66 && b(5) === 0x74 && b(6) === 0x79 && b(7) === 0x70) {
+    return file.type === 'image/heic' || file.type === 'image/heif'
+  }
+  return false // claims a raster type its bytes don't match — reject
+}
+
 /**
  * Upload files to the thread's folder. All-or-nothing: if any upload fails,
  * the ones that already landed are removed (the uploader-orphan DELETE
@@ -55,6 +97,13 @@ export async function uploadMessageAttachments(opts: {
   const uploaded: UploadedAttachment[] = []
 
   for (const file of opts.files) {
+    if (!(await declaredRasterTypeMatchesBytes(file))) {
+      await removeUploadedAttachments(uploaded)
+      return {
+        uploaded: null,
+        error: `${file.name || 'That file'} doesn't look like the image it claims to be.`,
+      }
+    }
     const ext = extensionFor(file)
     const storagePath = `${opts.organizationId}/${opts.threadId}/${crypto.randomUUID()}${ext ? `.${ext}` : ''}`
 

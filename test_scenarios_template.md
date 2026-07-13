@@ -1794,3 +1794,28 @@ browser layer.
   attachment in either surface.
 - **Pass:** None exists — matching messages. (DB-level: pgTAP 59 asserts
   UPDATE raises P0001 and DELETE is denied.)
+
+### ATT-9 — Adversarial: a mime-spoofed "image" cannot execute (finding a)
+- **Setup:** This is the reviewer's finding (a) — `storage.objects` mimetype is
+  caller-controlled (verified 2026-07-13: SVG bytes stored under a declared
+  `image/png` Content-Type serve back as image/png with no `nosniff`). Try to
+  land and trigger such a blob: e.g. craft a file whose bytes are
+  `<svg><script>…</script></svg>` but whose Content-Type is `image/png`.
+- **Pass (send layer):** The composer refuses it — `uploadMessageAttachments`
+  magic-number sniff rejects "doesn't look like the image it claims to be"
+  before upload. (Defense-in-depth; not the guarantee.)
+- **Pass (render layer — the guarantee):** Even a blob that reaches a bubble
+  (e.g. crafted via a direct storage/RPC call bypassing the composer) renders
+  ONLY through `<img>` — no `<a>`/new-tab navigation to the raw signed URL
+  exists. The image either decodes as a picture or shows as broken; no script
+  runs, and "view larger" is an in-DOM lightbox (same `<img>`, no navigation).
+  Files (incl. any SVG, which the RPC classifies kind='file') only ever
+  download, never render inline.
+
+### ATT-10 — Immutability holds for archived threads (finding b)
+- **Setup:** A client sends a photo, then the client (and so their thread) is
+  archived. Attempt, as that client, to delete the already-sent photo's blob.
+- **Pass:** The blob cannot be deleted — the message and its photo persist.
+  (DB-level: pgTAP 59 tests 21-23 prove the storage DELETE policy resolves
+  "referenced?" through a SECURITY-DEFINER helper that bypasses the caller's
+  archived-thread RLS, while genuine orphans stay deletable for rollback.)

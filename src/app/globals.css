@@ -1017,9 +1017,13 @@ body {
   gap: 6px;
   margin-bottom: 4px;
 }
-.msg-attach-img-link {
+.msg-attach-img-btn {
   display: block;
   line-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
 }
 .msg-attach-img {
   display: block;
@@ -1027,6 +1031,40 @@ body {
   max-height: 320px;
   border-radius: 10px;
   border: 1px solid var(--color-border-subtle);
+}
+
+/* In-DOM image lightbox — no navigation to the raw signed URL (see the
+   MessageAttachments security header). Overlays the whole viewport. */
+.msg-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+.msg-lightbox__img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  cursor: default;
+}
+.msg-lightbox__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
 }
 .msg-attach-file {
   display: inline-flex;
