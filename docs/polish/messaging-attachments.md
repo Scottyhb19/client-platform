@@ -1,6 +1,6 @@
 # Messaging attachments — gap analysis (structural re-entry)
 
-**Status: GO'd + shipped 2026-07-13 (commit `59e523b`), then RETURNED FOR REVISION by the reviewer on two security findings, both now confirmed and fixed (commit pending). See §8 for the review response. G-1/G-3/G-8 and the composer/render work closed on merit; G-2/G-4 re-opened, hardened, and re-closed with the fixes in §8. Full browser matrix ATT-1..ATT-10 remains the operator's pass.**
+**Status: GO'd + shipped 2026-07-13 (commits `59e523b` feature + `a8e76db` security fix, both live on prod). Reviewer RETURNED on two security findings — both confirmed, fixed, and re-closed in §8. Operator browser pass GREEN 2026-07-13 ("views well"). Remaining: reviewer re-review of §8, then record the sign-off decision below per the ritual.**
 
 Date: 2026-07-13
 Lineage: this is the documented re-trigger in `docs/polish/messaging.md` §5 firing —
@@ -354,3 +354,47 @@ finding-(b) definer-helper migration, pgTAP 59 at 23/23 live and suite 34 at
 17/17. This §8 is written to be pasted back to the reviewer for the re-review;
 the browser matrix ATT-1..ATT-10 (now including the two adversarial scenarios)
 is the operator's pass.
+
+## §9 Re-review addendum (2026-07-13) — three "name it / confirm it" items
+
+The reviewer accepted both findings as soundly closed and raised three
+non-blocking items. Resolutions:
+
+1. **Raw-URL navigation is contained, not eliminated (accepted residual).**
+   Removing the `<a>` closes the *app-driven* navigation to the signed URL, but
+   a staff user can still right-click → "open image in new tab" / "copy image
+   address" and reach the same `image/png`-declared, no-`nosniff` signed URL as
+   a top-level navigation. §8's finding-(a) wording implied this path was gone;
+   it is **narrowed, not eliminated**. The exploit chain is long (an attacker
+   must first land spoofed bytes via a *direct* storage+RPC call that bypasses
+   the magic-number sniff, then a staff user must perform the manual gesture),
+   and cross-origin serving bounds the blast radius to `*.supabase.co`, never
+   app-origin. **Accepted for f&f. Re-trigger:** `nosniff` (or response
+   content-type) becomes settable on the signed-URL response — set it and mint
+   image URLs with `X-Content-Type-Options: nosniff` — **or** any non-f&f user
+   onboards (fold into the same serve-hardening pass as FM-G EXIF). Recorded
+   here alongside FM-G / FM-K rather than claimed closed.
+
+2. **Adversarial ATT-9 / ATT-10 vs "views well".** The operator's "views well"
+   pass confirms the happy path (photos send + render). The two adversarial
+   scenarios are separately evidenced:
+   - **ATT-10 (archived-thread delete denied)** is **behaviourally proven by
+     pgTAP 59 tests 21-23** — the delete path is *entirely* Storage-API-gated by
+     the DELETE policy (hosted `protect_delete` blocks every other path), and
+     the suite proves the policy's decisive predicate denies while genuine
+     orphans stay deletable. A browser run re-confirms the same policy through
+     the UI; it is not additional proof.
+   - **ATT-9 (spoofed SVG-as-png)** is proven on the two paths that exist: the
+     **normal composer path is mechanically blocked** — the magic-number sniff
+     was unit-tested 2026-07-13 and rejects `<svg>`/HTML bytes declared
+     `image/png` (13/13 cases, incl. the spoof → reject); the **direct-storage
+     bypass path** renders via `<img>` only, whose broken-decode / no-script
+     behaviour is an established browser property (secure static mode), and its
+     residual new-tab gesture is item 1 above. A live operator run of ATT-9 is
+     welcome as belt-and-braces but is not the missing behavioural proof.
+3. **HEIC sniff coverage (verified — no regression).** Unit-tested the sniff's
+   HEIC branch against the real iOS brand set: `heic`, `heix`, `hevc`, `mif1`,
+   `msf1` all **accept** (the branch keys on the `ftyp` box at bytes 4-7, not
+   the brand, so all ISO-BMFF brands pass), an untyped HEIC (`file.type === ''`)
+   passes through un-sniffed, and the spoof still rejects. The primary
+   form-check-photo path is **not** regressed. ✓
