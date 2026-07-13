@@ -1,6 +1,6 @@
 # Messaging attachments — gap analysis (structural re-entry)
 
-**Status: GO'd + shipped 2026-07-13 (commits `59e523b` feature + `a8e76db` security fix, both live on prod). Reviewer RETURNED on two security findings — both confirmed, fixed, and re-closed in §8. Operator browser pass GREEN 2026-07-13 ("views well"). Remaining: reviewer re-review of §8, then record the sign-off decision below per the ritual.**
+**Status: CLOSED (with deferred items) — reviewer sign-off 2026-07-13 (see Sign-off at the very bottom). Shipped across `59e523b` (feature) + `a8e76db` / migration `20260713140000` (security fix), all live on prod. Two returned security findings (a: caller-controlled stored mimetype; b: orphan-DELETE predicate under caller RLS) verified, fixed, pgTAP-locked (suite 59 23/23, suite 34 17/17). Operator browser pass GREEN. Deferred/accepted items carry re-triggers; the boundary marker (first client-write storage + first client PII photo path; velcroed non-prod-target + re-entry liabilities) is under Sign-off and indexed in `go-live-checklist.md` §8.**
 
 Date: 2026-07-13
 Lineage: this is the documented re-trigger in `docs/polish/messaging.md` §5 firing —
@@ -398,3 +398,54 @@ non-blocking items. Resolutions:
    the brand, so all ISO-BMFF brands pass), an untyped HEIC (`file.type === ''`)
    passes through un-sniffed, and the spoof still rejects. The primary
    form-check-photo path is **not** regressed. ✓
+
+## Sign-off
+
+- **Date signed off:** 2026-07-13
+- **Reviewer:** claude.ai project chat (challenger role)
+- **Decision:** Closed with deferred items
+
+Full approved scope (§1 incl. the GO'd §6 numbers) shipped across `59e523b`
+(feature) + `a8e76db` / migration `20260713140000` (security fix), all live on
+prod. The two returned security findings — caller-controlled stored mimetype
+(a) and the orphan-DELETE predicate under caller RLS in archived threads (b) —
+were verified, fixed, and pgTAP-locked (suite 59 23/23, suite 34 17/17). The
+three re-review residuals (raw-URL user-gesture navigation, ATT-9/ATT-10
+adversarial execution, HEIC magic-number coverage) are handled in §9. Operator
+browser pass GREEN.
+
+### Deferred / accepted — each carries a re-trigger
+- **Raw-URL user-gesture navigation (finding-a residual).** `<img>`-only
+  rendering closes app-driven navigation; a manual right-click "open image in
+  new tab" can still reach the no-`nosniff`, `image/png`-declared signed URL.
+  Contained (long chain: bypass the sniff via a direct storage call, then a
+  human gesture) and cross-origin (`*.supabase.co`, never app-origin).
+  **Re-trigger:** `nosniff`/response-content-type becomes settable on the
+  signed URL (set it), **or** any non-f&f user — fold into the FM-G serve
+  hardening pass.
+- **FM-G — EXIF/GPS retained on client photos.** **Re-trigger:** any non-f&f
+  user, or the SaaS fork.
+- **FM-K — HEIC render quality on staff browsers.** Sniff coverage verified
+  (§9.3); the render-quality concern remains. **Re-trigger:** a real report.
+- **No client-side image compression.** **Re-trigger:** storage cost or
+  upload-failure reports at real usage.
+- **1-hour image signed-URL expiry.** A tab left open longer re-renders a
+  broken `<img>` until refresh. **Re-trigger:** reported by a user.
+
+### Boundary marker (reviewer, out-the-door — not a condition on this sign-off)
+This surface is the platform's **first client-write storage path and first
+client-facing PII photo path**, signed off at f&f scope. A form-check photo
+**is** identifiable client health data — and this feature is the one that
+*manufactures* it. Two standing liabilities stay velcroed here (and are
+indexed in `go-live-checklist.md` §8 so they fire, not just filed):
+1. **Non-prod pgTAP target.** A staging target exists (`go-live-checklist.md`
+   §5, `odyssey-staging`, 2026-07-03), but the default run path — including
+   suite 59 this session — is still live prod via `BEGIN … ROLLBACK`. Once
+   real photos exist, prefer the staging target for any risky run on this
+   surface; the "stand up / use a non-prod target before identifiable client
+   health data enters" tripwire is now materially closer *because of this
+   feature*.
+2. **Re-entry on either re-trigger.** The moment a non-f&f user onboards or the
+   SaaS fork is taken, this doc re-enters the polish protocol carrying the
+   above residuals — the raw-URL/serve-hardening pass and the EXIF strip are
+   the first agenda items.
