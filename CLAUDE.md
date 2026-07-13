@@ -178,7 +178,7 @@ Full treatment in `Odyssey_Design_System.pdf` Section 02. Load-bearing rules:
 - **Imperative for actions.** "Begin Session", "Save", "Add exercise". No "Let's…", no exclamation points on buttons.
 - **Encouragement is earned, not free.** Only after session completion: "Another one in the bank. Consistency wins." Nowhere else.
 - **Reason codes are factual, not dramatised.** "Last session logged 12 days ago — normally logs 3×/week." No "oops", no "uh-oh".
-- **Numbers and units have specific conventions.** Reps with `×` not `x` (`4 × 6`). "Each side" → `e/s`. "Seconds" → lowercase `s` attached to number (`90s rest`). Time-ago is explicit (`9 days ago`, not `recently`).
+- **Numbers and units have specific conventions.** Reps with `×` not `x` (`4 × 6`). Each-side work is written out in the exercise cues/notes, not abbreviated in the reps field — the `e/s` shorthand was retired platform-wide 2026-07-13 (data + form + code). "Seconds" → lowercase `s` attached to number (`90s rest`). Time-ago is explicit (`9 days ago`, not `recently`). *(The `Odyssey — Design System.pdf` voice section still shows the old `e/s` rule; it's a Chrome-printed export with no editable source on disk, so it can't be cleanly text-edited — this line and the code are the current truth until the PDF is regenerated from source.)*
 - **Australian English.** "Program" not "programme". Dates as `Sat 11 Apr 2026` or `12 Jan 2026`.
 
 ## Design philosophy
