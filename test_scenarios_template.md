@@ -1588,3 +1588,33 @@ expanders now provide.
 - **Setup:** Expand a session where one exercise logged no sets while others did.
 - **Pass:** That exercise's tile shows its header then a hairline-divided
   "No sets logged" in muted italic — not an empty or broken tile.
+
+## PWA — Install identity on every route (2026-07-11)
+
+The "C / Client Platform" home-screen tile (Roger, then Olivia Terry): the PWA
+identity (manifest link, apple-touch-icon, "OdysseyHQ." title) was declared only
+in `portal/layout.tsx`, but new clients are told to Add to Home Screen on
+`/welcome/install` — which renders under the ROOT layout, where none of that
+metadata existed and the title was the placeholder "Client Platform". iOS built
+a letter tile from `<title>`; Android Chrome never fired `beforeinstallprompt`
+(no manifest on the page) and the manual fallback created a title-named
+shortcut. Fix: hoist manifest + `appleWebApp` + apple icon + "OdysseyHQ." title
+to the root layout so every route carries them; portal layout inherits.
+
+### PWA-ID-1 — Pre-portal pages carry full PWA identity
+- **Setup:** Load `/login` and `/welcome/install` (the latter as a
+  newly-onboarded client) and inspect the rendered `<head>`.
+- **Pass:** Both pages contain `<link rel="manifest" href="/manifest.json">`,
+  `<link rel="apple-touch-icon" href="/icons/icon-apple-touch.png">`,
+  `<meta name="apple-mobile-web-app-title" content="OdysseyHQ.">`, and
+  `<title>OdysseyHQ.</title>`. No route in the app renders the placeholder
+  "Client Platform" title.
+
+### PWA-ID-2 — Guided install from /welcome/install produces the branded tile
+- **Setup:** On a real phone, complete client onboarding to `/welcome/install`
+  and follow the on-screen install steps (iOS: Share → Add to Home Screen;
+  Android: the Install button — `beforeinstallprompt` must now fire on this
+  page — or the three-dots fallback).
+- **Pass:** The home-screen tile shows the OdysseyHQ icon (green-rimmed "O"
+  mark) named "OdysseyHQ." — never a letter "C", never "Client Platform".
+  Launching it opens `/portal` standalone (no browser chrome).

@@ -1,22 +1,13 @@
-import type { Metadata, Viewport } from 'next'
+import type { Viewport } from 'next'
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { BottomNav } from './_components/BottomNav'
 import { RegisterSW } from './_components/RegisterSW'
 import { TimezoneSync } from './_components/TimezoneSync'
 
-export const metadata: Metadata = {
-  title: 'OdysseyHQ.',
-  manifest: '/manifest.json',
-  appleWebApp: {
-    capable: true,
-    title: 'OdysseyHQ.',
-    statusBarStyle: 'default',
-  },
-  icons: {
-    apple: { url: '/icons/icon-apple-touch.png', sizes: '180x180', type: 'image/png' },
-  },
-}
+// PWA identity (manifest, apple-touch-icon, app title) is declared once in
+// the ROOT layout and inherited here — clients install from /welcome/install,
+// outside this segment, so it cannot live only on portal routes.
 
 export const viewport: Viewport = {
   themeColor: '#1E1A18',
