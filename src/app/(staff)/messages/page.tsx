@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { Filter, Edit3 } from 'lucide-react'
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { MessageRow, SenderRole } from '@/lib/messages/types'
+import type { AttachmentView, MessageRow, SenderRole } from '@/lib/messages/types'
+import { loadAttachmentViews } from '@/lib/messages/attachments-server'
 import { categoryToneFor } from '../clients/_lib/client-helpers'
 import { Inbox } from './_components/Inbox'
 
@@ -68,17 +69,23 @@ export default async function MessagesPage({ searchParams }: PageProps) {
       : threads[0]?.id ?? null
 
   let activeMessages: MessageRow[] = []
+  let activeAttachments: Record<string, AttachmentView[]> = {}
   if (activeThreadId) {
     const { data: msgs } = await supabase
       .from('messages')
       .select(
-        'id, thread_id, organization_id, sender_user_id, sender_role, body, read_at, created_at, updated_at, deleted_at',
+        'id, thread_id, organization_id, sender_user_id, sender_role, body, has_attachments, read_at, created_at, updated_at, deleted_at',
       )
       .eq('thread_id', activeThreadId)
       .is('deleted_at', null)
       .order('created_at', { ascending: true })
       .limit(500)
     activeMessages = msgs ?? []
+    if (activeMessages.some((m) => m.has_attachments)) {
+      activeAttachments = await loadAttachmentViews(supabase, {
+        threadId: activeThreadId,
+      })
+    }
   }
 
   const totalUnread = Array.from(unreadByThread.values()).reduce((a, b) => a + b, 0)
@@ -126,6 +133,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
           }))}
           activeThreadId={activeThreadId}
           initialMessages={activeMessages}
+          initialAttachments={activeAttachments}
           currentUserId={userId}
           organizationId={organizationId}
         />

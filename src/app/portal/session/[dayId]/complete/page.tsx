@@ -26,7 +26,7 @@ export default async function PortalSessionCompletePage({
        exercise_logs(
          id,
          sets:set_logs(
-           reps_performed, weight_value
+           reps_performed, rep_metric, weight_value, weight_metric
          )
        )`,
     )
@@ -57,8 +57,20 @@ export default async function PortalSessionCompletePage({
   for (const el of session.exercise_logs ?? []) {
     for (const s of el.sets ?? []) {
       totalSets += 1
-      if (s.weight_value !== null && s.reps_performed !== null) {
-        totalVolumeKg += Number(s.weight_value) * s.reps_performed
+      // Volume is tonnage: sets × reps × kg. Only plain rep counts qualify —
+      // rep_metric non-NULL means reps_performed holds seconds or metres
+      // (e.g. a 10kg × 30s hold or a 40kg × 20m carry), which would poison
+      // the kg total with kg·seconds / kg·metres.
+      if (
+        s.weight_value !== null &&
+        s.reps_performed !== null &&
+        s.rep_metric === null
+      ) {
+        const kg =
+          s.weight_metric === 'lb'
+            ? Number(s.weight_value) * 0.45359237
+            : Number(s.weight_value)
+        totalVolumeKg += kg * s.reps_performed
       }
     }
   }

@@ -3,14 +3,29 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, useTransition } from 'react'
-import { Paperclip, Send, Phone, User as UserIcon } from 'lucide-react'
+import { Paperclip, Send, Phone, User as UserIcon, X } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import {
+  MESSAGE_ATTACHMENTS_MAX,
   MESSAGE_BODY_MAX,
+  STAFF_ATTACHMENT_MAX_BYTES,
+  STAFF_BLOCKED_EXTENSIONS,
+  type AttachmentView,
   type MessageRow,
   type SenderRole,
 } from '@/lib/messages/types'
-import { markThreadReadAction, sendStaffMessageAction } from '../actions'
+import {
+  removeUploadedAttachments,
+  uploadMessageAttachments,
+} from '@/lib/messages/upload'
+import { MessageAttachments } from '@/components/messages/MessageAttachments'
+import {
+  getStaffAttachmentDownloadUrlAction,
+  getStaffAttachmentViewsAction,
+  markThreadReadAction,
+  sendStaffMessageAction,
+  sendStaffMessageWithAttachmentsAction,
+} from '../actions'
 import type { AvatarTone } from '../../clients/_lib/client-helpers'
 
 export interface ThreadSummary {
@@ -33,6 +48,8 @@ interface InboxProps {
   threads: ThreadSummary[]
   activeThreadId: string | null
   initialMessages: MessageRow[]
+  /** Attachment views for initialMessages, keyed by message id. */
+  initialAttachments: Record<string, AttachmentView[]>
   currentUserId: string
   organizationId: string
 }
@@ -129,6 +146,7 @@ export function Inbox(props: InboxProps) {
     threads,
     activeThreadId,
     initialMessages,
+    initialAttachments,
     currentUserId,
     organizationId,
   } = props
@@ -136,6 +154,9 @@ export function Inbox(props: InboxProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [messages, setMessages] = useState<MessageRow[]>(initialMessages)
+  const [attachmentsByMsg, setAttachmentsByMsg] =
+    useState<Record<string, AttachmentView[]>>(initialAttachments)
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSending, startTransition] = useTransition()
@@ -145,9 +166,11 @@ export function Inbox(props: InboxProps) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resets thread-local view state (messages/draft/error) on thread navigation or server refresh; intentional effect in the signed-off messaging surface.
     setMessages(initialMessages)
+    setAttachmentsByMsg(initialAttachments)
+    setPendingFiles([])
     setDraft('')
     setError(null)
-  }, [initialMessages, activeThreadId])
+  }, [initialMessages, initialAttachments, activeThreadId])
 
   // Auto-scroll to bottom on new message.
   useEffect(() => {
@@ -199,6 +222,19 @@ export function Inbox(props: InboxProps) {
             )
             return [...filtered, payload.new]
           })
+          // The realtime payload carries only the messages row; attachment
+          // rows are fetched separately (FM-L). Also covers the self-send
+          // race — setAttachmentsByMsg merge is idempotent.
+          if (payload.new.has_attachments) {
+            void getStaffAttachmentViewsAction(payload.new.id).then((res) => {
+              if (res.data && res.data.length > 0) {
+                setAttachmentsByMsg((prev) => ({
+                  ...prev,
+                  [payload.new.id]: res.data!,
+                }))
+              }
+            })
+          }
         },
       )
       .subscribe()
@@ -235,13 +271,84 @@ export function Inbox(props: InboxProps) {
     [threads, activeThreadId],
   )
 
+  function handlePickFiles(picked: FileList | null) {
+    if (!picked || picked.length === 0) return
+    setError(null)
+    const incoming = Array.from(picked)
+    const merged = [...pendingFiles, ...incoming]
+    if (merged.length > MESSAGE_ATTACHMENTS_MAX) {
+      setError(`Up to ${MESSAGE_ATTACHMENTS_MAX} attachments per message.`)
+      return
+    }
+    for (const f of incoming) {
+      if (f.size > STAFF_ATTACHMENT_MAX_BYTES) {
+        setError(
+          `${f.name} is ${(f.size / 1024 / 1024).toFixed(1)} MB — attachments are capped at 25 MB.`,
+        )
+        return
+      }
+      const dot = f.name.lastIndexOf('.')
+      const ext = dot > 0 ? f.name.slice(dot + 1).toLowerCase() : ''
+      if (ext && STAFF_BLOCKED_EXTENSIONS.has(ext)) {
+        setError(`.${ext} files aren't supported here.`)
+        return
+      }
+    }
+    setPendingFiles(merged)
+  }
+
+  function handleSendWithAttachments(body: string) {
+    if (!activeThread) return
+    const files = pendingFiles
+    startTransition(async () => {
+      const up = await uploadMessageAttachments({
+        organizationId,
+        threadId: activeThread.id,
+        files,
+      })
+      if (up.error || !up.uploaded) {
+        setError(up.error ?? 'Upload failed.')
+        return
+      }
+      const res = await sendStaffMessageWithAttachmentsAction({
+        threadId: activeThread.id,
+        body,
+        attachments: up.uploaded,
+      })
+      if (res.error || !res.data) {
+        // The message never landed — remove the now-orphan blobs so nothing
+        // lingers in storage without a DB record (FM-F).
+        await removeUploadedAttachments(up.uploaded)
+        setError(res.error ?? 'Send failed.')
+        return
+      }
+      const { message, attachments } = res.data
+      setAttachmentsByMsg((prev) => ({ ...prev, [message.id]: attachments }))
+      setMessages((prev) =>
+        prev.some((m) => m.id === message.id) ? prev : [...prev, message],
+      )
+      setPendingFiles([])
+      setDraft('')
+      router.refresh()
+    })
+  }
+
   function handleSend(text: string) {
     const body = text.trim()
-    if (!body || isSending || !activeThread) return
+    if (isSending || !activeThread) return
     if (body.length > MESSAGE_BODY_MAX) {
       setError(`Message is ${body.length} characters; cap is ${MESSAGE_BODY_MAX}.`)
       return
     }
+    if (pendingFiles.length > 0) {
+      // Attachment sends skip the optimistic bubble — the upload is the slow
+      // part and a bubble that may still fail two steps later would be a lie.
+      // isSending keeps the composer honest instead.
+      setError(null)
+      handleSendWithAttachments(body)
+      return
+    }
+    if (!body) return
     setError(null)
     setDraft('')
 
@@ -255,6 +362,7 @@ export function Inbox(props: InboxProps) {
       sender_user_id: currentUserId,
       sender_role: 'staff',
       body,
+      has_attachments: false,
       read_at: null,
       created_at: now,
       updated_at: now,
@@ -300,6 +408,12 @@ export function Inbox(props: InboxProps) {
         <ThreadPane
           thread={activeThread}
           messages={messages}
+          attachmentsByMsg={attachmentsByMsg}
+          pendingFiles={pendingFiles}
+          onPickFiles={handlePickFiles}
+          onRemovePending={(i) =>
+            setPendingFiles((prev) => prev.filter((_, idx) => idx !== i))
+          }
           draft={draft}
           onDraftChange={setDraft}
           onSend={() => handleSend(draft)}
@@ -407,6 +521,10 @@ function ThreadList({
 function ThreadPane({
   thread,
   messages,
+  attachmentsByMsg,
+  pendingFiles,
+  onPickFiles,
+  onRemovePending,
   draft,
   onDraftChange,
   onSend,
@@ -416,6 +534,10 @@ function ThreadPane({
 }: {
   thread: ThreadSummary
   messages: MessageRow[]
+  attachmentsByMsg: Record<string, AttachmentView[]>
+  pendingFiles: File[]
+  onPickFiles: (files: FileList | null) => void
+  onRemovePending: (index: number) => void
   draft: string
   onDraftChange: (v: string) => void
   onSend: () => void
@@ -423,6 +545,7 @@ function ThreadPane({
   isSending: boolean
   error: string | null
 }) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const tone = thread.tone
   const counterClass =
     draft.length > MESSAGE_BODY_MAX
@@ -501,7 +624,16 @@ function ThreadPane({
                 <div
                   className={`thread-pane__bubble ${item.msg.sender_role === 'staff' ? 'me' : 'them'}`}
                 >
-                  {item.msg.body}
+                  {(attachmentsByMsg[item.msg.id]?.length ?? 0) > 0 && (
+                    <MessageAttachments
+                      attachments={attachmentsByMsg[item.msg.id]!}
+                      onDownload={async (id) => {
+                        const r = await getStaffAttachmentDownloadUrlAction(id)
+                        return { url: r.data?.url ?? null, error: r.error }
+                      }}
+                    />
+                  )}
+                  {item.msg.body.trim().length > 0 && item.msg.body}
                   <div className="thread-pane__bubble-time">
                     {formatBubbleTime(item.msg.created_at)}
                   </div>
@@ -514,12 +646,23 @@ function ThreadPane({
 
       <div className="thread-pane__composer">
         <div className="thread-pane__composer-row">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              onPickFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
           <button
             type="button"
             className="btn ghost"
-            aria-label="Attach (coming soon)"
-            disabled
-            title="Attachments coming in a later phase"
+            aria-label="Attach files"
+            title="Attach files"
+            disabled={isSending}
+            onClick={() => fileInputRef.current?.click()}
           >
             <Paperclip size={14} aria-hidden />
           </button>
@@ -538,12 +681,35 @@ function ThreadPane({
           <button
             type="button"
             className="btn primary"
-            disabled={!draft.trim() || isSending || draft.length > MESSAGE_BODY_MAX}
+            disabled={
+              (!draft.trim() && pendingFiles.length === 0) ||
+              isSending ||
+              draft.length > MESSAGE_BODY_MAX
+            }
             onClick={onSend}
           >
-            <Send size={14} aria-hidden /> Send
+            <Send size={14} aria-hidden /> {isSending ? 'Sending…' : 'Send'}
           </button>
         </div>
+        {pendingFiles.length > 0 && (
+          <div className="composer-pending">
+            {pendingFiles.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="composer-pending__item">
+                <Paperclip size={12} aria-hidden />
+                <span className="composer-pending__name">{f.name}</span>
+                <button
+                  type="button"
+                  className="composer-pending__remove"
+                  aria-label={`Remove ${f.name}`}
+                  onClick={() => onRemovePending(i)}
+                  disabled={isSending}
+                >
+                  <X size={12} aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="thread-pane__composer-quick">
           {QUICK_REPLIES.map((q) => (
             <button

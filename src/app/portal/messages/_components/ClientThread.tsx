@@ -9,12 +9,26 @@ import {
   useTransition,
 } from 'react'
 import { useRouter } from 'next/navigation'
-import { Send, X } from 'lucide-react'
+import { ImagePlus, Send, X } from 'lucide-react'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
-import { MESSAGE_BODY_MAX, type MessageRow } from '@/lib/messages/types'
 import {
+  CLIENT_PHOTO_MAX_BYTES,
+  MESSAGE_ATTACHMENTS_MAX,
+  MESSAGE_BODY_MAX,
+  type AttachmentView,
+  type MessageRow,
+} from '@/lib/messages/types'
+import {
+  removeUploadedAttachments,
+  uploadMessageAttachments,
+} from '@/lib/messages/upload'
+import { MessageAttachments } from '@/components/messages/MessageAttachments'
+import {
+  getClientAttachmentDownloadUrlAction,
+  getClientAttachmentViewsAction,
   markClientThreadReadAction,
   sendClientMessageAction,
+  sendClientPhotoMessageAction,
 } from '../actions'
 
 // P2-1: clinical-safety disclosure dismissal, read from localStorage via a
@@ -56,6 +70,8 @@ interface ClientThreadProps {
   organizationId: string | null
   currentUserId: string
   initialMessages: MessageRow[]
+  /** Attachment views for initialMessages, keyed by message id. */
+  initialAttachments: Record<string, AttachmentView[]>
   practitionerName: string | null
 }
 
@@ -82,14 +98,37 @@ function formatDayDivider(iso: string): string {
 }
 
 export function ClientThread(props: ClientThreadProps) {
-  const { threadId, organizationId, currentUserId, initialMessages, practitionerName } = props
+  const {
+    threadId,
+    organizationId,
+    currentUserId,
+    initialMessages,
+    initialAttachments,
+    practitionerName,
+  } = props
 
   const router = useRouter()
   const [messages, setMessages] = useState(initialMessages)
+  const [attachmentsByMsg, setAttachmentsByMsg] =
+    useState<Record<string, AttachmentView[]>>(initialAttachments)
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSending, startTransition] = useTransition()
   const bodyRef = useRef<HTMLDivElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
+  // Object URLs for the pending-photo thumbnails — derived, revoked on change.
+  const pendingPreviews = useMemo(
+    () => pendingPhotos.map((f) => URL.createObjectURL(f)),
+    [pendingPhotos],
+  )
+  useEffect(
+    () => () => {
+      pendingPreviews.forEach((u) => URL.revokeObjectURL(u))
+    },
+    [pendingPreviews],
+  )
 
   // P2-1: show the clinical-safety disclosure unless dismissed (client-only
   // localStorage read). Factual, non-alarming — the persistent 000 footer in
@@ -107,6 +146,7 @@ export function ClientThread(props: ClientThreadProps) {
   if (prevInitialMessages !== initialMessages) {
     setPrevInitialMessages(initialMessages)
     setMessages(initialMessages)
+    setAttachmentsByMsg(initialAttachments)
   }
 
   useEffect(() => {
@@ -157,6 +197,18 @@ export function ClientThread(props: ClientThreadProps) {
             )
             return [...filtered, payload.new]
           })
+          // Attachment rows aren't in the realtime payload — fetch views for
+          // an incoming photo/file message (FM-L). Idempotent on self-sends.
+          if (payload.new.has_attachments) {
+            void getClientAttachmentViewsAction(payload.new.id).then((res) => {
+              if (res.data && res.data.length > 0) {
+                setAttachmentsByMsg((prev) => ({
+                  ...prev,
+                  [payload.new.id]: res.data!,
+                }))
+              }
+            })
+          }
         },
       )
       .subscribe()
@@ -165,13 +217,80 @@ export function ClientThread(props: ClientThreadProps) {
     }
   }, [threadId])
 
+  function handlePickPhotos(picked: FileList | null) {
+    if (!picked || picked.length === 0) return
+    setError(null)
+    const incoming = Array.from(picked)
+    const merged = [...pendingPhotos, ...incoming]
+    if (merged.length > MESSAGE_ATTACHMENTS_MAX) {
+      setError(`Up to ${MESSAGE_ATTACHMENTS_MAX} photos per message.`)
+      return
+    }
+    for (const f of incoming) {
+      if (!f.type.startsWith('image/')) {
+        setError('Photos only in here.')
+        return
+      }
+      if (f.size > CLIENT_PHOTO_MAX_BYTES) {
+        setError(
+          `That photo is ${(f.size / 1024 / 1024).toFixed(1)} MB — the cap is 10 MB.`,
+        )
+        return
+      }
+    }
+    setPendingPhotos(merged)
+  }
+
+  function handleSendPhotos(body: string) {
+    if (!threadId || !organizationId) return
+    const files = pendingPhotos
+    startTransition(async () => {
+      const up = await uploadMessageAttachments({
+        organizationId,
+        threadId,
+        files,
+      })
+      if (up.error || !up.uploaded) {
+        setError(up.error ?? 'Upload failed — check your connection and try again.')
+        return
+      }
+      const res = await sendClientPhotoMessageAction({
+        body,
+        attachments: up.uploaded,
+      })
+      if (res.error || !res.data) {
+        // Message never landed — clean up the orphan blobs (FM-F).
+        await removeUploadedAttachments(up.uploaded)
+        setError(res.error ?? 'Send failed — your photos were not sent.')
+        return
+      }
+      const { message, attachments } = res.data
+      setAttachmentsByMsg((prev) => ({ ...prev, [message.id]: attachments }))
+      setMessages((prev) =>
+        prev.some((m) => m.id === message.id) ? prev : [...prev, message],
+      )
+      setPendingPhotos([])
+      setDraft('')
+      router.refresh()
+    })
+  }
+
   function handleSend() {
     const body = draft.trim()
-    if (!body || isSending || !threadId || !organizationId) return
+    if (isSending || !threadId || !organizationId) return
     if (body.length > MESSAGE_BODY_MAX) {
       setError(`Message is too long. Max ${MESSAGE_BODY_MAX} characters.`)
       return
     }
+    if (pendingPhotos.length > 0) {
+      // Photo sends skip the optimistic bubble — the upload is the slow part
+      // and a bubble that could still fail would be dishonest. The Sending…
+      // button state carries the feedback instead.
+      setError(null)
+      handleSendPhotos(body)
+      return
+    }
+    if (!body) return
     setError(null)
     setDraft('')
 
@@ -184,6 +303,7 @@ export function ClientThread(props: ClientThreadProps) {
       sender_user_id: currentUserId,
       sender_role: 'client',
       body,
+      has_attachments: false,
       read_at: null,
       created_at: now,
       updated_at: now,
@@ -358,7 +478,16 @@ export function ClientThread(props: ClientThreadProps) {
                 <div
                   className={`thread-pane__bubble ${item.msg.sender_role === 'client' ? 'me' : 'them'}`}
                 >
-                  {item.msg.body}
+                  {(attachmentsByMsg[item.msg.id]?.length ?? 0) > 0 && (
+                    <MessageAttachments
+                      attachments={attachmentsByMsg[item.msg.id]!}
+                      onDownload={async (id) => {
+                        const r = await getClientAttachmentDownloadUrlAction(id)
+                        return { url: r.data?.url ?? null, error: r.error }
+                      }}
+                    />
+                  )}
+                  {item.msg.body.trim().length > 0 && item.msg.body}
                   <div className="thread-pane__bubble-time">
                     {formatBubbleTime(item.msg.created_at)}
                   </div>
@@ -371,6 +500,27 @@ export function ClientThread(props: ClientThreadProps) {
 
       <div className="portal-thread__composer">
         <div className="thread-pane__composer-row">
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              handlePickPhotos(e.target.files)
+              e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            className="btn ghost"
+            aria-label="Add photos"
+            title="Add photos"
+            disabled={isSending}
+            onClick={() => photoInputRef.current?.click()}
+          >
+            <ImagePlus size={16} aria-hidden />
+          </button>
           <textarea
             placeholder="Message your practitioner…"
             value={draft}
@@ -387,13 +537,42 @@ export function ClientThread(props: ClientThreadProps) {
           <button
             type="button"
             className="btn primary"
-            disabled={!draft.trim() || isSending || draft.length > MESSAGE_BODY_MAX}
+            disabled={
+              (!draft.trim() && pendingPhotos.length === 0) ||
+              isSending ||
+              draft.length > MESSAGE_BODY_MAX
+            }
             onClick={handleSend}
             aria-label="Send"
           >
             <Send size={14} aria-hidden />
           </button>
         </div>
+        {pendingPhotos.length > 0 && (
+          <div className="composer-pending">
+            {pendingPhotos.map((f, i) => (
+              <span key={`${f.name}-${i}`} className="composer-pending__thumb">
+                {/* Local object URL preview of a photo about to be sent. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={pendingPreviews[i]} alt={f.name} />
+                <button
+                  type="button"
+                  className="composer-pending__remove"
+                  aria-label={`Remove ${f.name}`}
+                  onClick={() =>
+                    setPendingPhotos((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                  disabled={isSending}
+                >
+                  <X size={12} aria-hidden />
+                </button>
+              </span>
+            ))}
+            {isSending && (
+              <span className="composer-pending__sending">Sending…</span>
+            )}
+          </div>
+        )}
         {error && (
           <div style={{ color: 'var(--color-alert)', fontSize: '.78rem', marginTop: 6 }}>
             {error}

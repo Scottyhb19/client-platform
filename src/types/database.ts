@@ -1691,6 +1691,67 @@ export type Database = {
           },
         ]
       }
+      message_attachments: {
+        Row: {
+          byte_size: number
+          created_at: string
+          file_name: string
+          id: string
+          kind: string
+          message_id: string
+          mime_type: string
+          organization_id: string
+          storage_path: string
+          thread_id: string
+        }
+        Insert: {
+          byte_size: number
+          created_at?: string
+          file_name: string
+          id?: string
+          kind: string
+          message_id: string
+          mime_type: string
+          organization_id: string
+          storage_path: string
+          thread_id: string
+        }
+        Update: {
+          byte_size?: number
+          created_at?: string
+          file_name?: string
+          id?: string
+          kind?: string
+          message_id?: string
+          mime_type?: string
+          organization_id?: string
+          storage_path?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "message_attachments_message_thread_fk"
+            columns: ["message_id", "thread_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id", "thread_id"]
+          },
+          {
+            foreignKeyName: "message_attachments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "message_attachments_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "message_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_notifications: {
         Row: {
           created_at: string
@@ -1830,6 +1891,7 @@ export type Database = {
           body: string
           created_at: string
           deleted_at: string | null
+          has_attachments: boolean
           id: string
           organization_id: string
           read_at: string | null
@@ -1842,6 +1904,7 @@ export type Database = {
           body: string
           created_at?: string
           deleted_at?: string | null
+          has_attachments?: boolean
           id?: string
           organization_id: string
           read_at?: string | null
@@ -1854,6 +1917,7 @@ export type Database = {
           body?: string
           created_at?: string
           deleted_at?: string | null
+          has_attachments?: boolean
           id?: string
           organization_id?: string
           read_at?: string | null
@@ -4242,6 +4306,28 @@ export type Database = {
       seed_organization_defaults: {
         Args: { p_org_id: string }
         Returns: undefined
+      }
+      send_message_with_attachments: {
+        Args: { p_attachments: Json; p_body: string; p_thread_id: string }
+        Returns: {
+          body: string
+          created_at: string
+          deleted_at: string | null
+          has_attachments: boolean
+          id: string
+          organization_id: string
+          read_at: string | null
+          sender_role: string
+          sender_user_id: string
+          thread_id: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "messages"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }

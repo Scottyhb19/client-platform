@@ -1673,3 +1673,124 @@ sessions from off-feet conditioning (bike, rower, ski erg, …).
 - **Pass:** "Conditioning" appears in all three; selecting the chip filters to
   conditioning exercises; combining it with the "Field" tag chip separates
   field work from off-feet conditioning.
+
+## Portal — completion volume honesty + messaging composer layout (2026-07-13)
+
+Dogfooding batch, client portal. (1) The end-of-session "Volume" tile summed
+`weight_value × reps_performed` without reading `set_logs.rep_metric`, so a
+weighted timed hold (10kg × 30s) added 300 "kg" and a loaded carry
+(40kg × 20m) added 800 "kg" — kg·seconds and kg·metres wearing a kg label.
+It also summed lb loads as raw kg. Volume is now strict tonnage: only sets
+with `rep_metric IS NULL` (a true rep count) qualify, and lb converts to kg.
+(2) The portal message composer relied on a textarea sizing rule scoped to
+the STAFF wrapper class (`.thread-pane__composer`), so on the portal the
+textarea collapsed to its intrinsic width and packed left; and the thread
+height was measured in `100vh` (the large viewport), pushing the pinned
+composer below the fold behind mobile browser chrome. The sizing rule now
+covers `.portal-thread__composer`, thread/shell heights use `dvh`, the nav
+offset's `env()` fallback matches the nav's own (14px), and the portal
+textarea gets a 16px font floor (stops iOS zoom-on-focus) with no resize
+handle.
+
+### VOL-1 — Volume counts only reps × kg
+- **Setup:** Complete a portal session containing (a) a plain weighted set,
+  e.g. 60kg × 10; (b) a weighted timed hold, e.g. 10kg × 30s (rep unit
+  Seconds); (c) a weighted carry, e.g. 40kg × 20m (rep unit Metres); (d) a
+  bodyweight set logged with no load.
+- **Pass:** The completion screen's Volume tile reads exactly 600kg — the
+  timed, distance, and unloaded sets contribute nothing. The Sets count still
+  includes all four sets.
+
+### VOL-2 — lb loads convert instead of masquerading as kg
+- **Setup:** Log one set with the load typed as "100lb" × 5, complete the
+  session.
+- **Pass:** Volume shows ~227kg (100 × 0.4536 × 5), not 500kg.
+
+### VOL-3 — All-non-tonnage session shows the empty state
+- **Setup:** Complete a session of only timed/bodyweight work (no set has
+  both a plain rep count and a load).
+- **Pass:** The Volume tile shows "—", never 0kg or a fabricated number.
+
+### MSG-COMPOSER-1 — Composer spans the width on a phone
+- **Setup:** Open `/portal/messages` at 375px (real phone or devtools mobile
+  emulation).
+- **Pass:** The message textarea stretches the full row width with the Send
+  button at its right edge — it is not a narrow box packed to the left.
+
+### MSG-COMPOSER-2 — Composer is visible without scrolling
+- **Setup:** Open `/portal/messages` on a real phone with the browser address
+  bar visible, thread containing enough messages to fill the screen.
+- **Pass:** The composer sits pinned above the bottom nav and is fully
+  visible on load — no scrolling required to reach it; the bottom nav never
+  overlaps it. The message list scrolls within the thread body.
+
+### MSG-COMPOSER-3 — Focusing the composer does not zoom the page (iOS)
+- **Setup:** On an iPhone, tap into the message textarea.
+- **Pass:** The keyboard opens without Safari zooming the page in; after
+  dismissing the keyboard the layout returns with the composer still pinned.
+
+## Messaging attachments (2026-07-13)
+
+Structural build (docs/polish/messaging-attachments.md — the messaging §5
+re-trigger fired). Staff attach any file (25 MB, executable extensions
+blocked); clients attach photos only (10 MB); up to 4 per message; a photo
+alone is a message (empty body allowed when attachments present); attachments
+are immutable like messages. Blobs upload browser-direct to the private
+`message-attachments` bucket under {org}/{thread}/ paths — the platform's
+first client-role storage writes — and the `send_message_with_attachments`
+definer RPC verifies every blob (existence, uploader, authoritative mimetype,
+size) before the message lands. DB behaviours are locked by pgTAP
+`59_message_attachments.sql` (20 assertions); these scenarios cover the
+browser layer.
+
+### ATT-1 — Staff sends a file with text
+- **Setup:** Staff inbox, open a thread, click the paperclip, pick a PDF
+  under 25 MB, type a short message, Send.
+- **Pass:** One bubble renders with the file chip (name + size) above the
+  text; clicking the chip opens/downloads the file with its original name.
+  The thread-list preview shows the message text.
+
+### ATT-2 — Client sends a photo-only message
+- **Setup:** Portal messages on a phone, tap the photo button, pick one
+  gallery photo, leave the text empty, Send.
+- **Pass:** The photo renders as an image bubble (no empty text line under
+  it); the staff inbox receives it in realtime as an image bubble, and the
+  thread-list preview reads "[Attachment]" — never blank.
+
+### ATT-3 — Multiple photos, cap enforced
+- **Setup:** Portal, attempt to attach 5 photos.
+- **Pass:** The composer refuses the fifth with "Up to 4 photos per message."
+  Four photos send as one message with four image bubbles.
+
+### ATT-4 — Client cannot attach a non-image
+- **Setup:** Portal photo picker (accept=image/*); attempt a workaround by
+  picking a non-image if the OS allows it.
+- **Pass:** The composer rejects it ("Photos only in here."); anything that
+  slips past the UI dies at the storage policy (extension) or the RPC
+  (authoritative mimetype) — the send errors honestly, nothing half-lands.
+
+### ATT-5 — Oversize honesty
+- **Setup:** Portal: pick a photo over 10 MB. Staff: pick a file over 25 MB.
+- **Pass:** Both are refused at pick time with the size named; nothing
+  uploads.
+
+### ATT-6 — Send-failure rollback leaves no orphan visible
+- **Setup:** With devtools offline mode enabled mid-send (after picking
+  photos), attempt Send; then restore the connection and retry.
+- **Pass:** The failed attempt shows an inline error and no message bubble;
+  the retry sends cleanly with no duplicate photos. (Blob orphans from the
+  failed upload are uploader-deletable only and swept per
+  docs/runbooks/message-attachments-orphan-sweep.md.)
+
+### ATT-7 — Realtime attachment delivery
+- **Setup:** Staff inbox and the client portal open side-by-side; client
+  sends a photo.
+- **Pass:** The staff pane shows the image bubble without a refresh (the
+  attachment fetch rides the realtime INSERT); same in reverse for a staff
+  file → portal chip.
+
+### ATT-8 — Immutability holds end-to-end
+- **Setup:** After sending, look for any edit/delete affordance on an
+  attachment in either surface.
+- **Pass:** None exists — matching messages. (DB-level: pgTAP 59 asserts
+  UPDATE raises P0001 and DELETE is denied.)

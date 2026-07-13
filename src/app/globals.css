@@ -966,7 +966,8 @@ body {
   gap: 8px;
   align-items: flex-end;
 }
-.thread-pane__composer textarea {
+.thread-pane__composer textarea,
+.portal-thread__composer textarea {
   flex: 1;
   min-height: 42px;
   max-height: 160px;
@@ -981,7 +982,8 @@ body {
   outline: none;
   transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-.thread-pane__composer textarea:focus {
+.thread-pane__composer textarea:focus,
+.portal-thread__composer textarea:focus {
   border-color: var(--color-primary);
   background: #fff;
 }
@@ -1006,6 +1008,120 @@ body {
 }
 .thread-pane__counter.error {
   color: var(--color-alert);
+}
+
+/* --- Message attachments (shared: staff thread pane + portal thread) --- */
+.msg-attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.msg-attach-img-link {
+  display: block;
+  line-height: 0;
+}
+.msg-attach-img {
+  display: block;
+  max-width: min(240px, 100%);
+  max-height: 320px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-subtle);
+}
+.msg-attach-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--color-charcoal);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.msg-attach-file:hover {
+  border-color: var(--color-primary);
+}
+.msg-attach-file__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.msg-attach-file__size {
+  color: var(--color-muted);
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+.msg-attach-error {
+  color: var(--color-alert);
+  font-size: 0.72rem;
+}
+
+/* Pending attachments queued in the composer (chips on staff, thumbnails on
+   the portal), shown between the composer row and the quick replies. */
+.composer-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.composer-pending__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  font-size: 0.74rem;
+  color: var(--color-charcoal);
+}
+.composer-pending__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+.composer-pending__thumb {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+.composer-pending__thumb img {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-subtle);
+}
+.composer-pending__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--color-muted);
+}
+.composer-pending__thumb .composer-pending__remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 999px;
+}
+.composer-pending__sending {
+  font-size: 0.74rem;
+  color: var(--color-muted);
 }
 .thread-pane__empty {
   flex: 1;
@@ -1126,11 +1242,17 @@ body {
   }
 }
 
-/* Mobile portal thread — single-column full-bleed */
+/* Mobile portal thread — single-column full-bleed.
+   Height must be the VISIBLE viewport minus the bottom nav, or the pinned
+   composer lands below the fold on phones: 100vh is the LARGE viewport
+   (browser chrome excluded), so dvh is load-bearing here, with a vh fallback
+   for older engines. The env() fallback matches .portal-bottom-nav's own
+   padding-bottom fallback (14px) so the two expressions cancel exactly. */
 .portal-thread {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 56px - env(safe-area-inset-bottom, 0px));
+  height: calc(100vh - 56px - env(safe-area-inset-bottom, 14px));
+  height: calc(100dvh - 56px - env(safe-area-inset-bottom, 14px));
 }
 .portal-thread__head {
   padding: 14px 18px;
@@ -1153,6 +1275,13 @@ body {
   padding: 10px 12px;
   border-top: 1px solid var(--color-border-subtle);
   background: #fff;
+}
+/* Portal-only textarea overrides: 16px floor stops iOS Safari zooming the
+   page on focus; no resize handle — touch has no drag affordance and the
+   grabber reads as clutter at 375px. */
+.portal-thread__composer textarea {
+  font-size: 1rem;
+  resize: none;
 }
 
 /* =============================================================================
@@ -1566,6 +1695,7 @@ body {
 .portal-shell {
   background: #e8ece9;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
 }
@@ -1573,6 +1703,7 @@ body {
   width: 100%;
   max-width: 480px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--color-surface);
   display: flex;
   flex-direction: column;

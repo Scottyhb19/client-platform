@@ -1,6 +1,7 @@
 import { requireRole } from '@/lib/auth/require-role'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { MessageRow } from '@/lib/messages/types'
+import type { AttachmentView, MessageRow } from '@/lib/messages/types'
+import { loadAttachmentViews } from '@/lib/messages/attachments-server'
 import { ClientThread } from './_components/ClientThread'
 
 export default async function PortalMessagesPage() {
@@ -15,6 +16,7 @@ export default async function PortalMessagesPage() {
     .maybeSingle()
 
   let messages: MessageRow[] = []
+  let attachments: Record<string, AttachmentView[]> = {}
   let practitionerName: string | null = null
 
   if (thread) {
@@ -22,7 +24,7 @@ export default async function PortalMessagesPage() {
       supabase
         .from('messages')
         .select(
-          'id, thread_id, organization_id, sender_user_id, sender_role, body, read_at, created_at, updated_at, deleted_at',
+          'id, thread_id, organization_id, sender_user_id, sender_role, body, has_attachments, read_at, created_at, updated_at, deleted_at',
         )
         .eq('thread_id', thread.id)
         .is('deleted_at', null)
@@ -38,6 +40,9 @@ export default async function PortalMessagesPage() {
     ])
     messages = msgsRes.data ?? []
     practitionerName = orgRes.data?.name ?? null
+    if (messages.some((m) => m.has_attachments)) {
+      attachments = await loadAttachmentViews(supabase, { threadId: thread.id })
+    }
   }
 
   return (
@@ -46,6 +51,7 @@ export default async function PortalMessagesPage() {
       organizationId={thread?.organization_id ?? null}
       currentUserId={userId}
       initialMessages={messages}
+      initialAttachments={attachments}
       practitionerName={practitionerName}
     />
   )
