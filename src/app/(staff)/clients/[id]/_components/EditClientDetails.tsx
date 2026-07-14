@@ -23,6 +23,15 @@ import {
 } from '../actions'
 import type { ProfileCategory, ProfileClient } from './ClientProfile'
 
+/**
+ * Canonical Sex options (UX papercut, dogfooding): the field was a free-text
+ * input, which invites typo/format drift ("M", "male", "Male"). A controlled
+ * dropdown removes that. UI-only per owner decision — the column stays
+ * free-text (no CHECK), so any legacy value predating this list is preserved
+ * as an extra option below rather than silently blanked when the form opens.
+ */
+const SEX_OPTIONS = ['Female', 'Male', 'Prefer not to say']
+
 export function EditClientDetailsDialog({
   client,
   categories,
@@ -194,14 +203,25 @@ export function EditClientDetailsDialog({
 
         <Row style={{ marginTop: 12 }}>
           <Field label="Sex" htmlFor="edit-sex">
-            <input
+            <select
               id="edit-sex"
-              type="text"
               value={sex}
               onChange={(e) => setSex(e.target.value)}
               disabled={isSaving}
-              style={inputStyle}
-            />
+              style={{ ...inputStyle, cursor: 'pointer' }}
+            >
+              <option value="">—</option>
+              {SEX_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+              {/* Preserve a legacy free-text value not in the canonical list
+                  so opening the form never rewrites it to blank on save. */}
+              {sex && !SEX_OPTIONS.includes(sex) && (
+                <option value={sex}>{sex}</option>
+              )}
+            </select>
           </Field>
           <Field label="Category" htmlFor="edit-category">
             <select

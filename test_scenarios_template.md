@@ -1819,3 +1819,61 @@ browser layer.
   (DB-level: pgTAP 59 tests 21-23 prove the storage DELETE policy resolves
   "referenced?" through a SECURITY-DEFINER helper that bypasses the caller's
   archived-thread RLS, while genuine orphans stay deletable for rollback.)
+
+---
+
+## Dogfooding — Bookings tiles + Sex dropdown (staff, presentation, 2026-07-14)
+
+Context: two UX papercuts inside already-signed-off surfaces — pure
+presentation, no schema / RLS / pgTAP. (1) The client Bookings tab
+(`BookingsTab.tsx`) moves from two stacked Upcoming/Past lists to two
+side-by-side tiles, each with its nearest appointment front-and-centre and a
+chevron to drop the full list. (2) The Edit-details Sex field
+(`EditClientDetails.tsx`) becomes a dropdown (Female / Male / Prefer not to say)
+over the still-free-text `clients.sex` column — UI-only, values not DB-enforced.
+
+### BOOK-TILES-1 — Two side-by-side tiles, Past and Upcoming
+- **Setup:** Open a client's Bookings tab (authed staff) with both past and
+  future appointments.
+- **Pass:** The tab renders two tiles, **Past** (left) and **Upcoming** (right),
+  side by side on desktop; each is a `.card` carrying the section label and a
+  count. They collapse to one column when the viewport is too narrow for two
+  (grid `repeat(auto-fit, minmax(min(100%, 280px), 1fr))`).
+
+### BOOK-TILES-2 — The nearest appointment is front-and-centre
+- **Pass:** The Upcoming tile's headline row is the **closest** upcoming
+  appointment (soonest `start_at`, status pending/confirmed); the Past tile's
+  headline is the **most recent** past one (latest `start_at`). Each shows the
+  date line, time range · type, and status label.
+
+### BOOK-TILES-3 — The chevron drops the full list, independently per tile
+- **Setup:** A tile with more than one appointment.
+- **Pass:** Collapsed, only the headline shows, with an "N more" toggle (down
+  chevron). Clicking it reveals the remaining appointments below the headline
+  and flips to "Show less" (up chevron); the other tile's expand state is
+  unaffected, and — crucially — the other tile does **not** grow to match the
+  expanded one's height (grid `align-items: start`, so each tile sizes to its
+  own content with no dead space beside a dropped-down list). A tile with a
+  single appointment shows no toggle; an empty tile shows "No past bookings." /
+  "No upcoming bookings."
+
+### BOOK-TILES-4 — Cancel still works, from the Upcoming tile only
+- **Pass:** Upcoming rows keep the **Cancel** affordance → shared `ConfirmDialog`
+  → `cancelAppointmentAction` → refresh. Past rows have no Cancel. Behaviour
+  carried over unchanged from the pre-tile layout.
+
+### SEX-DROPDOWN-1 — Sex is a controlled dropdown
+- **Setup:** Open a client's Edit-details dialog (authed staff).
+- **Pass:** The Sex field (`id="edit-sex"`) is a `<select>` offering **—**
+  (unset), **Female**, **Male**, **Prefer not to say**. Choosing one and saving
+  writes that exact string to `clients.sex` via `updateClientDetailsAction`; the
+  Profile tab's SEX FieldBox then reads it back.
+
+### SEX-DROPDOWN-2 — A legacy free-text value is preserved, not blanked
+- **Setup:** A client whose `clients.sex` holds a value outside the canonical
+  three (e.g. "M" or "Non-binary" typed before this change).
+- **Pass:** Opening Edit-details shows that legacy value as the selected extra
+  option (not blank), so saving other fields does not silently rewrite Sex. The
+  EP can re-pick a canonical option; the column stays free-text (no CHECK), so
+  either write is accepted. (Prevents the classic "select value not in option
+  list → renders blank → clobbers on save" data-loss trap.)

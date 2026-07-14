@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { cancelAppointmentAction } from '../../../schedule/actions'
 import { PRACTICE_TIMEZONE } from '@/lib/constants'
 import {
@@ -13,8 +14,9 @@ import { ConfirmDialog } from '@/app/(staff)/_components/ConfirmDialog'
 
 /**
  * §6.1 Bookings tab. Renders this client's appointments (already loaded on the
- * profile) split into upcoming and past, with a cancel affordance on upcoming
- * ones. Reschedule lives on the /schedule grid (drag-to-move) — this surface is
+ * profile) as two side-by-side tiles — Past and Upcoming — each with its
+ * nearest appointment front-and-centre and a chevron to drop the full list.
+ * Reschedule lives on the /schedule grid (drag-to-move); this surface is
  * history + quick-cancel. All times in the practice timezone (P0-2).
  */
 const STATUS_LABEL: Record<string, string> = {
@@ -43,6 +45,9 @@ export function BookingsTab({
     new Date(a.start_at).getTime() >= now &&
     (a.status === 'pending' || a.status === 'confirmed')
 
+  // Upcoming sorted soonest-first so upcoming[0] is the closest appointment;
+  // past sorted newest-first so past[0] is the most recent. Those two are the
+  // "front and centre" headlines of their tiles.
   const upcoming = appointments
     .filter(isUpcoming)
     .sort(
@@ -73,7 +78,11 @@ export function BookingsTab({
     })
   }
 
-  function renderRow(a: ProfileAppointment, cancellable: boolean) {
+  function renderRow(
+    a: ProfileAppointment,
+    cancellable: boolean,
+    topSeparator: boolean,
+  ) {
     const isCancelled = a.status === 'cancelled'
     return (
       <div
@@ -81,11 +90,11 @@ export function BookingsTab({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 14,
-          padding: '12px 16px',
-          border: '1px solid var(--color-border-subtle)',
-          borderRadius: 10,
-          background: 'var(--color-card)',
+          gap: 12,
+          padding: '11px 4px',
+          borderTop: topSeparator
+            ? '1px solid var(--color-border-hairline)'
+            : 'none',
           opacity: isCancelled ? 0.6 : 1,
         }}
       >
@@ -151,31 +160,33 @@ export function BookingsTab({
   }
 
   return (
-    <div style={{ padding: '18px 22px 22px', display: 'grid', gap: 18 }}>
-      {appointments.length === 0 && (
-        <div
-          style={{
-            fontSize: '.88rem',
-            color: 'var(--color-text-light)',
-          }}
-        >
-          No bookings yet.
-        </div>
-      )}
-
-      {upcoming.length > 0 && (
-        <section style={{ display: 'grid', gap: 8 }}>
-          <SectionLabel>Upcoming</SectionLabel>
-          {upcoming.map((a) => renderRow(a, true))}
-        </section>
-      )}
-
-      {past.length > 0 && (
-        <section style={{ display: 'grid', gap: 8 }}>
-          <SectionLabel>Past</SectionLabel>
-          {past.map((a) => renderRow(a, false))}
-        </section>
-      )}
+    <div style={{ padding: '18px 22px 22px' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))',
+          gap: 16,
+          // Each tile sizes to its own content — without this, grid's default
+          // align-items: stretch makes the collapsed tile grow to match the
+          // expanded one, leaving dead space beside a dropped-down list.
+          alignItems: 'start',
+        }}
+      >
+        <SessionTile
+          label="Past"
+          emptyText="No past bookings."
+          items={past}
+          cancellable={false}
+          renderRow={renderRow}
+        />
+        <SessionTile
+          label="Upcoming"
+          emptyText="No upcoming bookings."
+          items={upcoming}
+          cancellable={true}
+          renderRow={renderRow}
+        />
+      </div>
 
       {confirmCancel && (
         <ConfirmDialog
@@ -202,6 +213,127 @@ export function BookingsTab({
         />
       )}
     </div>
+  )
+}
+
+/**
+ * One tile: header (label + count), the nearest appointment front-and-centre,
+ * and — when there's more than one — a chevron that drops the full list. Owns
+ * its own expand state so Past and Upcoming toggle independently.
+ */
+function SessionTile({
+  label,
+  emptyText,
+  items,
+  cancellable,
+  renderRow,
+}: {
+  label: string
+  emptyText: string
+  items: ProfileAppointment[]
+  cancellable: boolean
+  renderRow: (
+    a: ProfileAppointment,
+    cancellable: boolean,
+    topSeparator: boolean,
+  ) => React.ReactNode
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const headline = items[0] ?? null
+  const rest = items.slice(1)
+
+  return (
+    <section
+      className="card"
+      style={{
+        padding: 0,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--color-border-subtle)',
+        }}
+      >
+        <SectionLabel>{label}</SectionLabel>
+        {items.length > 0 && (
+          <span
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontWeight: 700,
+              fontSize: '.8rem',
+              color: 'var(--color-muted)',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {items.length}
+          </span>
+        )}
+      </header>
+
+      {headline === null ? (
+        <div
+          style={{
+            padding: '18px 16px',
+            fontSize: '.86rem',
+            color: 'var(--color-text-light)',
+          }}
+        >
+          {emptyText}
+        </div>
+      ) : (
+        <div style={{ padding: '6px 12px 10px' }}>
+          {renderRow(headline, cancellable, false)}
+          {expanded && rest.map((a) => renderRow(a, cancellable, true))}
+          {rest.length > 0 && (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={
+                expanded
+                  ? `Hide the rest of ${label.toLowerCase()} bookings`
+                  : `Show all ${items.length} ${label.toLowerCase()} bookings`
+              }
+              onClick={() => setExpanded((v) => !v)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 5,
+                width: '100%',
+                marginTop: 6,
+                padding: '7px 8px',
+                border: 'none',
+                borderTop: '1px solid var(--color-border-hairline)',
+                borderRadius: 0,
+                background: 'transparent',
+                color: 'var(--color-text-light)',
+                fontFamily: 'var(--font-display)',
+                fontWeight: 600,
+                fontSize: '.72rem',
+                letterSpacing: '.03em',
+                cursor: 'pointer',
+                transition: 'color 150ms cubic-bezier(0.4,0,0.2,1)',
+              }}
+            >
+              {expanded ? 'Show less' : `${rest.length} more`}
+              {expanded ? (
+                <ChevronUp size={15} aria-hidden />
+              ) : (
+                <ChevronDown size={15} aria-hidden />
+              )}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
   )
 }
 
