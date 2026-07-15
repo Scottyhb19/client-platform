@@ -1877,3 +1877,68 @@ over the still-free-text `clients.sex` column — UI-only, values not DB-enforce
   EP can re-pick a canonical option; the column stays free-text (no CHECK), so
   either write is accepted. (Prevents the classic "select value not in option
   list → renders blank → clobbers on save" data-loss trap.)
+
+## Dogfooding — Completed-session lock + calendar completion tick (staff, 2026-07-15)
+
+Context: a completed session (the client has logged it) is now **read-only** in
+the session builder — its prescription is the record the client actually
+performed against, so freezing it keeps that record honest. The program calendar
+shows a green **Completed** tick on days with a logged session. Both are
+read-only projections over the already-staff-readable `sessions` table
+(`sessions.completed_at`, `program_day_id`-linked, client-scoped) — no schema /
+RLS / pgTAP. Lock predicate = **completed AND still assigned**; Unassign is the
+unlock. "Missed" (red mark) is deferred (`deferred-prompts.md`). The
+calendar-pristine rule was consciously amended to allow a single binary status
+glyph on a cell (see `docs/polish/program-calendar.md` §10).
+
+### CAL-DONE-1 — Completed day shows a green tick on the calendar
+- **Setup:** A client with a `program_day` that has a completed session
+  (`sessions.completed_at` set, `program_day_id` linked) and is assigned.
+- **Pass:** The day's top-right corner shows a **Completed** pill — green
+  `Check` (strokeWidth 3) on `--color-accent-soft-strong` — superseding the
+  "Assigned" pill. Assigned-but-not-completed days still show **Assigned**;
+  unassigned-with-exercises show the **Assign** paper-plane. The detailed logged
+  data does NOT appear on the calendar (still profile-only).
+
+### LOCK-1 — Completed + assigned session opens read-only
+- **Setup:** Open the session builder for a completed, still-assigned day.
+- **Pass:** A quiet lock banner sits above the exercise list — Lock icon +
+  "This session is locked — completed {date}. Unassign it above to make
+  changes." The set-value cells render as **static text**, not inputs; the
+  Load/Notes and Reps column headers are static slabs, not dropdowns; rest/tempo
+  and instructions are static text; the exercise name is plain text (no swap).
+
+### LOCK-2 — Every write affordance is absent when locked
+- **Pass:** No move-up/down, no ungroup, no remove (trash), no drag handle, no
+  set +/− stepper (the "N sets" count still shows), no between-cards
+  "+ Add exercise" / "Superset" bars, no section-title dropdown (a set section
+  shows as a static eyebrow; a blank one renders nothing), and the day label in
+  the header is plain text (no rename pencil). Attempting a write via a stale
+  control (or racing the DB directly) is additionally guarded — the mutation
+  handlers early-return while locked (UI guardrail; DB-level enforcement is
+  deferred, `go-live-checklist.md` §8).
+
+### LOCK-3 — Unassigning re-enables editing
+- **Setup:** On the locked builder, click **Unassign** in the page header,
+  confirm.
+- **Pass:** `published_at` clears, so `locked` goes false and the builder
+  returns to fully editable (inputs, steppers, bars, drag all back). The
+  calendar still shows the **Completed** tick for that day (completion is a
+  historical fact, independent of assignment) — the tick does not depend on the
+  day being assigned.
+
+### LOCK-4 — Assigned-but-not-completed stays fully editable
+- **Setup:** Open the builder for a day that is assigned (`published_at` set)
+  but has NO completed session.
+- **Pass:** The builder is fully editable — no lock banner, all controls live.
+  Assigning a session does not lock it; only completion (with assignment) does.
+  (Confirms we did not regress the common "assign then tweak tomorrow's load"
+  flow.)
+
+### LOCK-5 — Library browse stays live; add/swap is inert when locked
+- **Setup:** On the locked builder, open the right-panel **Library** tab.
+- **Pass:** Search, chip filters, and video links all work (browse for
+  reference). Clicking an exercise to add/swap does **not** mutate the session —
+  it surfaces the on-system notice "This session is locked — unassign it above
+  to add or swap exercises." The Library tab itself is never removed (the
+  Notes/Reports/Library adjacency is the differentiator).

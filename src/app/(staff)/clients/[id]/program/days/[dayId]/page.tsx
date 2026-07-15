@@ -110,6 +110,7 @@ export default async function SessionBuilderPage({
     { data: metricUnitsRaw },
     { data: circuitsRaw },
     { data: sessionsRaw },
+    { data: completedSessionRaw },
   ] = await Promise.all([
     supabase
       .from('program_exercises')
@@ -233,6 +234,20 @@ export default async function SessionBuilderPage({
       .select('id, name, session_template_exercises(id, deleted_at)')
       .is('deleted_at', null)
       .order('name'),
+    // Read-only lock probe: has the client logged a completed session against
+    // this day? sessions is already staff-readable under existing RLS. The
+    // builder freezes when this is non-null AND the day is still assigned —
+    // a completed prescription is the record the client performed against.
+    supabase
+      .from('sessions')
+      .select('completed_at')
+      .eq('client_id', id)
+      .eq('program_day_id', dayId)
+      .not('completed_at', 'is', null)
+      .is('deleted_at', null)
+      .order('completed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
   if (peErr) throw new Error(`Load program exercises: ${peErr.message}`)
@@ -240,6 +255,14 @@ export default async function SessionBuilderPage({
   if (flagsErr) throw new Error(`Load active flags: ${flagsErr.message}`)
   if (publicationsResult.error)
     throw new Error(`Load publications: ${publicationsResult.error.message}`)
+
+  // Read-only lock. Locked = the client has completed this session AND it is
+  // still assigned. Unassigning (published_at → null) is the deliberate
+  // unlock: it drops `locked` so the EP can edit, exactly as an "unassign to
+  // update" flow. Keyed on both so the Unassign button stays the escape
+  // hatch. UI guardrail only — see SessionLockContext in SessionBuilder.
+  const completedAt = completedSessionRaw?.completed_at ?? null
+  const locked = completedAt !== null && day.published_at !== null
 
   // Phase H (2026-05-08): "Last logged" footer per exercise card.
   // For each exercise_id on this day, find the client's most recent set
@@ -532,6 +555,7 @@ export default async function SessionBuilderPage({
                 clientId={id}
                 dayId={dayId}
                 initialLabel={day.day_label}
+                locked={locked}
               />
               {dayDateLabel && (
                 <span style={{ color: 'var(--color-text-light)' }}>
@@ -577,6 +601,8 @@ export default async function SessionBuilderPage({
         movementPatterns={movementPatterns}
         exerciseTags={exerciseTags}
         metricUnits={metricUnits}
+        locked={locked}
+        completedAt={completedAt}
       />
     </div>
   )

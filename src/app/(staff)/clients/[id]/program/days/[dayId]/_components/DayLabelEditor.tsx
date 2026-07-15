@@ -11,6 +11,9 @@ interface DayLabelEditorProps {
   clientId: string
   dayId: string
   initialLabel: string
+  // Read-only lock — the session is completed. Renders the label as plain
+  // static text (no rename affordance). Defaults to editable.
+  locked?: boolean
 }
 
 /**
@@ -27,6 +30,7 @@ export function DayLabelEditor({
   clientId,
   dayId,
   initialLabel,
+  locked = false,
 }: DayLabelEditorProps) {
   const router = useRouter()
   const [label, setLabel] = useState(initialLabel)
@@ -94,6 +98,11 @@ export function DayLabelEditor({
       setEditing(false)
       router.refresh()
     })
+  }
+
+  // Locked: plain static label, no rename affordance.
+  if (locked) {
+    return <span>{label}</span>
   }
 
   if (!editing) {

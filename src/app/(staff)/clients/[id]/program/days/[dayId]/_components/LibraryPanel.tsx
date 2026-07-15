@@ -45,6 +45,7 @@ export function LibraryPanel({
   swapTarget,
   setSwapTarget,
   onSwapComplete,
+  locked = false,
 }: {
   options: LibraryExercise[]
   clientId: string
@@ -59,6 +60,9 @@ export function LibraryPanel({
   setSwapTarget: (peId: string | null) => void
   /** Fires after a successful swap — §6.5.2: panel returns to Notes. */
   onSwapComplete: () => void
+  /** Read-only lock — the session is completed. Browse stays live; picking
+   *  an exercise (add/swap) is inert with an on-system notice. */
+  locked?: boolean
 }) {
   const [query, setQuery] = useState('')
   const [adding, setAdding] = useState<string | null>(null)
@@ -117,6 +121,12 @@ export function LibraryPanel({
   }
 
   function handlePick(exerciseId: string) {
+    // Read-only lock — the completed session's prescription is frozen. Browse
+    // stays live for reference; adding/swapping is inert with a factual notice.
+    if (locked) {
+      notify('This session is locked — unassign it above to add or swap exercises.')
+      return
+    }
     if (adding !== null) return
     setAdding(exerciseId)
     // Swap takes priority — the two states are mutually exclusive at the

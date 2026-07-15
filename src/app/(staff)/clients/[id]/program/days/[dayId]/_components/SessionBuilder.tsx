@@ -9,6 +9,7 @@ import {
   ChevronDown,
   GripVertical,
   Link2,
+  Lock,
   Play,
   Plus,
   Search,
@@ -119,6 +120,24 @@ type DragHandleApi = {
 
 const DragHandleContext = React.createContext<DragHandleApi | null>(null)
 
+/**
+ * Read-only lock (2026-07-15). True when the client has completed this
+ * session and it is still assigned (see the day page's `locked` compute).
+ * Every write control in the builder reads this via useSessionLocked() and
+ * renders read-only — value inputs become static text, action affordances
+ * hide. A completed session's prescription is the record the client actually
+ * performed against, so freezing it keeps that record honest.
+ *
+ * This is a UI guardrail, not a DB constraint: the Unassign button in the
+ * page header is the deliberate escape hatch — unassigning drops
+ * published_at, so `locked` goes false and editing re-opens. DB-level
+ * enforcement is deferred with a re-trigger (docs/go-live-checklist.md §8).
+ */
+const SessionLockContext = React.createContext(false)
+function useSessionLocked(): boolean {
+  return React.useContext(SessionLockContext)
+}
+
 export type PrescriptionSet = {
   id: string
   set_number: number
@@ -199,6 +218,11 @@ interface SessionBuilderProps {
   movementPatterns: MovementPatternOption[]
   exerciseTags: ExerciseTagOption[]
   metricUnits: MetricUnitOption[]
+  // Read-only lock — the client has completed this (still-assigned) session,
+  // so its prescription is frozen. Threaded down via SessionLockContext.
+  locked: boolean
+  // ISO timestamp of the completion, for the lock banner. Null when unlocked.
+  completedAt: string | null
 }
 
 export function SessionBuilder({
@@ -213,6 +237,8 @@ export function SessionBuilder({
   movementPatterns,
   exerciseTags,
   metricUnits,
+  locked,
+  completedAt,
 }: SessionBuilderProps) {
   const router = useRouter()
   // §6.5.2: Notes is the default tab — clinical context visible while
@@ -273,6 +299,9 @@ export function SessionBuilder({
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragId(null)
+    // Belt on top of hiding the drag handle when locked — a completed
+    // session's exercise order is part of the frozen record.
+    if (locked) return
     const { active, over } = event
     if (!over || active.id === over.id) return
 
@@ -347,6 +376,7 @@ export function SessionBuilder({
   }
 
   return (
+    <SessionLockContext.Provider value={locked}>
     <div
       style={{
         display: 'grid',
@@ -356,6 +386,7 @@ export function SessionBuilder({
       }}
     >
       <div>
+        {locked && <LockedBanner completedAt={completedAt} />}
         {programExercises.length === 0 ? (
           <EmptyState onBrowse={browseFromEmptyState} />
         ) : (
@@ -492,6 +523,7 @@ export function SessionBuilder({
             swapTarget={swapTarget}
             setSwapTarget={setSwapTarget}
             onSwapComplete={() => setTab('notes')}
+            locked={locked}
           />
         )}
         {tab === 'notes' && <NotesPanel notes={clinicalNotes} />}
@@ -499,6 +531,52 @@ export function SessionBuilder({
           <ReportsPanel reports={reports} history={testHistory} />
         )}
       </aside>
+    </div>
+    </SessionLockContext.Provider>
+  )
+}
+
+/**
+ * Lock banner (2026-07-15). Sits above the exercise list when the session
+ * is read-only. Quiet surface + muted copy per the design voice — factual,
+ * no alarm. Points the EP at the Unassign button in the page header, which
+ * is the only way back to editing.
+ */
+function LockedBanner({ completedAt }: { completedAt: string | null }) {
+  const dateLabel = completedAt
+    ? new Intl.DateTimeFormat('en-AU', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      }).format(new Date(completedAt))
+    : null
+  return (
+    <div
+      role="status"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 14px',
+        marginBottom: 16,
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border-subtle)',
+        borderRadius: 'var(--radius-card-dense)',
+        fontSize: '.84rem',
+        lineHeight: 1.5,
+        color: 'var(--color-text-light)',
+      }}
+    >
+      <Lock
+        size={15}
+        aria-hidden
+        style={{ flexShrink: 0, color: 'var(--color-muted)' }}
+      />
+      <span>
+        This session is locked
+        {dateLabel ? ` — completed ${dateLabel}` : ''}. Unassign it above to
+        make changes.
+      </span>
     </div>
   )
 }
@@ -1200,6 +1278,7 @@ function ExerciseBody({
   onSwapClick: (peId: string) => void
 }) {
   const isSwapping = swapTarget === pe.id
+  const locked = useSessionLocked()
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   // On-system confirm (CN-13 pattern, shared ConfirmDialog) in place of the
@@ -1213,6 +1292,7 @@ function ExerciseBody({
   // and re-render the page with the new data.
 
   function doRemove() {
+    if (locked) return
     setRemoveError(null)
     startTransition(async () => {
       const res = await removeProgramExerciseAction(clientId, dayId, pe.id)
@@ -1226,6 +1306,7 @@ function ExerciseBody({
   }
 
   function handleMove(direction: 'up' | 'down') {
+    if (locked) return
     startTransition(async () => {
       const res = await moveProgramExerciseAction(clientId, dayId, pe.id, direction)
       if (res.error) {
@@ -1242,6 +1323,7 @@ function ExerciseBody({
   // only one member remains, that member is also cleared — handled inside
   // ungroupFromSupersetAction).
   function handleUngroup() {
+    if (locked) return
     startTransition(async () => {
       const res = await ungroupFromSupersetAction(clientId, dayId, pe.id)
       if (res.error) {
@@ -1277,81 +1359,102 @@ function ExerciseBody({
           {/* Phase F: clickable name arms a swap-in-place. Click again on
               the same name = cancel; click a different name = re-arm.
               Renders as an underlined button when armed; hover-only
-              underline at rest so the surface stays calm. */}
-          <button
-            type="button"
-            onClick={() => onSwapClick(pe.id)}
-            aria-label={`Swap ${pe.exercise_name}`}
-            title={isSwapping ? 'Cancel swap' : 'Swap exercise'}
-            style={{
-              fontFamily: 'var(--font-sans)',
-              fontWeight: 600,
-              fontSize: 15,
-              color: INK,
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              textAlign: 'left',
-              textDecoration: isSwapping ? 'underline' : 'none',
-              textDecorationStyle: 'dashed',
-              textDecorationColor: 'var(--color-slate)',
-              textUnderlineOffset: 4,
-            }}
-            onMouseEnter={(e) => {
-              if (!isSwapping)
-                e.currentTarget.style.textDecoration = 'underline'
-            }}
-            onMouseLeave={(e) => {
-              if (!isSwapping) e.currentTarget.style.textDecoration = 'none'
-            }}
-          >
-            {/* §6.5.2 (G-6): while this card's swap is armed, the name
-                blanks to the brief-literal placeholder; cancelling the
-                swap (click again / banner Cancel) restores it. */}
-            {isSwapping ? (
-              <span style={{ color: MUTED, fontStyle: 'italic' }}>
-                Select exercise…
-              </span>
-            ) : (
-              pe.exercise_name
-            )}
-          </button>
-          <IconButton
-            disabled={isFirst || pending}
-            onClick={() => handleMove('up')}
-            label="Move up"
-          >
-            <ArrowUp size={14} aria-hidden />
-          </IconButton>
-          <IconButton
-            disabled={isLast || pending}
-            onClick={() => handleMove('down')}
-            label="Move down"
-          >
-            <ArrowDown size={14} aria-hidden />
-          </IconButton>
-          {pe.superset_group_id && (
-            <IconButton
-              disabled={pending}
-              onClick={handleUngroup}
-              label="Remove from superset"
+              underline at rest so the surface stays calm. When locked, the
+              name is plain static text — no swap. */}
+          {locked ? (
+            <div
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 600,
+                fontSize: 15,
+                color: INK,
+                flex: 1,
+              }}
             >
-              <Unlink size={14} aria-hidden />
-            </IconButton>
+              {pe.exercise_name}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onSwapClick(pe.id)}
+              aria-label={`Swap ${pe.exercise_name}`}
+              title={isSwapping ? 'Cancel swap' : 'Swap exercise'}
+              style={{
+                fontFamily: 'var(--font-sans)',
+                fontWeight: 600,
+                fontSize: 15,
+                color: INK,
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                textAlign: 'left',
+                textDecoration: isSwapping ? 'underline' : 'none',
+                textDecorationStyle: 'dashed',
+                textDecorationColor: 'var(--color-slate)',
+                textUnderlineOffset: 4,
+              }}
+              onMouseEnter={(e) => {
+                if (!isSwapping)
+                  e.currentTarget.style.textDecoration = 'underline'
+              }}
+              onMouseLeave={(e) => {
+                if (!isSwapping) e.currentTarget.style.textDecoration = 'none'
+              }}
+            >
+              {/* §6.5.2 (G-6): while this card's swap is armed, the name
+                  blanks to the brief-literal placeholder; cancelling the
+                  swap (click again / banner Cancel) restores it. */}
+              {isSwapping ? (
+                <span style={{ color: MUTED, fontStyle: 'italic' }}>
+                  Select exercise…
+                </span>
+              ) : (
+                pe.exercise_name
+              )}
+            </button>
           )}
-          <IconButton
-            disabled={pending}
-            onClick={() => {
-              setRemoveError(null)
-              setConfirmRemove(true)
-            }}
-            label="Remove exercise"
-          >
-            <Trash2 size={14} aria-hidden />
-          </IconButton>
-          <DragHandle />
+          {/* Reorder / ungroup / remove / drag — all hidden when the session
+              is locked (read-only record). */}
+          {!locked && (
+            <>
+              <IconButton
+                disabled={isFirst || pending}
+                onClick={() => handleMove('up')}
+                label="Move up"
+              >
+                <ArrowUp size={14} aria-hidden />
+              </IconButton>
+              <IconButton
+                disabled={isLast || pending}
+                onClick={() => handleMove('down')}
+                label="Move down"
+              >
+                <ArrowDown size={14} aria-hidden />
+              </IconButton>
+              {pe.superset_group_id && (
+                <IconButton
+                  disabled={pending}
+                  onClick={handleUngroup}
+                  label="Remove from superset"
+                >
+                  <Unlink size={14} aria-hidden />
+                </IconButton>
+              )}
+              <IconButton
+                disabled={pending}
+                onClick={() => {
+                  setRemoveError(null)
+                  setConfirmRemove(true)
+                }}
+                label="Remove exercise"
+              >
+                <Trash2 size={14} aria-hidden />
+              </IconButton>
+              <DragHandle />
+            </>
+          )}
         </div>
 
         <SectionTitleField
@@ -1716,6 +1819,7 @@ function SetCell({
   // remounts and the keyframe runs once. No setTimeout, no cleanup.
   const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
+  const locked = useSessionLocked()
   const empty = value.trim() === ''
 
   if (initialValue !== lastSeenProp) {
@@ -1766,6 +1870,30 @@ function SetCell({
         if (trimmed !== '') onCommitted?.(field, trimmed, previous)
       }
     })
+  }
+
+  // Locked: static value in the same cell box, no input.
+  if (locked) {
+    return (
+      <div
+        style={{
+          background: CREAM,
+          borderRadius: 8,
+          height: 26,
+          display: 'grid',
+          placeItems: 'center',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 13,
+          fontWeight: 500,
+          color: empty ? FAINT : INK,
+          padding: '0 10px',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        {empty ? placeholder ?? '—' : value}
+      </div>
+    )
   }
 
   return (
@@ -1888,12 +2016,22 @@ function MetricColumnDropdown({
 }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  const locked = useSessionLocked()
   // Legacy-value fallback: same pattern as SectionTitleField from Phase E.
   // If the saved metric isn't in the org's current list (renamed,
   // soft-deleted, etc.), keep it as a selectable option so the closed
   // state doesn't silently drop to "—".
   const metricInOptions =
     metric !== '' && metricUnits.some((u) => u.code === metric)
+
+  // Locked: static column header, no dropdown.
+  if (locked) {
+    const label =
+      metric === ''
+        ? 'Load / Notes'
+        : metricUnits.find((u) => u.code === metric)?.display_label ?? metric
+    return <ColHeader>{label}</ColHeader>
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const next = e.target.value === '' ? null : e.target.value
@@ -1999,12 +2137,21 @@ function VolumeColumnDropdown({
 }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  const locked = useSessionLocked()
   // Legacy-value fallback (mirrors MetricColumnDropdown): a saved unit not in
   // the surfaced options (e.g. km/mi) stays selectable so the closed state
   // doesn't silently drop to a different unit.
   const repMetricInOptions = VOLUME_UNIT_OPTIONS.some(
     (u) => u.value === repMetric,
   )
+
+  // Locked: static column header, no dropdown.
+  if (locked) {
+    const label =
+      VOLUME_UNIT_OPTIONS.find((u) => u.value === repMetric)?.label ??
+      (repMetric === '' ? 'Reps' : volumeUnitLabel(repMetric))
+    return <ColHeader>{label}</ColHeader>
+  }
 
   function handleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const next = e.target.value === '' ? null : e.target.value
@@ -2092,7 +2239,26 @@ function SetStepper({
 }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  const locked = useSessionLocked()
   const current = pe.prescriptionSets.length
+
+  // Locked: show the set count, drop the add/remove steppers.
+  if (locked) {
+    return (
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          marginTop: 8,
+          alignSelf: 'flex-end',
+        }}
+      >
+        <span style={{ fontSize: 12, color: MUTED, fontWeight: 500 }}>
+          {current} {current === 1 ? 'set' : 'sets'}
+        </span>
+      </div>
+    )
+  }
 
   function handleAdd() {
     startTransition(async () => {
@@ -2228,7 +2394,47 @@ function SmallField({
   // Phase I §2.16 — autosave success indicator (see SaveTick below).
   const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
+  const locked = useSessionLocked()
   const empty = value.trim() === ''
+
+  // Locked: label + static value, no input.
+  if (locked) {
+    return (
+      <label style={{ display: 'block' }}>
+        <div
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontWeight: 700,
+            fontSize: 9,
+            letterSpacing: '.08em',
+            textTransform: 'uppercase',
+            color: FAINT,
+            marginBottom: 3,
+          }}
+        >
+          {label}
+        </div>
+        <div
+          style={{
+            width: '100%',
+            height: 28,
+            padding: '0 8px',
+            background: CREAM,
+            borderRadius: 6,
+            fontFamily: 'var(--font-sans)',
+            fontSize: 12,
+            fontWeight: 500,
+            color: empty ? FAINT : INK,
+            display: 'grid',
+            placeItems: 'center',
+            boxSizing: 'border-box',
+          }}
+        >
+          {empty ? '—' : value}
+        </div>
+      </label>
+    )
+  }
 
   function handleBlur() {
     if (value === initialValue) return
@@ -2444,6 +2650,10 @@ function BetweenCardsBar({
 }) {
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  const locked = useSessionLocked()
+
+  // Locked: no insertion / superset affordances at all.
+  if (locked) return null
 
   const isTop = beforePeId === null
   const isBottom = afterPeId === null
@@ -2605,6 +2815,32 @@ function EditableTextarea({
   // Phase I §2.16 — autosave success indicator (see SaveTick).
   const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
+  const locked = useSessionLocked()
+
+  // Locked: static text block, no textarea. Preserves line breaks.
+  if (locked) {
+    const emptyText = value.trim() === ''
+    return (
+      <div
+        style={{
+          background: CREAM,
+          borderRadius: 8,
+          padding: '10px 12px',
+          fontFamily: 'var(--font-sans)',
+          fontSize: 13,
+          lineHeight: 1.5,
+          color: emptyText ? FAINT : INK,
+          fontWeight: 400,
+          width: '100%',
+          minHeight: 60,
+          boxSizing: 'border-box',
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {emptyText ? '—' : value}
+      </div>
+    )
+  }
 
   function handleBlur() {
     if (value === initialValue) return
@@ -2733,6 +2969,7 @@ function SectionTitleField({
   const [draft, setDraft] = useState('')
   const [, startTransition] = useTransition()
   const router = useRouter()
+  const locked = useSessionLocked()
 
   // Sync local state when the server pushes a new initialValue — happens
   // when a sibling in our superset group adopts a section title via
@@ -2751,7 +2988,28 @@ function SectionTitleField({
   // reset on first render to the empty option.
   const valueInOptions = value !== '' && options.some((o) => o.name === value)
 
+  // Locked: static section eyebrow when one is set, nothing when blank.
+  if (locked) {
+    if (value === '') return null
+    return (
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: 10,
+          letterSpacing: '.08em',
+          textTransform: 'uppercase',
+          color: MUTED,
+          marginBottom: 12,
+        }}
+      >
+        {value}
+      </div>
+    )
+  }
+
   function applyValue(next: string) {
+    if (locked) return
     setValue(next)
     startTransition(async () => {
       // Section is a property of the block. The action fans out to every
