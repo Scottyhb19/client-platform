@@ -202,6 +202,31 @@ export default async function ClientProgramPage({
       }
     }
 
+    // Completed-session lookup for the per-cell status glyph. A program_day
+    // is "completed" when a non-deleted session with completed_at exists for
+    // it, scoped to this client. sessions.program_day_id is the durable link
+    // (sessions_program_day_idx was built for exactly this "calendar dot").
+    // Read-only over the already-staff-readable sessions table — the same
+    // table the dashboard and session builder read today, so no new RLS
+    // surface. This is a single binary status glyph, not the logged
+    // performance data: the detailed adherence readout still lives only on
+    // the client profile (amended calendar-pristine carve-out, 2026-07-15).
+    const completedDayIds = new Set<string>()
+    const allDayIds = (daysRaw ?? []).map((d) => d.id)
+    if (allDayIds.length > 0) {
+      const { data: doneRaw, error: doneErr } = await supabase
+        .from('sessions')
+        .select('program_day_id')
+        .eq('client_id', id)
+        .in('program_day_id', allDayIds)
+        .not('completed_at', 'is', null)
+        .is('deleted_at', null)
+      if (doneErr) throw new Error(`Load completed sessions: ${doneErr.message}`)
+      for (const s of doneRaw ?? []) {
+        if (s.program_day_id) completedDayIds.add(s.program_day_id)
+      }
+    }
+
     days = (daysRaw ?? []).map((d) => ({
       id: d.id,
       program_id: d.program_id,
@@ -209,6 +234,7 @@ export default async function ClientProgramPage({
       day_label: d.day_label,
       sort_order: d.sort_order,
       published_at: d.published_at,
+      completed: completedDayIds.has(d.id),
       exercises: exercisesByDayId.get(d.id) ?? [],
     }))
   }

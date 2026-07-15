@@ -246,3 +246,41 @@ should follow whatever the popover decision is, browser-verified.
 **Re-trigger:** the first time the operator (or the EP collaborator) actually
 misreads a schedule row because the archived state wasn't visible — or any
 schedule-surface polish pass, whichever first.
+
+---
+
+## Program calendar — "missed" session mark (red minus)
+
+**Surfaced:** 2026-07-15, alongside the completed-session green tick + read-only
+lock dogfooding pass. The operator chose the green tick now and asked to "add
+that missed session aspect in later."
+
+**Motivating friction.** The calendar now shows a green "Completed" tick on days
+with a logged session, but there's no at-a-glance signal for a day the client
+*was assigned* and didn't do. The schedule (appointments) already has the visual
+language — a red minus corner pip for `no_show` (`StatusBadge` in
+`src/app/(staff)/schedule/_components/WeekView.tsx`).
+
+**Why not built now.** "Completed" is a clean stored fact
+(`sessions.completed_at`). "Missed" is a *derived* state with real edge cases the
+operator must decide, not defaults:
+
+- Definition candidate: past-dated + assigned (`published_at` set) + no completed
+  session against the day.
+- Grace period: does a session flip to "missed" at midnight after its date, or
+  after a buffer? A client often logs the evening of, or the next morning.
+- Forgot-to-log: a session the client *did* but didn't log reads as "missed" — a
+  false negative that can feel accusatory. Copy/colour must stay factual, not
+  dramatised (CLAUDE.md voice — "reason codes are factual, not dramatised").
+- Drafts (never assigned) and loose one-off days are not "missed" — never
+  assigned, nothing to miss.
+
+**Shape when picked up.** Read-only, same data path as the completed tick (no
+schema / RLS / pgTAP): the calendar loader already has each day's
+`scheduled_date`, `published_at`, and completion; "missed" is `todayIso`-relative
+plus those three. Reuse the schedule's red-minus pip for consistency. Slots into
+the existing corner-badge precedence in `MonthCalendar.tsx`
+(completed > **missed** > assigned > assign).
+
+**Re-trigger:** the operator wants the missed signal after living with the tick,
+**or** the derived-state definition (grace period especially) is settled.

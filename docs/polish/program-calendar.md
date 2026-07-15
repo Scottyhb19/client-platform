@@ -274,3 +274,47 @@ All twelve gaps — P0-1, P0-2, P1-1, P1-2, P1-3, P1-4, P2-1, P2-2, P2-3, P2-4, 
 ## 9. Sign-off
 
 **Sign-off — Program calendar (section 6). Decision: Closed.** Reviewed against the closing commit in section 8 and the progress log in section 7. All twelve gaps (P0-1, P0-2, P1-1 through P1-4, P2-1 through P2-6) plus the test fixture rider are implemented, tested, and operator-visually-confirmed. Acceptance evidence verified: pgTAP 176/176 across 15 files on live, with the three calendar suites re-confirmed 2026-06-14 (11 at 16/16, 23 at 32/32, 24 at 20/20); type-check, eslint, and `next build` clean on the deploy commit; operator two-round authenticated browser walkthrough returning "Everything works" across all six clone paths, plus 2026-06-14 visual confirmation of the P2 polish. Production deploy confirmed live on Vercel from the deploy commit. `CLAUDE.md` reconciled to the shipped state. Section-scoped items previously flagged for deferral — pin and view-mode persistence, and the P2-2 design-layer token values — are resolved. Two platform-level liabilities remain tracked in `go-live-checklist.md` and are outside this section's contract: the full-platform SECURITY DEFINER anon-EXECUTE sweep and the non-production test target. One noted nuance, not a defect: the P2-5 Active chip is confirmation rather than disambiguation, since archived blocks are already excluded from that surface. Reviewer: Claude (claude.ai project chat), 2026-06-14.
+
+---
+
+## 10. Post-close addendum — completion glyph + calendar-pristine amendment (2026-07-15)
+
+A dogfooding pass **after** close. Not a re-open of the section — this is a change
+*within* the signed-off calendar/builder surfaces (read-only projection over
+already-tested RLS; no new surface, schema, or security surface), so it runs the
+four-bucket dogfooding loop, not the seven-step polish protocol. Recorded here
+because it consciously amends a rule this section locked.
+
+**Calendar-pristine rule — amended (operator decision, 2026-07-15).** The standing
+rule was: the calendar stays prescription + scheduling only — completion data
+lives on the client profile, *never overlaid on calendar cells* (§8 close, and the
+`calendar-pristine` memory). The operator amended it: **a single binary status
+glyph is now allowed on a cell** — a green "Completed" tick (and, deferred, a red
+"missed" mark) — reframed as *scheduling legibility* ("did this happen?"), which is
+within the calendar's remit. What stays off the calendar is unchanged: the
+*detailed adherence data* — logged sets/reps/load/RPE, session feedback,
+per-session summaries — still lives only on `/clients/[id]?tab=program`. The
+distinction the original rule protected (calendar = programmed, not a review
+surface for actuals) holds; only a one-bit status pip crosses over.
+
+**Completed tick (shipped).** `program/page.tsx` reads completed sessions
+(`sessions.completed_at`, `program_day_id`-linked, client-scoped) into a
+`completed` flag per day; `MonthCalendar.tsx` renders a "Completed" pill (green
+`Check`, `--color-accent-soft-strong`) that supersedes the "Assigned" pill. The
+schema anticipated this — `sessions_program_day_idx` was commented "Calendar dot"
+at build. Read-only over the already-staff-readable `sessions` table — no schema /
+RLS / pgTAP.
+
+**Read-only lock on completed sessions (shipped).** The session builder freezes
+when a session is completed AND still assigned (`SessionLockContext` in
+`SessionBuilder.tsx`; `locked` computed in the day page). Unassign is the unlock
+(drops `published_at` → `locked` false). UI guardrail only — DB-level enforcement
+is deferred to `go-live-checklist.md` §8 (re-trigger: first paying clinical client
+— fold into the CN-7 write-immutability trigger family — or an edited completed
+session found). The Library tab stays present (differentiator adjacency); its
+add/swap is inert-with-notice when locked.
+
+**"Missed" mark — deferred** to `deferred-prompts.md` (derived-state definition +
+grace-period decision outstanding; the operator chose the tick now, missed later).
+
+**Scenarios:** `CAL-DONE-1`, `LOCK-1..5` in `test_scenarios_template.md`.

@@ -74,6 +74,12 @@ export interface ProgramDayWithExercises {
   // client's portal. Drives the per-tile "Assigned" marker and the
   // "Assign all" header count.
   published_at: string | null
+  // Completed state — true when the client has logged a completed session
+  // against this day (sessions.completed_at). Drives the per-tile
+  // "Completed" glyph, which supersedes the "Assigned" marker (a completed
+  // day was necessarily assigned). A single binary status glyph only — the
+  // logged performance data stays on the client profile.
+  completed: boolean
   exercises: ProgramExerciseWithMeta[]
 }
 
@@ -1577,13 +1583,45 @@ function DateCell({
       </button>
 
       {/* Top-right corner (items 2 & 3) — absolutely positioned so it never
-          changes the tile's height. Assigned → a quiet green check; not yet
-          assigned but has exercises → a paper-plane that assigns the day in
-          one click (no need to open it). Hidden during a copy-pick so it can't
-          be mistaken for a paste target. */}
-      {!inCopyPick && (day.published_at !== null || day.exercises.length > 0) && (
+          changes the tile's height. Precedence: completed → a stronger green
+          "Completed" tick (the client has logged it); assigned → a quiet green
+          check; not yet assigned but has exercises → a paper-plane that assigns
+          the day in one click (no need to open it). Hidden during a copy-pick so
+          it can't be mistaken for a paste target. */}
+      {!inCopyPick &&
+        (day.completed || day.published_at !== null || day.exercises.length > 0) && (
         <div style={{ position: 'absolute', top: 6, right: 6, zIndex: 3 }}>
-          {day.published_at !== null ? (
+          {day.completed ? (
+            <span
+              aria-label="Completed"
+              title="Completed"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 7px',
+                borderRadius: 999,
+                // Stronger accent tint than the "Assigned" pill so completion
+                // reads as a step beyond assignment — matches the schedule's
+                // completed status pip. Green is the sanctioned completion
+                // colour; the small-size text stays soft per the design rule.
+                background: 'var(--color-accent-soft-strong)',
+                color: 'var(--color-text-light)',
+                fontFamily: 'var(--font-sans)',
+                fontSize: '.62rem',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Check
+                size={11}
+                strokeWidth={3}
+                aria-hidden
+                style={{ color: 'var(--color-accent)' }}
+              />
+              Completed
+            </span>
+          ) : day.published_at !== null ? (
             <span
               aria-label="Assigned"
               style={{
