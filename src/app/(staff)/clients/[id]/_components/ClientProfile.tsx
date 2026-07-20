@@ -1125,6 +1125,11 @@ function DetailsTab({
             value={client.dob ? formatDob(client.dob) : null}
           />
           <FieldBox label="Sex" value={client.sex} />
+          {/* Category (client "title": Athlete/Rehab/Lifestyle…) is edited in
+              the Edit-details dialog alongside Sex; surface it here at rest so
+              it's visible without opening the form. Same category_name the
+              header tag renders. */}
+          <FieldBox label="Category" value={client.category_name} />
           <FieldBox label="Address" value={client.address} span2 />
           <FieldBox label="Referrer" value={client.referral_source} />
           <FieldBox label="Referred by" value={client.referred_by} />

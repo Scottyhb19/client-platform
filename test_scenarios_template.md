@@ -1878,6 +1878,28 @@ over the still-free-text `clients.sex` column — UI-only, values not DB-enforce
   either write is accepted. (Prevents the classic "select value not in option
   list → renders blank → clobbers on save" data-loss trap.)
 
+## Dogfooding — Category on the Contact card (staff, presentation, 2026-07-21)
+
+Context: a UX papercut inside the already-signed-off client Profile tab — pure
+presentation, no schema / RLS / pgTAP. The client "title" (category: Athlete /
+Rehab / Lifestyle / …) was already editable in the Edit-details dialog and shown
+as the header tag, but was **absent from the Contact card's read view**, so it
+read as un-changeable. A **Category** `FieldBox` is added to the Contact grid
+(after Sex), reading the same `client.category_name` the header tag uses. The
+existing Edit-details → Category dropdown is unchanged; no new edit path.
+
+### CAT-FIELD-1 — Category is visible at rest on the Contact card
+- **Setup:** Open a categorised client's Profile tab (authed staff).
+- **Pass:** The Contact card shows a **CATEGORY** eyebrow FieldBox reading the
+  client's category name (e.g. "Rehab"), the same value as the header tag. An
+  uncategorised client renders the em dash (`—`), muted — never blank or a crash.
+
+### CAT-FIELD-2 — It's edited through the existing Edit-details dialog
+- **Pass:** Changing the category via Edit-details → **Category** and saving
+  (`updateClientDetailsAction`, `clients.category_id`) is reflected in the new
+  Contact FieldBox after refresh. No separate edit control was added on the read
+  view — the single "Edit details" pencil still owns every Contact field.
+
 ## Dogfooding — Completed-session lock + calendar completion tick (staff, 2026-07-15)
 
 Context: a completed session (the client has logged it) is now **read-only** in
