@@ -96,6 +96,12 @@ export async function sendInviteForClient(args: {
     practiceName,
     practitionerName,
     acceptUrl: gateUrl,
+    // §12 Part B: record on the Comms tab, attributed to the inviting EP.
+    log: {
+      organizationId: args.organizationId,
+      clientId: args.clientId,
+      senderUserId: args.sendingUserId,
+    },
   })
   if (emailErr) {
     return {

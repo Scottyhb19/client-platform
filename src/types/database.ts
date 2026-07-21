@@ -1262,7 +1262,7 @@ export type Database = {
           recipient_email: string | null
           recipient_phone: string | null
           scheduled_for: string | null
-          sender_user_id: string
+          sender_user_id: string | null
           sent_at: string | null
           status: Database["public"]["Enums"]["communication_status"]
           subject: string | null
@@ -1289,7 +1289,7 @@ export type Database = {
           recipient_email?: string | null
           recipient_phone?: string | null
           scheduled_for?: string | null
-          sender_user_id: string
+          sender_user_id?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["communication_status"]
           subject?: string | null
@@ -1316,7 +1316,7 @@ export type Database = {
           recipient_email?: string | null
           recipient_phone?: string | null
           scheduled_for?: string | null
-          sender_user_id?: string
+          sender_user_id?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["communication_status"]
           subject?: string | null

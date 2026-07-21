@@ -110,13 +110,15 @@ async function sendStaffBookingConfirmation(
     .from('appointments')
     .select(
       `id, start_at, end_at, appointment_type, location, staff_user_id,
+       client_id, organization_id,
        organization:organizations(name, timezone, email_notifications_enabled),
        client:clients(first_name, email)`,
     )
     .eq('id', appointmentId)
     .maybeSingle()
 
-  if (!appt || !appt.client?.email || !appt.organization) return
+  if (!appt || !appt.client?.email || !appt.organization || !appt.client_id)
+    return
   // P2-5: respect the practice's email toggle — skip the confirmation when off.
   if (!appt.organization.email_notifications_enabled) return
 
@@ -146,6 +148,12 @@ async function sendStaffBookingConfirmation(
     timeLine: formatBookingTimeRange(appt.start_at, appt.end_at, tz),
     location: appt.location,
     bookingUrl,
+    // §12 Part B: record on the Comms tab, attributed to the booking staffer.
+    log: {
+      organizationId: appt.organization_id,
+      clientId: appt.client_id,
+      senderUserId: appt.staff_user_id,
+    },
   })
 }
 
@@ -166,6 +174,7 @@ async function sendStaffRescheduleNotification(
     .from('appointments')
     .select(
       `id, start_at, end_at, appointment_type, location, kind, staff_user_id,
+       client_id, organization_id,
        organization:organizations(name, timezone, email_notifications_enabled),
        client:clients(first_name, email)`,
     )
@@ -174,7 +183,7 @@ async function sendStaffRescheduleNotification(
 
   // Appointment-kind client bookings only; unavailable blocks have no client.
   if (!appt || appt.kind !== 'appointment') return
-  if (!appt.client?.email || !appt.organization) return
+  if (!appt.client?.email || !appt.organization || !appt.client_id) return
   // P2-5: respect the practice's email toggle.
   if (!appt.organization.email_notifications_enabled) return
 
@@ -210,6 +219,12 @@ async function sendStaffRescheduleNotification(
     previousLine,
     location: appt.location,
     bookingUrl,
+    // §12 Part B: record on the Comms tab, attributed to the moving staffer.
+    log: {
+      organizationId: appt.organization_id,
+      clientId: appt.client_id,
+      senderUserId: appt.staff_user_id,
+    },
   })
 }
 

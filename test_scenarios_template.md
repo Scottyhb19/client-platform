@@ -2169,3 +2169,27 @@ Supabase accept URL is minted at the human's gate tap, never at send.
 - **Pass:** The gate returns with "That didn't go through — tap again";
   consumed_at is back to NULL, and a later tap succeeds. The invite is never
   bricked by a transient failure.
+
+## Comms tab + system-send logging (2026-07-21, migration 20260721160000)
+
+Context: polish/email-and-sms.md "Part B — the LOGGING half". Every outbound
+client email lands on the profile's Comms tab; failed sends surface there.
+
+### COMMS-1 — Sends appear on the Comms tab
+- **Setup:** Invite a client; book them (staff-side and portal-side); let a
+  reminder send. Open the client profile → Comms.
+- **Pass:** One row per send, newest first: invite (attributed), booking
+  confirmations, reminder ("Automatic"). Rows expand to the stored body;
+  the invite/booking bodies are the actual plaintext that went out.
+
+### COMMS-2 — A failed send is visible to the EP
+- **Setup:** Cause a send failure (e.g. invalid Resend key on staging) for a
+  reminder or invite.
+- **Pass:** The Comms tab shows the row with FAILED in the alert colour and
+  the failure reason on expand. No send is retried or blocked by logging.
+
+### COMMS-3 — The record outlives archiving and stays staff-only
+- **Setup:** Archive a client with comms history; view their profile → Comms.
+  Separately, as a portal client, attempt to read communications via API.
+- **Pass:** The archived profile still shows the full comms record (FM-8
+  boundary). The client-role API read returns zero rows (pgTAP 62 #5).

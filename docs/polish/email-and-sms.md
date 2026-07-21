@@ -240,3 +240,21 @@ Reviewer confirmed fine without change: the Part A/B split, the no-new-pgTAP cal
 **Deferred items** (Part B → go-live pipeline, indexed in [`go-live-checklist.md`](../go-live-checklist.md) §8): the connected-account email compose feature + Comms tab + system-send log-wiring (P0-1/2/3, P1-1, P1-2, P1-4, P2-4, P2-5, §4 Q1–Q5), and within that **the EP-facing in-product surfacing of send failures** (FM-5's second half). **Re-trigger:** the connected-account feature is picked up, or the operator wants a per-client communication history / in-product send-failure visibility before then.
 
 *Section 12 (Email & SMS) — Closed with deferred items. As the final section of the locked polish-pass order, this completes the Phase-1 polish pass.*
+
+---
+
+## Part B — the LOGGING half, built (2026-07-21)
+
+**Status: BUILT on staging (pending prod apply at the next deploy sitting + the sign-off ritual).** The operator's 2026-06-22 split deferred all of Part B to the go-live pipeline; Step 5 of the 2026-07-21 internal work sequence pulls forward **the logging half only** — the brief §6.7 "sent communications logged to the client's Comms tab" requirement. **The connected-account OAuth compose half stays deferred** (unchanged owner decision; its P0-1/P0-2/P0-3 questions — FROM address, token storage, Google OAuth publishing — remain open and untouched).
+
+**Premortem (compact, as built):** logging must never break a send (best-effort `logCommunication`, called after the Resend outcome; send-module failure semantics unchanged) · comms must not leak to clients (existing 20260420102600 staff-only policies verified; pgTAP 62 #5/#6) · reminder retries produce multiple rows (accepted — a truthful timeline, not a duplicate) · the reminder trigger hit a real enum/text mismatch on first run (`reminder_type::text` cast; test 62 is the tripwire) · the record must survive archiving (the Comms read has no archived filter; the profile renders for archived clients per CN-7 — the FM-8 records boundary).
+
+**What shipped** (migration `20260721160000_comms_system_send_log.sql`; pgTAP `62` 6/6 on staging):
+
+- **`communications.sender_user_id` nullable** — NULL = system send; system mail no longer needs fake attribution.
+- **Reminder outcomes logged DB-side** — `reminder_log_communication` (AFTER UPDATE on `appointment_reminders`, sent AND failed transitions) derives a communications row from what the Edge Function already writes — **no EF change, so nothing rides on a prod functions deploy**. Failed rows carry `failure_reason`: the EP-facing failed-send surfacing that Part A's P1-3 deliberately left to this tab now exists.
+- **App-side sends log themselves** — `src/lib/comms/log.ts` (`logCommunication` + `CommLogContext`); the three send modules (invite, booking confirmation, reschedule notification) accept an optional `log` context and record both outcomes with the REAL subject + plaintext body. Wired at all four call paths: invite (attributed to the inviting EP; covers new-client AND resend via `sendInviteForClient`), portal self-book confirmation (system send), staff booking confirmation + reschedule notification (attributed to the staffer).
+- **The Comms tab** — `CommsTab.tsx` on the client profile (`?tab=comms`): newest-first read-only record, subject + AU-format date + Automatic marker for system sends, status label (Failed in the alert colour with its reason), expandable stored body. Empty state in the quiet voice. Renders for archived clients (the record outlives the archive).
+- **Excluded by decision:** message-notification emails to the EP (practice-internal ops mail, not client-directed — the Comms tab is the client's record). Reminder rows store a factual summary line, not the rendered email body (the DB doesn't hold the EF's render); verbatim reminder-body capture rides the EF's next touch — disclosed, not silent.
+
+**Verified:** pgTAP 62 (6/6 — trigger rows for sent+failed with provider id/recipient/subject, staff read, client-role zero, anon 42501); `tsc` green; types regenerated. Render-tier: accepted per go-live-checklist §5b (type-check + build + code-read) with the authed-harness drive following in Step 6.
