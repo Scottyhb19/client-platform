@@ -94,6 +94,23 @@ export async function setNewPassword(formData: FormData) {
     );
   }
 
+  // Revoke every OTHER session for this account (§3 post-reset session
+  // behaviour, go-live-checklist). A reset motivated by suspected
+  // compromise must not leave a stolen session alive on another device;
+  // without this, a password change does not touch existing refresh
+  // tokens. scope:'others' keeps THIS session (it just proved email
+  // control via the ticket) and revokes the rest. Revocation kills
+  // refresh tokens, not live access tokens — a revoked device dies at
+  // its next refresh, worst case the access-token TTL (~1h). Best-effort:
+  // the password write already succeeded, so a failure here must not
+  // strand the user — log and continue.
+  const { error: revokeErr } = await supabase.auth.signOut({ scope: "others" });
+  if (revokeErr) {
+    console.error(
+      `[reset-password] sibling-session revoke failed: ${revokeErr.message}`,
+    );
+  }
+
   // Role-aware redirect (C-4). updateUser issued a fresh JWT through the
   // Custom Access Token Hook, so user_role() reads the current claim.
   // No `next` in this flow — postAuthLanding falls back to /dashboard for

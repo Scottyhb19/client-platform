@@ -69,6 +69,21 @@ export async function setPasswordAndAcceptAction(
     return { error: `Couldn't set password: ${pwErr.message}`, fieldErrors: {} }
   }
 
+  // 1b. Revoke every OTHER session for this account (§3 post-reset
+  //     session behaviour, go-live-checklist — applied here for parity
+  //     with the reset path). Matters for re-invited accounts whose
+  //     auth user predates this invite: any session from the account's
+  //     previous life dies at its next token refresh (worst case ~1h,
+  //     the access-token TTL). scope:'others' keeps the magic-link
+  //     session doing this setup. Best-effort — the password is already
+  //     set; don't fail the accept over it.
+  const { error: revokeErr } = await supabase.auth.signOut({ scope: 'others' })
+  if (revokeErr) {
+    console.error(
+      `[welcome-accept] sibling-session revoke failed: ${revokeErr.message}`,
+    )
+  }
+
   // 2. Rate-limit check (C-6, docs/auth.md §7.2). Failed-only: this
   //    refuses the attempt if recent failures for this uid already meet
   //    the cap. The wrapper FAILS CLOSED — a rate-limit infrastructure

@@ -2040,3 +2040,36 @@ glyph on a cell (see `docs/polish/program-calendar.md` §10).
   it surfaces the on-system notice "This session is locked — unassign it above
   to add or swap exercises." The Library tab itself is never removed (the
   Notes/Reports/Library adjacency is the differentiator).
+
+## Go-live §3 — post-reset sibling-session revocation (auth, 2026-07-21)
+
+Context: the last open go-live-checklist §3 item. A password reset (or a
+welcome-flow first password-set) now calls `auth.signOut({ scope: 'others' })`
+after the successful password write — every OTHER session for the account is
+revoked; the session that just proved email control survives. Revocation kills
+refresh tokens, not live access tokens, so a revoked device dies at its next
+token refresh (worst case ~1h, the access-token TTL). Best-effort: a revoke
+failure is logged (`[reset-password]` / `[welcome-accept]` console.error) and
+never blocks the user — the password change already succeeded. No schema / RLS
+/ pgTAP (no DB surface; GoTrue owns session storage).
+
+### RESET-REVOKE-1 — Password reset kills the other device's session
+- **Setup:** Log the same account in on two browsers (A and B). In A, run the
+  full forgot-password → email link → reset flow to a new password.
+- **Pass:** B is bounced to `/login` at its next token refresh — force it
+  immediately by leaving B idle past access-token expiry, or by restarting B's
+  browser (the persisted session must re-authenticate via the refresh token,
+  which is now revoked). B cannot regain access without the NEW password.
+
+### RESET-REVOKE-2 — The resetting session itself survives
+- **Setup:** Same as RESET-REVOKE-1, observing browser A.
+- **Pass:** A lands on its role-aware destination (staff → `/dashboard`,
+  client → `/portal`) signed in, with no re-login prompt. Subsequent
+  navigation in A keeps working past the next token refresh.
+
+### WELCOME-REVOKE-1 — Invite accept revokes a pre-existing session (parity)
+- **Setup:** An auth account with a live session in browser B is re-invited
+  (the Imaan-class case: auth user predates the invite). In browser A, open
+  the invite link and complete the welcome set-password flow.
+- **Pass:** A proceeds to `/welcome/install` normally; B's old session is dead
+  at its next refresh, same semantics as RESET-REVOKE-1.

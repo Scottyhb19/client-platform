@@ -232,9 +232,9 @@ No custom server-side work on the login path. Supabase's rate limits (§7) are i
 6. Supabase updates the password hash, invalidates all existing refresh tokens, issues a fresh session.
 7. User redirected to their role-appropriate home.
 
-**No custom code needed.** Supabase handles tokenization, email, and hash rotation.
+**No custom code needed.** Supabase handles tokenization, email, and hash rotation. (Implementation note: the production flow is the ticket-gated server action at `/auth/reset-password` — see `consume_recovery_ticket` and `src/app/auth/reset-password/actions.ts` — not the client-side sketch above.)
 
-**Revocation side effect:** changing the password invalidates all refresh tokens — any other active sessions (other devices) are logged out at next access-token refresh (within 1 hour). This is the correct default.
+**Revocation side effect — corrected 2026-07-21 (doc drift).** The original line here claimed GoTrue invalidates all refresh tokens on a password change by default. **It does not** — a password change leaves other devices' sessions alive, which is why go-live-checklist §3 carried "post-reset session behaviour" as an open item. Closed 2026-07-21: the reset action (and the welcome set-password action, for parity) now explicitly calls `auth.signOut({ scope: 'others' })` after a successful password write — every *other* session is revoked while the resetting session continues. A revoked device dies at its next token refresh (worst case the ~1 h access-token TTL; in practice the middleware's per-request `getUser()` bounces it on next navigation). Verified live 2026-07-21 by a two-browser pass (scenarios `RESET-REVOKE-1/2`, `test_scenarios_template.md`).
 
 ### 5.6 Email change
 
