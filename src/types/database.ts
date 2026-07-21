@@ -1686,7 +1686,7 @@ export type Database = {
       }
       invite_tokens: {
         Row: {
-          action_link: string
+          action_link: string | null
           client_id: string
           consumed_at: string | null
           created_at: string
@@ -1695,7 +1695,7 @@ export type Database = {
           organization_id: string
         }
         Insert: {
-          action_link: string
+          action_link?: string | null
           client_id: string
           consumed_at?: string | null
           created_at?: string
@@ -1704,7 +1704,7 @@ export type Database = {
           organization_id: string
         }
         Update: {
-          action_link?: string
+          action_link?: string | null
           client_id?: string
           consumed_at?: string | null
           created_at?: string

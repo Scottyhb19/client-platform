@@ -904,3 +904,21 @@ The platform-wide §4 sweep (`docs/go-live-checklist.md`) held this function ope
 - The RPC body itself raises `Not authenticated` when `auth.uid()` is null (in-body guard, the load-bearing protection during the open window).
 
 **Answer: never pre-auth → anon revoke safe.** Migration `20260702130000` revoked anon EXECUTE (authenticated retained — the welcome flow's role), alongside the rest of the §4 candidate bucket (`create_organization_with_owner`, `staff_create_client_invite`, and the audit-infra internals to definer-only). pgTAP `52_onboarding_audit_rpc_grants.sql` (14/14 on live, 2026-07-02) is the regression tripwire; pgTAP `51` re-ran green post-revoke, proving audited authenticated writes (the `log_audit_event` → `audit_resolve_org_id` chain) are unaffected. With this, the §4 sweep's candidate bucket is **fully discharged** — no open anon-EXECUTE items remain anywhere in the sweep.
+
+---
+
+## C-14 deferred item 1 closure — invite link minted at POST (2026-07-21)
+
+**Status: BUILT on staging (pending prod apply at the next deploy sitting + the sign-off ritual).** The residual left after C-11's burn-on-click (the pre-minted link living in the DB from send time) is closed: pulled forward from the paying-client gate as Step 4 of the 2026-07-21 internal work sequence.
+
+**What shipped** (migration `20260721150000_invite_link_mint_at_post.sql` — `invite_tokens.action_link` now nullable; `src/lib/clients/invite.ts`, `src/lib/clients/invite-link.ts` (new — the extracted mint + already-registered fallback), `src/app/i/[id]/actions.ts`, `page.tsx`):
+
+- **Send** stores the token row with `action_link` NULL and emails only the `/i/<id>` gate URL. No live OTP link exists anywhere between send and tap. `getPublicOrigin()` stays at send (G-11 fail-loud in front of the EP).
+- **The human's POST mints.** `continueInviteAction`'s winning atomic claim now calls `mintAcceptLink` (invite → magiclink fallback, logic unchanged, moved to `invite-link.ts`), stores the minted link on the row (preserving the C-11 double-tap grace window), and redirects. The OTP's TTL starts at the tap, not at send — a slow inbox can no longer burn it.
+- **Mint failure un-claims** (`consumed_at` → NULL) and bounces to the gate with a gentle retry alert — safe to re-open because scanners never POST (the C-11 premise), and gate expiry still applies.
+- **Deploy-skew safe, no shim:** a claim that finds a stored `action_link` (a row written by the old code) redirects it directly; only null-link rows mint.
+- **Grace-window note:** a double-tap landing before the winner's mint completes falls through to the bounce (the winner's redirect is already in flight) — disclosed, not hidden.
+
+**Verified live on staging (2026-07-21):** a NULL-link token for a seeded synthetic client → gate rendered → tap minted + redirected through staging GoTrue → landed authenticated on `/welcome` set-password; row shows consumed + staging-minted link stored; re-visiting the gate renders the "already been used" shell (burn semantics intact). `tsc` green; types regenerated. `scripts/c11-burn-verify.mjs` seeds sentinel-link rows and therefore exercises the legacy stored-link path — still valid for the burn/grace machinery it asserts.
+
+**What this does to the C-14 scanner-class weakness:** with no link in the HTML (C-11) and now no link minted before the human acts, a body-parsing scanner has nothing to reach at any point. The **enterprise Safe Links/M365 behavioural re-run** remains the outstanding confirmation (checklist §8) — it needs an M365 mailbox and stays at the paying-client gate.

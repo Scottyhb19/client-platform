@@ -2151,3 +2151,21 @@ structured row in auth_events; the table is server-side-only + append-only.
   auth_events via PostgREST; as owner, attempt UPDATE/DELETE on a row.
 - **Pass:** API roles get permission denied (42501). UPDATE/DELETE are
   refused ("auth_events is append-only") — pgTAP 61 is the machine gate.
+
+## Invite link mint-at-POST (2026-07-21, migration 20260721150000)
+
+Context: auth-onboarding-client.md "C-14 deferred item 1 closure". The
+Supabase accept URL is minted at the human's gate tap, never at send.
+
+### INV-MINT-1 — Invite flow works with tap-time minting
+- **Setup:** Invite a client. Open the emailed /i/<id> gate; tap Continue.
+- **Pass:** The tap lands them authenticated on /welcome set-password. In
+  invite_tokens the row shows consumed_at set AND action_link stored (it was
+  NULL between send and tap). Re-opening the gate shows "already been used".
+
+### INV-MINT-2 — A failed mint is retryable, not a dead invite
+- **Setup:** Force a mint failure (e.g. temporarily unreachable GoTrue) and
+  tap Continue.
+- **Pass:** The gate returns with "That didn't go through — tap again";
+  consumed_at is back to NULL, and a later tap succeeds. The invite is never
+  bricked by a transient failure.
