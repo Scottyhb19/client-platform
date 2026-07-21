@@ -331,6 +331,18 @@ export function ColHeader({
 }
 
 /**
+ * The set that's being typed right now, broadcast to its siblings so the
+ * cells below can preview the follow value instantly (no Enter, no
+ * round-trip). Clone of the SessionBuilder LiveSetEdit — keep in sync.
+ */
+type LiveSetEdit = {
+  setNumber: number
+  field: AutofillableSetField
+  value: string
+  previousValue: string
+}
+
+/**
  * The reps + load grid. Column-level metrics read from the first live set and
  * are kept in sync across rows by the bulk rep-metric / load-metric writers.
  * Persistence is delegated to the consumer's commit callbacks.
@@ -364,6 +376,11 @@ export function SetTable({
   const run = useSaveRun()
   const [, startTransition] = useTransition()
 
+  // Live column-autofill preview (clone of the SessionBuilder behaviour). Set
+  // on every keystroke of the focused cell; cells below mirror it immediately
+  // (SetCell.overlayValue). Cleared once the durable autofill has revalidated.
+  const [liveEdit, setLiveEdit] = useState<LiveSetEdit | null>(null)
+
   // Column autofill — the session builder's downward follow-the-value rule
   // cloned onto the kit grid: a committed value follows into the cells
   // BELOW the edited set that are empty or still hold its previous value;
@@ -382,12 +399,19 @@ export function SetTable({
       const sibling = s[field] ?? ''
       return sibling === '' || sibling === previousValue
     })
-    if (!followable) return
+    if (!followable) {
+      // Nothing below can follow — drop the preview now, no round-trip.
+      setLiveEdit(null)
+      return
+    }
     startTransition(async () => {
       // Through run() so the save pill covers the fill like any autosave.
       // On failure the sibling cells simply keep their current values —
       // nothing the EP typed is lost.
       await run(onAutofill(field, value, previousValue, setNumber))
+      // Clear the preview only now the revalidate has landed: siblings have
+      // adopted the real value in the same render, so there's no flicker.
+      setLiveEdit(null)
     })
   }
 
@@ -420,6 +444,9 @@ export function SetTable({
           onCommitted={(field, value, previous) =>
             handleCellCommitted(set.set_number, field, value, previous)
           }
+          liveEdit={liveEdit}
+          onLiveEdit={setLiveEdit}
+          onLiveEditCancel={() => setLiveEdit(null)}
         />
       ))}
     </div>
@@ -431,6 +458,9 @@ function SetRow({
   onRepsCommit,
   onValueCommit,
   onCommitted,
+  liveEdit,
+  onLiveEdit,
+  onLiveEditCancel,
 }: {
   set: PrescriptionSet
   onRepsCommit: (next: string | null) => Promise<SaveResult>
@@ -440,6 +470,9 @@ function SetRow({
     value: string,
     previousValue: string,
   ) => void
+  liveEdit: LiveSetEdit | null
+  onLiveEdit: (edit: LiveSetEdit) => void
+  onLiveEditCancel: () => void
 }) {
   return (
     <>
@@ -459,18 +492,28 @@ function SetRow({
         {set.set_number}
       </div>
       <SetCell
+        setNumber={set.set_number}
+        field="reps"
         initialValue={set.reps ?? ''}
         placeholder="—"
         onCommit={onRepsCommit}
         onCommitted={(value, previous) => onCommitted('reps', value, previous)}
+        liveEdit={liveEdit}
+        onLiveEdit={onLiveEdit}
+        onLiveEditCancel={onLiveEditCancel}
       />
       <SetCell
+        setNumber={set.set_number}
+        field="optional_value"
         initialValue={set.optional_value ?? ''}
         placeholder="—"
         onCommit={onValueCommit}
         onCommitted={(value, previous) =>
           onCommitted('optional_value', value, previous)
         }
+        liveEdit={liveEdit}
+        onLiveEdit={onLiveEdit}
+        onLiveEditCancel={onLiveEditCancel}
       />
     </>
   )
@@ -483,17 +526,30 @@ function SetRow({
  * database doesn't hold.
  */
 export function SetCell({
+  setNumber,
+  field,
   initialValue,
   placeholder,
   onCommit,
   onCommitted,
+  liveEdit,
+  onLiveEdit,
+  onLiveEditCancel,
 }: {
+  setNumber: number
+  field: AutofillableSetField
   initialValue: string
   placeholder?: string
   onCommit: (next: string | null) => Promise<SaveResult>
   /** Fires after a successful save of a non-empty value — column autofill.
    *  previousValue is the server value the edit replaced. */
   onCommitted?: (value: string, previousValue: string) => void
+  /** The set currently being typed (any cell in this table), or null. */
+  liveEdit: LiveSetEdit | null
+  /** Announce this cell's live value so cells below can preview the follow. */
+  onLiveEdit: (edit: LiveSetEdit) => void
+  /** Withdraw this cell's live broadcast (no change / empty / save failed). */
+  onLiveEditCancel: () => void
 }) {
   const [value, setValue] = useState(initialValue)
   // Last server value this cell knows — moves on its OWN successful save,
@@ -511,7 +567,31 @@ export function SetCell({
   const [savedAt, setSavedAt] = useState(0)
   const [, startTransition] = useTransition()
   const run = useSaveRun()
-  const empty = value.trim() === ''
+
+  // Live autofill preview: while a set ABOVE is being typed, mirror its value
+  // into this cell the instant it's keyed — display-only, self-healing on the
+  // revalidate, eligibility identical to the server rule (empty OR == the
+  // edited cell's previous, read off this cell's own stable serverValue).
+  // Clone of the SessionBuilder SetCell — keep in sync.
+  const overlayValue =
+    liveEdit &&
+    liveEdit.field === field &&
+    liveEdit.value.trim() !== '' &&
+    setNumber > liveEdit.setNumber &&
+    status === 'idle' &&
+    value === serverValue &&
+    (serverValue.trim() === '' || serverValue === liveEdit.previousValue)
+      ? liveEdit.value
+      : null
+  const displayValue = !focused && overlayValue !== null ? overlayValue : value
+  const displayEmpty = displayValue.trim() === ''
+
+  // True when this cell owns the live broadcast — only its own edit may
+  // withdraw it, so a focus+blur elsewhere can't cancel a sibling's preview.
+  const ownsLiveEdit =
+    liveEdit !== null &&
+    liveEdit.setNumber === setNumber &&
+    liveEdit.field === field
 
   if (initialValue !== lastSeenProp) {
     if (initialValue === serverValue) {
@@ -536,7 +616,11 @@ export function SetCell({
   }
 
   function handleBlur() {
-    if (value === serverValue) return
+    if (value === serverValue) {
+      // Nothing to save. Withdraw our preview (e.g. typed then deleted back).
+      if (ownsLiveEdit) onLiveEditCancel()
+      return
+    }
     const trimmed = value.trim()
     const previous = serverValue
     const next = trimmed === '' ? null : trimmed
@@ -546,6 +630,7 @@ export function SetCell({
       if (res.error) {
         setValue(previous)
         setStatus('error')
+        if (ownsLiveEdit) onLiveEditCancel()
       } else {
         setStatus('idle')
         // Normalise display to what was saved so the dirty check stays
@@ -553,7 +638,11 @@ export function SetCell({
         setValue(trimmed)
         setServerValue(trimmed)
         setSavedAt((n) => n + 1)
+        // Non-empty commit: hand the follow to SetTable (it clears the preview
+        // once the autofill revalidate lands). Empty commit doesn't propagate,
+        // so withdraw the preview now.
         if (trimmed !== '') onCommitted?.(trimmed, previous)
+        else if (ownsLiveEdit) onLiveEditCancel()
       }
     })
   }
@@ -562,7 +651,7 @@ export function SetCell({
     <div style={{ position: 'relative', width: '100%' }}>
       <input
         type="text"
-        value={value}
+        value={displayValue}
         placeholder={placeholder}
         title={
           status === 'error'
@@ -570,10 +659,20 @@ export function SetCell({
             : undefined
         }
         onChange={(e) => {
-          setValue(e.target.value)
+          const next = e.target.value
+          setValue(next)
           if (status === 'error') setStatus('idle')
+          // Broadcast this cell's live value so the cells below preview the
+          // follow immediately. previousValue is the untouched server value.
+          onLiveEdit({ setNumber, field, value: next, previousValue: serverValue })
         }}
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          // Adopt the previewed value on entry so editing continues from what
+          // the EP sees, not the blank server value. No-op unless a preview
+          // is currently showing here.
+          if (overlayValue !== null && value !== overlayValue) setValue(overlayValue)
+          setFocused(true)
+        }}
         onBlur={() => {
           setFocused(false)
           handleBlur()
@@ -589,7 +688,7 @@ export function SetCell({
           fontFamily: 'var(--font-sans)',
           fontSize: 13,
           fontWeight: 500,
-          color: empty ? FAINT : INK,
+          color: displayEmpty ? FAINT : INK,
           border:
             status === 'error'
               ? '1px solid var(--color-alert)'

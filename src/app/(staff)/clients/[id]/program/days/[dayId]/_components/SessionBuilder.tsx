@@ -1637,6 +1637,20 @@ function ColHeader({
  * the first set. Logger's portal-side prefill keeps working unchanged
  * because all sets share the metric.
  */
+/**
+ * The set that's being typed right now, broadcast to its siblings so the
+ * cells below can preview the follow value instantly (no Enter, no
+ * round-trip). previousValue is the edited cell's server value at edit time,
+ * so a below-cell decides eligibility (empty OR == previous) off its own
+ * stable server value — the same rule the server autofill applies.
+ */
+type LiveSetEdit = {
+  setNumber: number
+  field: AutofillableSetField
+  value: string
+  previousValue: string
+}
+
 function SetTable({
   pe,
   metricUnits,
@@ -1648,6 +1662,11 @@ function SetTable({
   clientId: string
   dayId: string
 }) {
+  // Live column-autofill preview. Set on every keystroke of the focused set
+  // cell; cells below mirror it immediately (SetCell.overlayValue). Cleared
+  // once the durable autofill has revalidated (below) so the preview and the
+  // real values never both show at once.
+  const [liveEdit, setLiveEdit] = useState<LiveSetEdit | null>(null)
   // Column-level metric is read from the first live set — they're all in
   // sync since updateProgramExerciseMetricAction is the only writer and
   // does a bulk UPDATE. addExerciseToDayAction / swap_program_exercise /
@@ -1675,13 +1694,20 @@ function SetTable({
     previousValue: string,
   ) {
     const edited = pe.prescriptionSets.find((s) => s.id === setId)
-    if (!edited) return
+    if (!edited) {
+      setLiveEdit(null)
+      return
+    }
     const followable = pe.prescriptionSets.some((s) => {
       if (s.set_number <= edited.set_number) return false
       const sibling = s[field] ?? ''
       return sibling === '' || sibling === previousValue
     })
-    if (!followable) return
+    if (!followable) {
+      // Nothing below can follow — drop the preview now, no round-trip.
+      setLiveEdit(null)
+      return
+    }
     startTransition(async () => {
       const res = await autofillProgramExerciseSetColumnAction(
         clientId,
@@ -1696,6 +1722,10 @@ function SetTable({
       // current values (the pre-autofill behaviour) — nothing the EP typed
       // is lost, so no error UI beyond the console.
       if (res.error) console.error(res.error)
+      // Clear the preview only now the revalidate has landed: the siblings
+      // have adopted the real value in the same render, so there's no flicker
+      // between preview and durable value.
+      setLiveEdit(null)
     })
   }
 
@@ -1724,7 +1754,14 @@ function SetTable({
       />
 
       {pe.prescriptionSets.map((set) => (
-        <SetRow key={set.id} set={set} onCommitted={handleCellCommitted} />
+        <SetRow
+          key={set.id}
+          set={set}
+          onCommitted={handleCellCommitted}
+          liveEdit={liveEdit}
+          onLiveEdit={setLiveEdit}
+          onLiveEditCancel={() => setLiveEdit(null)}
+        />
       ))}
     </div>
   )
@@ -1733,6 +1770,9 @@ function SetTable({
 function SetRow({
   set,
   onCommitted,
+  liveEdit,
+  onLiveEdit,
+  onLiveEditCancel,
 }: {
   set: PrescriptionSet
   onCommitted: (
@@ -1741,6 +1781,9 @@ function SetRow({
     value: string,
     previousValue: string,
   ) => void
+  liveEdit: LiveSetEdit | null
+  onLiveEdit: (edit: LiveSetEdit) => void
+  onLiveEditCancel: () => void
 }) {
   return (
     <>
@@ -1761,21 +1804,29 @@ function SetRow({
       </div>
       <SetCell
         setId={set.id}
+        setNumber={set.set_number}
         field="reps"
         initialValue={set.reps ?? ''}
         placeholder="—"
         onCommitted={(field, value, previous) =>
           onCommitted(set.id, field, value, previous)
         }
+        liveEdit={liveEdit}
+        onLiveEdit={onLiveEdit}
+        onLiveEditCancel={onLiveEditCancel}
       />
       <SetCell
         setId={set.id}
+        setNumber={set.set_number}
         field="optional_value"
         initialValue={set.optional_value ?? ''}
         placeholder="—"
         onCommitted={(field, value, previous) =>
           onCommitted(set.id, field, value, previous)
         }
+        liveEdit={liveEdit}
+        onLiveEdit={onLiveEdit}
+        onLiveEditCancel={onLiveEditCancel}
       />
     </>
   )
@@ -1783,12 +1834,17 @@ function SetRow({
 
 function SetCell({
   setId,
+  setNumber,
   field,
   initialValue,
   placeholder,
   onCommitted,
+  liveEdit,
+  onLiveEdit,
+  onLiveEditCancel,
 }: {
   setId: string
+  setNumber: number
   field: AutofillableSetField
   initialValue: string
   placeholder?: string
@@ -1800,6 +1856,12 @@ function SetCell({
     value: string,
     previousValue: string,
   ) => void
+  /** The set currently being typed (any cell in this table), or null. */
+  liveEdit: LiveSetEdit | null
+  /** Announce this cell's live value so cells below can preview the follow. */
+  onLiveEdit: (edit: LiveSetEdit) => void
+  /** Withdraw this cell's live broadcast (no change / empty / save failed). */
+  onLiveEditCancel: () => void
 }) {
   const [value, setValue] = useState(initialValue)
   // Last server value this cell knows — moves on its OWN successful save.
@@ -1821,6 +1883,27 @@ function SetCell({
   const [, startTransition] = useTransition()
   const locked = useSessionLocked()
   const empty = value.trim() === ''
+
+  // Live autofill preview: while a set ABOVE is being typed, mirror its value
+  // into this cell the instant it's keyed — no Enter, no round-trip. This is
+  // display-only; the durable value still arrives through the autofill action
+  // (handleBlur → onCommitted → revalidate). Eligibility mirrors the server
+  // rule exactly (empty OR == the edited cell's previous), read off this
+  // cell's own stable serverValue, so the preview can never diverge from what
+  // the server will write. `value === serverValue` (untouched) and idle status
+  // keep it from ever clobbering an in-progress edit of this cell.
+  const overlayValue =
+    liveEdit &&
+    liveEdit.field === field &&
+    liveEdit.value.trim() !== '' &&
+    setNumber > liveEdit.setNumber &&
+    status === 'idle' &&
+    value === serverValue &&
+    (serverValue.trim() === '' || serverValue === liveEdit.previousValue)
+      ? liveEdit.value
+      : null
+  const displayValue = !focused && overlayValue !== null ? overlayValue : value
+  const displayEmpty = displayValue.trim() === ''
 
   if (initialValue !== lastSeenProp) {
     if (initialValue === serverValue) {
@@ -1844,8 +1927,19 @@ function SetCell({
     // stale payload must never overwrite what the EP just did.
   }
 
+  // True when this cell owns the live broadcast — only its own edit may
+  // withdraw it, so a focus+blur elsewhere can't cancel a sibling's preview.
+  const ownsLiveEdit =
+    liveEdit !== null &&
+    liveEdit.setNumber === setNumber &&
+    liveEdit.field === field
+
   function handleBlur() {
-    if (value === serverValue) return
+    if (value === serverValue) {
+      // Nothing to save. Withdraw our preview (e.g. typed then deleted back).
+      if (ownsLiveEdit) onLiveEditCancel()
+      return
+    }
     const trimmed = value.trim()
     const previous = serverValue
     const patch: ProgramExerciseSetPatch = {
@@ -1860,6 +1954,7 @@ function SetCell({
         // border clears on the next keystroke.
         setValue(previous)
         setStatus('error')
+        if (ownsLiveEdit) onLiveEditCancel()
       } else {
         setStatus('idle')
         // Normalise display to what was saved so the dirty check stays
@@ -1867,7 +1962,11 @@ function SetCell({
         setValue(trimmed)
         setServerValue(trimmed)
         setSavedAt((n) => n + 1)
+        // Non-empty commit: hand the follow to SetTable (it clears the preview
+        // once the autofill revalidate lands). Empty commit doesn't propagate,
+        // so withdraw the preview now.
         if (trimmed !== '') onCommitted?.(field, trimmed, previous)
+        else if (ownsLiveEdit) onLiveEditCancel()
       }
     })
   }
@@ -1900,7 +1999,7 @@ function SetCell({
     <div style={{ position: 'relative', width: '100%' }}>
       <input
         type="text"
-        value={value}
+        value={displayValue}
         placeholder={placeholder}
         title={
           status === 'error'
@@ -1908,10 +2007,20 @@ function SetCell({
             : undefined
         }
         onChange={(e) => {
-          setValue(e.target.value)
+          const next = e.target.value
+          setValue(next)
           if (status === 'error') setStatus('idle')
+          // Broadcast this cell's live value so the cells below preview the
+          // follow immediately. previousValue is the untouched server value.
+          onLiveEdit({ setNumber, field, value: next, previousValue: serverValue })
         }}
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          // Adopt the previewed value on entry so editing continues from what
+          // the EP sees (they clicked a cell showing the follow, not its blank
+          // server value). No-op unless a preview is currently showing here.
+          if (overlayValue !== null && value !== overlayValue) setValue(overlayValue)
+          setFocused(true)
+        }}
         onBlur={() => {
           setFocused(false)
           handleBlur()
@@ -1927,7 +2036,7 @@ function SetCell({
           fontFamily: 'var(--font-sans)',
           fontSize: 13,
           fontWeight: 500,
-          color: empty ? FAINT : INK,
+          color: displayEmpty ? FAINT : INK,
           border:
             status === 'error' ? '1px solid var(--color-alert)' : '1px solid transparent',
           outline: 'none',

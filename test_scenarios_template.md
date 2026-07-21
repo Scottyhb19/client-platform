@@ -1203,6 +1203,32 @@ send path verified by the standing synthetic check (`succeeded:1`, runbook
 
 ---
 
+## Messaging — "New message" opens the thread directly (UX papercut, 2026-07-21)
+
+Context: the inbox "New message" button linked to `/clients`, so picking a
+client landed on their profile, not a conversation — the opposite of the
+profile speech-bubble, which opens the thread. "New message" now opens an
+in-place searchable client picker (`NewMessageButton`); selecting a client runs
+the same `getOrCreateThreadAction` and navigates straight to
+`/messages?thread=…`. Archived clients are excluded from the picker
+(`deleted_at IS NULL`) — the action refuses them anyway.
+
+### MSG-NEW-1 — New message picks a client and lands in their thread
+- **Setup:** Messages → New message. Search for a client and click them.
+- **Pass:** A modal picker opens (search + live client list, category-tone
+  avatars). Selecting a client goes straight to `/messages?thread=…` with that
+  client's thread active in the pane — no detour through the profile. A client
+  with no prior conversation gets a freshly-created empty thread; a client with
+  an existing thread reopens it (no duplicate). Escape / clicking the backdrop /
+  the ✕ closes the picker without navigating.
+
+### MSG-NEW-2 — Archived clients aren't offered
+- **Setup:** Archive a client, then open the New message picker.
+- **Pass:** The archived client does not appear in the list (even via search).
+  Live clients are all present, ordered by first name.
+
+---
+
 ## Archived-client record access (CN-7, 2026-07-02)
 
 Context: brief §7.2 — archived records stay queryable. Migration `20260702190000`
@@ -1317,6 +1343,47 @@ defaults — reduce repetitive data entry. No migration, no new table surface
 - **Pass:** The three sets show 8 / 6 / 4 — the follows landed in
   `program_exercise_sets` rows, not just the staff UI.
 
+### Live preview (UX papercut, 2026-07-21)
+
+Context: the follow-the-value only appeared after a blur/Enter round-trip, so
+it needed Enter and felt laggy ("too slow"). The eligible cells below now
+**mirror the value instantly as you type** — a display-only preview computed
+client-side from the edited cell's live value, using the *same* eligibility
+rule as the server (empty **OR** == the edited cell's previous value), read off
+each below-cell's own stable server value. The durable save is unchanged: it
+still flows through `autofillProgramExerciseSetColumnAction` on blur/Enter, so
+SB-AF-1..8 all still hold — the preview just removes the wait and the Enter.
+Because the preview is display-only and self-heals on the revalidate, a failed
+save can never leave a below-cell showing a value the DB doesn't hold.
+
+### SB-AF-9 — Preview follows the keystrokes, no Enter
+- **Setup:** Seeded 8/8/8 (or all empty). Focus set 1's Volume cell and type `5`
+  — do **not** press Enter or click away.
+- **Pass:** Sets 2 and 3 immediately show `5` (previewed) the instant the key
+  lands. Type another digit (`54`) and they track to `54` live. Blur/Enter then
+  persists — reopen the day (or the portal) and 54/54/54 is saved. The Load
+  column is untouched (per-column).
+
+### SB-AF-10 — Preview obeys the follow rule (customised below not previewed)
+- **Setup:** Load column 60/65/70 (typed individually). Focus set 1 and type
+  `62` without committing.
+- **Pass:** Sets 2 and 3 do **not** preview `62` (their values differ from set
+  1's previous `60`). Now clear set 3, focus set 1, type `64` — set 3 (empty)
+  previews `64`, set 2 (65) stays. Matches the committed SB-AF-4 result.
+
+### SB-AF-11 — Clicking a previewed cell keeps what you see
+- **Setup:** All empty. Type `8` into set 1 (sets 2/3 preview `8`). Without
+  pressing Enter, click into set 2's Volume cell.
+- **Pass:** Set 2 shows `8` (the previewed value is adopted on focus, not the
+  blank server value) and is editable from there — editing to `6` and blurring
+  saves `6`; the final column is 8/6/8, never 8/(blank)/8.
+
+### SB-AF-12 — Typed-then-cleared withdraws the preview
+- **Setup:** Seeded 8/8/8. Focus set 1, type `5` (sets 2/3 preview `5`), then
+  delete back to `8` (the original) and blur.
+- **Pass:** The preview disappears and nothing changes — 8/8/8 stands (no
+  save fired, no stray preview left behind).
+
 ---
 
 ## Staff session builder — create-exercise returns to the builder (UX papercut, 2026-07-03)
@@ -1396,6 +1463,15 @@ after save/Cancel instead of `/library`. No migration, no new table surface.
 ### LIB-AF-3 — Autofill parity in the circuit editor
 - **Setup:** `/library/circuits/[id]`; same column shapes.
 - **Pass:** Same matrix as LIB-AF-1, on `circuit_exercise_sets`.
+
+### LIB-AF-4 — Live preview parity (2026-07-21)
+- **Setup:** In each of the three editors, focus a set's Volume cell and type a
+  value **without** pressing Enter (as in SB-AF-9).
+- **Pass:** The eligible cells below preview the value instantly as you type
+  (same rule: empty OR == the edited cell's previous), clicking a previewed
+  cell keeps what's shown (SB-AF-11), typing-then-deleting-back withdraws it
+  (SB-AF-12), and blur/Enter still persists through the per-storage autofill
+  action. The kit `SetCell` mirrors the builder's live-preview behaviour.
 
 ### LIB-CX-1 — Create-exercise from an editor returns to that editor
 - **Setup:** From each of the three editors' Library panel → "Create New
