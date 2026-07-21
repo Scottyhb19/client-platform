@@ -284,3 +284,54 @@ the existing corner-badge precedence in `MonthCalendar.tsx`
 
 **Re-trigger:** the operator wants the missed signal after living with the tick,
 **or** the derived-state definition (grace period especially) is settled.
+
+---
+
+## Hard rule — BAA condition move: drafted and withdrawn (2026-07-21)
+
+**Surfaced:** 2026-07-21, during the roadmap-lock session. An amendment to the
+hard rule (CLAUDE.md "Open gates") was drafted and **withdrawn before commit**. It
+would have moved condition **(b)**, the BAA, off the paying-client gate and onto
+the Phase-2 / AI gate (roadmap step 4).
+
+**Why withdrawn.** The amendment's stated rationale — that Anthropic is not in the
+client-data path while the product has no AI features — was contradicted the same
+day: a production census returned real client names and emails into a development
+session. The product may have no AI features, but the *development tooling* path
+routes real client data through Anthropic. The rationale as written was false, so
+the amendment was pulled rather than committed on a bad premise. The hard rule
+stands unchanged at all three conditions (a) review, (b) BAA, (c) entity.
+
+**What the rewrite must do when it happens.**
+
+- **Distinguish the two data paths.** The *product* data path (what the deployed
+  app sends where) and the *development tooling* data path (what a dev/agent
+  session touches) are separate questions. The rewrite must not conflate them —
+  the original amendment's error was reasoning about the product path while the
+  tooling path told the opposite story. Name the **Environment separation** section
+  (CLAUDE.md, committed `0362791`) as the control for the tooling path.
+- **Correct the legal framing.** "BAA" is a United States HIPAA instrument; the
+  operator is an APP entity under the Privacy Act 1988, not a HIPAA covered entity.
+  The operative requirement is a data-processing arrangement satisfying **APP 8**
+  (cross-border disclosure) and **APP 11** (security), with any BAA-adjacent
+  configuration being a *mechanism* toward that, not the test itself. **This framing
+  is not settled** — it requires confirmation by an Australian privacy lawyer and
+  must not be asserted as decided in the document until that happens.
+
+**Four items the rewrite pass must also carry** (flagged at withdrawal, left
+uncorrected deliberately so the rewrite makes them coherent together, not piecemeal):
+
+1. Roadmap step 4 points at Open gates text that predates the rewrite — it will
+   read correctly only once the gate text it tracks is itself rewritten.
+2. Roadmap step 1 currently inherits the full three-condition hard rule, so it
+   carries the BAA as a precondition for the operator's *own* paying clients —
+   stricter than intended, harmless until corrected.
+3. The Entity line ("gated on whether paying clients ever enter the picture") is
+   stale now that the roadmap commits that they will.
+4. The stranger-validation gate sits at the tail of step 2's prerequisites
+   paragraph, and the validation-caveat paragraph ("The financial number is a
+   readiness note") does not forward-reference it.
+
+**Re-trigger:** the Australian privacy lawyer consultation — which is part of the
+entity-review conversation (hard rule (c)). The rewrite lands off the back of that
+advice, not before it.
