@@ -7,7 +7,7 @@
 A second, disposable Supabase project that lets us do the things that can never be risked on prod: rehearse destructive migrations, run a real `db reset`, and run the full pgTAP suite somewhere a mistake costs nothing. Prod (`azjllcsffixswiigjqhj`) remains the linked project of this repo at all times; staging is reached only through the explicit channels below.
 
 **What staging is:** a database-layer clone — all migrations, the pgTAP helpers, the same extensions.
-**What staging is not:** a full environment clone. It has **no** deployed Edge Functions, no Vault `cron_shared_secret` entry, no Auth dashboard config (custom-access-token hook registration, SMTP), no storage buckets, and no Vercel app pointing at it. The pgTAP suite is unaffected (it spoofs JWTs via GUCs and never touches those surfaces), but anything that depends on them must still be verified on prod.
+**What staging is not:** a full environment clone. It has **no** deployed Edge Functions, no Vault `cron_shared_secret` entry, no SMTP (auth email never sends from staging), and no Vercel app pointing at it. Since 2026-07-21 the auth dashboard config **is** matched to prod — custom-access-token hook registered (G-1 GREEN on staging), HIBP on, minimum password length 12, session time-box 720 h — and storage buckets exist wherever migrations create them (`message-attachments`, from `20260713130000`). The pgTAP suite is unaffected either way (it spoofs JWTs via GUCs), but anything that depends on Edge Functions, Vault, SMTP, or the Vercel app must still be verified on prod.
 
 ## Project facts
 
@@ -16,10 +16,10 @@ A second, disposable Supabase project that lets us do the things that can never 
 | Name | `odyssey-staging` |
 | Project ref | `fbtfzlgvnivgwydlijka` |
 | Region | ap-southeast-2 (Sydney, same as prod) |
-| Tier | Free |
+| Tier | Pro (org-level upgrade 2026-07-21 — Supabase bills per-org; staging shares org `xahhqstpkfxvekfjwbke` with prod) |
 | Created | 2026-07-03 (operator), wired same day |
 
-**Free-tier auto-pause:** the project pauses after ~1 week idle. Wake it from the Supabase dashboard (project page → Restore/Resume, takes a minute or two) before any session, then confirm with the wake probe in Step 1.
+**Auto-pause: no longer applies (Pro, 2026-07-21).** Pro projects do not auto-pause. (Historical: on Free the project paused after ~1 week idle and needed a dashboard wake — retained only to explain older session notes.) Keep the Step 1 probe as a cheap liveness check before any session.
 
 **Credentials** live in `.env.local` (gitignored) as `STAGING_PROJECT_REF`, `STAGING_DB_PASSWORD`, and the assembled `STAGING_DB_URL` (session pooler, port 5432: `postgresql://postgres.<ref>:<password>@aws-1-ap-southeast-2.pooler.supabase.com:5432/postgres`). Catalogued in `docs/secrets-inventory.md`. The password must be percent-encoded if it ever contains URL-special characters (the current generated one doesn't).
 
@@ -53,7 +53,7 @@ URL=$(grep '^STAGING_DB_URL=' .env.local | cut -d= -f2- | tr -d '\r')
 supabase db query --db-url "$URL" "select 1 as ok"
 ```
 
-If this hangs or errors and the project has been idle a week+, wake it in the dashboard and retry.
+If this hangs or errors, check the project's status in the dashboard and retry. (On the Free tier this was usually the ~1-week auto-pause; Pro does not pause.)
 
 ### Step 2 — sync migrations
 
@@ -81,7 +81,7 @@ Single statement: `supabase db query --db-url "$URL" "…"`. Multi-statement fil
 
 The order matters — steps 3 and 5 exist because the migration chain and the test helpers are interdependent. This exact sequence was proven twice on 2026-07-03 (initial stand-up, then the reset drill).
 
-1. **Create the project** (dashboard: Sydney, Free) — or start from a just-reset database.
+1. **Create the project** (dashboard: Sydney; the project inherits the org's plan — currently Pro) — or start from a just-reset database.
 2. **Enable extensions the migration chain assumes but never creates** (prod got them via dashboard, outside migrations):
    ```bash
    supabase db query --db-url "$URL" "CREATE EXTENSION IF NOT EXISTS pg_cron"
@@ -115,6 +115,7 @@ Drill result 2026-07-03: see the Verification log below.
 
 - **2026-07-03 — initial stand-up.** All 176 migrations applied (first push stopped at the documented helper dependency, resumed clean after applying helpers). First full-suite run: **55/56 files PASS** — the one failure was pgTAP `49`, whose assertion 1 still asserted the pre-CN-7 archived-client-invisible posture. Verified stale on prod too (identical failure), fixed to the CN-7 posture, re-run green on **both** targets. The staging target caught a real regression-net gap on day one: the CN-7 pass (2026-07-02) re-ran tests 17/38/46/54/56 but missed 49.
 - **2026-07-03 — destructive rehearsal.** `db reset --db-url --no-seed` executed against staging; replay stopped at `20260604120100` exactly as documented above (extensions dropped by the reset); recovered per Fresh rebuild steps 2→7; full suite re-run via `scripts/run-pgtap-staging.sh --fresh`: **56/56 files PASS**. Prod verified untouched after the drill: 176 migrations, all 3 cron jobs scheduled, client data intact.
+- **2026-07-21 — Pro upgrade + parity sync.** Org upgraded to Pro (per-org billing lifts staging too; auto-pause gone; daily physical backups present on both projects; PITR off on both — deliberately deferred). Five pending migrations applied via Step 2 (`20260709120000` … `20260713140000`): 176 → **181**, matching prod; the `audit_wide_column_config` RLS advisory cleared; `message-attachments` storage bucket created. Auth config patched to prod parity via Management API (min length 12, time-box 720 h, HIBP on) and `verify-auth-config.mjs` run against staging: **G-1 / G-3 / G-3u GREEN** (G-7 CND — no SMTP; G-4 DOC). Full suite `--fresh`: **59/59 files PASS** (incl. new suites 58 + 59). Side effect: the script bootstrapped the inert memberless verification org `verify-auth-config-probe` (`73a63b1c-60fa-4278-a98b-f3e7bab76ffd`) on staging.
 
 ## Rollback
 
