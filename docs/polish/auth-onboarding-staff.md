@@ -898,3 +898,20 @@ Deferred items, with rationale and re-activation trigger:
 - **G-4** (30-day refresh-token lifetime): deferred, Pro-gated. **Trigger:** the Pro upgrade, same trigger family as **G-3**.
 - **G-6** (structured auth-event audit log): deferred as disproportionate for a two-person friends-and-family beta where the operator is the security team. Master brief section 7.4 names audit logging as a requirement, so this is deferred, not cut. **Trigger:** before any paying clinical client onboards.
 - **R-4** (automated cross-tenant pgTAP regression test): deferred until a second practitioner account exists. The compensating manual procedure at `runbooks/verify-cross-tenant-isolation.md` is built but has not yet been run, so the multi-tenant boundary's independent verification is pending rather than complete; the boundary currently rests on the **G-1** automated hook check (green) plus that as-yet-unexercised manual tripwire. **Trigger to run the manual procedure:** before first real data, and on any migration touching RLS, the JWT hook, or the auth helpers. **Trigger to land the automated test:** a second practitioner account.
+
+---
+
+## G-6 closure — structured auth-event audit log (2026-07-21)
+
+**Status: BUILT on staging (pending prod apply at the next deploy sitting + the sign-off ritual).** Pulled forward from the paying-client gate as Step 3 of the 2026-07-21 internal work sequence (operator-ratified). Closes F-10 to the degree below.
+
+**What shipped** (migration `20260721140000_g6_auth_events.sql`; pgTAP `61` 8/8 on staging):
+
+- `public.auth_events` — append-only, server-side-only event table for the ten `docs/auth.md` §11 events (CHECK-constrained). No API-role access at either the grant or policy layer (RLS enabled, zero policies); writes go through the service-role client via `src/lib/auth/events.ts` (`logAuthEvent` — best-effort, never blocks an auth flow). `organization_id` nullable + ON DELETE SET NULL, `user_id` bare uuid — audit rows survive org/user teardown. Append-only enforced by trigger (same exemption model as `20260721120000`).
+- **Emitters wired (8/10):** `auth.login.success`/`failure` (login action), `auth.signup.success`/`failure` (signup action), `auth.password_reset.requested` (forgot-password action, non-enumerating — logs the attempt), `auth.password_reset.completed` (reset action, with `sibling_sessions_revoked`), `auth.invite.sent` (in `sendInviteForClient`, so new-client AND resend callers are covered by construction), `auth.invite.accepted` (welcome action).
+- **NOT app-emitted, honestly recorded:** `auth.jwt.hook_failure` — the custom-access-token hook is STABLE (read-only) and G-1-verified; changing its volatility to log from inside is disproportionate risk. Detection stays the G-1 behavioural probe + GoTrue logs. `auth.cross_tenant_access_attempt` — no generic runtime detection point exists (RLS denials are silent row filters); pgTAP 17/57 are the tripwires. Both re-enter scope with the external security review (hard rule (a)).
+- **Alert thresholds** from §11 (>10 signup failures/hour; >50 login failures/hour/IP) are **not** implemented — no alerting pipeline exists yet (Sentry is still the console-seam stub). The log makes the forensic record exist; alerting rides the observability build-out. Recorded, not silent.
+
+**Verified:** pgTAP 61 (posture: anon/authenticated denied read+write at 42501, CHECK enforced, append-only UPDATE/DELETE refused); live end-to-end on the staging-backed dev server — a real `/login` form submission with bad credentials landed `auth.login.failure` with email + reason. `tsc` green; types regenerated.
+
+**Retention:** none set at f&f scale (rows are tiny). Decide a trim policy at the paying-client gate alongside PITR.

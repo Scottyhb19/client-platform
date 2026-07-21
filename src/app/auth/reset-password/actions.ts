@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { logAuthEvent } from "@/lib/auth/events";
 import { postAuthLanding } from "@/lib/auth/post-auth-landing";
 import type { UserRole } from "@/lib/auth/require-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -109,6 +110,17 @@ export async function setNewPassword(formData: FormData) {
     console.error(
       `[reset-password] sibling-session revoke failed: ${revokeErr.message}`,
     );
+  }
+
+  // G-6: auth.password_reset.completed (docs/auth.md §11). The recovery
+  // session is this user's — getUser() re-verifies rather than trusting
+  // the cookie.
+  {
+    const { data: userData } = await supabase.auth.getUser();
+    await logAuthEvent("auth.password_reset.completed", {
+      userId: userData.user?.id ?? null,
+      detail: { sibling_sessions_revoked: !revokeErr },
+    });
   }
 
   // Role-aware redirect (C-4). updateUser issued a fresh JWT through the

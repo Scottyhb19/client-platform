@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { logAuthEvent } from "@/lib/auth/events";
 import { postAuthLanding } from "@/lib/auth/post-auth-landing";
 import type { UserRole } from "@/lib/auth/require-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -21,9 +22,17 @@ export async function login(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
   if (error) {
+    // G-6: auth.login.failure — email + reason (docs/auth.md §11).
+    await logAuthEvent("auth.login.failure", {
+      email,
+      detail: { reason: error.message },
+    });
     return { error: error.message, email };
   }
 
@@ -31,6 +40,10 @@ export async function login(
   // the Custom Access Token Hook, so user_role() reads the just-injected
   // claim. NULL is handled by postAuthLanding's stale-JWT branch.
   const { data: role } = await supabase.rpc("user_role");
+  await logAuthEvent("auth.login.success", {
+    userId: data.user?.id ?? null,
+    detail: { role: role ?? null },
+  });
   redirect(postAuthLanding(role as UserRole | null, next));
 }
 

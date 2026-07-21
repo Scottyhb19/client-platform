@@ -2133,3 +2133,21 @@ the machine gate; these are the browser-level confirmations.
 - **Pass:** Archive succeeds; the future appointment flips to cancelled
   (reason "Client archived") and its reminder cascade-cancels. Restore
   succeeds; the client is live again; the cancelled booking stays cancelled.
+
+## G-6 — auth-event audit log (2026-07-21, migration 20260721140000)
+
+Context: auth-onboarding-staff.md "G-6 closure". Every auth flow leaves a
+structured row in auth_events; the table is server-side-only + append-only.
+
+### G6-1 — Auth flows leave audit rows
+- **Setup:** Perform a failed login, a successful login, a password-reset
+  request + completion, and an invite send + accept.
+- **Pass:** auth_events (SQL editor, owner read) shows one row per event with
+  the right event name, email/user_id, and detail fields. No auth flow is
+  slowed or broken by the logging (it is best-effort).
+
+### G6-2 — The log is invisible to API roles and immutable
+- **Setup:** As any signed-in user (or anon), attempt to SELECT/INSERT on
+  auth_events via PostgREST; as owner, attempt UPDATE/DELETE on a row.
+- **Pass:** API roles get permission denied (42501). UPDATE/DELETE are
+  refused ("auth_events is append-only") — pgTAP 61 is the machine gate.

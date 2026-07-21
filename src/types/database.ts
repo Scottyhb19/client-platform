@@ -362,6 +362,44 @@ export type Database = {
         }
         Relationships: []
       }
+      auth_events: {
+        Row: {
+          detail: Json
+          email: string | null
+          event: string
+          id: string
+          occurred_at: string
+          organization_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          detail?: Json
+          email?: string | null
+          event: string
+          id?: string
+          occurred_at?: string
+          organization_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          detail?: Json
+          email?: string | null
+          event?: string
+          id?: string
+          occurred_at?: string
+          organization_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auth_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       availability_rules: {
         Row: {
           created_at: string

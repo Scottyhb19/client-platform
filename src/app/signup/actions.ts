@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { logAuthEvent } from "@/lib/auth/events";
 import { getPublicOrigin } from "@/lib/env/site-url";
 import { isPublicSignupEnabled } from "@/lib/env/signup";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -37,8 +38,20 @@ export async function signup(
   });
 
   if (error) {
+    // G-6: auth.signup.failure (docs/auth.md §11).
+    await logAuthEvent("auth.signup.failure", {
+      email,
+      detail: { reason: error.message },
+    });
     return { error: error.message, email };
   }
+
+  // G-6: auth.signup.success. organization_id is unknown at this point —
+  // the org is created later at /onboarding/org.
+  await logAuthEvent("auth.signup.success", {
+    userId: data.user?.id ?? null,
+    email,
+  });
 
   if (data.session) {
     redirect("/onboarding/org");

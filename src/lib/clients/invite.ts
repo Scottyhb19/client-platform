@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { logAuthEvent } from '@/lib/auth/events'
 import { sendClientInviteEmail } from '@/lib/email/send-client-invite'
 import { getPublicOrigin } from '@/lib/env/site-url'
 import { checkAndRecordStaffInvite } from '@/lib/rate-limit'
@@ -158,6 +159,15 @@ export async function sendInviteForClient(args: {
       `[invite] send succeeded but invited_at refresh failed: client=${args.clientId} err=${stampErr.message}`,
     )
   }
+
+  // G-6: auth.invite.sent (docs/auth.md §11). Emitted here so every caller
+  // (new-client invite AND profile resend) is covered by construction.
+  await logAuthEvent('auth.invite.sent', {
+    userId: args.sendingUserId,
+    organizationId: args.organizationId,
+    email: args.email,
+    detail: { client_id: args.clientId },
+  })
 
   return { error: null }
 }
