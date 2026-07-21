@@ -34,7 +34,9 @@ import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 
-const BASE_URL = (process.argv[2] ?? 'http://localhost:3000').replace(/\/$/, '')
+const ARGS = process.argv.slice(2)
+const BASE_URL = (ARGS.find((a) => !a.startsWith('--')) ?? 'http://localhost:3000').replace(/\/$/, '')
+const PROD_FLAG = ARGS.includes('--prod')
 
 function loadEnvLocal() {
   let raw
@@ -90,17 +92,26 @@ function check(label, ok, detail) {
 
 async function main() {
   const env = loadEnvLocal()
-  const url = env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const service = env.SUPABASE_SERVICE_ROLE_KEY
+  // Environment separation (2026-07-21): .env.local's default keys point at
+  // STAGING. Probing the deployed production site needs --prod, which resolves
+  // the PROD_* keys instead; a prod-looking BASE_URL without --prod is refused
+  // so a probe user can never be created in the wrong project.
+  const url = PROD_FLAG ? env.PROD_SUPABASE_URL : env.NEXT_PUBLIC_SUPABASE_URL
+  const anon = PROD_FLAG ? env.PROD_SUPABASE_ANON_KEY : env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const service = PROD_FLAG ? env.PROD_SUPABASE_SERVICE_ROLE_KEY : env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !anon || !service) {
-    console.error('Missing Supabase env in .env.local')
+    console.error(`Missing Supabase env in .env.local (${PROD_FLAG ? 'PROD_*' : 'default'} keys)`)
+    process.exit(2)
+  }
+  if (/odysseyhq\.com\.au|vercel\.app/i.test(BASE_URL) && !PROD_FLAG) {
+    console.error('BASE_URL looks like production but --prod was not passed — refusing to probe the prod site with staging keys.')
     process.exit(2)
   }
   const ref = new URL(url).hostname.split('.')[0]
   const cookieName = `sb-${ref}-auth-token`
 
-  console.log(`\n=== staff login-path verification against ${BASE_URL} ===\n`)
+  console.log(`\n=== staff login-path verification against ${BASE_URL} ===`)
+  console.log(`Supabase target: ${PROD_FLAG ? `PRODUCTION (${ref}, PROD_* keys)` : `staging (${ref}, default .env.local keys)`}\n`)
 
   // 0. health endpoint — config visibility (informational + asserted later
   //    only insofar as the page checks pass; a missing-env report here is

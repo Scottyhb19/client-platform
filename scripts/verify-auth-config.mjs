@@ -116,6 +116,7 @@ function parseFlags(argv) {
   return {
     bootstrap: args.includes('--bootstrap'),
     cleanOrphans: args.includes('--clean-orphans'),
+    prod: args.includes('--prod'),
   }
 }
 
@@ -526,7 +527,29 @@ function computeExitCode(results) {
 async function main() {
   const flags = parseFlags(process.argv)
   const env = loadEnvLocal()
+  // Environment separation (2026-07-21): the .env.local default keys point at
+  // STAGING, so that is the default target. --prod re-points this run at
+  // production via the PROD_* keys — cutover/post-deploy sittings pass it
+  // explicitly. The resolved target is printed so the operator always knows
+  // where the probes are landing.
+  if (flags.prod) {
+    for (const [dst, src] of [
+      ['NEXT_PUBLIC_SUPABASE_URL', 'PROD_SUPABASE_URL'],
+      ['NEXT_PUBLIC_SUPABASE_ANON_KEY', 'PROD_SUPABASE_ANON_KEY'],
+      ['SUPABASE_SERVICE_ROLE_KEY', 'PROD_SUPABASE_SERVICE_ROLE_KEY'],
+    ]) {
+      if (!env[src]) {
+        console.error(`--prod requires ${src} in .env.local`)
+        process.exit(2)
+      }
+      env[dst] = env[src]
+    }
+  }
   requireEnv(env)
+  const targetRef = new URL(env.NEXT_PUBLIC_SUPABASE_URL).hostname.split('.')[0]
+  console.log(
+    `Target: ${flags.prod ? 'PRODUCTION' : 'staging (default)'} (${targetRef}) — resolved from .env.local ${flags.prod ? 'PROD_*' : 'default'} keys.`,
+  )
 
   // Resolve the probe email domain from .env.local first (then an exported override, then default).
   VERIFY_EMAIL_DOMAIN = env.VERIFY_EMAIL_DOMAIN || process.env.VERIFY_EMAIL_DOMAIN || 'verify.invalid'

@@ -10,7 +10,7 @@ Deploy the Next.js app to production and verify the deploy. **Every push to `mas
 
 - Working tree contains exactly what you intend to ship (`git status`).
 - `.env.local` present (the local production build reads it).
-- No schema change is riding along unapplied — DB changes follow their own sequence (migration file → `supabase db push` → types regen → verify) *before* the code that depends on them is pushed.
+- No schema change is riding along unapplied — DB changes follow their own sequence (migration file → staging push + suite green → **explicit prod apply** via the prod workdir channel → types regen → verify) *before* the code that depends on them is pushed. Since the 2026-07-21 environment-separation flip, bare `supabase db push` targets **staging**; applying to prod is a deliberate act: `source scripts/prod-workdir.sh` then `supabase db push --workdir "$PROD_WD" --linked` (see `use-the-staging-project.md`, "Production — the explicit channel").
 
 ## Steps
 

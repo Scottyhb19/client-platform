@@ -2073,3 +2073,33 @@ never blocks the user — the password change already succeeded. No schema / RLS
   the invite link and complete the welcome set-password flow.
 - **Pass:** A proceeds to `/welcome/install` normally; B's old session is dead
   at its next refresh, same semantics as RESET-REVOKE-1.
+
+## Environment separation — staging-default resolution (2026-07-21)
+
+Context: the environment-separation flip (CLAUDE.md "Environment separation",
+now Operative). Local dev, bare CLI commands, type generation, and the pgTAP
+runner all resolve to the STAGING project; production is reached only through
+explicit channels (`PROD_*` keys + `--prod` flags, `scripts/prod-workdir.sh`).
+Staging carries synthetic data only (`scripts/seed-staging.mjs`).
+
+### ENV-SEP-1 — Local dev server targets staging
+- **Setup:** `npm run dev`, open `http://localhost:3000/api/health`, then sign
+  in with the `STAGING_DEV_LOGIN_*` credentials from `.env.local`.
+- **Pass:** Health reports `db:ok`; the dashboard shows the synthetic clients
+  (Jordan Sample, Casey Demo, …), never a real client name. The Supabase
+  cookies on localhost carry the staging project ref (`sb-fbtfzlgv…`).
+
+### ENV-SEP-2 — Prod probes refuse to run without the explicit flag
+- **Setup:** `node scripts/staff-login-path-verify.mjs https://odysseyhq.com.au`
+  (no `--prod`).
+- **Pass:** The script exits 2 with the "refusing to probe the prod site with
+  staging keys" message before creating any probe user. With `--prod` appended
+  it runs against production using the `PROD_*` keys and prints
+  `Supabase target: PRODUCTION`.
+
+### ENV-SEP-3 — Bare CLI commands land on staging
+- **Setup:** `supabase migration list` from the repo root; then
+  `node scripts/seed-staging.mjs` (against an already-seeded staging).
+- **Pass:** The migration list shows the staging linkage (no prod touch); the
+  seed script prints `Target: staging (…)` and REFUSES because the seed orgs
+  already exist — proving both the target resolution and the re-run guard.

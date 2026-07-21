@@ -4225,6 +4225,10 @@ export type Database = {
         }
         Returns: string
       }
+      message_attachment_path_referenced: {
+        Args: { p_name: string }
+        Returns: boolean
+      }
       rate_limit_check_and_record: {
         Args: { p_key: string; p_max: number; p_window: string }
         Returns: Record<string, unknown>
