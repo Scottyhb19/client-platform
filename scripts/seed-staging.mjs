@@ -497,6 +497,10 @@ async function buildProgram({ client, name, startOffset, weeks, daysPerWeek, sta
         day_label: `Week ${w + 1} · Day ${d + 1}`,
         scheduled_date: sydDate(startOffset + w * 7 + weekdayOffsets[d]),
         sort_order: w * daysPerWeek + d,
+        // Published (= assigned to the client): the portal can see the day,
+        // and a completed session against it locks the builder — the state
+        // the render harness asserts.
+        published_at: daysAgoISO(20),
       })
     }
   }

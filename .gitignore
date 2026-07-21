@@ -39,3 +39,8 @@ yarn-error.log*
 
 # Design bundle (downloaded reference, not tracked)
 .design-ref/
+
+# Playwright (§5b render harness)
+/e2e/.auth/
+/test-results/
+/playwright-report/
