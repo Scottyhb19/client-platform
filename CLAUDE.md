@@ -52,6 +52,16 @@ A friends-and-family beta tester is a real user with real health data. "Friends 
 
 If a real f&f user has *already* logged in and any of the above is not yet done, that is not a reason to skip it — it is a reason to do it now and record the exposure window in `docs/incident-response.md`.
 
+## Environment separation
+
+Three rules govern every database touch:
+
+1. **Staging (`odyssey-staging`) is the default target for all database work** — migrations, queries, pgTAP, and the local dev server.
+2. **Production is touched only on explicit instruction from the operator in that session** — never for exploratory or diagnostic work.
+3. **Before any database operation, state which environment is being targeted and how that target was resolved** (which file, flag, or config decided it), so the operator always knows where the work is landing without asking.
+
+**In transition (2026-07-21).** The defaults do not yet match the rules: the app resolves to production via `.env.local`, the CLI via the linked project ref (`supabase/.temp/project-ref`), and the pgTAP gate runs against production under `BEGIN … ROLLBACK`. Staging exists and was schema-synced at creation (2026-07-03) — currently five migrations behind production — and holds no data, real or synthetic. Until the defaults are flipped and staging is seeded, rule 3 is the operative rule and rules 1–2 are the target state. Two pieces of work close the gap: **seed staging with synthetic data**, and **flip the resolution defaults** (app, CLI, test runner) to staging. This note is deleted when both land. Factual record: production data has routinely entered development sessions to date — including a production census on 2026-07-21 that returned real client names and emails — and that practice ends when the defaults flip.
+
 ## Current operating mode — Phase 1.5 dogfooding loop
 The Phase-1 polish pass is complete (all 12 locked sections closed; the sign-off log is in "Active section" below). The platform is functionally operational and works well. The mode is no longer "polish a section toward a bar in the abstract" — it is **use the tool for real work and let real use drive the next changes.** Changes flow from friction encountered in actual use, not from a pre-planned section order.
 
