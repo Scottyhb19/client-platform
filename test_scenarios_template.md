@@ -2103,3 +2103,33 @@ Staging carries synthetic data only (`scripts/seed-staging.mjs`).
 - **Pass:** The migration list shows the staging linkage (no prod touch); the
   seed script prints `Target: staging (…)` and REFUSES because the seed orgs
   already exist — proving both the target resolution and the re-run guard.
+
+## DB-level write immutability (2026-07-21, migration 20260721120000)
+
+Context: docs/polish/db-write-immutability.md. The CN-7 archived-client
+trigger family + the completed-and-assigned session edit-lock, enforced at
+the database so raw API writes obey the same rules as the UI. pgTAP 60 is
+the machine gate; these are the browser-level confirmations.
+
+### DBWI-1 — Archived client record refuses writes at the DB layer
+- **Setup:** Archive a client. Via any API path that bypasses the UI guard
+  (e.g. a stale tab's save, or a crafted PostgREST call with a staff key),
+  attempt to add a note / edit medical history / book them / edit their
+  program.
+- **Pass:** Every attempt fails with "This client is archived — their record
+  is read-only. Restore the client to make changes." Nothing is written.
+
+### DBWI-2 — Completed-and-assigned day is locked at the DB layer
+- **Setup:** Client completes an assigned session. In the builder, the day
+  renders read-only (existing behaviour). Attempt a direct API write to a
+  set row of that day.
+- **Pass:** The write fails with "This session is completed and still
+  assigned — unassign it to edit the prescription." After Unassign, the same
+  edit succeeds (UI and DB agree).
+
+### DBWI-3 — Archive/restore cascades still run end-to-end
+- **Setup:** A client with a future confirmed appointment. Archive them;
+  then restore them.
+- **Pass:** Archive succeeds; the future appointment flips to cancelled
+  (reason "Client archived") and its reminder cascade-cancels. Restore
+  succeeds; the client is live again; the cancelled booking stays cancelled.

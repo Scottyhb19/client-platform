@@ -1,0 +1,340 @@
+-- pgTAP installs into the `extensions` schema on Supabase managed; bring
+-- it into search_path so plan(), ok(), is() resolve unqualified.
+SET search_path TO public, extensions, pg_temp;
+
+-- ============================================================================
+-- 60_write_immutability
+-- ============================================================================
+-- Locks in migration 20260721120000 — the DB-level write-immutability guards
+-- (docs/polish/db-write-immutability.md): the CN-7 archived-client trigger
+-- family (raw-PostgREST / force-book / program stale-tab residuals) and the
+-- completed-and-assigned session edit-lock, plus the soft_delete_client /
+-- restore_client v3 cascade GUC exemption.
+--
+-- Probe style: pg_temp._try() executes a statement as the CURRENT role and
+-- returns 'rows:N' or 'error:<message>'. Blocked-write assertions match the
+-- guard's exact message — a silent RLS 0-row no-op ('rows:0') would FAIL the
+-- assertion, so a policy change can never fake a guard pass. Controls assert
+-- 'rows:1' so they also catch silent no-ops.
+--
+-- Assertions (14):
+--    1. archived: clinical_notes INSERT refused by the guard
+--    2. archived: client_medical_history UPDATE refused
+--    3. archived: appointments INSERT (the force-book residual) refused
+--    4. archived: program_exercise_sets UPDATE (stale-tab residual) refused
+--    5. archived: clients row UPDATE refused (guard or RLS-invisible — either
+--       layer refusing is a pass; the row must stay unchanged)
+--    6. control: clinical_notes INSERT for a LIVE client succeeds
+--    7. lock: program_exercise_sets UPDATE under a completed+assigned day refused
+--    8. lock: program_exercises INSERT into that day refused
+--    9. control: same UPDATE under an assigned, NOT-completed day succeeds
+--   10. unlock: same UPDATE under an UNASSIGNED completed day succeeds
+--       (published_at IS NULL — the "unassign to edit" escape hatch)
+--   11. cascade: soft_delete_client() runs end-to-end as staff (the GUC lets
+--       its own appointments-cancel through the new appointments guard)
+--   12. cascade: the future appointment flipped to cancelled
+--   13. cascade: restore_client() runs end-to-end as staff
+--   14. cascade: the client is live again (deleted_at cleared)
+--
+-- Style: buffered into _tap (mirrors 56); BEGIN/ROLLBACK for live-run safety.
+-- NOTE: assertions 1–10 MUST run before 11 — soft_delete_client sets the
+-- transaction-local cascade GUC, which would exempt every later guard check
+-- in this single-transaction suite.
+-- ============================================================================
+
+BEGIN;
+
+SELECT plan(14);
+
+CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
+GRANT INSERT, SELECT ON _tap TO authenticated;
+
+-- The probe. SECURITY INVOKER: EXECUTE runs as the calling role, so RLS and
+-- the guards apply exactly as they would to a PostgREST statement.
+CREATE FUNCTION pg_temp._try(p_sql text) RETURNS text
+LANGUAGE plpgsql AS $$
+DECLARE v_n int;
+BEGIN
+  EXECUTE p_sql;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN 'rows:' || v_n;
+EXCEPTION WHEN others THEN
+  RETURN 'error:' || SQLERRM;
+END $$;
+
+-- ----------------------------------------------------------------------------
+-- Fixture (owner-privileged; the guards exempt session_user = 'postgres').
+-- ----------------------------------------------------------------------------
+DO $$
+DECLARE
+  org_w        uuid := '00000000-0000-0000-0000-0000000060a1'::uuid;
+  staff_w      uuid;
+  arch_client  uuid := '00000000-0000-0000-0000-0000000060a2'::uuid;
+  live_client  uuid := '00000000-0000-0000-0000-0000000060a3'::uuid;
+  casc_client  uuid := '00000000-0000-0000-0000-0000000060a4'::uuid;
+  arch_prog    uuid := '00000000-0000-0000-0000-0000000060b1'::uuid;
+  live_prog    uuid := '00000000-0000-0000-0000-0000000060b2'::uuid;
+  arch_day     uuid := '00000000-0000-0000-0000-0000000060c1'::uuid;
+  day_locked   uuid := '00000000-0000-0000-0000-0000000060c2'::uuid;
+  day_open     uuid := '00000000-0000-0000-0000-0000000060c3'::uuid;
+  day_unassign uuid := '00000000-0000-0000-0000-0000000060c4'::uuid;
+  arch_ex      uuid;
+  arch_pe      uuid := '00000000-0000-0000-0000-0000000060d1'::uuid;
+  pe_locked    uuid := '00000000-0000-0000-0000-0000000060d2'::uuid;
+  pe_open      uuid := '00000000-0000-0000-0000-0000000060d3'::uuid;
+  pe_unassign  uuid := '00000000-0000-0000-0000-0000000060d4'::uuid;
+  set_arch     uuid := '00000000-0000-0000-0000-0000000060e1'::uuid;
+  set_locked   uuid := '00000000-0000-0000-0000-0000000060e2'::uuid;
+  set_open     uuid := '00000000-0000-0000-0000-0000000060e3'::uuid;
+  set_unassign uuid := '00000000-0000-0000-0000-0000000060e4'::uuid;
+  cmh_arch     uuid := '00000000-0000-0000-0000-0000000060f1'::uuid;
+  casc_appt    uuid := '00000000-0000-0000-0000-0000000060f2'::uuid;
+  v_start      timestamptz;
+BEGIN
+  INSERT INTO organizations (id, name, slug)
+  VALUES (org_w, 'Test Org W — write immutability 60', 'test-org-w-immut-60');
+
+  staff_w := public._test_make_user('staff-w-immut60@test.local');
+  PERFORM public._test_grant_membership(staff_w, org_w, 'staff'::user_role);
+
+  INSERT INTO clients (id, organization_id, first_name, last_name, email,
+                       deleted_at, archived_at)
+  VALUES (arch_client, org_w, 'Archie', 'Locked',
+          'archie-immut60@test.local', now() - interval '1 day', now() - interval '1 day');
+  INSERT INTO clients (id, organization_id, first_name, last_name, email)
+  VALUES (live_client, org_w, 'Liv', 'Open', 'liv-immut60@test.local'),
+         (casc_client, org_w, 'Cass', 'Cascade', 'cass-immut60@test.local');
+
+  INSERT INTO client_medical_history (id, organization_id, client_id, condition)
+  VALUES (cmh_arch, org_w, arch_client, 'Historical condition (fixture)');
+
+  -- one library exercise to hang prescriptions off
+  SELECT id INTO arch_ex FROM exercises WHERE organization_id = org_w LIMIT 1;
+  IF arch_ex IS NULL THEN
+    INSERT INTO exercises (organization_id, name) VALUES (org_w, 'Fixture Squat 60')
+    RETURNING id INTO arch_ex;
+  END IF;
+
+  -- archived client's program (stale-tab surface)
+  INSERT INTO programs (id, organization_id, client_id, name, status)
+  VALUES (arch_prog, org_w, arch_client, 'Archived block', 'active');
+  INSERT INTO program_days (id, program_id, day_label, scheduled_date, published_at)
+  VALUES (arch_day, arch_prog, 'A-Day 1', current_date - 30, now() - interval '30 days');
+  INSERT INTO program_exercises (id, program_day_id, exercise_id, sort_order)
+  VALUES (arch_pe, arch_day, arch_ex, 0);
+  INSERT INTO program_exercise_sets (id, program_exercise_id, set_number, reps)
+  VALUES (set_arch, arch_pe, 1, '10');
+
+  -- live client's program: locked / open / unassigned days
+  INSERT INTO programs (id, organization_id, client_id, name, status)
+  VALUES (live_prog, org_w, live_client, 'Live block', 'active');
+  INSERT INTO program_days (id, program_id, day_label, scheduled_date, published_at) VALUES
+    (day_locked,   live_prog, 'Day L', current_date - 2, now() - interval '10 days'),
+    (day_open,     live_prog, 'Day O', current_date + 2, now() - interval '10 days'),
+    (day_unassign, live_prog, 'Day U', current_date - 4, NULL);
+  INSERT INTO program_exercises (id, program_day_id, exercise_id, sort_order) VALUES
+    (pe_locked,   day_locked,   arch_ex, 0),
+    (pe_open,     day_open,     arch_ex, 0),
+    (pe_unassign, day_unassign, arch_ex, 0);
+  INSERT INTO program_exercise_sets (id, program_exercise_id, set_number, reps) VALUES
+    (set_locked,   pe_locked,   1, '8'),
+    (set_open,     pe_open,     1, '8'),
+    (set_unassign, pe_unassign, 1, '8');
+
+  -- completed sessions: on the locked day AND the unassigned day
+  INSERT INTO sessions (organization_id, client_id, program_day_id, started_at, completed_at)
+  VALUES (org_w, live_client, day_locked,   now() - interval '2 days', now() - interval '2 days'),
+         (org_w, live_client, day_unassign, now() - interval '4 days', now() - interval '4 days');
+
+  -- cascade client's future confirmed appointment (15-min aligned)
+  v_start := date_trunc('hour', now() + interval '7 days');
+  INSERT INTO appointments (id, organization_id, client_id, staff_user_id,
+                            start_at, end_at, status, confirmed_at,
+                            appointment_type, kind)
+  VALUES (casc_appt, org_w, casc_client, staff_w,
+          v_start, v_start + interval '45 minutes', 'confirmed', now(),
+          'Session', 'appointment');
+
+  CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
+    org_w, staff_w, arch_client, live_client, casc_client,
+    arch_prog, arch_day, arch_pe, set_arch, cmh_arch,
+    day_locked, pe_locked, set_locked, day_open, set_open,
+    day_unassign, set_unassign, casc_appt, arch_ex;
+  GRANT SELECT ON _ids TO authenticated;
+END $$;
+
+-- Force enforcement for this transaction: the pgTAP channel connects with
+-- session_user = postgres, which the guards exempt for maintenance. This GUC
+-- can only make enforcement STRICTER — it disables the postgres exemption so
+-- the assertions exercise exactly the API-path behaviour. The cascade GUC
+-- still wins (soft_delete_client / restore_client must pass their own guards).
+SELECT set_config('odyssey.test_enforce_guards', '1', true);
+
+-- ----------------------------------------------------------------------------
+-- Blocked writes + controls, as the staff session (the real writer).
+-- ----------------------------------------------------------------------------
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'staff'
+);
+SET LOCAL ROLE authenticated;
+
+INSERT INTO _tap (n, line) VALUES (1, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'INSERT INTO clinical_notes (organization_id, client_id, author_user_id, title, plan) VALUES (%L, %L, %L, %L, ''fixture plan'')',
+      (SELECT org_w FROM _ids), (SELECT arch_client FROM _ids),
+      (SELECT staff_w FROM _ids), 'Should be refused'
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'archived: clinical_notes INSERT refused by the DB guard'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (2, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE client_medical_history SET notes = %L WHERE id = %L',
+      'edited', (SELECT cmh_arch FROM _ids)
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'archived: client_medical_history UPDATE refused by the DB guard'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (3, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'INSERT INTO appointments (organization_id, client_id, staff_user_id, start_at, end_at, status, appointment_type, kind) '
+      || 'VALUES (%L, %L, %L, %L::timestamptz, %L::timestamptz, %L, %L, %L)',
+      (SELECT org_w FROM _ids), (SELECT arch_client FROM _ids), (SELECT staff_w FROM _ids),
+      date_trunc('hour', now() + interval '14 days'),
+      date_trunc('hour', now() + interval '14 days') + interval '45 minutes',
+      'pending', 'Session', 'appointment'
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'archived: appointments INSERT (force-book residual) refused by the DB guard'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (4, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_exercise_sets SET reps = %L WHERE id = %L',
+      '99', (SELECT set_arch FROM _ids)
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'archived: program_exercise_sets UPDATE (stale-tab residual) refused by the DB guard'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (5, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE clients SET first_name = %L WHERE id = %L',
+      'Renamed', (SELECT arch_client FROM _ids)
+    )) IN (
+      'error:This client is archived — their record is read-only. Restore the client to make changes.',
+      'rows:0'
+    ),
+    'archived: clients row UPDATE refused (guard, or RLS-invisible — either layer)'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (6, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'INSERT INTO clinical_notes (organization_id, client_id, author_user_id, title, plan) VALUES (%L, %L, %L, %L, ''fixture plan'')',
+      (SELECT org_w FROM _ids), (SELECT live_client FROM _ids),
+      (SELECT staff_w FROM _ids), 'Live-client note'
+    )) = 'rows:1',
+    'control: clinical_notes INSERT for a LIVE client succeeds'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (7, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_exercise_sets SET reps = %L WHERE id = %L',
+      '12', (SELECT set_locked FROM _ids)
+    )) = 'error:This session is completed and still assigned — unassign it to edit the prescription.',
+    'lock: set UPDATE under a completed+assigned day refused'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (8, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'INSERT INTO program_exercises (program_day_id, exercise_id, sort_order) VALUES (%L, %L, 5)',
+      (SELECT day_locked FROM _ids), (SELECT arch_ex FROM _ids)
+    )) = 'error:This session is completed and still assigned — unassign it to edit the prescription.',
+    'lock: program_exercises INSERT into a completed+assigned day refused'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (9, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_exercise_sets SET reps = %L WHERE id = %L',
+      '12', (SELECT set_open FROM _ids)
+    )) = 'rows:1',
+    'control: set UPDATE under an assigned, NOT-completed day succeeds'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (10, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_exercise_sets SET reps = %L WHERE id = %L',
+      '12', (SELECT set_unassign FROM _ids)
+    )) = 'rows:1',
+    'unlock: set UPDATE under an UNASSIGNED completed day succeeds (published_at IS NULL)'
+  ) AS l
+));
+
+-- ----------------------------------------------------------------------------
+-- Cascade round trip — MUST stay last (the GUC lingers for this transaction).
+-- ----------------------------------------------------------------------------
+INSERT INTO _tap (n, line) VALUES (11, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'SELECT public.soft_delete_client(%L)', (SELECT casc_client FROM _ids)
+    )) = 'rows:1',
+    'cascade: soft_delete_client runs end-to-end as staff (GUC passes its own appointments-cancel)'
+  ) AS l
+));
+
+RESET ROLE;
+
+INSERT INTO _tap (n, line) VALUES (12, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT status || '/' || COALESCE(cancellation_reason, 'null')
+       FROM appointments WHERE id = (SELECT casc_appt FROM _ids)),
+    'cancelled/Client archived',
+    'cascade: the future appointment flipped to cancelled'
+  ) AS l
+));
+
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'staff'
+);
+SET LOCAL ROLE authenticated;
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'SELECT public.restore_client(%L)', (SELECT casc_client FROM _ids)
+    )) = 'rows:1',
+    'cascade: restore_client runs end-to-end as staff (GUC passes the un-archive UPDATE)'
+  ) AS l
+));
+
+RESET ROLE;
+
+INSERT INTO _tap (n, line) VALUES (14, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT (deleted_at IS NULL AND archived_at IS NULL)::text
+       FROM clients WHERE id = (SELECT casc_client FROM _ids)),
+    'true',
+    'cascade: the client is live again after restore'
+  ) AS l
+));
+
+SELECT line FROM _tap ORDER BY n;
+
+ROLLBACK;
