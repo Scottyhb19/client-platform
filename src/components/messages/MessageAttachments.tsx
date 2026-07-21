@@ -53,7 +53,7 @@ export function MessageAttachments({
     }
     // File downloads carry a Content-Disposition: attachment disposition
     // (minted server-side), so this saves the file rather than rendering it.
-    window.location.href = res.url
+    window.location.assign(res.url)
   }
 
   return (
