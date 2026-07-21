@@ -73,6 +73,11 @@ Each service level indicator (SLI) is a measurable signal. Each SLO is the targe
 
 The transition from dev to production is a named gate (`/docs/go-live-checklist.md` — Gate 3 deliverable). The upgrade to Pro happens before any real client record is created, and the first DR drill is run on the newly-upgraded project as the final pre-launch step.
 
+**Current posture — friends-and-family beta (recorded 2026-07-21, operator decision).** The Pro upgrade landed 2026-07-21 and the first DR drill ran and passed the same day (`disaster-recovery.md` run log). The backup stream actually in force is **Supabase Pro daily backups (7-day retention)** — a deliberate, recorded deviation from the production-phase list above:
+- **PITR: deferred to the paying-client gate.** It is a paid add-on on top of Pro; at f&f scale (~10 users, low write volume) an RPO of up to 24 hours is accepted. Re-trigger: PITR becomes mandatory at the first paying client (hard-rule threshold), per the list above.
+- **Weekly S3 exports and monthly restore drills: not established** — both belong to the paying-client posture. The drill cadence during f&f is on-demand (re-run on any backup-infrastructure change).
+- §2.7's PITR-lag SLI is therefore **not in force** during the beta; the operative recency check is the daily-backup stream (within 26 h).
+
 ### 2.3 API latency (p95)
 
 **SLI.** 95th percentile of response time for all authenticated API routes, measured over a rolling 30-day window.

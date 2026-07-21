@@ -409,3 +409,16 @@ I am deeply sorry this has happened. If you have questions or concerns, please c
 - RLS policies (what "unauthorized" means in this system): `/docs/rls-policies.md`
 - SLOs and alerting (what fires an incident): `/docs/slos.md`
 - Backup and restore procedures (detailed IR-02, IR-08 recovery steps): `/docs/disaster-recovery.md` (Gate 3)
+
+---
+
+## 10. Recorded exposure windows
+
+Per CLAUDE.md (Beta-entry hardening gate): if a real friends-and-family user logged in before a gate item closed, the gap is recorded here rather than waved through. These are records of accepted exposure, not incidents — no data loss or breach occurred in any window below.
+
+### 2026-06-10 → 2026-07-21 — real data present without a proven-restorable backup
+
+- **What:** The Beta-entry gate required one exercised backup restore before the first real f&f login. The drill was blocked on the Supabase Pro upgrade (Free tier has no "Restore to a New Project"; documented dependency in `disaster-recovery.md`). Real friends-and-family users began logging in before the upgrade happened.
+- **Window:** first real (non-operator) client sign-in 2026-06-10 (`auth.users` census, 2026-07-21) → first successful DR drill 2026-07-21 (~41 days). During the window ~10 real f&f users across both orgs (The Odyssey. Platform, The Exercise Collaborative) created real health-adjacent data.
+- **Exposure during the window:** Free-tier posture — no daily backups, no PITR. A destructive database event in the window would have meant reconstruction from migrations + seeds + the audit trail, with probable loss of client-entered data (logs, messages, bookings).
+- **Closed by:** Supabase Pro upgrade (2026-07-21) + first DR drill run and passed the same day (restore to scratch project, row census matched prod across all seven census columns, RLS policies intact; log in `disaster-recovery.md`). Daily backups active from the upgrade onward; PITR deliberately deferred to the paying-client gate (`slos.md` §2.2 posture note).

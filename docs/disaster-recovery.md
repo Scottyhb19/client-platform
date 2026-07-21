@@ -1,6 +1,6 @@
 # Disaster recovery — backup restore drill
 
-**Status:** **blocked on plan — operator confirmed Free tier 2026-07-02.** The "Restore to a New Project" drill requires Supabase **Pro+** with physical backups; it is not available on Free, and this machine has no local Postgres tools for the download-and-restore alternative. **Prerequisite before this gate can be met: upgrade to Pro and enable physical backups** (this is also the go-live "PITR" item in `go-live-checklist.md`). This is a documented dependency, **not** a skip — do not treat the gate as met until the drill actually runs post-upgrade. This is a **Beta-entry hardening gate** item (CLAUDE.md): before real friends-and-family data lands, a backup must be *proven restorable* — not merely "backups are enabled."
+**Status:** **GATE MET — first drill run and PASSED 2026-07-21** (see run log). The Supabase Pro upgrade landed 2026-07-21; the drill ran the same day against a Pro daily backup, the census matched production, and the scratch project was torn down. Because real f&f users had logged in from 2026-06-10 while the drill was plan-blocked, the ~41-day gap is recorded as an exposure window in `incident-response.md` §10 (per the CLAUDE.md Beta-entry rule), not waved through. Backup posture in force: Pro daily backups, 7-day retention; **PITR deliberately deferred to the paying-client gate** (operator decision 2026-07-21, recorded in `slos.md` §2.2). Re-run this drill on any backup-infrastructure change (e.g. enabling PITR).
 
 **Why this exists.** "Backups exist" and "we have restored from one" are different claims. A backup you have never restored is a backup you do not know works. This drill restores a real backup to a **throwaway project** (non-destructive to production), confirms the data is intact, and records the result.
 
@@ -71,4 +71,4 @@ Add a dated line to the run log: the backup point you restored from, whether the
 
 | Date | Plan / backup type | Restored from | Census match | Result / notes |
 |---|---|---|---|---|
-| _(pending first run)_ | | | | |
+| 2026-07-21 | Pro / daily backup (first drill, day of the Pro upgrade) | Most recent daily backup → scratch project "OdysseyHQ" | **YES** — orgs 7, memberships 18, clients 14, programs 41, appointments 136, RLS policies 282 all exactly matched prod; audit_rows 12002 vs 12528 (scratch slightly lower = rows written after the backup point, expected) | **PASS.** Spot-check on scratch returned the real org names (operator-confirmed). Scratch project deleted same day (teardown confirmed). This run closes the final Beta-entry hardening gate item; the pre-drill exposure window (2026-06-10 → 2026-07-21) is recorded in `incident-response.md` §10. |

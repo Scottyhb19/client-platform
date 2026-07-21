@@ -2,6 +2,15 @@
 
 Follow-up to the syd1 region fix (`docs/perf/baseline-2026-06-26.md`, promoted to production 2026-07-01). Pass 1 named a residual for "a later pass"; this doc audits it and designs the fix. **Status (2026-07-01): residual MEASURED and confirmed real (~200–250 ms per authenticated request); DECISION recorded below — accepted for the friends-and-family beta with re-triggers. Not implemented: the fix is operator-gated (Vercel Pro billing, or enabling asymmetric JWT keys + the external auth-review gate). Per CLAUDE.md a security-surface change cannot ship without approval + external review.**
 
+## RESOLVED (2026-07-21) — Vercel Pro re-trigger fired; residual gone with no code change
+
+The operator upgraded Vercel to Pro (2026-07-21, alongside the Supabase Pro cutover). The first-listed re-trigger fired and the clean no-auth-code path was taken, exactly as designed. Verified against production the same day:
+
+- `X-Vercel-Id: syd1::syd1::…` on three consecutive probes of a middleware-matched route (`/login`) — the **edge invocation and the function both run in Sydney** (previously the edge hop was un-pinned and could land off-region).
+- Warm TTFB through the middleware: **~0.18–0.29 s for the full page** (three probes from an AU connection), versus the ~200–250 ms *added* middleware-auth round-trip measured 2026-07-01. The middleware→Sydney-auth hop is now intra-region.
+
+Consequences: the **local-JWT (`getClaims` + asymmetric keys) alternative is moot** — do not implement it; it existed only as the no-Pro fallback and carries auth-bypass risk. The remaining re-triggers (reported authed-navigation slowness; paying-client onboarding) stay live as ordinary perf vigilance, but the named residual this doc exists for is closed. `PERF-REGION-1` in `test_scenarios_template.md` continues to guard the function-region half; the `syd1::syd1::` edge prefix above is the check for the middleware half if this is ever re-probed.
+
 ## Decision (2026-07-01) — accepted with re-triggers
 **Accepted** for the current Hobby friends-and-family beta (no paying clients). The residual is real but modest (~200–250 ms per authenticated navigation) and the dominant per-query cost is already removed by the syd1 move. **Re-triggers that reopen it:**
 - **The Vercel Pro / commercial-use move** — Pro runs Edge middleware in `syd1` regions, fixing this residual with *no* auth-code change. Do it then (it's the clean fix, and you'll be on Pro anyway for commercial use).
