@@ -253,7 +253,7 @@ const EXCO_EMAIL = 'delivered+exco-owner@resend.dev'
 const CLIENT_EMAIL = 'delivered+dev-client@resend.dev'
 
 const owner = await ensureUser(OWNER_EMAIL, ownerPw, { first_name: 'Dev', last_name: 'Owner' })
-const excoOwner = await ensureUser(EXCO_EMAIL, excoPw, { first_name: 'Exco', last_name: 'Owner' })
+await ensureUser(EXCO_EMAIL, excoPw, { first_name: 'Exco', last_name: 'Owner' })
 const portalUser = await ensureUser(CLIENT_EMAIL, clientPw, { first_name: 'Jordan', last_name: 'Sample' })
 console.log('users: owner, exco-owner, portal client ✓')
 
@@ -538,7 +538,7 @@ async function buildProgram({ client, name, startOffset, weeks, daysPerWeek, sta
 const jp = await buildProgram({ client: jordan, name: 'Pre-season strength block', startOffset: -14, weeks: 4, daysPerWeek: 3 })
 const cp = await buildProgram({ client: casey, name: 'Return-to-running bridge', startOffset: -10, weeks: 2, daysPerWeek: 3 })
 const mp = await buildProgram({ client: morgan, name: 'Bone loading — phase 2', startOffset: -21, weeks: 6, daysPerWeek: 2 })
-const ap = await buildProgram({ client: avery, name: 'Golf conditioning (closed)', startOffset: -56, weeks: 4, daysPerWeek: 2, status: 'archived', archivedAt: daysAgoISO(14) })
+await buildProgram({ client: avery, name: 'Golf conditioning (closed)', startOffset: -56, weeks: 4, daysPerWeek: 2, status: 'archived', archivedAt: daysAgoISO(14) })
 console.log('programs: 4 ✓')
 
 // ---- 6. completed sessions with logged sets ---------------------------------
