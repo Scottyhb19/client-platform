@@ -991,3 +991,13 @@ G-6 stands as **partial build, staging-only** — prod apply rides the already-q
 4. **G-4's upstream target still said refresh-token lifetime** — the §12 scorecard row would have led a future auditor to re-derive the original target, find no refresh-token control set, and reopen G-4. **The scorecard row now carries a dated amendment** restating the target (`sessions_timebox = 720 h` + rotation + reuse interval) and directing measurement against the restatement.
 
 Live items unchanged and correctly scoped per the reviewer: **G-6 prod apply** (queued deploy sitting) and **G-15** (fix shape (a) cleared to proceed — "nothing here blocks approving G-15's fix shape").
+
+---
+
+## G-6 prod-apply appendix (2026-07-23) — appended per the single-ledger exception
+
+**Migration `20260721140000` applied to PRODUCTION 2026-07-23** at the prod-apply sitting (`runbooks/prod-apply-sitting-2026-07.md`); the merged frontend (with all eight `src/lib/auth/events.ts` emission points) deployed the same sitting.
+
+**Verified on prod:** `auth_events` table + `auth_events_append_only` trigger present in the catalog; CR-normalised function-body parity vs staging (where pgTAP `61` runs 8/8); API-invisibility probed live — an anon-key PostgREST `SELECT auth_events` returns 42501 at the grant layer.
+
+**Still pending, exactly as §"Reviewer revisions 2026-07-22" prescribed:** this record is **partial** — 8/10 events wired (`jwt.hook_failure` + `cross_tenant_access_attempt` have no emission point), 0/2 alert thresholds (no alerting pipeline). The first-login behavioural check (a fresh `auth.login.success` row from a real prod app login) could not run at the sitting — it needs an authed prod staff session, and the sitting had none (the `.env.local` `PROD_SUPABASE_SERVICE_ROLE_KEY` used by the throwaway-staff probe pattern is dead; operator re-issue pending). **Operator: after your next prod login, read `auth_events` via the prod workdir and confirm the row — that completes this record.** Sign-off ritual paste-back also pending.

@@ -131,3 +131,28 @@ SELECT count(*) FROM communications WHERE recipient_email IN ('delivered@resend.
 ---
 
 **Abort posture throughout:** any STOP condition → stop, don't improvise. The stack stays mergeable, staging stays green, and prod is either untouched or in a verified state at every phase boundary — there is no step where a partial result forces you forward.
+
+---
+
+## SITTING RECORD — executed 2026-07-23 (AEST; started 2026-07-22 ~21:45 UTC)
+
+Executed autonomously on the operator's standing go ("push everything to prod in the steps you deem most safe"). **Phases 0–4 complete; Phase 5 complete except two operator-only checks; Phase 6 recorded.** Keep this file until the two operator steps below are done, then archive/delete per the header.
+
+**What ran, and results:**
+- **Phase 0:** reviewer-pass commit `a04b2c4` on `client-auth-signoff-closeout`. Gate met.
+- **Pre-prod battery (all green before anything touched prod):** staging pgTAP **62/62 files** (60: 17/17, 61: 8/8, 62: 6/6, 56: 18/18, 57: 339/339); Playwright harness **9/9**; `next build` + `tsc` green on the tip and again on merged master; repo lint clean on master (the branch-local `MessageAttachments` hit resolved at merge exactly as predicted). Two independent review agents: all four migrations **SAFE TO APPLY** (two carry-forwards indexed in checklist §8); docs audit found no blockers (its Phase-6 correction list was applied — five checklist flips not four, the §10 close-condition amendment, the missing GUC-residual index entry).
+- **Phase 1:** exactly the four `202607211*` migrations local; prod `migration list` showed exactly those four pending. **Deviation:** the `pg_get_functiondef` pre-push snapshot did not run — this runbook's own Phase-1 code block omitted the command its prose named. Substituted post-apply with full CR-normalised parity vs staging (all seven functions ≡; raw hashes differ by line endings only).
+- **Phase 2:** merge clean (`d13e355`), build + lint green on master.
+- **Phase 3:** `db push` applied all four to prod (22:05 UTC); zero pending on re-list.
+- **Phase 4:** `git push origin master` → Vercel Production deployment for `d13e355` **state=success** (GitHub deployments API); `/api/health` 200 `db:ok config:ok` on the new build.
+- **Phase 5a:** pgTAP 17 on prod **8/8**; guard parity ✓ (CR-normalised); light smoke ✓ (archived edit + hard-delete refused, 9/9 triggers in catalog, rolled back); types parity **zero diff**; `auth_events` API-invisible (anon → 42501). **`staff-login-path-verify.mjs --prod` DID NOT RUN — blocked by the dead key below.**
+- **Phase 5b Leg 1:** GREEN — see the §12 entry in `go-live-checklist.md` §8 (production cron tick did the send; comms row derived exactly; teardown census 0).
+- **Phase 6:** closures recorded — `incident-response.md` §10 CLOSED (with the close-condition amendment), five checklist §8 flips + three new index entries, four polish-doc appendices.
+
+**Blocking discovery — `.env.local` `PROD_SUPABASE_SERVICE_ROLE_KEY` is DEAD.** Its prefix (`sb_secret_BQLQIB…`) matches neither live prod secret key (`default` `sb_secret_i_h4w…`, `odysseyhq_server` `sb_secret_X4PD9…` — Management-API listing); PostgREST rejects it ("Invalid API key"). The prod *app* is unaffected (Vercel holds its own working key). Impact: every local `PROD_*` service-role script path is broken — `staff-login-path-verify.mjs --prod`, the throwaway-staff probe pattern, automated Leg 2. The publishable `PROD_SUPABASE_ANON_KEY` is valid. **Operator: re-issue/reveal a prod secret key in the dashboard (API Keys page) and update `.env.local`; consider recording in `secrets-inventory.md` which named key (`odysseyhq_server`?) is the canonical script credential.**
+
+**The two remaining operator steps:**
+1. **§12 Leg 2** (needs your prod staff login): create the throwaway client per Phase 5b above, tick send-invite, run the assertions + teardown via prod workdir, confirm census 0 — then paste the two-leg results to the reviewer (pre-cleared) and record the close in `email-and-sms.md`. The same probe's bonus assertions complete the mint-at-POST (`action_link IS NULL`) and G-6 (`auth.invite.sent`) prod evidence.
+2. **G-6 first-login row:** after your next prod login, read `auth_events` for `auth.login.success` via prod workdir (≥1 fresh row) — completes the G-6 appendix in `auth-onboarding-staff.md`. Then run the three sign-off ritual paste-backs (G-6, C-14 item 1, §12 logging half).
+
+**Also done this sitting:** `staff-login-path-verify` re-run against **staging** as a control was skipped (harness login already proves the staging path 9/9). R-4 request-path half indexed in checklist §8 (was tracked nowhere). SMS-branch trigger hazard indexed (pre-apply review finding).

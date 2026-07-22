@@ -175,3 +175,18 @@ ok 17 - cascade: the client is live again after restore
 - **`clients_row_write_guard` GUC residual** (round-2 follow-up 2): the one guard whose `archive_cascade` safety rests on the PostgREST boundary. Standing check in force (no caller-supplied `set_config` first arg). Re-trigger: any API-exposed GUC setter, or the SaaS fork.
 - **Contract §5 parks:** sessions/`set_logs` tables, test tables, messaging (FM-8 owner), `invite_tokens`.
 - **Production apply** of `20260721120000` (all of the above enforcement is staging-only): Step-7 deploy sitting, with the `pg_get_functiondef` drift check + light smoke as preconditions (§8). Exposure window open until then (`incident-response.md` §10).
+
+---
+
+## Prod-apply appendix (2026-07-23) — appended per the single-ledger exception
+
+**Migration `20260721120000` applied to PRODUCTION 2026-07-23 (AEST; 2026-07-22 ~22:05 UTC)** at the prod-apply sitting (`runbooks/prod-apply-sitting-2026-07.md`), via the prod-workdir channel; `supabase migration list` read zero-pending afterward.
+
+**Preconditions, as they actually ran:**
+1. *`pg_get_functiondef` pre-push drift snapshot — DID NOT RUN.* The sitting runbook's Phase-1 code block omitted the command its prose named, and the omission was noticed only after the push. Substituted post-apply: CR-normalised `pg_get_functiondef` **parity** across all seven guard/RPC functions (`clients_row_write_guard`, `client_record_write_guard`, `program_write_guard`, `soft_delete_client`, `restore_client`, `auth_events_append_only`, `reminder_log_communication`) — prod ≡ staging, where pgTAP 60 runs 17/17. (The raw hashes differ by line endings only — the two apply channels carried different EOLs; `chr(13)`-stripped hashes are identical. Recorded so a future drift check normalises before alarming.) Prod's functions were only ever touched by tracked migrations, so the skipped snapshot lost forensic comfort, not correctness.
+2. *`db push`* — done, four migrations in timestamp order, no errors (`DROP TRIGGER IF EXISTS` NOTICEs only).
+3. *Light prod smoke — PASSED* (rolled-back transaction, `odyssey.test_enforce_guards='1'` to disable the postgres exemption): synthetic client inserted → archive transition allowed → **archived edit refused** and **archived hard-delete refused**, both with the exact app copy ("This client is archived — their record is read-only…"); catalog census 9/9 `write_immutability_guard` triggers. Channel note: the smoke ran through the SQL channel with the enforce-GUC because the `.env.local` `PROD_SUPABASE_SERVICE_ROLE_KEY` was found **dead** at the sitting (see the sitting runbook's completion note) — an authenticator-session PostgREST smoke should be re-run once the operator re-issues that key, though the guard's `session_user` predicate makes the outcome mechanical.
+
+**Exposure window (blocker 2): CLOSED** — `incident-response.md` §10 closure entry, including the amendment of that entry's stale "pgTAP 60 on prod" close-condition to this light smoke (round-2 follow-up 5 is the authority).
+
+**Deferred-items ledger updates in the same commit:** the GUC residual gained its missing `go-live-checklist.md` §8 index entry (the sitting's doc audit found the inbound-half gap); the pre-apply migration re-review also surfaced a latent SMS-branch CHECK hazard in `reminder_log_communication` — indexed in §8 with re-trigger SMS-activation (owned by the §12 logging-half record, not this doc).

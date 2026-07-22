@@ -986,3 +986,11 @@ The checklist §8 "C-1 branch-(b) / C-6 infra-error runtime verification" entry 
 - **Decision:** Confirmed for close and sign-off. The three post-hoc actionables — C-1/C-6 staging runtime verification, the pgTAP `56` archived-client dependent-table tripwire (8→18), and the password-rule census re-walk — are accepted as discharged, and the section's original 2026-06-11 close stands as reviewed. Nothing returned for revision.
 
 Two structural notes carried forward from the verdict, not blocking this sign-off: (a) future premortems gain an explicit configuration/environment-drift lens — a one-sentence CLAUDE.md polish-protocol step-3 amendment is drafted and **awaits the operator's application** (CLAUDE.md is operator-gated); (b) the final gap of a section gets its own reviewer round before the closing commit, applied to future closes. The Auth-and-Onboarding-(client) section remains **formally closed**; this pass adds no open actionable items to it.
+
+---
+
+## C-14 item 1 prod-apply appendix (2026-07-23) — appended per the single-ledger exception
+
+**Migration `20260721150000` applied to PRODUCTION 2026-07-23** at the prod-apply sitting (`runbooks/prod-apply-sitting-2026-07.md`); the mint-at-POST frontend (`src/lib/clients/invite-link.ts`, `src/app/i/[id]/actions.ts`, send path inserting `action_link: null`) deployed the same sitting. `invite_tokens.action_link` is nullable on prod (types parity zero-diff post-apply); the deploy-skew legacy path (claimed rows with stored links redirect directly; only null-link rows mint) shipped as designed.
+
+**Prod behavioural evidence pending:** the "fresh invite row has `action_link IS NULL`" assertion rides the §12 Leg-2 operator probe (`go-live-checklist.md` §8 → §12 Part B prod-verify) — sending one real invite through the prod app and reading the row back completes this record. Sign-off ritual paste-back also pending.
