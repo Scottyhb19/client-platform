@@ -7,31 +7,57 @@
 --   1. CN-7 archived-client immutability — closes the three named residuals
 --      (raw-PostgREST staff write, schedule force-book, program stale-tab)
 --      uniformly: BEFORE INSERT/UPDATE/DELETE guards on the direct client_id
---      tables, the program family (parent-walk), and the clients row itself.
---      Predicate = clients.deleted_at IS NOT NULL — identical to the
---      app-layer assertClientLive (archive-guard.ts).
+--      tables, the program family (parent-walk), and the clients row itself
+--      (UPDATE + DELETE). Predicate = clients.deleted_at IS NOT NULL —
+--      identical to the app-layer assertClientLive (archive-guard.ts).
 --
 --   2. Completed-and-assigned session edit-lock — DB enforcement of the
 --      builder's UI-only lock: refuse program_exercises /
 --      program_exercise_sets writes when the target row's program_day has
 --      published_at IS NOT NULL and a live completed session. Mirrors the
 --      day page's `locked` predicate exactly; unassign (published_at → NULL)
---      remains the unlock.
+--      remains the unlock. NOTE (accepted, reviewer 2026-07-22): unassign is a
+--      raw UPDATE on program_days and stays the sanctioned unlock at every
+--      layer, so a staff credential can unassign→edit→reassign. That path is
+--      audit-logged (audit_program_days) and never touches the performed
+--      record (set_logs/sessions). The hard gate (an RPC-only unassign) is
+--      deferred to the paying-client tier — docs/polish/db-write-immutability.md
+--      §5/§7.
 --
--- Exemptions (both families):
+-- Exemptions:
 --   - session_user = 'postgres' — owner-level maintenance (migrations, pgTAP
 --     fixtures, seed/wipe scripts). API traffic always arrives via
 --     `authenticator`, so no API role is ever exempt — including
 --     service_role (SECURITY DEFINER changes current_user, not session_user).
 --   - transaction-local GUC odyssey.archive_cascade = '1' — set ONLY by
---     soft_delete_client / restore_client (v3 below) so the archive/restore
---     cascades (cancel-future-appointments; un-archive row) pass their own
---     guards. Not settable through PostgREST (no exposed setter RPC).
+--     restore_client (v3 below) and honoured by ONLY clients_row_write_guard,
+--     which the un-archive UPDATE (writing an already-archived row) needs. The
+--     OTHER guards do NOT consult it: soft_delete_client (v4) cancels its
+--     future appointments WHILE THE CLIENT IS STILL LIVE, so those writes pass
+--     on the merits, not by exemption. Narrowing the GUC to a single low-impact
+--     guard shrinks the single point of trust the whole family used to share
+--     (reviewer 2026-07-22). It is not settable through PostgREST (no exposed
+--     setter RPC, and PostgREST namespaces its injected GUCs under `request.`);
+--     pgTAP 60 tripwires that the family guards ignore a forged value.
+--   - odyssey.test_enforce_guards = '1' — pgTAP-only. The test channel connects
+--     as session_user = postgres, which the maintenance exemption would exempt;
+--     this transaction-local GUC DISABLES the postgres exemption so the suite
+--     exercises the real API-path behaviour. Strictness-only — it can make the
+--     guards stricter, never looser; it cannot bypass anything. Never set in
+--     production paths. Recorded as a deviation in the contract's Approval note.
 --
 -- The trigger functions are SECURITY DEFINER so their truth lookups
 -- (clients.deleted_at, the program parent-walk, the session probe) never
 -- depend on the WRITER's RLS view — e.g. an archived client's own session
 -- cannot see its own clients row, and must not thereby slip the guard.
+-- search_path is `public, pg_temp` on all three — the documented SECURITY
+-- DEFINER idiom. Postgres implicitly searches pg_temp FIRST for relation/type
+-- names when it is not named in the path; naming it explicitly LAST forces it
+-- out of first position so a temp relation cannot shadow the guards' lookups
+-- (clients / sessions / program_days). A bare `= public` was tried and REVERTED
+-- 2026-07-22 (reviewer): dropping pg_temp re-opened the vector — the pgTAP
+-- channel populates pg_temp (pg_temp._try), so a temp relation could silently
+-- shadow a guard's lookup and never be seen.
 --
 -- Error copy reuses the app's user-facing strings (archive-guard.ts /
 -- the builder lock) so a raw 400 reads identically to the app's refusal.
@@ -41,7 +67,9 @@
 -- ----------------------------------------------------------------------------
 -- §1. client_record_write_guard — direct client_id tables
 --     (programs, appointments, clinical_notes, client_medical_history,
---      client_medications)
+--      client_medications). Does NOT consult odyssey.archive_cascade — no
+--      definer cascade writes these tables on an archived client
+--      (soft_delete_client v4 cancels appointments while the client is live).
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.client_record_write_guard()
 RETURNS trigger
@@ -52,9 +80,8 @@ AS $$
 DECLARE
   v_ids uuid[];
 BEGIN
-  IF (session_user = 'postgres'
-      AND COALESCE(current_setting('odyssey.test_enforce_guards', true), '') <> '1')
-     OR COALESCE(current_setting('odyssey.archive_cascade', true), '') = '1' THEN
+  IF session_user = 'postgres'
+     AND COALESCE(current_setting('odyssey.test_enforce_guards', true), '') <> '1' THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
   END IF;
 
@@ -90,7 +117,8 @@ REVOKE EXECUTE ON FUNCTION public.client_record_write_guard() FROM PUBLIC, anon,
 -- §2. program_write_guard — program_days / program_exercises /
 --     program_exercise_sets: archived-client walk + the completed-and-
 --     assigned lock (program_exercises + program_exercise_sets only; the
---     day-ROW question is deliberately parked — contract §5).
+--     day-ROW question is accepted-deferred — contract §5/§7). Does NOT consult
+--     odyssey.archive_cascade — no definer cascade writes these tables.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.program_write_guard()
 RETURNS trigger
@@ -103,9 +131,8 @@ DECLARE
   v_client_ids uuid[];
   v_locked     uuid;
 BEGIN
-  IF (session_user = 'postgres'
-      AND COALESCE(current_setting('odyssey.test_enforce_guards', true), '') <> '1')
-     OR COALESCE(current_setting('odyssey.archive_cascade', true), '') = '1' THEN
+  IF session_user = 'postgres'
+     AND COALESCE(current_setting('odyssey.test_enforce_guards', true), '') <> '1' THEN
     IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
   END IF;
 
@@ -191,9 +218,13 @@ $$;
 REVOKE EXECUTE ON FUNCTION public.program_write_guard() FROM PUBLIC, anon, authenticated;
 
 -- ----------------------------------------------------------------------------
--- §3. clients_row_write_guard — the clients row itself. UPDATE only: the
---     archive transition (OLD.deleted_at IS NULL) always passes; edits to an
---     already-archived row are refused. restore_client passes via the GUC.
+-- §3. clients_row_write_guard — the clients row itself. UPDATE + DELETE: the
+--     archive transition (OLD.deleted_at IS NULL) always passes; edits OR hard
+--     deletes of an already-archived row are refused. restore_client passes via
+--     the odyssey.archive_cascade GUC (the ONE guard that still consults it).
+--     DELETE coverage closes the §4 "DELETE included everywhere" contradiction
+--     (reviewer 2026-07-22, blocker 3): a hard-DELETE of an archived clients
+--     row is refused BY DESIGN, not merely by collateral child-guard/RLS luck.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.clients_row_write_guard()
 RETURNS trigger
@@ -205,14 +236,14 @@ BEGIN
   IF (session_user = 'postgres'
       AND COALESCE(current_setting('odyssey.test_enforce_guards', true), '') <> '1')
      OR COALESCE(current_setting('odyssey.archive_cascade', true), '') = '1' THEN
-    RETURN NEW;
+    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
   END IF;
   IF OLD.deleted_at IS NOT NULL THEN
     RAISE EXCEPTION 'This client is archived — their record is read-only. Restore the client to make changes.'
       USING ERRCODE = 'P0001',
             HINT = 'write_immutability: archived client row (CN-7 DB guard)';
   END IF;
-  RETURN NEW;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
 END;
 $$;
 
@@ -262,17 +293,29 @@ CREATE TRIGGER write_immutability_guard
   BEFORE INSERT OR UPDATE OR DELETE ON public.program_exercise_sets
   FOR EACH ROW EXECUTE FUNCTION public.program_write_guard();
 
+-- clients: UPDATE + DELETE (see §3). INSERT is unguarded — a brand-new client
+-- cannot already be archived.
 DROP TRIGGER IF EXISTS write_immutability_guard ON public.clients;
 CREATE TRIGGER write_immutability_guard
-  BEFORE UPDATE ON public.clients
+  BEFORE UPDATE OR DELETE ON public.clients
   FOR EACH ROW EXECUTE FUNCTION public.clients_row_write_guard();
 
 -- ----------------------------------------------------------------------------
--- §5. soft_delete_client v3 + restore_client v3 — identical bodies to the
---     latest deployed versions (20260702190000 / 20260429130000) plus the
---     cascade GUC as the first statement, so their own guards pass. Same
---     signatures — CREATE OR REPLACE, no drop (deployed-function rule).
+-- §5. soft_delete_client v4 + restore_client v3 — CREATE OR REPLACE, same
+--     signatures, no drop (deployed-function rule). Bodies diffed against their
+--     last defining migrations before this replace (reviewer 2026-07-22):
+--       - soft_delete_client: 20260702190000 (the actual latest) — reordered
+--         here so it needs no exemption GUC (see below).
+--       - restore_client:     20260429130000 (bare fn; 20260623180000 was
+--         REVOKE-only, not a body change) — unchanged except the GUC line.
 -- ----------------------------------------------------------------------------
+
+-- v4: reordered vs 20260702190000. Old order archived the client FIRST, then
+-- cancelled future appointments — which, under the new appointments guard,
+-- would need an exemption. New order verifies-live, cancels appointments WHILE
+-- THE CLIENT IS STILL LIVE (guard passes on the merits), then archives (the
+-- archive transition passes clients_row_write_guard on its own). No
+-- archive_cascade GUC set here — the narrowing (reviewer 2026-07-22).
 CREATE OR REPLACE FUNCTION public.soft_delete_client(p_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -288,28 +331,22 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501';
   END IF;
 
-  -- v3: the write-immutability guards must not refuse this function's own
-  -- cascade (the appointments cancel below runs AFTER the client is
-  -- archived). Transaction-local; resets on commit/rollback.
-  PERFORM set_config('odyssey.archive_cascade', '1', true);
-
-  UPDATE clients
-     SET deleted_at  = ts,
-         archived_at = ts
-   WHERE id = p_id
-     AND organization_id = caller_org
-     AND deleted_at IS NULL;
-
+  -- Verify the client is live & in-org up front (preserves the prior
+  -- 'not found / already archived' semantics now that the archive UPDATE is
+  -- no longer the first statement).
+  PERFORM 1 FROM clients
+   WHERE id = p_id AND organization_id = caller_org AND deleted_at IS NULL;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'client % not found in your organization, or already archived', p_id
       USING ERRCODE = 'no_data_found';
   END IF;
 
-  -- P1-5: an archived client keeps no future bookings. Cancelling here (not
-  -- deleting) preserves the schedule history; the reminder-lifecycle trigger
-  -- fires on this status change and cancels each queued reminder, so no
-  -- reminder email can reach an archived client. Past/completed/no-show rows
-  -- are untouched — they are the record.
+  -- P1-5: an archived client keeps no future bookings. Cancel BEFORE archiving
+  -- (client still live) so client_record_write_guard passes without an
+  -- exemption; the reminder-lifecycle trigger fires on this status change and
+  -- cancels each queued reminder, so no reminder email can reach the
+  -- (about-to-be-)archived client. Past/completed/no-show rows are untouched —
+  -- they are the record.
   UPDATE appointments
      SET status              = 'cancelled',
          cancelled_at        = ts,
@@ -320,12 +357,24 @@ BEGIN
      AND start_at > ts
      AND status IN ('pending', 'confirmed')
      AND deleted_at IS NULL;
+
+  -- Archive last. clients_row_write_guard passes this because it is the archive
+  -- TRANSITION (OLD.deleted_at IS NULL), not an edit of an already-archived row.
+  UPDATE clients
+     SET deleted_at  = ts,
+         archived_at = ts
+   WHERE id = p_id
+     AND organization_id = caller_org
+     AND deleted_at IS NULL;
 END;
 $$;
 
 COMMENT ON FUNCTION public.soft_delete_client(uuid) IS
-  'Archive a client: set deleted_at + archived_at, and cancel their future live appointments (reminders cascade-cancel via appointment_manage_reminder). v3 sets the odyssey.archive_cascade GUC so the write-immutability guards pass its own cascade. Releases the (org, lower(email)) unique-active slot for re-invites. CN-7 P1-5; restore_client deliberately does not resurrect cancelled bookings.';
+  'Archive a client: cancel their future live appointments (reminders cascade-cancel via appointment_manage_reminder) THEN set deleted_at + archived_at. v4 reorders vs 20260702190000 so the cancel runs while the client is still live — the write-immutability appointments guard passes on the merits, no archive_cascade GUC needed (the GUC now exempts only clients_row_write_guard, for restore). Releases the (org, lower(email)) unique-active slot for re-invites. CN-7 P1-5; restore_client deliberately does not resurrect cancelled bookings.';
 
+-- restore_client: body identical to 20260429130000 plus the archive_cascade
+-- GUC, which clients_row_write_guard (the only guard that still consults it)
+-- needs so the un-archive UPDATE — writing an already-archived row — passes.
 CREATE OR REPLACE FUNCTION public.restore_client(p_id uuid)
 RETURNS void
 LANGUAGE plpgsql
@@ -341,7 +390,7 @@ BEGIN
     RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501';
   END IF;
 
-  -- v3: the un-archive UPDATE below writes an archived row — exactly what
+  -- The un-archive UPDATE below writes an archived row — exactly what
   -- clients_row_write_guard refuses for everyone else.
   PERFORM set_config('odyssey.archive_cascade', '1', true);
 
@@ -378,4 +427,4 @@ END;
 $$;
 
 COMMENT ON FUNCTION public.restore_client(uuid) IS
-  'Un-archive a client: clear deleted_at and archived_at. v3 sets the odyssey.archive_cascade GUC so clients_row_write_guard passes the un-archive UPDATE. Refuses if the email is now claimed by a different live client in the same org — explicit error rather than 23505 from the unique-active index.';
+  'Un-archive a client: clear deleted_at and archived_at. Sets the odyssey.archive_cascade GUC so clients_row_write_guard (the only guard that consults it) passes the un-archive UPDATE. Refuses if the email is now claimed by a different live client in the same org — explicit error rather than 23505 from the unique-active index.';

@@ -8,8 +8,9 @@ SET search_path TO public, extensions, pg_temp;
 -- Locks in migration 20260721120000 — the DB-level write-immutability guards
 -- (docs/polish/db-write-immutability.md): the CN-7 archived-client trigger
 -- family (raw-PostgREST / force-book / program stale-tab residuals) and the
--- completed-and-assigned session edit-lock, plus the soft_delete_client /
--- restore_client v3 cascade GUC exemption.
+-- completed-and-assigned session edit-lock, plus the soft_delete_client v4 /
+-- restore_client v3 behaviour under the NARROWED archive_cascade GUC (only
+-- clients_row_write_guard consults it; reviewer 2026-07-22).
 --
 -- Probe style: pg_temp._try() executes a statement as the CURRENT role and
 -- returns 'rows:N' or 'error:<message>'. Blocked-write assertions match the
@@ -17,34 +18,45 @@ SET search_path TO public, extensions, pg_temp;
 -- assertion, so a policy change can never fake a guard pass. Controls assert
 -- 'rows:1' so they also catch silent no-ops.
 --
--- Assertions (14):
+-- Assertions (17):
 --    1. archived: clinical_notes INSERT refused by the guard
 --    2. archived: client_medical_history UPDATE refused
 --    3. archived: appointments INSERT (the force-book residual) refused
 --    4. archived: program_exercise_sets UPDATE (stale-tab residual) refused
---    5. archived: clients row UPDATE refused (guard or RLS-invisible — either
---       layer refusing is a pass; the row must stay unchanged)
+--    5. archived: clients row UPDATE refused BY THE GUARD — staff RLS permits
+--       the archived row (the incidental finding), so this deterministically
+--       exercises the guard's raise, not an RLS no-op
 --    6. control: clinical_notes INSERT for a LIVE client succeeds
 --    7. lock: program_exercise_sets UPDATE under a completed+assigned day refused
 --    8. lock: program_exercises INSERT into that day refused
 --    9. control: same UPDATE under an assigned, NOT-completed day succeeds
 --   10. unlock: same UPDATE under an UNASSIGNED completed day succeeds
 --       (published_at IS NULL — the "unassign to edit" escape hatch)
---   11. cascade: soft_delete_client() runs end-to-end as staff (the GUC lets
---       its own appointments-cancel through the new appointments guard)
---   12. cascade: the future appointment flipped to cancelled
---   13. cascade: restore_client() runs end-to-end as staff
---   14. cascade: the client is live again (deleted_at cleared)
+--   11. GUC tripwire: client_record_write_guard ignores a forged archive_cascade
+--   12. GUC tripwire: program_write_guard ignores a forged archive_cascade
+--   13. archived: clients row DELETE refused BY THE GUARD — run as postgres
+--       (BYPASSRLS) with enforce-GUC on, so RLS cannot hide the row and only
+--       the guard can refuse; deterministic proof of the DELETE branch
+--   14. cascade: soft_delete_client() runs end-to-end as staff. v4 cancels the
+--       future appointment WHILE THE CLIENT IS STILL LIVE, so the appointments
+--       guard passes on the merits — NO archive_cascade GUC is set
+--   15. cascade: the future appointment flipped to cancelled
+--   16. cascade: restore_client() runs end-to-end as staff (its archive_cascade
+--       GUC lets the un-archive UPDATE past clients_row_write_guard)
+--   17. cascade: the client is live again (deleted_at cleared)
 --
 -- Style: buffered into _tap (mirrors 56); BEGIN/ROLLBACK for live-run safety.
--- NOTE: assertions 1–10 MUST run before 11 — soft_delete_client sets the
--- transaction-local cascade GUC, which would exempt every later guard check
--- in this single-transaction suite.
+-- ORDER: 1–12 run as the authenticated staff role; 13 runs as postgres (a
+-- deterministic DELETE-guard proof); 14–17 are the cascade round-trip as staff.
+-- The only lingering GUC is odyssey.test_enforce_guards (strictness). The forged
+-- archive_cascade set for 11–12 is RESET to '' before 13; soft_delete_client v4
+-- sets NO GUC; restore_client sets archive_cascade at 16, after which only a
+-- read (17) runs.
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(14);
+SELECT plan(17);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -167,7 +179,7 @@ END $$;
 -- session_user = postgres, which the guards exempt for maintenance. This GUC
 -- can only make enforcement STRICTER — it disables the postgres exemption so
 -- the assertions exercise exactly the API-path behaviour. The cascade GUC
--- still wins (soft_delete_client / restore_client must pass their own guards).
+-- (archive_cascade) is honoured only by clients_row_write_guard.
 SELECT set_config('odyssey.test_enforce_guards', '1', true);
 
 -- ----------------------------------------------------------------------------
@@ -228,11 +240,8 @@ INSERT INTO _tap (n, line) VALUES (5, (
     pg_temp._try(format(
       'UPDATE clients SET first_name = %L WHERE id = %L',
       'Renamed', (SELECT arch_client FROM _ids)
-    )) IN (
-      'error:This client is archived — their record is read-only. Restore the client to make changes.',
-      'rows:0'
-    ),
-    'archived: clients row UPDATE refused (guard, or RLS-invisible — either layer)'
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'archived: clients row UPDATE refused BY THE GUARD (staff RLS reaches the row)'
   ) AS l
 ));
 
@@ -288,20 +297,75 @@ INSERT INTO _tap (n, line) VALUES (10, (
 ));
 
 -- ----------------------------------------------------------------------------
--- Cascade round trip — MUST stay last (the GUC lingers for this transaction).
+-- GUC tripwire (reviewer 2026-07-22): a caller CAN set a custom GUC in its own
+-- session — PostgREST just never exposes a way to. Forge archive_cascade='1'
+-- as the authenticated staff role and prove the FAMILY guards ignore it. Only
+-- clients_row_write_guard consults it (and only restore_client sets it).
 -- ----------------------------------------------------------------------------
+SELECT set_config('odyssey.archive_cascade', '1', true);
+
 INSERT INTO _tap (n, line) VALUES (11, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'INSERT INTO clinical_notes (organization_id, client_id, author_user_id, title, plan) VALUES (%L, %L, %L, %L, ''fixture plan'')',
+      (SELECT org_w FROM _ids), (SELECT arch_client FROM _ids),
+      (SELECT staff_w FROM _ids), 'Forged-GUC note'
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'GUC tripwire: client_record_write_guard ignores a forged archive_cascade'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (12, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_exercise_sets SET reps = %L WHERE id = %L',
+      '77', (SELECT set_arch FROM _ids)
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'GUC tripwire: program_write_guard ignores a forged archive_cascade'
+  ) AS l
+));
+
+-- Reset the forged GUC so it cannot exempt the clients-row guard below.
+SELECT set_config('odyssey.archive_cascade', '', true);
+
+-- #13 runs as postgres — which BYPASSRLS on Supabase (the fixture INSERTs above
+-- prove it) — with test_enforce_guards still '1' so the postgres exemption is
+-- DISABLED. RLS therefore cannot hide the row and ONLY clients_row_write_guard
+-- can refuse the DELETE: deterministic proof of the DELETE branch, not RLS
+-- invisibility (reviewer 2026-07-22 follow-up 1).
+RESET ROLE;
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'DELETE FROM clients WHERE id = %L', (SELECT arch_client FROM _ids)
+    )) = 'error:This client is archived — their record is read-only. Restore the client to make changes.',
+    'archived: clients row DELETE refused BY THE GUARD (postgres bypasses RLS + enforce-GUC on → guard is the sole control)'
+  ) AS l
+));
+
+-- ----------------------------------------------------------------------------
+-- Cascade round trip — MUST stay last. soft_delete_client v4 sets no GUC;
+-- restore_client sets archive_cascade at 16, which lingers for the final read.
+-- Re-establish the authenticated staff session (13 dropped to postgres).
+-- ----------------------------------------------------------------------------
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'staff'
+);
+SET LOCAL ROLE authenticated;
+
+INSERT INTO _tap (n, line) VALUES (14, (
   SELECT string_agg(l, E'\n') FROM ok(
     pg_temp._try(format(
       'SELECT public.soft_delete_client(%L)', (SELECT casc_client FROM _ids)
     )) = 'rows:1',
-    'cascade: soft_delete_client runs end-to-end as staff (GUC passes its own appointments-cancel)'
+    'cascade: soft_delete_client runs end-to-end as staff (v4 cancels the future appt while the client is live — no GUC)'
   ) AS l
 ));
 
 RESET ROLE;
 
-INSERT INTO _tap (n, line) VALUES (12, (
+INSERT INTO _tap (n, line) VALUES (15, (
   SELECT string_agg(l, E'\n') FROM is(
     (SELECT status || '/' || COALESCE(cancellation_reason, 'null')
        FROM appointments WHERE id = (SELECT casc_appt FROM _ids)),
@@ -315,18 +379,18 @@ SELECT public._test_set_jwt(
 );
 SET LOCAL ROLE authenticated;
 
-INSERT INTO _tap (n, line) VALUES (13, (
+INSERT INTO _tap (n, line) VALUES (16, (
   SELECT string_agg(l, E'\n') FROM ok(
     pg_temp._try(format(
       'SELECT public.restore_client(%L)', (SELECT casc_client FROM _ids)
     )) = 'rows:1',
-    'cascade: restore_client runs end-to-end as staff (GUC passes the un-archive UPDATE)'
+    'cascade: restore_client runs end-to-end as staff (archive_cascade GUC passes the un-archive UPDATE)'
   ) AS l
 ));
 
 RESET ROLE;
 
-INSERT INTO _tap (n, line) VALUES (14, (
+INSERT INTO _tap (n, line) VALUES (17, (
   SELECT string_agg(l, E'\n') FROM is(
     (SELECT (deleted_at IS NULL AND archived_at IS NULL)::text
        FROM clients WHERE id = (SELECT casc_client FROM _ids)),

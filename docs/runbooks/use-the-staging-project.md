@@ -59,6 +59,8 @@ bash scripts/run-pgtap-staging.sh --fresh    # discard prior results, full re-ru
 
 The script re-applies `00_test_helpers.sql` first (canonical helper grant posture — see Fresh rebuild step 5 for why), then runs every numbered test file and writes one verdict line per file. Exit 0 = all pass. It handles the two test generations itself: `_tap`-pattern files (09+) are gated on zero `not ok` + ok-count == `plan(N)`; old-pattern files (01–08, 14) run as a throwaway copy whose `finish()` is swapped for a `num_failed()` row, because the Management API runner only returns the last row-producing statement. (Its workdir indirection predates the flip and is now redundant — it resolves to the same staging target the link does — but harmless.)
 
+**Intermittent empty-API-response flake (recorded 2026-07-22).** The Management API occasionally returns an empty body for a file mid-sweep — observed on four *consecutive* old-pattern files (03–06) during one run. The runner **fails closed** on this, verified: an empty response yields no `"failed": N` (old-pattern → `${failed:-x}` ≠ `0` → FAIL, logged `num_failed=parse-error`) and no `ok` lines (new-pattern → `okc=0`, the `okc -gt 0` guard fails → FAIL). Neither branch can score an empty response as zero-failures, so **a green sweep is trustworthy**. Recovery: the runner is resumable — delete the transient FAIL lines from the results file and re-run without `--fresh` (it re-runs only the missing files), or re-run the named files directly. The flake is a transport blip, not a logic failure — but confirm the re-run is genuinely green rather than assuming "cleared on re-run."
+
 ### Ad-hoc SQL
 
 Single statement: `supabase db query --linked "…"` (or `--db-url "$URL"`). Multi-statement file: `supabase db query --linked -f "<ABSOLUTE path>"` — note `-f` is Management-API-routed; the direct `--db-url` channel rejects multi-statement SQL with `cannot insert multiple commands into a prepared statement (42601)`.
@@ -79,6 +81,17 @@ supabase db push        --workdir "$PROD_WD" --linked                    # apply
 Authorisation comes from the CLI's stored account login (Management API) — no password needed on the `--linked` channel. If a direct connection is ever required (`--db-url`), the prod DB password is the operator's (password manager); it is deliberately **not** stored in `.env.local` or the repo. The app-level prod keys (`PROD_SUPABASE_URL` / `PROD_SUPABASE_ANON_KEY` / `PROD_SUPABASE_SERVICE_ROLE_KEY`) live in `.env.local` for the `--prod` verify scripts only.
 
 **First-use note (recorded 2026-07-21, verify at the first prod sitting):** `db push --workdir --linked` against prod has not yet been exercised post-flip; `migration list --workdir` is the cheap first probe. If push over the Management-API channel fails, the fallback is `--db-url` with the operator supplying the password for that sitting.
+
+**Before a prod `db push` that `CREATE OR REPLACE`s a deployed function, snapshot the live body first.** Repo migration history is authoritative for prod *only if* prod received every migration and nobody ever edited a function in the dashboard — operator discipline asserted, not verified — and `CREATE OR REPLACE` overwrites drift silently. So immediately before the push, capture the current prod body of each function the migration replaces and eyeball it against the file:
+
+```bash
+supabase db query --workdir "$PROD_WD" --linked \
+  "SELECT pg_get_functiondef('public.soft_delete_client(uuid)'::regprocedure);"
+supabase db query --workdir "$PROD_WD" --linked \
+  "SELECT pg_get_functiondef('public.restore_client(uuid)'::regprocedure);"
+```
+
+If the live body differs from the migration's provenance base by anything other than the intended change, stop and reconcile — do not let the push overwrite drift. (Reviewer 2026-07-22, raised for `20260721120000`; applies to any migration that replaces a live function.)
 
 ## Fresh rebuild (also the recovery path after `db reset`)
 

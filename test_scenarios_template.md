@@ -2134,6 +2134,26 @@ the machine gate; these are the browser-level confirmations.
   (reason "Client archived") and its reminder cascade-cancels. Restore
   succeeds; the client is live again; the cancelled booking stays cancelled.
 
+### DBWI-4 — Archived clients row cannot be edited OR hard-deleted; the day-row unassign bypass is accepted (2026-07-22)
+- **Setup:** Archive a client. Via raw PostgREST with a staff key, attempt to
+  UPDATE and to DELETE that client's `clients` row. Separately, on a completed
+  + assigned day, attempt the two-step unassign→edit→reassign via raw API.
+- **Pass:** The UPDATE is refused by the guard ("This client is archived …");
+  the DELETE is refused (by the guard, or by RLS — either layer; a successful
+  delete `rows:1` is the only failure). The unassign→edit→reassign path is
+  **accepted, not blocked** — it is the sanctioned unlock at every layer — and
+  is confirmed audit-logged: the `program_days` unassign leaves an
+  `audit_program_days` row, and the performed record (`set_logs`/`sessions`)
+  is unchanged. pgTAP 60 #5/#13 are the machine gate.
+
+### DBWI-5 — A forged archive_cascade GUC cannot bypass the family guards
+- **Setup:** As the authenticated staff role, set `odyssey.archive_cascade`
+  to `'1'` in the session, then attempt an archived-client write to
+  `clinical_notes` and to `program_exercise_sets`.
+- **Pass:** Both writes are still refused — only `clients_row_write_guard`
+  (used by `restore_client`) consults the GUC; the family guards ignore it.
+  pgTAP 60 #11/#12 are the machine gate.
+
 ## G-6 — auth-event audit log (2026-07-21, migration 20260721140000)
 
 Context: auth-onboarding-staff.md "G-6 closure". Every auth flow leaves a
