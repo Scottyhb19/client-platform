@@ -495,3 +495,9 @@ Gate pointer updated in `docs/go-live-checklist.md` §8 (CN-6 entry marked close
 
 **Client profile and clinical notes is formally closed (with deferred items).** CLAUDE.md's Active section advances to polish-pass order item 4 — Exercise library.
 
+
+---
+
+## Ledger reconciliation — 2026-07-22 (platform drift audit)
+
+Appended by the ten-doc ledger drift audit. Two of the five Sign-off deferred items closed on 2026-07-02 and were never written back here: **item 1, CN-7 archived-client record access — CLOSED 2026-07-02** under its own signed-off section doc (`polish/archived-client-access.md`; indexed `go-live-checklist.md` §8), and **item 2, the SECURITY DEFINER anon-EXECUTE family sweep — CLOSED** (the 2026-06-23 platform-wide enumeration explicitly closed the "Section-3 RPC family" item; gate CLOSED 2026-07-02, checklist §4, pgTAP `52`). Item 3 (CN-6 OCC) was already closed in-doc the same day. **Items 4 and 5** (`clinical_notes` client-deny automated-test coverage; `clients.user_id` column-restriction indirection) were indexed only in `rls-policies.md` §4.6/§4.4 — a ledger hole under the single-ledger rule, since a re-trigger recorded outside the checklist does not fire; both now carry a `go-live-checklist.md` §8 entry (added 2026-07-22). This doc is a historical record per the single-ledger rule; current state lives on the checklist.

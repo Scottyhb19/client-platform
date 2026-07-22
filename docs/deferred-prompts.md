@@ -335,3 +335,12 @@ uncorrected deliberately so the rewrite makes them coherent together, not piecem
 **Re-trigger:** the Australian privacy lawyer consultation — which is part of the
 entity-review conversation (hard rule (c)). The rewrite lands off the back of that
 advice, not before it.
+
+---
+
+## Messaging — web push notifications (P1-1(b)) + thread-restore distinguishability (P2-2) — indexed 2026-07-22
+
+**Surfaced:** section 10 (Messaging) sign-off 2026-06-20; indexed here 2026-07-22 by the ledger drift audit (staff-auth reviewer pass) — both were deferred in `polish/messaging.md` §5/§6 only, which under the go-live checklist's single-ledger rule means their re-triggers could never fire. They are feature deferrals, not hardening gates, so this file (not the checklist) is their index home.
+
+- **P1-1(b) — web push.** A viability spike was run during §10; deferred. **Re-trigger:** email + in-app notification shown insufficient in beta, or the operator wants desktop OS notifications. Detail: `polish/messaging.md` §5.
+- **P2-2 — thread-restore distinguishability.** Restored archived threads are indistinguishable from never-archived ones. **Re-trigger:** a thread-level archive action is added to the UI. Detail: `polish/messaging.md` §6.

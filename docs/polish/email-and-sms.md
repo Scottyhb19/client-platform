@@ -258,3 +258,9 @@ Reviewer confirmed fine without change: the Part A/B split, the no-new-pgTAP cal
 - **Excluded by decision:** message-notification emails to the EP (practice-internal ops mail, not client-directed — the Comms tab is the client's record). Reminder rows store a factual summary line, not the rendered email body (the DB doesn't hold the EF's render); verbatim reminder-body capture rides the EF's next touch — disclosed, not silent.
 
 **Verified:** pgTAP 62 (6/6 — trigger rows for sent+failed with provider id/recipient/subject, staff read, client-role zero, anon 42501); `tsc` green; types regenerated. Render-tier: accepted per go-live-checklist §5b (type-check + build + code-read) with the authed-harness drive following in Step 6.
+
+---
+
+## Ledger reconciliation — 2026-07-22 (platform drift audit)
+
+The 2026-06-22 Sign-off's deferred list still names the client-profile Comms tab and the system-send log-wiring as deferred; both were **BUILT 2026-07-21** (staging, pending prod apply) per this doc's own "Part B — the LOGGING half" section and `go-live-checklist.md` §8. The Sign-off list is superseded on those two items only; the connected-account OAuth compose half remains deferred exactly as listed. The parallel stale line inside checklist §8 (which still carried the two built items as deferred scope) was pruned the same day. This doc is a historical record per the single-ledger rule; current state lives on the checklist.

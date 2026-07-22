@@ -780,3 +780,9 @@ plus product clamp 1–480 in both server actions. Role-gating owner+staff
 confirmed deliberate and asserted at pgTAP `48` #11. Full scheduling suite green:
 pgTAP `26`/`27`/`28`/`29`/`48`/`49`/`50` plus vitest `appointment-removal` 3/3.
 Migrations `20260630130000` and `20260630140000` both additive and live-validated.
+
+---
+
+## Ledger reconciliation — 2026-07-22 (platform drift audit)
+
+One §9 deferred item went stale: the Resend-dashboard revocation of the stale pre-rotation API key, listed above as an open operator action, was **DONE 2026-07-03** (`go-live-checklist.md` §2 — exactly one active key remains, created 2026-05-17). Every other §9 deferral is either checklist-tracked and current or legitimately doc-local. This doc is a historical record per the single-ledger rule; current state lives on the checklist.

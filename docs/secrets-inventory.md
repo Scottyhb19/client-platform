@@ -82,6 +82,14 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 - **Stakes:** LOW — staging holds synthetic data only (`scripts/seed-staging.mjs`); exposure is not a data event. Kept out of transcripts/commits on principle.
 - **Rotation:** Supabase dashboard → `odyssey-staging` → API keys; or re-read via the Management API (`/v1/projects/<ref>/api-keys?reveal=true`, CLI token auth).
 
+### Supabase CLI access token (Windows Credential Manager)
+
+- **Purpose:** the operator-machine login token the Supabase CLI stores after `supabase login`. Authorises the **Management API** (`api.supabase.com/v1/...`) for **both** projects — including `GET/PATCH /v1/projects/<ref>/config/auth` (reads *and writes* production auth config: HIBP, confirmations, session time-box, the custom-access-token hook fields) and `GET /v1/projects/<ref>/api-keys?reveal=true` (reveals API keys). Catalogued 2026-07-22 — the reviewer pass on `polish/auth-onboarding-staff.md` found it in active use as a verification read channel since 2026-06-10 (`runbooks/verify-auth-config.md`, Management API note) but absent from this inventory. Its use is a recorded, conscious reversal of that doc's A.1(revised) Q4 "no Management API token" posture: no *new* credential was minted, but the channel exists and this entry is its ledger home.
+- **Stored where:** Windows Credential Manager, generic credential `Supabase CLI:supabase` — operator machine only. Never in `.env.local`, never in CI, never deployed.
+- **Stakes:** HIGH — it can silently flip the same dashboard-invisible auth settings the `verify-auth-config` workstream exists to guard, on production. Declared posture (from the runbook, restated here): never log or persist the token; read-only by default; PATCH only to restore a documented target value, recorded in the run log.
+- **Rotation procedure:** `supabase logout` then `supabase login` (old token revoked server-side via the dashboard → Account → Access Tokens if one was minted explicitly). Rotate on suspicion the machine or credential store is compromised.
+- **Set:** predates this entry (CLI link); catalogued 2026-07-22.
+
 ### `STAGING_DEV_LOGIN_*` / `STAGING_DEV_CLIENT_*` / `STAGING_DEV_EXCO_*`
 
 - **Purpose:** synthetic dev logins for the seeded staging orgs (staff owner, portal client, EXCO owner), written into `.env.local` by `scripts/seed-staging.mjs`. Also the credential source for the authed render harness.
