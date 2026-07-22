@@ -976,3 +976,13 @@ The census trigger ("any change to password policy — including the C-7 Pro-upg
 The checklist §8 "C-1 branch-(b) / C-6 infra-error runtime verification" entry is marked **CLOSED 2026-07-22** with this entry as the record (single-ledger rule: this doc holds the detail, the checklist holds the state). `scripts/c1-c6-staging-verify.mjs` is committed alongside as the re-runnable fixture harness, joining the section's standing script battery.
 
 **With all three actionables discharged, the post-hoc reviewer pass is complete.** The section's close stands as reviewed — "sound to close" — and this doc owns no open actionable items. The tooling-triggered residuals (unit-test ports for `postAuthLanding` and the C-13 mapper) keep their original re-trigger: a TypeScript test runner landing in the repo.
+
+---
+
+## Sign-off — post-hoc reviewer pass (2026-07-22)
+
+- **Date:** 2026-07-22
+- **Reviewer:** claude.ai project chat (challenger role)
+- **Decision:** Confirmed for close and sign-off. The three post-hoc actionables — C-1/C-6 staging runtime verification, the pgTAP `56` archived-client dependent-table tripwire (8→18), and the password-rule census re-walk — are accepted as discharged, and the section's original 2026-06-11 close stands as reviewed. Nothing returned for revision.
+
+Two structural notes carried forward from the verdict, not blocking this sign-off: (a) future premortems gain an explicit configuration/environment-drift lens — a one-sentence CLAUDE.md polish-protocol step-3 amendment is drafted and **awaits the operator's application** (CLAUDE.md is operator-gated); (b) the final gap of a section gets its own reviewer round before the closing commit, applied to future closes. The Auth-and-Onboarding-(client) section remains **formally closed**; this pass adds no open actionable items to it.
