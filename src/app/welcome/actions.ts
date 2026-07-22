@@ -1,6 +1,7 @@
 'use server'
 
 import { redirect } from 'next/navigation'
+import { logAuthEvent } from '@/lib/auth/events'
 import { checkAcceptInvite } from '@/lib/rate-limit'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { WelcomeState } from './types'
@@ -120,6 +121,13 @@ export async function setPasswordAndAcceptAction(
       fieldErrors: {},
     }
   }
+
+  // G-6: auth.invite.accepted (docs/auth.md §11) — the RPC just linked
+  // this auth user to the clients row.
+  await logAuthEvent('auth.invite.accepted', {
+    userId: user.id,
+    detail: { client_id: clientId },
+  })
 
   // 4. Refresh the session so the JWT picks up role='client' + org_id.
   //    (updateUser above already returns a fresh session, but the

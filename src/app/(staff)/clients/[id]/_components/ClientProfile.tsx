@@ -34,6 +34,7 @@ import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
 import { BookingsTab } from './BookingsTab'
+import { CommsTab, type ProfileCommunication } from './CommsTab'
 import { ResendInviteButton } from './ResendInviteButton'
 import type {
   BatteryRow,
@@ -226,6 +227,7 @@ export type Tab =
   | 'bookings'
   | 'reports'
   | 'files'
+  | 'comms'
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'details', label: 'Profile' },
@@ -234,6 +236,7 @@ const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'bookings', label: 'Bookings' },
   { key: 'reports', label: 'Reports' },
   { key: 'files', label: 'Files' },
+  { key: 'comms', label: 'Comms' },
 ]
 
 interface ClientProfileProps {
@@ -254,6 +257,7 @@ interface ClientProfileProps {
   lastInviteSentAt: string | null
   noteTemplates: ProfileNoteTemplate[]
   appointments: ProfileAppointment[]
+  comms: ProfileCommunication[]
   reports: ProfileReport[]
   files: ClientFile[]
   lastTemplateId: string | null
@@ -275,6 +279,7 @@ const VALID_TABS: Tab[] = [
   'bookings',
   'reports',
   'files',
+  'comms',
 ]
 
 /**
@@ -321,6 +326,7 @@ export function ClientProfile({
   lastInviteSentAt,
   noteTemplates,
   appointments,
+  comms,
   reports,
   files,
   lastTemplateId,
@@ -426,6 +432,7 @@ export function ClientProfile({
           />
         )}
         {tab === 'bookings' && <BookingsTab appointments={appointments} />}
+        {tab === 'comms' && <CommsTab comms={comms} />}
         {tab === 'program' && (
           <ProgramTab
             clientId={client.id}

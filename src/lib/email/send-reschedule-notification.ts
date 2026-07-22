@@ -1,6 +1,7 @@
 'use server'
 
 import { defaultFromAddress, getResendClient } from './client'
+import { logCommunication, type CommLogContext } from '@/lib/comms/log'
 import { captureException } from '@/lib/observability/sentry'
 import {
   renderRescheduleNotificationEmail,
@@ -10,6 +11,8 @@ import {
 export interface SendRescheduleNotificationArgs
   extends RescheduleNotificationEmailInput {
   to: string
+  /** §12 Part B: when present, the send outcome lands on the Comms tab. */
+  log?: CommLogContext
 }
 
 /**
@@ -22,7 +25,7 @@ export interface SendRescheduleNotificationArgs
 export async function sendRescheduleNotificationEmail(
   args: SendRescheduleNotificationArgs,
 ): Promise<{ error: string | null; messageId: string | null }> {
-  const { to, ...templateInput } = args
+  const { to, log, ...templateInput } = args
 
   let resend
   try {
@@ -53,7 +56,27 @@ export async function sendRescheduleNotificationEmail(
     captureException(new Error(error.message), {
       where: 'email-send:reschedule-notification',
     })
+    if (log) {
+      await logCommunication({
+        ...log,
+        recipientEmail: to,
+        subject,
+        body: text,
+        status: 'failed',
+        failureReason: error.message,
+      })
+    }
     return { error: error.message, messageId: null }
+  }
+  if (log) {
+    await logCommunication({
+      ...log,
+      recipientEmail: to,
+      subject,
+      body: text,
+      status: 'sent',
+      providerMessageId: data?.id ?? null,
+    })
   }
   return { error: null, messageId: data?.id ?? null }
 }

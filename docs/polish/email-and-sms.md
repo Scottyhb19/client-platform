@@ -1,3 +1,24 @@
+> ## ⚠️ FROZEN AS HISTORICAL RECORD — read this first (2026-07-22)
+>
+> This document is the **2026-06-22 section-12 record**, frozen as history per the single-ledger rule. Everything below the line — the header **Status** line, §1 conformance, the §2 premortem, the §3 gap list, and the 2026-06-22 Closing commit / Sign-off — reflects the state **as at 2026-06-22 and is not kept in sync.** Where it disagrees with this block, this block wins. **Current state lives on [`go-live-checklist.md`](../go-live-checklist.md) §8.**
+>
+> **Part A** (reliability + tone + SMS honest-stub + preference honesty) — Closed with deferred items 2026-06-22, signed off, merged + deployed to prod. Unchanged; not reopened.
+>
+> **Part B — the LOGGING half is now BUILT (2026-07-21, on staging).** This supersedes the 2026-06-22 Sign-off's deferred list on **THREE** items (the 2026-07-22 "Ledger reconciliation" note at the foot named only **two** — that under-scoped count is corrected here):
+> 1. **The client-profile Comms tab** (P1-2) — built ([`CommsTab.tsx`](../../src/app/(staff)/clients/[id]/_components/CommsTab.tsx)).
+> 2. **System-send log-wiring** (P1-4) — invite, booking confirmation, and reschedule notification (app-side, [`src/lib/comms/log.ts`](../../src/lib/comms/log.ts)) + appointment reminders (DB trigger, migration [`20260721160000`](../../supabase/migrations/20260721160000_comms_system_send_log.sql)) now write `communications` rows.
+> 3. **FM-5's second half — EP-facing in-product surfacing of failed sends** — built: failed reminders and failed app-side sends now appear on the Comms tab as `failed` rows carrying a reason. (§12 Part A left this ops-observable-only; the tab makes it EP-facing.)
+>
+> **BUILT, not CLOSED.** The logging half is **staging-only, pending: (a) prod apply of migration `20260721160000` + prod verify, and (b) the section sign-off ritual.** The authed render-tier drive (was parked Step 6) is **done (2026-07-22)** — the §5b Playwright harness was extended with a seeded reminder-summary row, a failed row, and an archived-client comms row, and runs **9/9 green** on staging ([`e2e/staff-render.spec.ts`](../../e2e/staff-render.spec.ts): "labels a reminder summary and surfaces a failed send" + "renders for an ARCHIVED client — the record outlives the archive"). Part A's own "deployed-and-verified-in-prod" bar still applies before this closes on (a).
+>
+> **Still deferred, exactly as the 2026-06-22 Sign-off lists** (owner decision unchanged): the connected-account OAuth **compose** half — P0-1/P0-2/P0-3, P1-1 (compose modal replacing the mail-icon `mailto:`), P2-4, P2-5, and §4 Q1–Q5.
+>
+> **Two corrections to claims in the body / appended sections below:**
+> - **"pgTAP 62 on staging" / "BUILT on staging" means the real [`odyssey-staging`](../runbooks/use-the-staging-project.md) Supabase project** (the linked default since 2026-07-21 — CLAUDE.md "Environment separation"), **not** the git branch and **not** prod. This post-dates the old "no non-prod target exists / all pgTAP runs against prod with BEGIN/ROLLBACK" constraint, which no longer holds.
+> - **The comms logger now observes its own write failures.** [`src/lib/comms/log.ts`](../../src/lib/comms/log.ts) routes a failed log-write through `captureException` (not a raw console line), so a failed *log* write on a failed *send* becomes **ops-observable** (server logs / the Sentry seam, still a stub) instead of vanishing. This is deliberately **not** the FM-5 *tab* surface: a log write that failed means, by definition, no row on the tab — the EP sees nothing, only the ops log does. That is the correct trade (logging must never block or retry a send), made honest — the same line Part A held on P1-3. Separately, the Comms tab now labels reminder rows as summaries ("the exact message sent isn't stored"), since reminder `body` is a factual summary line, not the verbatim email.
+
+---
+
 # Polish-pass gap analysis — Email and SMS (section 12)
 
 **Brief:** [`Client_Platform_Brief_v2.1.docx`](../../Client_Platform_Brief_v2.1.docx) **§6.7 Communication System** (extracted: [`docs/_brief_v2.1_extracted.txt`](../_brief_v2.1_extracted.txt) lines 150–156), plus §3 data model ("Comms: Communication log — emails sent, reminders, AI-drafted messages", line 66) and §9.1 ("Notifications — email + SMS appointment reminders, booking confirmations"). The brief's communication model in full: *"Communication is email-based … Platform drafts emails (manually or AI-assisted in Phase 4) … Emails sent via EP's email domain using Resend … Client receives a normal email from the EP — no platform branding … Sent communications logged to the client's Comms tab … SMS used for appointment reminders and booking confirmations only."* Treated as the desired end state, not a greenfield spec.
@@ -240,3 +261,27 @@ Reviewer confirmed fine without change: the Part A/B split, the no-new-pgTAP cal
 **Deferred items** (Part B → go-live pipeline, indexed in [`go-live-checklist.md`](../go-live-checklist.md) §8): the connected-account email compose feature + Comms tab + system-send log-wiring (P0-1/2/3, P1-1, P1-2, P1-4, P2-4, P2-5, §4 Q1–Q5), and within that **the EP-facing in-product surfacing of send failures** (FM-5's second half). **Re-trigger:** the connected-account feature is picked up, or the operator wants a per-client communication history / in-product send-failure visibility before then.
 
 *Section 12 (Email & SMS) — Closed with deferred items. As the final section of the locked polish-pass order, this completes the Phase-1 polish pass.*
+
+---
+
+## Part B — the LOGGING half, built (2026-07-21)
+
+**Status: BUILT on staging (pending prod apply at the next deploy sitting + the sign-off ritual).** The operator's 2026-06-22 split deferred all of Part B to the go-live pipeline; Step 5 of the 2026-07-21 internal work sequence pulls forward **the logging half only** — the brief §6.7 "sent communications logged to the client's Comms tab" requirement. **The connected-account OAuth compose half stays deferred** (unchanged owner decision; its P0-1/P0-2/P0-3 questions — FROM address, token storage, Google OAuth publishing — remain open and untouched).
+
+**Premortem (compact, as built):** logging must never break a send (best-effort `logCommunication`, called after the Resend outcome; send-module failure semantics unchanged) · comms must not leak to clients (existing 20260420102600 staff-only policies verified; pgTAP 62 #5/#6) · reminder retries produce multiple rows (accepted — a truthful timeline, not a duplicate) · the reminder trigger hit a real enum/text mismatch on first run (`reminder_type::text` cast; test 62 is the tripwire) · the record must survive archiving (the Comms read has no archived filter; the profile renders for archived clients per CN-7 — the FM-8 records boundary).
+
+**What shipped** (migration `20260721160000_comms_system_send_log.sql`; pgTAP `62` 6/6 on staging):
+
+- **`communications.sender_user_id` nullable** — NULL = system send; system mail no longer needs fake attribution.
+- **Reminder outcomes logged DB-side** — `reminder_log_communication` (AFTER UPDATE on `appointment_reminders`, sent AND failed transitions) derives a communications row from what the Edge Function already writes — **no EF change, so nothing rides on a prod functions deploy**. Failed rows carry `failure_reason`: the EP-facing failed-send surfacing that Part A's P1-3 deliberately left to this tab now exists.
+- **App-side sends log themselves** — `src/lib/comms/log.ts` (`logCommunication` + `CommLogContext`); the three send modules (invite, booking confirmation, reschedule notification) accept an optional `log` context and record both outcomes with the REAL subject + plaintext body. Wired at all four call paths: invite (attributed to the inviting EP; covers new-client AND resend via `sendInviteForClient`), portal self-book confirmation (system send), staff booking confirmation + reschedule notification (attributed to the staffer).
+- **The Comms tab** — `CommsTab.tsx` on the client profile (`?tab=comms`): newest-first read-only record, subject + AU-format date + Automatic marker for system sends, status label (Failed in the alert colour with its reason), expandable stored body. Empty state in the quiet voice. Renders for archived clients (the record outlives the archive).
+- **Excluded by decision:** message-notification emails to the EP (practice-internal ops mail, not client-directed — the Comms tab is the client's record). Reminder rows store a factual summary line, not the rendered email body (the DB doesn't hold the EF's render); verbatim reminder-body capture rides the EF's next touch — disclosed, not silent.
+
+**Verified:** pgTAP 62 (6/6 — trigger rows for sent+failed with provider id/recipient/subject, staff read, client-role zero, anon 42501); `tsc` green; types regenerated. Render-tier: accepted per go-live-checklist §5b (type-check + build + code-read) with the authed-harness drive following in Step 6.
+
+---
+
+## Ledger reconciliation — 2026-07-22 (platform drift audit)
+
+The 2026-06-22 Sign-off's deferred list still names the client-profile Comms tab and the system-send log-wiring as deferred; both were **BUILT 2026-07-21** (staging, pending prod apply) per this doc's own "Part B — the LOGGING half" section and `go-live-checklist.md` §8. The Sign-off list is superseded on those two items only; the connected-account OAuth compose half remains deferred exactly as listed. The parallel stale line inside checklist §8 (which still carried the two built items as deferred scope) was pruned the same day. This doc is a historical record per the single-ledger rule; current state lives on the checklist.

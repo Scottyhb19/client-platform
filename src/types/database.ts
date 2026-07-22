@@ -362,6 +362,44 @@ export type Database = {
         }
         Relationships: []
       }
+      auth_events: {
+        Row: {
+          detail: Json
+          email: string | null
+          event: string
+          id: string
+          occurred_at: string
+          organization_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          detail?: Json
+          email?: string | null
+          event: string
+          id?: string
+          occurred_at?: string
+          organization_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          detail?: Json
+          email?: string | null
+          event?: string
+          id?: string
+          occurred_at?: string
+          organization_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "auth_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       availability_rules: {
         Row: {
           created_at: string
@@ -1224,7 +1262,7 @@ export type Database = {
           recipient_email: string | null
           recipient_phone: string | null
           scheduled_for: string | null
-          sender_user_id: string
+          sender_user_id: string | null
           sent_at: string | null
           status: Database["public"]["Enums"]["communication_status"]
           subject: string | null
@@ -1251,7 +1289,7 @@ export type Database = {
           recipient_email?: string | null
           recipient_phone?: string | null
           scheduled_for?: string | null
-          sender_user_id: string
+          sender_user_id?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["communication_status"]
           subject?: string | null
@@ -1278,7 +1316,7 @@ export type Database = {
           recipient_email?: string | null
           recipient_phone?: string | null
           scheduled_for?: string | null
-          sender_user_id?: string
+          sender_user_id?: string | null
           sent_at?: string | null
           status?: Database["public"]["Enums"]["communication_status"]
           subject?: string | null
@@ -1648,7 +1686,7 @@ export type Database = {
       }
       invite_tokens: {
         Row: {
-          action_link: string
+          action_link: string | null
           client_id: string
           consumed_at: string | null
           created_at: string
@@ -1657,7 +1695,7 @@ export type Database = {
           organization_id: string
         }
         Insert: {
-          action_link: string
+          action_link?: string | null
           client_id: string
           consumed_at?: string | null
           created_at?: string
@@ -1666,7 +1704,7 @@ export type Database = {
           organization_id: string
         }
         Update: {
-          action_link?: string
+          action_link?: string | null
           client_id?: string
           consumed_at?: string | null
           created_at?: string
@@ -4224,6 +4262,10 @@ export type Database = {
           p_slot?: string
         }
         Returns: string
+      }
+      message_attachment_path_referenced: {
+        Args: { p_name: string }
+        Returns: boolean
       }
       rate_limit_check_and_record: {
         Args: { p_key: string; p_max: number; p_window: string }

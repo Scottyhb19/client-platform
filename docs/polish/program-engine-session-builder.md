@@ -256,3 +256,9 @@ Per the sign-off ritual, this section is **not closed** until this closing commi
 Closing commit reviewed in the operator's claude.ai project chat. All ten approved gaps (G-1 through G-10) are closed; the two P0 gaps (G-1 clone per-set fan-out, G-2 template lifecycle) are closed with their regression-proofing assertions, and the Q-A through Q-D decisions stand as recorded in §0.1. The three review items raised at sign-off — the test 05 fixture break, the copy/repeat matrix browser coverage, and the SectionTitleField eslint provenance — have been resolved. Section 5 (program engine and session builder) is signed off and closed.
 
 Riders carried forward unchanged: the SessionTypesEditor stale-add fix (closed section 1), the go-live SECURITY DEFINER sweep prioritising guardless internal helpers (_program_for_date and any siblings, anon-reachable, read-only), and the Q-D concurrency acceptances (reorder/group race, TOCTOU window, two-pass repeat loop, builder monolith, absent dirty-state guard).
+
+---
+
+## Ledger reconciliation — 2026-07-22 (platform drift audit, second pass)
+
+The 2026-07-22 drift audit initially graded this doc clean by ledger-consistency; the reviewer's method challenge prompted repo re-derivation of its two open spawned-task riders, and **both flipped**: the `SessionTypesEditor` stale-add fix shipped in `ac2f2d3` ("append new session type locally so it appears without reload") and the test-05 fixture repair shipped in `12cba90` ("repair test 05 fixture for per-test publication schema") — **both on 2026-06-12, the same day this section signed off**, and neither was recorded here or anywhere else. Both riders are CLOSED. This doc is a historical record per the single-ledger rule; current state lives on `go-live-checklist.md`.

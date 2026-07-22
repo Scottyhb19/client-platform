@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { logAuthEvent } from '@/lib/auth/events'
 import { sendClientInviteEmail } from '@/lib/email/send-client-invite'
 import { getPublicOrigin } from '@/lib/env/site-url'
 import { checkAndRecordStaffInvite } from '@/lib/rate-limit'
@@ -32,66 +33,26 @@ export async function sendInviteForClient(args: {
   // the G-11 fail-loud posture in signup/actions.ts and
   // forgot-password/actions.ts; closes the header-trust sibling that
   // G-11 did not reach.
+  // getPublicOrigin() keeps G-11's fail-loud posture at SEND time (a
+  // misconfigured origin fails here, in front of the EP — not at the
+  // client's tap). The /auth/callback redirectTo itself is rebuilt at mint
+  // time by the gate's POST action (C-14 mint-at-POST).
   const origin = getPublicOrigin()
-  const welcomeNext = `/welcome?client_id=${args.clientId}`
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(welcomeNext)}`
 
-  // Step 1: create the auth user + accept URL without firing Supabase's
-  // email. Two paths:
-  //   (a) Brand-new email → 'invite' type creates the auth.users row and
-  //       returns a one-time accept URL.
-  //   (b) Email already in auth.users (returning client; orphan from a
-  //       previously-archived clients row; etc.) → 'invite' fails with
-  //       "already registered". Fall back to 'magiclink' which generates
-  //       a sign-in link for the existing user. The downstream /welcome
-  //       flow links the new clients.user_id either way via
-  //       client_accept_invite.
-  let acceptUrl: string | null = null
-  {
-    const inviteResult = await admin.auth.admin.generateLink({
-      type: 'invite',
-      email: args.email,
-      options: { redirectTo },
-    })
-    if (inviteResult.data?.properties?.action_link) {
-      acceptUrl = inviteResult.data.properties.action_link
-    } else if (isAlreadyRegisteredError(inviteResult.error)) {
-      // Existing user — switch to magic-link sign-in. Same redirect target.
-      const magicResult = await admin.auth.admin.generateLink({
-        type: 'magiclink',
-        email: args.email,
-        options: { redirectTo },
-      })
-      if (magicResult.data?.properties?.action_link) {
-        acceptUrl = magicResult.data.properties.action_link
-      } else {
-        return {
-          error: `Client saved, but the sign-in link could not be generated: ${
-            magicResult.error?.message ?? 'no link returned'
-          }. You can resend from the client profile.`,
-        }
-      }
-    } else {
-      return {
-        error: `Client saved, but the invite link could not be generated: ${
-          inviteResult.error?.message ?? 'no link returned'
-        }. You can resend from the client profile.`,
-      }
-    }
-  }
-
-  // Step 2: stash the action_link behind a short id and email THAT
-  // instead. Defeats Gmail's link prefetcher: the email body now points
-  // at /i/<id> on our domain, which renders a click-through button —
-  // a prefetcher hits the page, sees no redirect, stops. The Supabase
-  // verify URL only fires when the human taps. See migration
-  // 20260426100000_invite_tokens.sql for table + RLS detail.
+  // Step 1+2 (C-14 mint-at-POST, migration 20260721150000): no Supabase
+  // link is generated here any more. The email carries only the short
+  // /i/<id> gate URL; the gate's POST action mints the accept URL at the
+  // human's tap (see src/app/i/[id]/actions.ts + src/lib/clients/
+  // invite-link.ts). Send just records the token row — action_link NULL
+  // means "not yet minted". Defeats Gmail's link prefetcher (the gate
+  // renders a click-through button) AND body-parsing scanners (there is
+  // no live OTP link anywhere until the human POSTs).
   const tokenInsert = await admin
     .from('invite_tokens')
     .insert({
       organization_id: args.organizationId,
       client_id: args.clientId,
-      action_link: acceptUrl,
+      action_link: null,
     })
     .select('id')
     .single()
@@ -135,6 +96,12 @@ export async function sendInviteForClient(args: {
     practiceName,
     practitionerName,
     acceptUrl: gateUrl,
+    // §12 Part B: record on the Comms tab, attributed to the inviting EP.
+    log: {
+      organizationId: args.organizationId,
+      clientId: args.clientId,
+      senderUserId: args.sendingUserId,
+    },
   })
   if (emailErr) {
     return {
@@ -159,23 +126,14 @@ export async function sendInviteForClient(args: {
     )
   }
 
-  return { error: null }
-}
+  // G-6: auth.invite.sent (docs/auth.md §11). Emitted here so every caller
+  // (new-client invite AND profile resend) is covered by construction.
+  await logAuthEvent('auth.invite.sent', {
+    userId: args.sendingUserId,
+    organizationId: args.organizationId,
+    email: args.email,
+    detail: { client_id: args.clientId },
+  })
 
-/**
- * Detect Supabase's "user already exists" error from generateLink({ type: 'invite' }).
- *
- * Supabase has tightened the error shape over versions — newer responses
- * carry a `code: 'email_exists'` field; older ones only set the message.
- * Match both so the magic-link fallback survives an SDK upgrade.
- */
-function isAlreadyRegisteredError(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false
-  const e = err as { code?: string; message?: string; status?: number }
-  if (e.code === 'email_exists') return true
-  const msg = e.message?.toLowerCase() ?? ''
-  if (msg.includes('already been registered')) return true
-  if (msg.includes('already registered')) return true
-  if (msg.includes('user already exists')) return true
-  return false
+  return { error: null }
 }

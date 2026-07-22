@@ -37,6 +37,7 @@ const VALID_TABS: Tab[] = [
   'bookings',
   'reports',
   'files',
+  'comms',
 ]
 
 function pickTab(value: string | string[] | undefined): Tab {
@@ -70,6 +71,7 @@ export default async function ClientProfilePage({
     { data: noteTemplateRows },
     { data: noteTemplateFieldRows },
     { data: appointmentRows },
+    { data: commRows },
     { data: reportRows },
     { data: fileRows, error: filesErr },
     { data: completionsRaw, error: completionsErr },
@@ -158,6 +160,17 @@ export default async function ClientProfilePage({
       .neq('status', 'cancelled')
       .order('start_at', { ascending: true })
       .limit(120),
+    // §12 Part B — the Comms tab record. Newest first; staff RLS already
+    // scopes to own org + deleted_at IS NULL. Works for archived clients
+    // too (the record outlives the archive — the FM-8 boundary).
+    supabase
+      .from('communications')
+      .select(
+        'id, created_at, communication_type, status, subject, body, recipient_email, failure_reason, sender_user_id',
+      )
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+      .limit(100),
     supabase
       .from('reports')
       .select(
@@ -525,6 +538,7 @@ export default async function ClientProfilePage({
       lastInviteSentAt={lastInviteSentAt}
       noteTemplates={noteTemplates}
       appointments={appointments}
+      comms={commRows ?? []}
       reports={reports}
       files={files}
       lastTemplateId={lastTemplateId}

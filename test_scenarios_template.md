@@ -2073,3 +2073,173 @@ never blocks the user — the password change already succeeded. No schema / RLS
   the invite link and complete the welcome set-password flow.
 - **Pass:** A proceeds to `/welcome/install` normally; B's old session is dead
   at its next refresh, same semantics as RESET-REVOKE-1.
+
+## Environment separation — staging-default resolution (2026-07-21)
+
+Context: the environment-separation flip (CLAUDE.md "Environment separation",
+now Operative). Local dev, bare CLI commands, type generation, and the pgTAP
+runner all resolve to the STAGING project; production is reached only through
+explicit channels (`PROD_*` keys + `--prod` flags, `scripts/prod-workdir.sh`).
+Staging carries synthetic data only (`scripts/seed-staging.mjs`).
+
+### ENV-SEP-1 — Local dev server targets staging
+- **Setup:** `npm run dev`, open `http://localhost:3000/api/health`, then sign
+  in with the `STAGING_DEV_LOGIN_*` credentials from `.env.local`.
+- **Pass:** Health reports `db:ok`; the dashboard shows the synthetic clients
+  (Jordan Sample, Casey Demo, …), never a real client name. The Supabase
+  cookies on localhost carry the staging project ref (`sb-fbtfzlgv…`).
+
+### ENV-SEP-2 — Prod probes refuse to run without the explicit flag
+- **Setup:** `node scripts/staff-login-path-verify.mjs https://odysseyhq.com.au`
+  (no `--prod`).
+- **Pass:** The script exits 2 with the "refusing to probe the prod site with
+  staging keys" message before creating any probe user. With `--prod` appended
+  it runs against production using the `PROD_*` keys and prints
+  `Supabase target: PRODUCTION`.
+
+### ENV-SEP-3 — Bare CLI commands land on staging
+- **Setup:** `supabase migration list` from the repo root; then
+  `node scripts/seed-staging.mjs` (against an already-seeded staging).
+- **Pass:** The migration list shows the staging linkage (no prod touch); the
+  seed script prints `Target: staging (…)` and REFUSES because the seed orgs
+  already exist — proving both the target resolution and the re-run guard.
+
+## DB-level write immutability (2026-07-21, migration 20260721120000)
+
+Context: docs/polish/db-write-immutability.md. The CN-7 archived-client
+trigger family + the completed-and-assigned session edit-lock, enforced at
+the database so raw API writes obey the same rules as the UI. pgTAP 60 is
+the machine gate; these are the browser-level confirmations.
+
+### DBWI-1 — Archived client record refuses writes at the DB layer
+- **Setup:** Archive a client. Via any API path that bypasses the UI guard
+  (e.g. a stale tab's save, or a crafted PostgREST call with a staff key),
+  attempt to add a note / edit medical history / book them / edit their
+  program.
+- **Pass:** Every attempt fails with "This client is archived — their record
+  is read-only. Restore the client to make changes." Nothing is written.
+
+### DBWI-2 — Completed-and-assigned day is locked at the DB layer
+- **Setup:** Client completes an assigned session. In the builder, the day
+  renders read-only (existing behaviour). Attempt a direct API write to a
+  set row of that day.
+- **Pass:** The write fails with "This session is completed and still
+  assigned — unassign it to edit the prescription." After Unassign, the same
+  edit succeeds (UI and DB agree).
+
+### DBWI-3 — Archive/restore cascades still run end-to-end
+- **Setup:** A client with a future confirmed appointment. Archive them;
+  then restore them.
+- **Pass:** Archive succeeds; the future appointment flips to cancelled
+  (reason "Client archived") and its reminder cascade-cancels. Restore
+  succeeds; the client is live again; the cancelled booking stays cancelled.
+
+### DBWI-4 — Archived clients row cannot be edited OR hard-deleted; the day-row unassign bypass is accepted (2026-07-22)
+- **Setup:** Archive a client. Via raw PostgREST with a staff key, attempt to
+  UPDATE and to DELETE that client's `clients` row. Separately, on a completed
+  + assigned day, attempt the two-step unassign→edit→reassign via raw API.
+- **Pass:** The UPDATE is refused by the guard ("This client is archived …");
+  the DELETE is refused (by the guard, or by RLS — either layer; a successful
+  delete `rows:1` is the only failure). The unassign→edit→reassign path is
+  **accepted, not blocked** — it is the sanctioned unlock at every layer — and
+  is confirmed audit-logged: the `program_days` unassign leaves an
+  `audit_program_days` row, and the performed record (`set_logs`/`sessions`)
+  is unchanged. pgTAP 60 #5/#13 are the machine gate.
+
+### DBWI-5 — A forged archive_cascade GUC cannot bypass the family guards
+- **Setup:** As the authenticated staff role, set `odyssey.archive_cascade`
+  to `'1'` in the session, then attempt an archived-client write to
+  `clinical_notes` and to `program_exercise_sets`.
+- **Pass:** Both writes are still refused — only `clients_row_write_guard`
+  (used by `restore_client`) consults the GUC; the family guards ignore it.
+  pgTAP 60 #11/#12 are the machine gate.
+
+## G-6 — auth-event audit log (2026-07-21, migration 20260721140000)
+
+Context: auth-onboarding-staff.md "G-6 closure". Every auth flow leaves a
+structured row in auth_events; the table is server-side-only + append-only.
+
+### G6-1 — Auth flows leave audit rows
+- **Setup:** Perform a failed login, a successful login, a password-reset
+  request + completion, and an invite send + accept.
+- **Pass:** auth_events (SQL editor, owner read) shows one row per event with
+  the right event name, email/user_id, and detail fields. No auth flow is
+  slowed or broken by the logging (it is best-effort).
+
+### G6-2 — The log is invisible to API roles and immutable
+- **Setup:** As any signed-in user (or anon), attempt to SELECT/INSERT on
+  auth_events via PostgREST; as owner, attempt UPDATE/DELETE on a row.
+- **Pass:** API roles get permission denied (42501). UPDATE/DELETE are
+  refused ("auth_events is append-only") — pgTAP 61 is the machine gate.
+
+## Invite link mint-at-POST (2026-07-21, migration 20260721150000)
+
+Context: auth-onboarding-client.md "C-14 deferred item 1 closure". The
+Supabase accept URL is minted at the human's gate tap, never at send.
+
+### INV-MINT-1 — Invite flow works with tap-time minting
+- **Setup:** Invite a client. Open the emailed /i/<id> gate; tap Continue.
+- **Pass:** The tap lands them authenticated on /welcome set-password. In
+  invite_tokens the row shows consumed_at set AND action_link stored (it was
+  NULL between send and tap). Re-opening the gate shows "already been used".
+
+### INV-MINT-2 — A failed mint is retryable, not a dead invite
+- **Setup:** Force a mint failure (e.g. temporarily unreachable GoTrue) and
+  tap Continue.
+- **Pass:** The gate returns with "That didn't go through — tap again";
+  consumed_at is back to NULL, and a later tap succeeds. The invite is never
+  bricked by a transient failure.
+
+## Comms tab + system-send logging (2026-07-21, migration 20260721160000)
+
+Context: polish/email-and-sms.md "Part B — the LOGGING half". Every outbound
+client email lands on the profile's Comms tab; failed sends surface there.
+
+### COMMS-1 — Sends appear on the Comms tab
+- **Setup:** Invite a client; book them (staff-side and portal-side); let a
+  reminder send. Open the client profile → Comms.
+- **Pass:** One row per send, newest first: invite (attributed), booking
+  confirmations, reminder ("Automatic"). Rows expand to the stored body;
+  the invite/booking bodies are the actual plaintext that went out.
+
+### COMMS-2 — A failed send is visible to the EP
+- **Setup:** Cause a send failure (e.g. invalid Resend key on staging) for a
+  reminder or invite.
+- **Pass:** The Comms tab shows the row with FAILED in the alert colour and
+  the failure reason on expand. No send is retried or blocked by logging.
+
+### COMMS-3 — The record outlives archiving and stays staff-only
+- **Setup:** Archive a client with comms history; view their profile → Comms.
+  Separately, as a portal client, attempt to read communications via API.
+- **Pass:** The archived profile still shows the full comms record (FM-8
+  boundary). The client-role API read returns zero rows (pgTAP 62 #5).
+- **Automated:** `e2e/staff-render.spec.ts` → "Comms tab renders for an
+  ARCHIVED client — the record outlives the archive (FM-8)" asserts the
+  archived read-only chrome AND the comms row render on one page.
+
+### COMMS-4 — A reminder row is labelled a summary, not the sent email
+- **Context:** Reminder rows are logged DB-side (`reminder_log_communication`)
+  with a factual SUMMARY line in `body`, not the verbatim email (the Edge
+  Function's render isn't captured). Without a marker an EP reads it back as
+  the message that went out.
+- **Setup:** Open a client profile → Comms and expand a reminder row (subject
+  "Appointment reminder"), then expand an app-side row (invite/booking).
+- **Pass:** The reminder row shows the caption "Summary of the reminder — the
+  exact message sent isn't stored." above the body; the app-side row does NOT
+  (its body is the real email text). Both reminder rows also read "Automatic".
+- **Automated:** `e2e/staff-render.spec.ts` → "Comms tab labels a reminder
+  summary and surfaces a failed send" (the same test also exercises COMMS-2's
+  failed-reminder rendering: FAILED label + failure reason on expand).
+
+### COMMS-5 — A failed comms-log write is observed, never silent
+- **Context:** `logCommunication` is best-effort so a logging failure can't
+  break or retry a send. But the Comms tab is now the EP-facing surface for a
+  failed send (FM-5) — so if the log write itself fails, the tab under-reports
+  and the miss must still be observable.
+- **Setup (reasoning/unit):** Force the `communications` insert in
+  `src/lib/comms/log.ts` to error (e.g. a constraint violation) on a failed
+  send.
+- **Pass:** The log-write failure is routed through `captureException` (the
+  `[observability]` seam), not a raw `console.error`, so it surfaces on the
+  same channel as the send paths and lights up when the real Sentry SDK is
+  wired. The send is neither retried nor blocked.

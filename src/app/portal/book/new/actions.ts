@@ -111,13 +111,14 @@ async function sendBookingConfirmationEmailForAppointment(
     .from('appointments')
     .select(
       `id, start_at, end_at, appointment_type, location, staff_user_id,
+       client_id, organization_id,
        organization:organizations(name, timezone, email_notifications_enabled),
        client:clients(first_name, email)`,
     )
     .eq('id', appointmentId)
     .maybeSingle()
 
-  if (!appt || !appt.client?.email || !appt.organization) {
+  if (!appt || !appt.client?.email || !appt.organization || !appt.client_id) {
     return
   }
   // P2-5: respect the practice's email toggle — skip the confirmation when off.
@@ -165,5 +166,12 @@ async function sendBookingConfirmationEmailForAppointment(
     timeLine,
     location: appt.location,
     bookingUrl,
+    // §12 Part B: record on the Comms tab. The client booked themselves —
+    // the confirmation is a system send, no acting human (sender NULL).
+    log: {
+      organizationId: appt.organization_id,
+      clientId: appt.client_id,
+      senderUserId: null,
+    },
   })
 }

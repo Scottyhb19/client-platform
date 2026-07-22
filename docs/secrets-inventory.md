@@ -1,6 +1,8 @@
 # Secrets Inventory
 
-**Last updated:** 2026-07-09
+**Last updated:** 2026-07-21 (environment-separation flip)
+
+> **Environment-separation note (2026-07-21).** `.env.local`'s **default** Supabase keys (`NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY`) now hold the **staging** project's values — local dev targets staging by default. The **production** values moved to `PROD_SUPABASE_URL` / `PROD_SUPABASE_ANON_KEY` / `PROD_SUPABASE_SERVICE_ROLE_KEY` in the same file, read only by the `--prod` verify-script channel. The Vercel runtime is untouched (its env vars remain the production values). Per-secret entries below describe the *production* credential; the staging counterparts are catalogued at the end of Section 1.
 **Audited at commit:** `ff42cff` (latest landed at write-time). Most file:line citations were authored at `0a29535`; the Build Prompt #2 code phase (`1656859`, `8780e7c`, `63b6942`, `ff42cff`) shifted some line numbers — notably the EMAIL_FROM paths in `client.ts` and the reminder Edge Function — so treat cited line numbers as approximate, not exact. Re-audit and bump this reference whenever a commit touches a path cited in this file.
 **Companion documents:**
 - Rotation history → [`secrets-rotation-log.md`](secrets-rotation-log.md)
@@ -72,6 +74,26 @@ Exposure of any value here is a notifiable-data-breach-adjacent event (the platf
 - **Stakes:** LOW — staging must never hold real client data (see the runbook's rollback note), so exposure is not a data event. It is still kept out of chat transcripts and commits on principle.
 - **Rotation procedure:** Supabase dashboard → `odyssey-staging` → Settings → Database → reset password; update `.env.local` (`STAGING_DB_PASSWORD` + rebuild `STAGING_DB_URL`).
 - **Set:** 2026-07-03 (project creation).
+
+### Staging API keys (`sb_secret` / `sb_publishable`, staging project)
+
+- **Purpose:** the staging project's new-format API keys. Since the 2026-07-21 environment-separation flip they are the values of `.env.local`'s **default** `SUPABASE_SERVICE_ROLE_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`, so local dev and all default-channel scripts hit staging.
+- **Stored where:** `.env.local` only (gitignored). Not in Vercel, not in Edge Function secrets.
+- **Stakes:** LOW — staging holds synthetic data only (`scripts/seed-staging.mjs`); exposure is not a data event. Kept out of transcripts/commits on principle.
+- **Rotation:** Supabase dashboard → `odyssey-staging` → API keys; or re-read via the Management API (`/v1/projects/<ref>/api-keys?reveal=true`, CLI token auth).
+
+### Supabase CLI access token (Windows Credential Manager)
+
+- **Purpose:** the operator-machine login token the Supabase CLI stores after `supabase login`. Authorises the **Management API** (`api.supabase.com/v1/...`) for **both** projects — including `GET/PATCH /v1/projects/<ref>/config/auth` (reads *and writes* production auth config: HIBP, confirmations, session time-box, the custom-access-token hook fields) and `GET /v1/projects/<ref>/api-keys?reveal=true` (reveals API keys). Catalogued 2026-07-22 — the reviewer pass on `polish/auth-onboarding-staff.md` found it in active use as a verification read channel since 2026-06-10 (`runbooks/verify-auth-config.md`, Management API note) but absent from this inventory. Its use is a recorded, conscious reversal of that doc's A.1(revised) Q4 "no Management API token" posture: no *new* credential was minted, but the channel exists and this entry is its ledger home.
+- **Stored where:** Windows Credential Manager, generic credential `Supabase CLI:supabase` — operator machine only. Never in `.env.local`, never in CI, never deployed.
+- **Stakes:** HIGH — it can silently flip the same dashboard-invisible auth settings the `verify-auth-config` workstream exists to guard, on production. Declared posture (from the runbook, restated here): never log or persist the token; read-only by default; PATCH only to restore a documented target value, recorded in the run log.
+- **Rotation procedure:** `supabase logout` then `supabase login` (old token revoked server-side via the dashboard → Account → Access Tokens if one was minted explicitly). Rotate on suspicion the machine or credential store is compromised.
+- **Set:** predates this entry (CLI link); catalogued 2026-07-22.
+
+### `STAGING_DEV_LOGIN_*` / `STAGING_DEV_CLIENT_*` / `STAGING_DEV_EXCO_*`
+
+- **Purpose:** synthetic dev logins for the seeded staging orgs (staff owner, portal client, EXCO owner), written into `.env.local` by `scripts/seed-staging.mjs`. Also the credential source for the authed render harness.
+- **Stakes:** effectively none — they open a synthetic-data staging account and nothing else. Regenerated on every `seed-staging.mjs --wipe` run.
 
 ---
 

@@ -34,10 +34,13 @@ export const dynamic = 'force-dynamic'
  */
 export default async function InviteGatePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ retry?: string }>
 }) {
   const { id } = await params
+  const { retry } = await searchParams
 
   // Cheap pre-check: bad UUID shape → don't even query.
   if (!isUuid(id)) return <ErrorShell reason="not_found" />
@@ -89,6 +92,12 @@ export default async function InviteGatePage({
         Tap below to open your portal. We&rsquo;ll set you up with a password
         and add the app to your home screen on the next screen.
       </AuthSubtitle>
+      {retry === '1' ? (
+        <AuthAlert>
+          That didn&rsquo;t go through — tap again. If it keeps happening, ask
+          your practitioner to resend the invite.
+        </AuthAlert>
+      ) : null}
       <ContinueGate continueAction={continueInviteAction.bind(null, token.id)} />
     </AuthShell>
   )

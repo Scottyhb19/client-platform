@@ -33,13 +33,37 @@ SET search_path TO public, extensions, pg_temp;
 --      appointment deliberately STAYS cancelled — restore does not
 --      resurrect bookings).
 --
+-- Assertions 9-18 (added 2026-07-22, reviewer verdict on the section close of
+-- docs/polish/auth-onboarding-client.md): the C-3 archived-client tripwire.
+-- C-3 was dismissed as a false premise on the reading-only universal claim
+-- "every client-readable RLS policy gates through clients.deleted_at IS NULL,
+-- so data denial is immediate at archive commit — no token-TTL window." These
+-- assertions convert that claim into a regression test, using the REAL archive
+-- mechanism (soft_delete_client on cancel_client, already exercised at test 6)
+-- rather than a seeded-archived row — a direct INSERT of archived state would
+-- bypass the client_cascade_thread_archive trigger and mis-test the thread
+-- surface. Same login, same five surfaces, before and after; the only variable
+-- between the two blocks is the archive RPC:
+--
+--   9-13. pre-archive controls — cancel_client's OWN client-role login sees
+--         its clients row, active program, session, appointment, and message
+--         thread (each count 1). Anti-trivial half: proves the client-read
+--         path lives on every table asserted zero below.
+--  14-18. post-archive zeros — the same login sees ZERO rows on all five
+--         surfaces immediately after soft_delete_client, inside the same
+--         transaction. Zero at commit, not at token expiry.
+--
+-- clinical_notes is deliberately absent from 9-18: the client role is
+-- blanket-denied there (rls_clinical_notes_select_client_denied, §4.6), so
+-- archived-gating is moot on that table.
+--
 -- Style: buffered into _tap (mirrors 19/51/53); BEGIN/ROLLBACK for live-run
 -- safety; finish() intentionally dropped (same as 15/16/17).
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(18);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 -- anon writes assertion 5's line while dropped to the anon role.
@@ -60,6 +84,7 @@ DECLARE
   staff_g       uuid;
   staff_h       uuid;
   arch_user     uuid;
+  cancel_user   uuid;
   arch_client   uuid := '00000000-0000-0000-0000-0000000055a2'::uuid;
   live_client   uuid := '00000000-0000-0000-0000-0000000055a3'::uuid;
   cancel_client uuid := '00000000-0000-0000-0000-0000000055a4'::uuid;
@@ -70,13 +95,15 @@ BEGIN
     (org_g, 'Test Org G — archived access 55', 'test-org-g-archived-55'),
     (org_h, 'Test Org H — archived access 55', 'test-org-h-archived-55');
 
-  staff_g   := public._test_make_user('staff-g-arch55@test.local');
-  staff_h   := public._test_make_user('staff-h-arch55@test.local');
-  arch_user := public._test_make_user('client-arch55@test.local');
+  staff_g     := public._test_make_user('staff-g-arch55@test.local');
+  staff_h     := public._test_make_user('staff-h-arch55@test.local');
+  arch_user   := public._test_make_user('client-arch55@test.local');
+  cancel_user := public._test_make_user('client-cancel55@test.local');
 
-  PERFORM public._test_grant_membership(staff_g,   org_g, 'staff'::user_role);
-  PERFORM public._test_grant_membership(staff_h,   org_h, 'staff'::user_role);
-  PERFORM public._test_grant_membership(arch_user, org_g, 'client'::user_role);
+  PERFORM public._test_grant_membership(staff_g,     org_g, 'staff'::user_role);
+  PERFORM public._test_grant_membership(staff_h,     org_h, 'staff'::user_role);
+  PERFORM public._test_grant_membership(arch_user,   org_g, 'client'::user_role);
+  PERFORM public._test_grant_membership(cancel_user, org_g, 'client'::user_role);
 
   -- The archived client, linked to a real client-role login (the strongest
   -- lockout case: even their OWN archived row must be invisible to them).
@@ -88,9 +115,11 @@ BEGIN
   INSERT INTO clients (id, organization_id, first_name, last_name, email)
   VALUES (live_client, org_g, 'Liv', 'Here', 'liv-arch55@test.local');
 
-  -- The client whose archive must cancel their future booking.
-  INSERT INTO clients (id, organization_id, first_name, last_name, email)
-  VALUES (cancel_client, org_g, 'Cass', 'Future', 'cass-arch55@test.local');
+  -- The client whose archive must cancel their future booking. Linked to a
+  -- real client-role login (cancel_user) so tests 9-18 can probe the portal-
+  -- readable perimeter through their own session before and after the archive.
+  INSERT INTO clients (id, organization_id, user_id, first_name, last_name, email)
+  VALUES (cancel_client, org_g, cancel_user, 'Cass', 'Future', 'cass-arch55@test.local');
 
   -- Future confirmed appointment, 15-minute-aligned, 7 days out. The
   -- appointment_manage_reminder AFTER INSERT trigger enqueues its reminder
@@ -104,9 +133,20 @@ BEGIN
           v_start, v_start + interval '60 minutes', 'confirmed', now(),
           'Initial consultation', 'appointment');
 
+  -- Portal-readable dependents for cancel_client (tests 9-18): one client-
+  -- visible program (status 'active' — the client SELECT policy only exposes
+  -- active/archived), one session, one message thread. Together with the
+  -- appointment above these span the client-readable RLS perimeter.
+  INSERT INTO programs (organization_id, client_id, name, start_date, duration_weeks, status)
+  VALUES (org_g, cancel_client, 'Cass Program 55', CURRENT_DATE, 4, 'active');
+  INSERT INTO sessions (organization_id, client_id)
+  VALUES (org_g, cancel_client);
+  INSERT INTO message_threads (organization_id, client_id)
+  VALUES (org_g, cancel_client);
+
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
     org_g AS org_g, org_h AS org_h, staff_g AS staff_g, staff_h AS staff_h,
-    arch_user AS arch_user, arch_client AS arch_client,
+    arch_user AS arch_user, cancel_user AS cancel_user, arch_client AS arch_client,
     live_client AS live_client, cancel_client AS cancel_client, appt AS appt;
   GRANT SELECT ON _ids TO authenticated;
 END $$;
@@ -122,6 +162,59 @@ BEGIN
   END IF;
 END $$;
 
+
+-- ============================================================================
+-- Tests 9-13 (pre-archive controls): cancel_client's OWN client-role login
+-- sees every portal-readable surface BEFORE the archive. The anti-trivial
+-- half of tests 14-18 — same login, same tables; the only variable between
+-- the two blocks is soft_delete_client.
+-- ============================================================================
+SELECT public._test_set_jwt(
+  (SELECT cancel_user FROM _ids), (SELECT org_g FROM _ids), 'client'
+);
+SET LOCAL ROLE authenticated;
+
+INSERT INTO _tap (n, line) VALUES (9, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM clients),
+    1,
+    'pre-archive control: the linked client login sees its own clients row'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (10, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM programs),
+    1,
+    'pre-archive control: the client sees its own active program'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (11, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM sessions),
+    1,
+    'pre-archive control: the client sees its own session'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (12, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM appointments),
+    1,
+    'pre-archive control: the client sees its own future appointment'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM message_threads),
+    1,
+    'pre-archive control: the client sees its own message thread'
+  ) AS l
+));
+
+RESET ROLE;
 
 -- ============================================================================
 -- Tests 1 & 4: staff in org_g read the archived row AND the live row.
@@ -176,6 +269,61 @@ INSERT INTO _tap (n, line) VALUES (7, (
     'P1-5 cascade: the queued reminder flipped to cancelled (lifecycle trigger fired)'
   ) AS l
 ));
+
+-- ============================================================================
+-- Tests 14-18 (post-archive zeros — the C-3 tripwire): the SAME login, the
+-- SAME five surfaces, immediately after soft_delete_client, inside the same
+-- transaction. The reading-only claim that discharged C-3 ("every client-
+-- readable policy gates through clients.deleted_at IS NULL — data denial is
+-- immediate at archive commit") becomes a regression test here. Zero rows
+-- means zero at COMMIT — no access-token-TTL window.
+-- ============================================================================
+SELECT public._test_set_jwt(
+  (SELECT cancel_user FROM _ids), (SELECT org_g FROM _ids), 'client'
+);
+SET LOCAL ROLE authenticated;
+
+INSERT INTO _tap (n, line) VALUES (14, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM clients),
+    0,
+    'C-3 tripwire: post-archive, the client''s own clients row is invisible to them'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (15, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM programs),
+    0,
+    'C-3 tripwire: post-archive, their active program returns zero rows'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (16, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM sessions),
+    0,
+    'C-3 tripwire: post-archive, their session history returns zero rows'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (17, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM appointments),
+    0,
+    'C-3 tripwire: post-archive, appointments return zero (clients-gate; P1-5 also cancelled it)'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (18, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM message_threads),
+    0,
+    'C-3 tripwire: post-archive, the thread is gone (clients-gate + archive cascade)'
+  ) AS l
+));
+
+RESET ROLE;
 
 -- ============================================================================
 -- Test 2: the archived client's OWN login sees zero rows (portal lockout).

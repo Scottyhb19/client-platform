@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { logAuthEvent } from "@/lib/auth/events";
 import { getPublicOrigin } from "@/lib/env/site-url";
 import {
   createSupabaseServerClient,
@@ -82,6 +83,14 @@ export async function requestPasswordReset(formData: FormData) {
       error.message,
     );
   }
+
+  // G-6: auth.password_reset.requested (docs/auth.md §11). Logged for the
+  // attempt regardless of the (deliberately invisible) send outcome — the
+  // audit question is "who asked", not "did GoTrue send".
+  await logAuthEvent("auth.password_reset.requested", {
+    email,
+    detail: error ? { send_error: error.message } : {},
+  });
 
   redirect("/forgot-password?info=sent");
 }

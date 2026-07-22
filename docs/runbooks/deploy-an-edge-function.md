@@ -88,8 +88,19 @@ The sink is Resend's `delivered@resend.dev` — Resend accepts and processes it 
    FROM appointment_reminders WHERE id = '<reminder_id>';
    ```
    Pass = `status='sent'` and `provider_message_id` is non-null. If `status='failed'`, read `failure_reason` (a `resend 401` means the EF's `RESEND_API_KEY` secret is stale — re-set it per step 3 of Steps above).
-4. **Tear down** (always — leaves no synthetic rows):
+
+   **§12 Part B trigger-leg assertion (post-`20260721160000` apply).** The `status='sent'` UPDATE also derives a `communications` row — confirm the trigger fired:
    ```sql
+   SELECT status, sender_user_id, communication_type, subject
+   FROM communications WHERE recipient_email = 'delivered@resend.dev';
+   ```
+   Pass = one row: `status='sent'`, `sender_user_id` NULL (system send), `communication_type='email'`, `subject='Appointment reminder'`. This is the **trigger leg** of the §12 Part B prod-verify (see `go-live-checklist.md` §8 → §12 Part B). Step 4 tears this row down first.
+4. **Tear down** (always — leaves no synthetic rows). **⚠️ Order matters, and `communications` must go first.** After the §12 Part B logging migration (`20260721160000`), the successful send's `status='sent'` UPDATE fires `reminder_log_communication`, which **derives a `communications` row** on the throwaway client. That row is **deny-delete under RLS** *and* FK-references the client, so if you don't remove it first the `DELETE FROM clients` **FK-fails and the whole teardown aborts** — stranding the synthetic client + its comms row in a **real prod org** (and it would render on that throwaway client's Comms tab until removed). The SQL Editor / `supabase db query --linked` runs as the `postgres` role, which carries **`BYPASSRLS`** (demonstrated on staging 2026-07-22 — `role=postgres`, `rolbypassrls=t`, `rolsuper=f`; a probe DELETE returned its row despite the deny-delete policy), so the policy does not apply — and there is no delete-guard *trigger* on `communications` (unlike the §8 write-immutability tables), so a direct DELETE suffices. **Prove it before you rely on it at the sitting:** the `DELETE … RETURNING` below returning the row *is* the confirmation (empty result = the role does not bypass → stop, the client teardown will FK-fail):
+   ```sql
+   -- FIRST: the §12-derived comms row (deny-delete under RLS, FK-blocks the client)
+   DELETE FROM communications WHERE client_id IN (
+     SELECT id FROM clients WHERE email = 'delivered@resend.dev' AND last_name = 'Healthcheck (delete me)'
+   );
    DELETE FROM appointment_reminders WHERE appointment_id IN (
      SELECT a.id FROM appointments a JOIN clients c ON c.id = a.client_id
      WHERE c.email = 'delivered@resend.dev' AND c.last_name = 'Healthcheck (delete me)'
@@ -99,6 +110,7 @@ The sink is Resend's `delivered@resend.dev` — Resend accepts and processes it 
    );
    DELETE FROM clients WHERE email = 'delivered@resend.dev' AND last_name = 'Healthcheck (delete me)';
    ```
+   Confirm zero remain: `SELECT count(*) FROM communications WHERE recipient_email = 'delivered@resend.dev';` → 0.
 
 The branch logic the live send does *not* exercise (email-off → cancel, 4xx/5xx/429/network classification) is covered by `node scripts/reminder-logic-verify.mjs` (12/12) — run it whenever the EF's send loop changes. See `docs/polish/scheduling.md` §8d for the branch-coverage posture.
 

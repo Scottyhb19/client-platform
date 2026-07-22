@@ -1,6 +1,7 @@
 'use server'
 
 import { defaultFromAddress, getResendClient } from './client'
+import { logCommunication, type CommLogContext } from '@/lib/comms/log'
 import { captureException } from '@/lib/observability/sentry'
 import {
   renderBookingConfirmationEmail,
@@ -10,6 +11,8 @@ import {
 export interface SendBookingConfirmationArgs
   extends BookingConfirmationEmailInput {
   to: string
+  /** §12 Part B: when present, the send outcome lands on the Comms tab. */
+  log?: CommLogContext
 }
 
 /**
@@ -23,7 +26,7 @@ export interface SendBookingConfirmationArgs
 export async function sendBookingConfirmationEmail(
   args: SendBookingConfirmationArgs,
 ): Promise<{ error: string | null; messageId: string | null }> {
-  const { to, ...templateInput } = args
+  const { to, log, ...templateInput } = args
 
   let resend
   try {
@@ -53,7 +56,27 @@ export async function sendBookingConfirmationEmail(
     captureException(new Error(error.message), {
       where: 'email-send:booking-confirmation',
     })
+    if (log) {
+      await logCommunication({
+        ...log,
+        recipientEmail: to,
+        subject,
+        body: text,
+        status: 'failed',
+        failureReason: error.message,
+      })
+    }
     return { error: error.message, messageId: null }
+  }
+  if (log) {
+    await logCommunication({
+      ...log,
+      recipientEmail: to,
+      subject,
+      body: text,
+      status: 'sent',
+      providerMessageId: data?.id ?? null,
+    })
   }
   return { error: null, messageId: data?.id ?? null }
 }
