@@ -2213,3 +2213,33 @@ client email lands on the profile's Comms tab; failed sends surface there.
   Separately, as a portal client, attempt to read communications via API.
 - **Pass:** The archived profile still shows the full comms record (FM-8
   boundary). The client-role API read returns zero rows (pgTAP 62 #5).
+- **Automated:** `e2e/staff-render.spec.ts` → "Comms tab renders for an
+  ARCHIVED client — the record outlives the archive (FM-8)" asserts the
+  archived read-only chrome AND the comms row render on one page.
+
+### COMMS-4 — A reminder row is labelled a summary, not the sent email
+- **Context:** Reminder rows are logged DB-side (`reminder_log_communication`)
+  with a factual SUMMARY line in `body`, not the verbatim email (the Edge
+  Function's render isn't captured). Without a marker an EP reads it back as
+  the message that went out.
+- **Setup:** Open a client profile → Comms and expand a reminder row (subject
+  "Appointment reminder"), then expand an app-side row (invite/booking).
+- **Pass:** The reminder row shows the caption "Summary of the reminder — the
+  exact message sent isn't stored." above the body; the app-side row does NOT
+  (its body is the real email text). Both reminder rows also read "Automatic".
+- **Automated:** `e2e/staff-render.spec.ts` → "Comms tab labels a reminder
+  summary and surfaces a failed send" (the same test also exercises COMMS-2's
+  failed-reminder rendering: FAILED label + failure reason on expand).
+
+### COMMS-5 — A failed comms-log write is observed, never silent
+- **Context:** `logCommunication` is best-effort so a logging failure can't
+  break or retry a send. But the Comms tab is now the EP-facing surface for a
+  failed send (FM-5) — so if the log write itself fails, the tab under-reports
+  and the miss must still be observable.
+- **Setup (reasoning/unit):** Force the `communications` insert in
+  `src/lib/comms/log.ts` to error (e.g. a constraint violation) on a failed
+  send.
+- **Pass:** The log-write failure is routed through `captureException` (the
+  `[observability]` seam), not a raw `console.error`, so it surfaces on the
+  same channel as the send paths and lights up when the real Sentry SDK is
+  wired. The send is neither retried nor blocked.

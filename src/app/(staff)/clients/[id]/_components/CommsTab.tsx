@@ -40,6 +40,20 @@ const STATUS_LABEL: Record<string, string> = {
 
 const FAILED = new Set(['failed', 'bounced'])
 
+// Reminder rows are logged DB-side by reminder_log_communication (migration
+// 20260721160000): `body` holds a factual summary line, NOT the verbatim
+// email that went out (the Edge Function's render isn't captured yet). Every
+// other send (invite, booking confirmation, reschedule) stores the real
+// plaintext body. Without this marker an EP reading the record back would
+// reasonably treat the summary as the message that was sent. Keyed on the
+// trigger's subject constant + system-send — keep in sync if the trigger's
+// subject changes.
+const REMINDER_SUBJECT = 'Appointment reminder'
+
+function isReminderSummary(c: ProfileCommunication): boolean {
+  return c.sender_user_id === null && c.subject?.trim() === REMINDER_SUBJECT
+}
+
 function formatCommDate(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString('en-AU', {
@@ -94,6 +108,7 @@ export function CommsTab({ comms }: { comms: ProfileCommunication[] }) {
         {comms.map((c, i) => {
           const open = openId === c.id
           const failed = FAILED.has(c.status)
+          const summary = isReminderSummary(c)
           return (
             <div
               key={c.id}
@@ -183,6 +198,18 @@ export function CommsTab({ comms }: { comms: ProfileCommunication[] }) {
                       }}
                     >
                       {c.failure_reason}
+                    </div>
+                  ) : null}
+                  {summary ? (
+                    <div
+                      style={{
+                        fontSize: '.72rem',
+                        color: 'var(--color-text-light)',
+                        marginBottom: 6,
+                      }}
+                    >
+                      Summary of the reminder — the exact message sent isn’t
+                      stored.
                     </div>
                   ) : null}
                   <div

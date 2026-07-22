@@ -106,6 +106,56 @@ test('Comms tab renders the logged communication (§12 Part B)', async ({
   ).toBeVisible()
 })
 
+test('Comms tab labels a reminder summary and surfaces a failed send (§12 Part B)', async ({
+  page,
+}) => {
+  await page.goto(`/clients/${jordanId}?tab=comms`)
+
+  // A delivered reminder is a SYSTEM send whose stored body is a factual
+  // summary line, not the verbatim email — the tab must say so, or an EP
+  // reads it back as the message that actually went out.
+  const sentReminder = page
+    .getByRole('button')
+    .filter({ hasText: 'Appointment reminder' })
+    .filter({ hasText: 'Sent' })
+    .first()
+  await expect(sentReminder).toBeVisible()
+  await sentReminder.click()
+  await expect(
+    page.getByText(/the exact message sent isn.t stored/i),
+  ).toBeVisible()
+
+  // A FAILED reminder is the EP-facing surfacing of a failed send (FM-5):
+  // the row reads Failed and expands to its failure reason.
+  const failedReminder = page
+    .getByRole('button')
+    .filter({ hasText: 'Appointment reminder' })
+    .filter({ hasText: 'Failed' })
+    .first()
+  await expect(failedReminder).toBeVisible()
+  await failedReminder.click()
+  await expect(
+    page.getByText('resend 550 mailbox unavailable (seed)'),
+  ).toBeVisible()
+})
+
+test('Comms tab renders for an ARCHIVED client — the record outlives the archive (FM-8)', async ({
+  page,
+}) => {
+  await page.goto(`/clients/${averyId}?tab=comms`)
+  // The intersection the build doc claims (Comms tab renders for archived
+  // clients): the archived read-only chrome AND the comms record on one page.
+  await expect(page.getByText(/archived/i).first()).toBeVisible()
+  const row = page.getByRole('button', {
+    name: /Your records — copy on close-out/,
+  })
+  await expect(row).toBeVisible()
+  await row.click()
+  await expect(
+    page.getByText('Synthetic archived-client comms (seed data).'),
+  ).toBeVisible()
+})
+
 test('the harness login left a G-6 auth.login.success row', async () => {
   const admin = stagingAdmin()
   const { data } = await admin

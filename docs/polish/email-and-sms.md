@@ -1,3 +1,24 @@
+> ## ⚠️ FROZEN AS HISTORICAL RECORD — read this first (2026-07-22)
+>
+> This document is the **2026-06-22 section-12 record**, frozen as history per the single-ledger rule. Everything below the line — the header **Status** line, §1 conformance, the §2 premortem, the §3 gap list, and the 2026-06-22 Closing commit / Sign-off — reflects the state **as at 2026-06-22 and is not kept in sync.** Where it disagrees with this block, this block wins. **Current state lives on [`go-live-checklist.md`](../go-live-checklist.md) §8.**
+>
+> **Part A** (reliability + tone + SMS honest-stub + preference honesty) — Closed with deferred items 2026-06-22, signed off, merged + deployed to prod. Unchanged; not reopened.
+>
+> **Part B — the LOGGING half is now BUILT (2026-07-21, on staging).** This supersedes the 2026-06-22 Sign-off's deferred list on **THREE** items (the 2026-07-22 "Ledger reconciliation" note at the foot named only **two** — that under-scoped count is corrected here):
+> 1. **The client-profile Comms tab** (P1-2) — built ([`CommsTab.tsx`](../../src/app/(staff)/clients/[id]/_components/CommsTab.tsx)).
+> 2. **System-send log-wiring** (P1-4) — invite, booking confirmation, and reschedule notification (app-side, [`src/lib/comms/log.ts`](../../src/lib/comms/log.ts)) + appointment reminders (DB trigger, migration [`20260721160000`](../../supabase/migrations/20260721160000_comms_system_send_log.sql)) now write `communications` rows.
+> 3. **FM-5's second half — EP-facing in-product surfacing of failed sends** — built: failed reminders and failed app-side sends now appear on the Comms tab as `failed` rows carrying a reason. (§12 Part A left this ops-observable-only; the tab makes it EP-facing.)
+>
+> **BUILT, not CLOSED.** The logging half is **staging-only, pending: (a) prod apply of migration `20260721160000` + prod verify, and (b) the section sign-off ritual.** The authed render-tier drive (was parked Step 6) is **done (2026-07-22)** — the §5b Playwright harness was extended with a seeded reminder-summary row, a failed row, and an archived-client comms row, and runs **9/9 green** on staging ([`e2e/staff-render.spec.ts`](../../e2e/staff-render.spec.ts): "labels a reminder summary and surfaces a failed send" + "renders for an ARCHIVED client — the record outlives the archive"). Part A's own "deployed-and-verified-in-prod" bar still applies before this closes on (a).
+>
+> **Still deferred, exactly as the 2026-06-22 Sign-off lists** (owner decision unchanged): the connected-account OAuth **compose** half — P0-1/P0-2/P0-3, P1-1 (compose modal replacing the mail-icon `mailto:`), P2-4, P2-5, and §4 Q1–Q5.
+>
+> **Two corrections to claims in the body / appended sections below:**
+> - **"pgTAP 62 on staging" / "BUILT on staging" means the real [`odyssey-staging`](../runbooks/use-the-staging-project.md) Supabase project** (the linked default since 2026-07-21 — CLAUDE.md "Environment separation"), **not** the git branch and **not** prod. This post-dates the old "no non-prod target exists / all pgTAP runs against prod with BEGIN/ROLLBACK" constraint, which no longer holds.
+> - **The comms logger now observes its own write failures.** [`src/lib/comms/log.ts`](../../src/lib/comms/log.ts) routes a failed log-write through `captureException` (not a raw console line), so a failed *log* write on a failed *send* becomes **ops-observable** (server logs / the Sentry seam, still a stub) instead of vanishing. This is deliberately **not** the FM-5 *tab* surface: a log write that failed means, by definition, no row on the tab — the EP sees nothing, only the ops log does. That is the correct trade (logging must never block or retry a send), made honest — the same line Part A held on P1-3. Separately, the Comms tab now labels reminder rows as summaries ("the exact message sent isn't stored"), since reminder `body` is a factual summary line, not the verbatim email.
+
+---
+
 # Polish-pass gap analysis — Email and SMS (section 12)
 
 **Brief:** [`Client_Platform_Brief_v2.1.docx`](../../Client_Platform_Brief_v2.1.docx) **§6.7 Communication System** (extracted: [`docs/_brief_v2.1_extracted.txt`](../_brief_v2.1_extracted.txt) lines 150–156), plus §3 data model ("Comms: Communication log — emails sent, reminders, AI-drafted messages", line 66) and §9.1 ("Notifications — email + SMS appointment reminders, booking confirmations"). The brief's communication model in full: *"Communication is email-based … Platform drafts emails (manually or AI-assisted in Phase 4) … Emails sent via EP's email domain using Resend … Client receives a normal email from the EP — no platform branding … Sent communications logged to the client's Comms tab … SMS used for appointment reminders and booking confirmations only."* Treated as the desired end state, not a greenfield spec.

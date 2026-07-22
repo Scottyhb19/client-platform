@@ -616,12 +616,48 @@ await must(svc.from('messages').insert(
   { organization_id: odysseyOrgId, thread_id: thread.id, sender_user_id: portalUser.id, sender_role: 'client', body: 'Also done with today’s session — knee felt great.' },
 ), 'message 3 (unread)')
 
-await must(svc.from('communications').insert({
-  organization_id: odysseyOrgId, client_id: jordan.id, sender_user_id: owner.id,
-  communication_type: 'email', direction: 'outbound', status: 'sent', provider: 'resend',
-  subject: 'Welcome to the portal', body: 'Synthetic welcome email (seed data).',
-  recipient_email: 'delivered+dev-client@resend.dev', sent_at: daysAgoISO(28),
-}), 'communication log row')
+await must(svc.from('communications').insert([
+  // App-side send: attributed to the EP (sender_user_id set), body is the
+  // real email text. Renders WITHOUT the "Automatic"/summary markers.
+  {
+    organization_id: odysseyOrgId, client_id: jordan.id, sender_user_id: owner.id,
+    communication_type: 'email', direction: 'outbound', status: 'sent', provider: 'resend',
+    subject: 'Welcome to the portal', body: 'Synthetic welcome email (seed data).',
+    recipient_email: 'delivered+dev-client@resend.dev', sent_at: daysAgoISO(28),
+  },
+  // System send — a delivered appointment reminder. sender_user_id is NULL
+  // (no acting human) and body is the trigger's factual SUMMARY line, not the
+  // verbatim email — so the Comms tab marks it "Automatic" and labels the body
+  // a summary (isReminderSummary keys on subject === 'Appointment reminder').
+  {
+    organization_id: odysseyOrgId, client_id: jordan.id, sender_user_id: null,
+    communication_type: 'email', direction: 'outbound', status: 'sent', provider: 'resend',
+    provider_message_id: 'seed-reminder-sent-01',
+    subject: 'Appointment reminder',
+    body: 'Appointment reminder for Session on Mon 27 Jul 2026, 9:00 AM.',
+    recipient_email: 'delivered+dev-client@resend.dev', sent_at: daysAgoISO(1),
+  },
+  // System send that FAILED — the EP-facing surfacing of a failed reminder
+  // (FM-5): the row reads Failed and expands to its failure_reason.
+  {
+    organization_id: odysseyOrgId, client_id: jordan.id, sender_user_id: null,
+    communication_type: 'email', direction: 'outbound', status: 'failed', provider: 'resend',
+    subject: 'Appointment reminder',
+    body: 'Appointment reminder for Review on Wed 29 Jul 2026, 11:00 AM.',
+    recipient_email: 'delivered+dev-client@resend.dev',
+    failed_at: daysAgoISO(0), failure_reason: 'resend 550 mailbox unavailable (seed)',
+  },
+  // Archived client (Avery) — the record OUTLIVES the archive: the Comms tab
+  // must still render on an archived, read-only profile (FM-8 boundary). Sent
+  // while active (before archived_at = daysAgo(14)), read back after archive.
+  {
+    organization_id: odysseyOrgId, client_id: avery.id, sender_user_id: owner.id,
+    communication_type: 'email', direction: 'outbound', status: 'sent', provider: 'resend',
+    subject: 'Your records — copy on close-out',
+    body: 'Synthetic archived-client comms (seed data).',
+    recipient_email: 'delivered+avery-archived@resend.dev', sent_at: daysAgoISO(15),
+  },
+]), 'communication log rows')
 console.log('messaging + communications ✓')
 
 // ---- 9. write dev creds into .env.local -------------------------------------

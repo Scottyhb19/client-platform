@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createSupabaseServiceRoleClient } from '@/lib/supabase/server'
+import { captureException } from '@/lib/observability/sentry'
 
 /**
  * §12 Part B (logging half) — record an outbound communication on the
@@ -57,9 +58,22 @@ export async function logCommunication(args: {
       failure_reason: args.failureReason ?? null,
     })
     if (error) {
-      console.error(`[comms-log] insert failed: ${error.message}`)
+      // The Comms tab is now the EP-facing surface for a failed send (FM-5).
+      // If this log write itself fails, that surface silently under-reports —
+      // so route the miss through the same observability seam the send paths
+      // use (not a raw console line), so it is visible now and lights up when
+      // the real Sentry SDK is wired. Still best-effort: never rethrow.
+      captureException(new Error(`comms-log insert failed: ${error.message}`), {
+        where: 'comms-log:insert',
+        clientId: args.clientId,
+        status: args.status,
+      })
     }
   } catch (e) {
-    console.error('[comms-log] insert threw:', e)
+    captureException(e, {
+      where: 'comms-log:insert',
+      clientId: args.clientId,
+      status: args.status,
+    })
   }
 }
