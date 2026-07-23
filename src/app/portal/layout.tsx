@@ -89,21 +89,31 @@ export default async function PortalLayout({
     .is('deleted_at', null)
     .maybeSingle()
 
-  // Unread staff→client messages count for the portal nav badge. RLS scopes
-  // messages to the caller's own thread, so no thread_id filter needed.
-  const { count: unreadFromStaff } = await supabase
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('sender_role', 'staff')
-    .is('read_at', null)
-    .is('deleted_at', null)
+  // Unread staff→client messages count for the portal nav badge, scoped to
+  // the live thread resolved above (no thread → nothing to count, skip the
+  // query). Scoping to thread.id rather than relying on RLS alone keeps an
+  // archived thread's messages out of the badge — the mirror of the staff
+  // TopBar bug. Today an archived client never reaches this layout (the
+  // AccessEnded gate above), but the scope holds if a thread-level archive
+  // path ever lands.
+  let unreadFromStaff = 0
+  if (thread) {
+    const { count } = await supabase
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('thread_id', thread.id)
+      .eq('sender_role', 'staff')
+      .is('read_at', null)
+      .is('deleted_at', null)
+    unreadFromStaff = count ?? 0
+  }
 
   return (
     <div className="portal-shell">
       <div className="portal-shell__column">
         <main style={{ flex: 1, overflowY: 'auto' }}>{children}</main>
         <BottomNav
-          messageCount={unreadFromStaff ?? 0}
+          messageCount={unreadFromStaff}
           threadId={thread?.id ?? null}
         />
       </div>

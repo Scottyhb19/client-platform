@@ -40,13 +40,24 @@ export default async function StaffLayout({
       .eq('id', organizationId)
       .maybeSingle(),
     // Unread client→staff messages across the whole org. RLS already scopes;
-    // the index messages_org_unread_idx covers this lookup.
+    // the index messages_org_unread_idx covers this lookup. !inner on
+    // message_threads drops messages sitting in archived threads: archiving a
+    // client archives the thread (client_cascade_thread_archive) but leaves
+    // its messages deleted_at NULL, and without this join those rows inflate
+    // the badge forever — the inbox filters archived threads out, so there is
+    // no row to open and clear them. Deliberately a read-side filter, not a
+    // read_at stamp at archive time: read_at is recipient-only integrity
+    // (a bulk stamp would forge reads) and must survive client restore.
     supabase
       .from('messages')
-      .select('id', { count: 'exact', head: true })
+      .select('id, message_threads!inner(deleted_at)', {
+        count: 'exact',
+        head: true,
+      })
       .eq('sender_role', 'client')
       .is('read_at', null)
-      .is('deleted_at', null),
+      .is('deleted_at', null)
+      .is('message_threads.deleted_at', null),
   ])
 
   const initials = computeInitials(profile?.first_name, profile?.last_name, email)

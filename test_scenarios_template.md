@@ -2328,3 +2328,38 @@ client email lands on the profile's Comms tab; failed sends surface there.
   and the same-org PATCH control prove the zeros are RLS, not dead endpoints.
 - **Cadence:** re-run on any JWT custom-claims hook change; the named test
   case for the external IT reviewer (re-run against prod with their creds).
+
+---
+
+## Messaging — unread badges ignore archived threads (bug fix, 2026-07-23)
+
+Context: the staff TopBar unread count queried `messages` directly
+(`sender_role='client'`, `read_at` null, `deleted_at` null). Archiving a
+client stamps `deleted_at` on the `message_threads` row only
+(`client_cascade_thread_archive`) — the child messages stay `deleted_at NULL`
+— so unread messages in an archived thread inflated the bell/nav badge
+forever, with no inbox row to open and clear them (the inbox filters archived
+threads out). Fixed read-side: the badge count now inner-joins
+`message_threads` on `deleted_at IS NULL` (staff layout), and the portal
+badge is scoped to the client's live thread id. Deliberately NOT fixed by
+stamping `read_at` at archive time — `read_at` is recipient-only integrity
+(pgTAP `34`), a bulk stamp would forge read receipts on a record FM-8
+preserves, and it would not survive client restore.
+
+### MSG-BADGE-1 — Archiving a client with unread messages clears the staff badge
+- **Setup:** A client sends a message the EP does not read (TopBar badge shows
+  ≥1). Archive that client from their profile.
+- **Pass:** After archive, the TopBar messages badge no longer counts that
+  thread's unread messages (badge drops by the thread's unread count; hidden
+  at 0). The thread is gone from the inbox. Restoring the client brings the
+  thread — and the same messages, still unread — back: the badge count
+  returns and the messages are NOT silently marked read.
+
+### MSG-BADGE-2 — Portal badge counts only the live thread
+- **Setup:** A portal client with no message thread yet; then one with a
+  thread holding an unread staff message.
+- **Pass:** With no thread, the portal Messages badge shows nothing (count
+  query skipped). With a live thread, the badge counts unread staff messages
+  in that thread only. (An archived client cannot reach the portal layout at
+  all — AccessEnded — so the archived mirror is unreachable by design; the
+  thread-id scope is the guard if a thread-level archive path ever lands.)
