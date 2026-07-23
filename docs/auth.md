@@ -446,6 +446,8 @@ Metrics we emit from the auth path, to Sentry and to structured logs:
 
 `auth.jwt.hook_failure` and `auth.cross_tenant_access_attempt` are S0 alerts. See `/docs/slos.md` and `/docs/incident-response.md`.
 
+**Implementation status (2026-07-23).** The log exists (`auth_events`, G-6, migration `20260721140000`): 8/10 events are emitted from `src/lib/auth/events.ts` call sites, with `client_ip` (per-IP threshold input) and `organization_id_snapshot` captured since `20260723120000`. The two exceptions are structural and recorded in the G-6 register (`polish/auth-onboarding-staff.md`): `auth.jwt.hook_failure` (the hook is STABLE/G-1-verified; logging from inside it is disproportionate risk — detection is the G-1 probe + GoTrue logs) and `auth.cross_tenant_access_attempt` (RLS denials are silent row filters; detection is pgTAP 17/57 + the R-4 request-path probe). **Both table alerts are LIVE:** `auth_events_threshold_scan()` + the `auth-events-alerts` Edge Function on an hourly cron email `ALERT_EMAIL` on breach (migrations `20260723150000`/`20260723170000`). The `>50/hour/IP` "account lock" and the S0 "page immediately" responses remain manual operator actions at current scale — the email is the pager.
+
 ---
 
 ## 12. Open questions

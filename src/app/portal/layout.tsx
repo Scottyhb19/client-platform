@@ -1,6 +1,10 @@
 import type { Viewport } from 'next'
 import { redirect } from 'next/navigation'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import {
+  createSupabaseServerClient,
+  createSupabaseServiceRoleClient,
+} from '@/lib/supabase/server'
+import { AccessEnded } from './_components/AccessEnded'
 import { BottomNav } from './_components/BottomNav'
 import { RegisterSW } from './_components/RegisterSW'
 import { TimezoneSync } from './_components/TimezoneSync'
@@ -55,7 +59,25 @@ export default async function PortalLayout({
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (!client) redirect('/welcome')
+  if (!client) {
+    // P2-3 (2026-07-23): distinguish "never onboarded" from "archived".
+    // The client's own RLS view cannot see their archived row (deliberate),
+    // so this one probe uses the service-role client, keyed strictly on the
+    // authenticated user's id — no caller-supplied input. An archived client
+    // gets the designed closed door instead of the onboarding funnel.
+    const svc = createSupabaseServiceRoleClient()
+    const { data: archived } = await svc
+      .from('clients')
+      .select('organization_id, organization:organizations(name)')
+      .eq('user_id', user.id)
+      .not('deleted_at', 'is', null)
+      .maybeSingle()
+
+    if (archived) {
+      return <AccessEnded practiceName={archived.organization?.name ?? null} />
+    }
+    redirect('/welcome')
+  }
 
   // Resolve the client's thread (if any) once so BottomNav can subscribe to
   // realtime with a filter. Supabase realtime postgres_changes silently drops

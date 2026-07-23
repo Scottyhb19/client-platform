@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
 import { EmailConfigError } from '@/lib/email/client'
+import { getPublicOrigin, EnvConfigError } from '@/lib/env/site-url'
 import { captureException } from '@/lib/observability/sentry'
 import { formatBookingDateLine, formatBookingTimeRange } from './_lib/format'
 
@@ -85,7 +86,9 @@ export async function confirmBookingAction(
   await sendBookingConfirmationEmailForAppointment(
     appointmentId as string,
   ).catch((e) => {
-    if (e instanceof EmailConfigError) throw e
+    // Config errors stay loud (established posture): a misconfigured origin
+    // or sender is an ops failure, not a transient send failure.
+    if (e instanceof EmailConfigError || e instanceof EnvConfigError) throw e
     // P1-3: an unexpected throw (e.g. a network error) mustn't vanish — the
     // booking is already saved, but the failed confirmation must be observable.
     captureException(e, { where: 'booking-confirm:portal' })
@@ -146,11 +149,13 @@ async function sendBookingConfirmationEmailForAppointment(
     appt.organization.timezone,
   )
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
-  const bookingUrl = baseUrl
-    ? `${baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`}/portal/book`
-    : 'https://app.example.com/portal/book'
+  // Canonical origin, fail-loud (go-live checklist §8 origin-idiom
+  // consolidation, closed 2026-07-23): this was the last surviving
+  // silent-fallback origin chain (NEXT_PUBLIC_APP_URL ?? VERCEL_URL ?? '').
+  // getPublicOrigin() throws EnvConfigError when NEXT_PUBLIC_SITE_URL is
+  // unset — surfaced by the action's config-error rethrow, same posture as
+  // EmailConfigError, and health-checked in prod via /api/health.
+  const bookingUrl = `${getPublicOrigin()}/portal/book`
 
   const practitionerName =
     `${staffProfile?.first_name ?? ''} ${staffProfile?.last_name ?? ''}`.trim() ||

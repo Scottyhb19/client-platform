@@ -12,6 +12,12 @@ import { NoticeHost } from './_components/Notice'
  * adding a new page under (staff)/ inherits the guard for free.
  *
  * RLS is the real security boundary; this guard is a UX fence.
+ *
+ * G-15 REGISTRATION RULE: a NEW top-level route under (staff)/ must ALSO be
+ * added to the isProtected prefix list in src/lib/supabase/middleware.ts, or
+ * a logged-out deep link to it silently lands on /dashboard after login
+ * instead of returning to the page (the middleware sets ?next=; requireRole
+ * here deliberately does not).
  */
 export default async function StaffLayout({
   children,

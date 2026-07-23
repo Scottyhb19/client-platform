@@ -303,3 +303,15 @@ Both pre-cleared conditions are met: prod apply of migration `20260721160000` (2
 **Deferred (unchanged, owner decision):** the connected-account OAuth **compose** half — P0-1/P0-2/P0-3, P1-1 (compose modal), P2-4, P2-5, §4 Q1–Q5.
 
 **Latent items indexed at `go-live-checklist.md` §8 from this gating pass:** (1) the `reminder_log_communication` trigger-exception **unbounded-resend** hazard (severity raised from duplicate-send; root cause = any trigger exception rolls back the EF's status write, and `retry_count`/`MAX_RETRIES` does not bound it because the terminal-write paths never increment it); (2) the `communications.sender_user_id` equality-predicate audit (SELECT clean; INSERT `WITH CHECK` carries `sender_user_id = auth.uid()`); (3) reminder rows store a summary, not the verbatim body → non-reconstructible after a template change.
+
+---
+
+## Unbounded-resend closure — 2026-07-23 parity pass (appended per the single-ledger exception)
+
+Latent item (1) above is **CLOSED**, same day it was indexed, by all three fix shapes the index entry named:
+
+1. **Trigger non-fatal (root cause dead)** — migration `20260723130000` wraps `reminder_log_communication`'s derived-log INSERT in its own exception scope: a logging failure `RAISE WARNING`s and returns, so the Edge Function's terminal status write commits regardless. Losing one derived log row is strictly better than re-emailing the client every 5 minutes.
+2. **SMS branch constraint-valid** — the derived row now carries `recipient_phone` from `clients.phone` (and `recipient_email` on every row for the record), so an SMS reminder for a phone-carrying client produces a valid `communication_type='sms'` row when SMS activates; a phoneless client's SMS log lands in the exception scope, never an abort.
+3. **Edge Function send bound** — `send-appointment-reminders` now: surfaces every terminal-write error (previously silently discarded — exactly how this class stayed latent); bumps `retry_count` in a trigger-safe statement when a terminal write fails after a real send; and refuses to send for a row at the retry ceiling, terminally failing it instead. Consequence: **no reminder row can produce more than `MAX_RETRIES` (5) real emails even if every terminal write keeps failing.** Deliberate tightening disclosed: the legit transient path's total send attempts go 6 → 5.
+
+**Verified:** pgTAP `62` extended 6 → 9 — #7 the exact statement that previously aborted (sms + phoneless client) now commits; #8 the flip persisted as `sent` with zero derived rows; #9 the phone-carrying sms case derives a valid `recipient_phone` row. Suite green on staging; migration + redeployed EF applied to prod at this pass's deploy sitting. Items (2) and (3) above are unchanged (standing audit note + accepted summary-body posture).

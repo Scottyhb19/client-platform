@@ -82,3 +82,9 @@ verify_jwt = false
 # shared-secret gate, same cron caller. Must be false BEFORE first deploy.
 [functions.send-message-notifications]
 verify_jwt = false
+
+# Same posture for the hourly auth-event threshold alerter (G-6 F-2, auth.md
+# S11) - same shared-secret gate, same cron caller. Must be false BEFORE
+# first deploy.
+[functions.auth-events-alerts]
+verify_jwt = false

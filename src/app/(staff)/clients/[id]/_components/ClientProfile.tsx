@@ -34,7 +34,11 @@ import { FlagBanners, FlagDialog, type ClientFlag } from './ClientFlags'
 import { FilesTab as FilesTabComponent, type ClientFile } from './FilesTab'
 import { ReportsTab } from './ReportsTab'
 import { BookingsTab } from './BookingsTab'
-import { CommsTab, type ProfileCommunication } from './CommsTab'
+import {
+  CommsTab,
+  type ArchivedThreadMessage,
+  type ProfileCommunication,
+} from './CommsTab'
 import { ResendInviteButton } from './ResendInviteButton'
 import type {
   BatteryRow,
@@ -258,6 +262,8 @@ interface ClientProfileProps {
   noteTemplates: ProfileNoteTemplate[]
   appointments: ProfileAppointment[]
   comms: ProfileCommunication[]
+  /** FM-8: archived clients only — the read-only in-app message transcript. */
+  archivedMessages: ArchivedThreadMessage[] | null
   reports: ProfileReport[]
   files: ClientFile[]
   lastTemplateId: string | null
@@ -327,6 +333,7 @@ export function ClientProfile({
   noteTemplates,
   appointments,
   comms,
+  archivedMessages,
   reports,
   files,
   lastTemplateId,
@@ -432,7 +439,13 @@ export function ClientProfile({
           />
         )}
         {tab === 'bookings' && <BookingsTab appointments={appointments} />}
-        {tab === 'comms' && <CommsTab comms={comms} />}
+        {tab === 'comms' && (
+          <CommsTab
+            comms={comms}
+            archivedMessages={archivedMessages}
+            clientFirstName={client.first_name}
+          />
+        )}
         {tab === 'program' && (
           <ProgramTab
             clientId={client.id}

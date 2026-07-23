@@ -20,11 +20,21 @@ SET search_path TO public, extensions, pg_temp;
 --      the table shape/CHECK is what this asserts)
 --   7. append-only: UPDATE refused (under the strictness GUC)
 --   8. append-only: DELETE refused (under the strictness GUC)
+--
+-- Extended 2026-07-23 (migration 20260723120000 — G-6 register hardening):
+--   9. F-4: service_role holds NO TRUNCATE privilege on auth_events
+--  10. F-2b: client_ip column exists (inet) — per-IP threshold computable
+--  11. F-1: organization_id_snapshot column exists (uuid, no FK)
+--
+-- Extended 2026-07-23 (migration 20260723150000 — §11 threshold scan):
+--  12. anon holds NO EXECUTE on auth_events_threshold_scan
+--  13. authenticated holds NO EXECUTE (auto-grant stripped)
+--  14. the scan returns all four §11 keys over an empty-ish window
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(14);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated, anon;
@@ -100,6 +110,56 @@ INSERT INTO _tap (n, line) VALUES (8, (
     $q$DELETE FROM public.auth_events WHERE email = 'probe-61@test.local'$q$,
     'P0001', 'auth_events is append-only',
     'append-only: DELETE refused'
+  ) AS l
+));
+
+-- 9. F-4 — TRUNCATE revoked from service_role (row triggers cannot fire on
+-- TRUNCATE, so the grant layer is the only enforcement point).
+INSERT INTO _tap (n, line) VALUES (9, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    NOT has_table_privilege('service_role', 'public.auth_events', 'TRUNCATE'),
+    'F-4: service_role has no TRUNCATE privilege on auth_events'
+  ) AS l
+));
+
+-- 10+11. Register columns exist with the right types.
+INSERT INTO _tap (n, line) VALUES (10, (
+  SELECT string_agg(l, E'\n') FROM col_type_is(
+    'public', 'auth_events', 'client_ip', 'inet',
+    'F-2b: client_ip column exists (inet)'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (11, (
+  SELECT string_agg(l, E'\n') FROM col_type_is(
+    'public', 'auth_events', 'organization_id_snapshot', 'uuid',
+    'F-1: organization_id_snapshot column exists (uuid)'
+  ) AS l
+));
+
+-- 12+13. Scan-function EXECUTE posture: service_role only (the function is
+-- SECURITY INVOKER — executing it is only useful to a role that can also
+-- read auth_events, which is service_role alone among API roles).
+INSERT INTO _tap (n, line) VALUES (12, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    NOT has_function_privilege('anon', 'public.auth_events_threshold_scan(interval)', 'EXECUTE'),
+    'anon cannot execute auth_events_threshold_scan'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (13, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    NOT has_function_privilege('authenticated', 'public.auth_events_threshold_scan(interval)', 'EXECUTE'),
+    'authenticated cannot execute auth_events_threshold_scan'
+  ) AS l
+));
+
+-- 14. Shape check (owner-side): all four §11 keys present.
+INSERT INTO _tap (n, line) VALUES (14, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    (SELECT s ?& ARRAY['window_minutes','signup_failures','login_failures_total','login_failure_ip_breaches']
+       FROM public.auth_events_threshold_scan() AS s),
+    'threshold scan returns the four §11 keys'
   ) AS l
 ));
 

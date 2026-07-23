@@ -160,12 +160,30 @@ export async function updateSession(request: NextRequest) {
     purgedCookieNames.forEach((name) => supabaseResponse.cookies.delete(name))
   }
 
-  // Route protection (kept minimal — Server Components do role-level gating)
+  // Route protection (kept minimal — Server Components do role-level gating).
+  //
+  // G-15 (2026-07-23): the staff route prefixes are listed here so a
+  // logged-out deep link to any of them redirects with ?next=<path> and
+  // SURVIVES login — previously only /dashboard did, and every other staff
+  // route silently landed on /dashboard after login (requireRole redirects
+  // to bare /login). The middleware only checks user PRESENCE; requireRole
+  // stays the sole authority for the claimless (/onboarding/org) and
+  // wrong-role (/unauthorized) branches. Maintenance coupling, named at the
+  // G-15 sign-off: a NEW top-level staff route must join this list or its
+  // deep-links silently drop — see the pointer comment in
+  // src/app/(staff)/layout.tsx.
   const path = request.nextUrl.pathname
   const isProtected =
     path.startsWith('/dashboard') ||
     path.startsWith('/portal') ||
-    path.startsWith('/onboarding')
+    path.startsWith('/onboarding') ||
+    path.startsWith('/analytics') ||
+    path.startsWith('/clients') ||
+    path.startsWith('/contacts') ||
+    path.startsWith('/library') ||
+    path.startsWith('/messages') ||
+    path.startsWith('/schedule') ||
+    path.startsWith('/settings')
 
   if (isProtected && !user) {
     const url = request.nextUrl.clone()

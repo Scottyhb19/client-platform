@@ -45,6 +45,13 @@ SET search_path TO public, extensions, pg_temp;
 --       GUC lets the un-archive UPDATE past clients_row_write_guard)
 --   17. cascade: the client is live again (deleted_at cleared)
 --
+-- Extended 2026-07-23 (migration 20260723140000 — RPC-only unassign hard gate):
+--   18. control: raw unassign of a published, NOT-completed day still succeeds
+--   19. hard gate: raw unassign of the completed+assigned day REFUSED
+--   20. sanctioned path: unassign_program_day() succeeds as staff
+--   21. …and the day really is unassigned (published_at IS NULL)
+--   22. unauthorized: the RPC refuses a client-role session (42501)
+--
 -- Style: buffered into _tap (mirrors 56); BEGIN/ROLLBACK for live-run safety.
 -- ORDER: 1–12 run as the authenticated staff role; 13 runs as postgres (a
 -- deterministic DELETE-guard proof); 14–17 are the cascade round-trip as staff.
@@ -56,7 +63,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(17);
+SELECT plan(22);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -398,6 +405,78 @@ INSERT INTO _tap (n, line) VALUES (17, (
     'cascade: the client is live again after restore'
   ) AS l
 ));
+
+-- ----------------------------------------------------------------------------
+-- RPC-only unassign hard gate (20260723140000). restore_client's lingering
+-- archive_cascade GUC only exempts clients_row_write_guard — reset it anyway
+-- so nothing below runs under a leftover exemption.
+-- ----------------------------------------------------------------------------
+SELECT set_config('odyssey.archive_cascade', '', true);
+
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'staff'
+);
+SET LOCAL ROLE authenticated;
+
+-- 18. control: a published day with NO completed session raw-unassigns freely.
+INSERT INTO _tap (n, line) VALUES (18, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_days SET published_at = NULL WHERE id = %L',
+      (SELECT day_open FROM _ids)
+    )) = 'rows:1',
+    'control: raw unassign of a published, NOT-completed day still succeeds'
+  ) AS l
+));
+
+-- 19. the hard gate: raw unassign of the completed+assigned day is refused.
+INSERT INTO _tap (n, line) VALUES (19, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_days SET published_at = NULL WHERE id = %L',
+      (SELECT day_locked FROM _ids)
+    )) = 'error:Completed sessions are unassigned through the app — use the Unassign action.',
+    'hard gate: raw unassign of a completed+assigned day refused'
+  ) AS l
+));
+
+-- 20. the sanctioned path succeeds for the same day, as the same staff session.
+INSERT INTO _tap (n, line) VALUES (20, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'SELECT public.unassign_program_day(%L)', (SELECT day_locked FROM _ids)
+    )) = 'rows:1',
+    'sanctioned path: unassign_program_day() succeeds as staff'
+  ) AS l
+));
+
+-- 21. …and it actually unassigned.
+INSERT INTO _tap (n, line) VALUES (21, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT (published_at IS NULL)::text
+       FROM program_days WHERE id = (SELECT day_locked FROM _ids)),
+    'true',
+    'the completed day is unassigned after the RPC (published_at IS NULL)'
+  ) AS l
+));
+
+-- 22. a client-role session → the RPC fails closed (42501 Unauthorized).
+-- (A cleared-JWT probe was tried first and hits the helpers' own claims
+-- parsing before the RPC's guard — the client-role spoof exercises the
+-- guard itself.)
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'client'
+);
+INSERT INTO _tap (n, line) VALUES (22, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'SELECT public.unassign_program_day(%L)', (SELECT day_unassign FROM _ids)
+    )) = 'error:Unauthorized',
+    'unauthorized: unassign_program_day refuses a client-role session (42501)'
+  ) AS l
+));
+
+RESET ROLE;
 
 SELECT line FROM _tap ORDER BY n;
 

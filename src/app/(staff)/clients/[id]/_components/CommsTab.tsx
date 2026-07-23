@@ -16,7 +16,23 @@ import { PRACTICE_TIMEZONE } from '@/lib/constants'
  *
  * Rows expand to the stored body (the plaintext of what actually went
  * out for app-side sends; a factual summary line for reminder sends).
+ *
+ * FM-8 (2026-07-23): for an ARCHIVED client this tab additionally renders
+ * the in-app message history (read-only transcript). Archiving cascades
+ * deleted_at onto the thread, which removes it from the staff inbox — the
+ * archived-arm SELECT policy (migration 20260723160000) makes it readable
+ * again HERE, so the clinical record stays producible in-app (AHPRA/APP
+ * record production). Live clients keep using /messages; archivedMessages
+ * is null for them and the section never renders.
  */
+export interface ArchivedThreadMessage {
+  id: string
+  created_at: string
+  sender_role: 'staff' | 'client'
+  body: string
+  attachment_count: number
+}
+
 export interface ProfileCommunication {
   id: string
   created_at: string
@@ -76,10 +92,22 @@ function formatCommTime(iso: string): string {
     .toLowerCase()
 }
 
-export function CommsTab({ comms }: { comms: ProfileCommunication[] }) {
+export function CommsTab({
+  comms,
+  archivedMessages = null,
+  clientFirstName = null,
+}: {
+  comms: ProfileCommunication[]
+  /**
+   * FM-8: the archived client's in-app message transcript (oldest-first).
+   * null = live client (or no thread) — the section doesn't render.
+   */
+  archivedMessages?: ArchivedThreadMessage[] | null
+  clientFirstName?: string | null
+}) {
   const [openId, setOpenId] = useState<string | null>(null)
 
-  if (comms.length === 0) {
+  if (comms.length === 0 && archivedMessages === null) {
     return (
       <div style={{ padding: '18px 22px 22px' }}>
         <div
@@ -98,6 +126,18 @@ export function CommsTab({ comms }: { comms: ProfileCommunication[] }) {
 
   return (
     <div style={{ padding: '18px 22px 22px' }}>
+      {comms.length === 0 ? (
+        <div
+          style={{
+            fontSize: '.85rem',
+            color: 'var(--color-text-light)',
+            padding: '0 0 18px',
+          }}
+        >
+          Nothing sent — no emails were logged before this client was
+          archived.
+        </div>
+      ) : (
       <div
         style={{
           background: 'var(--color-surface)',
@@ -228,6 +268,118 @@ export function CommsTab({ comms }: { comms: ProfileCommunication[] }) {
           )
         })}
       </div>
+      )}
+
+      {archivedMessages !== null && (
+        <ArchivedMessagesSection
+          messages={archivedMessages}
+          clientFirstName={clientFirstName}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * FM-8 — the archived client's in-app message transcript, read-only.
+ * Oldest-first (a record reads top-down); no compose affordance exists or
+ * ever will here — the thread is frozen by message_enforce_immutability and
+ * the send RPC's live-thread pin.
+ */
+function ArchivedMessagesSection({
+  messages,
+  clientFirstName,
+}: {
+  messages: ArchivedThreadMessage[]
+  clientFirstName: string | null
+}) {
+  return (
+    <div style={{ marginTop: 26 }}>
+      <div
+        style={{
+          fontFamily: 'var(--font-display)',
+          fontWeight: 700,
+          fontSize: '.72rem',
+          letterSpacing: '.05em',
+          textTransform: 'uppercase',
+          color: 'var(--color-text-faint)',
+          marginBottom: 6,
+        }}
+      >
+        In-app messages
+      </div>
+      <div
+        style={{
+          fontSize: '.78rem',
+          color: 'var(--color-text-light)',
+          marginBottom: 10,
+        }}
+      >
+        Messages exchanged through the portal before this client was
+        archived. Read-only — part of the retained record.
+      </div>
+      {messages.length === 0 ? (
+        <div style={{ fontSize: '.85rem', color: 'var(--color-text-light)' }}>
+          No messages were exchanged.
+        </div>
+      ) : (
+        <div
+          style={{
+            background: 'var(--color-surface)',
+            border: '1px solid var(--color-border-hairline)',
+            borderRadius: 10,
+          }}
+        >
+          {messages.map((m, i) => (
+            <div
+              key={m.id}
+              style={{
+                borderTop:
+                  i > 0 ? '1px solid var(--color-border-hairline)' : 'none',
+                padding: '10px 14px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '.74rem',
+                  color: 'var(--color-text-light)',
+                  marginBottom: 3,
+                }}
+              >
+                <span style={{ fontWeight: 600, color: 'var(--color-text)' }}>
+                  {m.sender_role === 'staff'
+                    ? 'Staff'
+                    : clientFirstName || 'Client'}
+                </span>{' '}
+                · {formatCommDate(m.created_at)}, {formatCommTime(m.created_at)}
+              </div>
+              <div
+                style={{
+                  fontSize: '.85rem',
+                  color: 'var(--color-text)',
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'break-word',
+                }}
+              >
+                {m.body}
+              </div>
+              {m.attachment_count > 0 && (
+                <div
+                  style={{
+                    fontSize: '.74rem',
+                    color: 'var(--color-text-light)',
+                    marginTop: 3,
+                  }}
+                >
+                  {m.attachment_count}{' '}
+                  {m.attachment_count === 1 ? 'attachment' : 'attachments'}{' '}
+                  (stored)
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

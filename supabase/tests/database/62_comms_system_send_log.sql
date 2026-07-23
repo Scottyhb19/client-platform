@@ -20,6 +20,16 @@ SET search_path TO public, extensions, pg_temp;
 --   5. a client-role session sees ZERO communications rows
 --   6. anon SELECT raises 42501 (post-4b grant posture)
 --
+-- Extended 2026-07-23 (migration 20260723130000 — unbounded-resend fix):
+--   7. NON-FATAL: a reminder status flip whose derived-log INSERT fails
+--      (sms type, phoneless client → recipient constraint violation) still
+--      COMMITS — the write lives; the log row is skipped with a WARNING.
+--      This is the exact statement that previously aborted and produced the
+--      unbounded resend loop.
+--   8. …and the row really is 'sent' with zero comms rows derived for it
+--   9. SMS branch constraint-valid: an sms reminder for a client WITH a
+--      phone derives a communication_type='sms' row carrying recipient_phone
+--
 -- Fixture note: the appointment INSERT auto-enqueues its reminder via
 -- appointment_manage_reminder (§9) — the fixture flips those rows the way
 -- the Edge Function does. Style: _tap buffer; BEGIN/ROLLBACK.
@@ -27,7 +37,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(6);
+SELECT plan(9);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated, anon;
@@ -38,8 +48,11 @@ DECLARE
   staff_v  uuid;
   client_u uuid;
   cl       uuid := '00000000-0000-0000-0000-0000000062a2'::uuid;
+  cl2      uuid := '00000000-0000-0000-0000-0000000062a3'::uuid;
   appt1    uuid := '00000000-0000-0000-0000-0000000062b1'::uuid;
   appt2    uuid := '00000000-0000-0000-0000-0000000062b2'::uuid;
+  appt3    uuid := '00000000-0000-0000-0000-0000000062b3'::uuid;
+  appt4    uuid := '00000000-0000-0000-0000-0000000062b4'::uuid;
   v_start  timestamptz := date_trunc('hour', now() + interval '7 days');
 BEGIN
   INSERT INTO organizations (id, name, slug)
@@ -50,8 +63,11 @@ BEGIN
   PERFORM public._test_grant_membership(staff_v, org_v, 'staff'::user_role);
   PERFORM public._test_grant_membership(client_u, org_v, 'client'::user_role);
 
+  -- cl has NO phone (the sms-branch failure case); cl2 has one (the valid case).
   INSERT INTO clients (id, organization_id, user_id, first_name, last_name, email)
   VALUES (cl, org_v, client_u, 'Remy', 'Minder', 'remy-comms62@test.local');
+  INSERT INTO clients (id, organization_id, first_name, last_name, email, phone)
+  VALUES (cl2, org_v, 'Sam', 'Signal', 'sam-comms62@test.local', '+61400000062');
 
   INSERT INTO appointments (id, organization_id, client_id, staff_user_id,
                             start_at, end_at, status, confirmed_at,
@@ -61,7 +77,19 @@ BEGIN
      'confirmed', now(), 'Session', 'appointment'),
     (appt2, org_v, cl, staff_v, v_start + interval '1 day',
      v_start + interval '1 day' + interval '45 minutes',
-     'confirmed', now(), 'Review', 'appointment');
+     'confirmed', now(), 'Review', 'appointment'),
+    (appt3, org_v, cl, staff_v, v_start + interval '2 days',
+     v_start + interval '2 days' + interval '45 minutes',
+     'confirmed', now(), 'Session', 'appointment'),
+    (appt4, org_v, cl2, staff_v, v_start + interval '3 days',
+     v_start + interval '3 days' + interval '45 minutes',
+     'confirmed', now(), 'Session', 'appointment');
+
+  -- Convert appt3/appt4's auto-enqueued reminders to the SMS type: appt3's
+  -- client has no phone (the derived-log INSERT must fail NON-fatally);
+  -- appt4's has one (the row must be a valid sms communications row).
+  UPDATE appointment_reminders SET reminder_type = 'reminder_24h_sms'
+   WHERE appointment_id IN (appt3, appt4);
 
   -- The EF's writes, replayed: one send success, one failure.
   UPDATE appointment_reminders
@@ -75,7 +103,7 @@ BEGIN
    WHERE appointment_id = appt2;
 
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
-    org_v, staff_v, client_u, cl, appt1, appt2;
+    org_v, staff_v, client_u, cl, cl2, appt1, appt2, appt3, appt4;
   GRANT SELECT ON _ids TO authenticated;
 END $$;
 
@@ -152,6 +180,53 @@ INSERT INTO _tap (n, line) VALUES (6, (
   ) AS l
 ));
 RESET ROLE;
+
+-- 7. NON-FATAL (20260723130000): the sms-type reminder for the PHONELESS
+-- client — the derived communications row violates
+-- communications_recipient_matches_type, which previously aborted this very
+-- statement (the unbounded-resend root cause). It must now commit.
+INSERT INTO _tap (n, line) VALUES (7, (
+  SELECT string_agg(l, E'\n') FROM lives_ok(
+    $q$UPDATE appointment_reminders
+          SET status = 'sent', provider = 'resend',
+              provider_message_id = 'twilio-msg-62-phoneless', sent_at = now()
+        WHERE appointment_id = (SELECT appt3 FROM _ids)$q$,
+    'a reminder status flip survives a failing derived-log INSERT (non-fatal trigger)'
+  ) AS l
+));
+
+-- 8. …the terminal write really landed, and no comms row was derived for it.
+INSERT INTO _tap (n, line) VALUES (8, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT (SELECT status::text FROM appointment_reminders
+              WHERE appointment_id = (SELECT appt3 FROM _ids))
+         || '/' ||
+         (SELECT count(*)::text FROM communications
+           WHERE provider_message_id = 'twilio-msg-62-phoneless')),
+    'sent/0',
+    'the flip persisted as sent; the invalid derived row was skipped, not fatal'
+  ) AS l
+));
+
+-- 9. SMS branch, valid case: client WITH a phone derives a constraint-valid
+-- sms communications row carrying recipient_phone.
+UPDATE appointment_reminders
+   SET status = 'sent', provider = 'resend',
+       provider_message_id = 'twilio-msg-62-ok', sent_at = now()
+ WHERE appointment_id = (SELECT appt4 FROM _ids);
+
+INSERT INTO _tap (n, line) VALUES (9, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM communications
+      WHERE client_id = (SELECT cl2 FROM _ids)
+        AND communication_type = 'sms'
+        AND recipient_phone = '+61400000062'
+        AND sender_user_id IS NULL
+        AND status = 'sent'),
+    1,
+    'sms reminder for a phone-carrying client derives a valid sms row with recipient_phone'
+  ) AS l
+));
 
 SELECT line FROM _tap ORDER BY n;
 

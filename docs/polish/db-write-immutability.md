@@ -190,3 +190,21 @@ ok 17 - cascade: the client is live again after restore
 **Exposure window (blocker 2): CLOSED** — `incident-response.md` §10 closure entry, including the amendment of that entry's stale "pgTAP 60 on prod" close-condition to this light smoke (round-2 follow-up 5 is the authority).
 
 **Deferred-items ledger updates in the same commit:** the GUC residual gained its missing `go-live-checklist.md` §8 index entry (the sitting's doc audit found the inbound-half gap); the pre-apply migration re-review also surfaced a latent SMS-branch CHECK hazard in `reminder_log_communication` — indexed in §8 with re-trigger SMS-activation (owned by the §12 logging-half record, not this doc).
+
+---
+
+## Completed-lock HARD GATE closure - 2026-07-23 parity pass (appended per the single-ledger exception)
+
+The accepted day-row unassign bypass (reviewer 2026-07-22, blocker 1; re-trigger "before any paying clinical client, or a non-trusted second staffer") is **CLOSED** - the re-trigger was consciously pre-empted by the operator-directed paying-client parity pass.
+
+**What shipped (migration `20260723140000_unassign_program_day_rpc.sql`):**
+
+- `program_write_guard` v2 gains branch (c): a raw `published_at -> NULL` UPDATE on a `program_days` row that has a completed live session is REFUSED ("Completed sessions are unassigned through the app - use the Unassign action.") unless the transaction-local GUC `odyssey.day_unassign = '1'` is set. Unassigning a day with NO completed session stays a plain permitted UPDATE - nothing is locked, so nothing is gated. Body based on the latest definition (20260721120000) per the function-rewrite rule; branches (a)/(b) unchanged.
+- `unassign_program_day(uuid)` - SECURITY DEFINER, in-body org/role guard (owner/staff), own-org day check, the GUC's ONLY setter, idempotent, `search_path = public, pg_temp`. Grants: authenticated only. The archived-client branch (a) still applies inside the RPC - an archived client's day cannot be unassigned without restoring first.
+- `unpublishProgramDayAction` now routes through the RPC for ALL days, so the app has exactly one unassign path.
+
+**GUC posture:** `odyssey.day_unassign` joins `odyssey.archive_cascade` in the single-guard-consults-it class; the shared PostgREST-boundary residual entry in `go-live-checklist.md` S8 was widened to name both in the same commit.
+
+**Verified:** pgTAP `60` extended 17 -> 22 (#18 control: raw unassign of a published NOT-completed day still succeeds; #19 hard gate: raw unassign of the completed+assigned day refused with the exact copy; #20 the RPC succeeds as the same staff session; #21 the day is really unassigned; #22 a claimless session gets 42501). Suite green on staging; prod apply at this pass's deploy sitting with the standing light-smoke pattern.
+
+**Deploy-skew accepted:** between DB apply and frontend deploy, the OLD frontend's raw unassign of a LOCKED day fails with the guard's clear message (refusal, not corruption); untouched for non-completed days; window is minutes.

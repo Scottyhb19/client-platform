@@ -2243,3 +2243,88 @@ client email lands on the profile's Comms tab; failed sends surface there.
   `[observability]` seam), not a raw `console.error`, so it surfaces on the
   same channel as the send paths and lights up when the real Sentry SDK is
   wired. The send is neither retried nor blocked.
+
+## 2026-07-23 parity pass (paying-client-gate closures)
+
+### UNASSIGN-1 - Raw unassign of a completed session is DB-refused
+- **Context:** the completed-lock hard gate (migration 20260723140000).
+  Unassign was a raw `published_at -> NULL` UPDATE - the sanctioned unlock -
+  so a staff credential could unassign->edit->reassign via raw PostgREST.
+- **Setup:** a program day with a completed, still-assigned session; issue a
+  raw PostgREST `PATCH program_days {published_at: null}` as staff.
+- **Pass:** refused with "Completed sessions are unassigned through the app -
+  use the Unassign action." A published day with NO completed session still
+  raw-unassigns (nothing is locked).
+- **Automated:** pgTAP `60` #18-19.
+
+### UNASSIGN-2 - The app's Unassign action still works, via the RPC
+- **Setup:** in the builder, open a completed+assigned day; click Unassign and
+  confirm.
+- **Pass:** the day unassigns (lock lifts, builder editable); the write went
+  through `unassign_program_day()` (the only setter of the day_unassign GUC).
+  A client-role session calling the RPC gets 42501.
+- **Automated:** pgTAP `60` #20-22 (RPC success, unassigned verify, client-role
+  refusal). Browser: unchanged LOCK-1..5 flow.
+
+### REMIND-NONFATAL-1 - A failing derived-log INSERT never re-sends mail
+- **Context:** the unbounded-resend latent (checklist S8): any exception in
+  reminder_log_communication aborted the EF's terminal status write, so the
+  row stayed 'scheduled' and re-sent every cron tick.
+- **Setup:** a reminder whose derived communications row is constraint-invalid
+  (sms type, phoneless client); flip it to 'sent' the way the EF does.
+- **Pass:** the flip COMMITS (status='sent'); no communications row is derived;
+  a WARNING lands in the DB logs. The EF additionally bounds real sends at
+  MAX_RETRIES even if terminal writes keep failing (pre-send ceiling +
+  trigger-safe retry_count bump).
+- **Automated:** pgTAP `62` #7-8.
+
+### REMIND-SMS-1 - An SMS reminder outcome logs a valid sms row
+- **Setup:** client WITH a phone; sms-type reminder flipped to 'sent'.
+- **Pass:** communications row with communication_type='sms',
+  recipient_phone = the client's phone, system sender (NULL).
+- **Automated:** pgTAP `62` #9.
+
+### ARCH-MSG-1 - Archived client's in-app message history is producible
+- **Context:** FM-8 (AHPRA/APP record production). Archiving cascades
+  deleted_at onto the thread; staff RLS was live-only, so the record vanished.
+- **Setup:** archive a client who has a message thread; open their profile ->
+  Comms tab.
+- **Pass:** an "In-app messages" read-only transcript renders (sender,
+  timestamp, body, attachment count); the staff inbox still excludes the
+  archived thread; the client role still sees nothing.
+- **Automated:** pgTAP `63` (6/6) + `e2e/staff-render.spec.ts` -> "archived
+  Comms tab renders the in-app message history (FM-8)".
+
+### PORTAL-END-1 - Archived client gets the closed door, not /welcome
+- **Setup:** log into the portal as a client whose record is archived.
+- **Pass:** the "Your portal access has ended" screen renders (practice name,
+  records-retained line, Sign out) - no portal nav, no /welcome onboarding
+  funnel, no broken empty screens. Sign out works.
+- **Automated:** `e2e/parity-pass.spec.ts` -> P2-3 test.
+
+### G15-DEEPLINK-1 - Staff deep link survives login
+- **Setup:** logged out, open /clients/<id> directly; log in on the redirect.
+- **Pass:** land on /clients/<id> (not /dashboard). Negative control: a
+  claimless user driven through the same flow still lands on /onboarding/org.
+- **Automated:** `e2e/parity-pass.spec.ts` -> both G-15 tests.
+
+### ALERT-1 - auth.md S11 threshold breach emails the operator
+- **Context:** G-6 F-2 closure - auth_events_threshold_scan + the
+  auth-events-alerts EF on an hourly Vault-token cron.
+- **Setup (synthetic):** insert >10 auth.signup.failure rows (or >50
+  auth.login.failure rows sharing a client_ip) with occurred_at in the last
+  hour; invoke the EF with the CRON_SHARED_SECRET bearer.
+- **Pass:** HTTP 200 `{breaches: >=1, emailed: true}` and the alert email
+  arrives at ALERT_EMAIL naming the breach; with no breaches, 200
+  `{breaches: 0}` and no email; with ALERT_EMAIL unset, 500 (fail-loud).
+- **Automated:** pgTAP `61` #12-14 (grant posture + shape); the send path is
+  verified at deploy per the synthetic check pattern.
+
+### R4-HTTP-1 - Real-token PostgREST cross-tenant denial over HTTP
+- **Setup:** `node scripts/r4-request-path-verify.mjs` (staging-only by
+  refusal; seeded two-org logins; cred-desync self-heal built in).
+- **Pass:** all checks green - cross-read/list/PATCH 0 rows, cross-INSERT
+  refused at the tenant boundary with zero residue, own-org positive controls
+  and the same-org PATCH control prove the zeros are RLS, not dead endpoints.
+- **Cadence:** re-run on any JWT custom-claims hook change; the named test
+  case for the external IT reviewer (re-run against prod with their creds).

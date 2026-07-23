@@ -421,7 +421,7 @@ $$;
 **Plain English:**
 - **SELECT** — TWO policies that OR together. The original: staff see all LIVE clients in their org; a client sees only their own LIVE row. The CN-7 addition (`"staff select archived clients in own org"`, migration `20260702190000`, brief §7.2): staff/owner ALSO see their org's ARCHIVED rows (`deleted_at IS NOT NULL`) — archived records stay queryable. The client arm was deliberately not widened: an archived client cannot read their own row, so the portal lockout is preserved. Net invariant: **staff see all org rows, clients see only their own live row.** Fail-closed: both policies carry the org + role predicates independently; dropping either only narrows access. Consequence for application code: staff surfaces that want live-only rows must filter explicitly (`.is('deleted_at', null)`) — the P0-2 classification in `polish/archived-client-access.md` §6 covers every read site; the deliberately archived-inclusive surfaces are the client list (Archived chip) and the read-only profile.
 - **INSERT** — staff only, within their org.
-- **UPDATE** — staff only. Clients cannot UPDATE `clients` directly; any self-service profile field edits go through a server action using service role, which validates the field allowlist (phone, emergency contact). Archived-record read-only-ness is enforced at the application layer (`src/lib/clients/archive-guard.ts` + explicit `.is('deleted_at', null)` on write chains), NOT at RLS — a named residual with a paying-client-era upgrade path (BEFORE UPDATE trigger).
+- **UPDATE** — staff only. Clients cannot UPDATE `clients` directly; any self-service profile field edits go through a server action using service role, which validates the field allowlist (phone, emergency contact). Archived-record read-only-ness is enforced at the application layer (`src/lib/clients/archive-guard.ts` + explicit `.is('deleted_at', null)` on write chains) **and, since `20260721120000` (prod-applied 2026-07-23), at the DATABASE layer** — the `write_immutability_guard` BEFORE trigger family refuses edits/hard-deletes of an archived row and writes against an archived client's child records for every API role (the "paying-client-era upgrade path (BEFORE UPDATE trigger)" this line used to defer; pgTAP `60`). RLS itself is still not the enforcement point for archived read-only-ness — the triggers are.
 - **DELETE** — denied; staff soft-delete via the `soft_delete_client` RPC (which since `20260702190000` also cancels the client's future appointments; reminders cascade-cancel).
 
 **Tests:** `56_archived_client_access.sql` (8/8 on live) — staff-reads-archived, archived-client self-read denial, cross-org denial on archived rows, live-policy control, anon 42501, archive-cancels-future + reminder cascade, restore round trip. Plus 17 / 46 / 54 as regression canaries.
@@ -509,7 +509,7 @@ CREATE POLICY "deny delete clients"
 
 **Tests:**
 - `rls_clinical_notes_select_staff_works`
-- `rls_clinical_notes_select_client_denied` — **critical test**: a client attempting to SELECT clinical_notes returns zero rows even for their own `client_id`.
+- `rls_clinical_notes_select_client_denied` — **critical test**: a client attempting to SELECT clinical_notes returns zero rows even for their own `client_id`. **Automated since 2026-07-23:** pgTAP `64_clinical_notes_client_deny.sql` (staff control, the client-denied zero, client INSERT 42501, anon 42501) — this section may now be represented as test-verified (closes the 2026-07-22 drift-audit ledger item in `go-live-checklist.md` §8).
 - `rls_clinical_notes_select_other_org_denied`
 - `rls_clinical_notes_insert_staff_works`
 - `rls_clinical_notes_insert_client_denied`
@@ -1062,9 +1062,11 @@ This prevents even the service role from writing synthetic audit log entries via
 
 **Plain English:** staff/owner see and manage every thread in their org; a client sees only their own thread (the one whose `client_id` is their `clients` row, via `user_id = auth.uid()`). Hard DELETE denied (`USING (false)`) — soft-delete only; the thread's `deleted_at` is kept in lockstep with the parent client by the `client_cascade_thread_archive()` trigger (so archiving a client archives their thread, and restoring un-archives it).
 
-**SQL:** migration `20260425100000_messages.sql` (policies) + `20260426110000` (archive cascade).
+**Archived arm (FM-8, 2026-07-23):** `"staff select archived threads in own org"` — an ADDITIVE staff/owner SELECT policy for `deleted_at IS NOT NULL` threads, the exact mirror of the clients-table archived-read policy (`20260702190000`). Rationale: the lockstep cascade made an archived client's in-app message history unreachable at the RLS layer, but the record must stay producible (AHPRA/APP record production). Consumer: the archived client profile's Comms-tab transcript only — the staff inbox keeps its explicit live-only filter. The client role deliberately has NO archived arm (the archived portal is a closed door), and no write policy changed (the archived thread stays frozen).
 
-**Tests:** `34_message_rls.sql` — cross-tenant thread isolation (test 1), client sees own thread (test 3), within-org client isolation (test 5), staff control (test 10).
+**SQL:** migration `20260425100000_messages.sql` (policies) + `20260426110000` (archive cascade) + `20260723160000` (archived arm).
+
+**Tests:** `34_message_rls.sql` — cross-tenant thread isolation (test 1), client sees own thread (test 3), within-org client isolation (test 5), staff control (test 10). `63_archived_thread_read.sql` (6/6) — the archived arm: staff read of the archived thread + its messages, live control, cross-org zero, client-role zero, anon 42501; fixture archives through the real cascade.
 
 ---
 

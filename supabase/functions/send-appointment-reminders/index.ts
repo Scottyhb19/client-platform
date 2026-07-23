@@ -149,12 +149,35 @@ Deno.serve(async (req) => {
   let skipped = 0
 
   for (const row of rows) {
+    // Send bound (2026-07-23, unbounded-resend fix shape 3): a row at the
+    // retry ceiling is terminally failed WITHOUT another send. Two ways to
+    // arrive here: (a) MAX_RETRIES transient send failures — previously this
+    // row got one final 6th send attempt; the bound deliberately tightens
+    // total send attempts to MAX_RETRIES; (b) a terminal status write failed
+    // after a send and the fallback bump below recorded the attempt.
+    // Either way: no reminder row can ever produce more than MAX_RETRIES
+    // real emails, even if every terminal write keeps failing.
+    if (row.retry_count >= MAX_RETRIES) {
+      const err = await markFailed(
+        supabase,
+        row.id,
+        `retry limit exhausted (${MAX_RETRIES} attempts) — last attempt reason in prior failure_reason / function logs`,
+      )
+      if (err) {
+        console.error(
+          `reminder ${row.id} STUCK at retry ceiling and terminal write still failing: ${err}`,
+        )
+      }
+      failed += 1
+      continue
+    }
+
     const ctx = await loadAppointmentContext(supabase, row.appointment_id)
     if (!ctx || !ctx.client_email) {
       // Terminal — there's no address to send to, so don't retry.
-      await markFailed(
+      await recordTerminal(
         supabase,
-        row.id,
+        row,
         ctx ? 'client has no email on file' : 'appointment not found',
       )
       failed += 1
@@ -213,7 +236,22 @@ Deno.serve(async (req) => {
         } catch {
           // Resend usually returns JSON; if not, leave messageId null.
         }
-        await markSent(supabase, row.id, messageId)
+        const sentErr = await markSent(supabase, row.id, messageId)
+        if (sentErr) {
+          // A failed terminal write is exactly how the unbounded-resend class
+          // starts (the email went out; the row is still 'scheduled'). Be
+          // loud, then bump retry_count in a trigger-safe statement so the
+          // pre-send ceiling above bounds total real sends at MAX_RETRIES.
+          console.error(
+            `reminder ${row.id}: SENT but markSent failed (${sentErr}) — bumping retry_count so the send bound applies`,
+          )
+          await markRetry(
+            supabase,
+            row.id,
+            Math.min(row.retry_count + 1, MAX_RETRIES),
+            `terminal write failed after send: ${sentErr.slice(0, 300)}`,
+          )
+        }
         succeeded += 1
         ok = true
       } else {
@@ -236,7 +274,7 @@ Deno.serve(async (req) => {
       await markRetry(supabase, row.id, row.retry_count + 1, reason)
       retried += 1
     } else {
-      await markFailed(supabase, row.id, reason)
+      await recordTerminal(supabase, row, reason)
       failed += 1
     }
   }
@@ -308,14 +346,18 @@ async function loadAppointmentContext(
   }
 }
 
+// Terminal writes return the DB error message (null = success) so the caller
+// can be loud about the unbounded-resend class instead of silently discarding
+// it (2026-07-23: previously every helper ignored its update error, which is
+// exactly how a rolling terminal-write failure stayed invisible).
 async function markSent(
   supabase: ReturnType<typeof createClient>,
   reminderId: string,
   messageId: string | null,
-): Promise<void> {
+): Promise<string | null> {
   // Atomic flip — the WHERE on status='scheduled' means a concurrent
   // invocation that already won this row can't have its update overwritten.
-  await supabase
+  const { error } = await supabase
     .from('appointment_reminders')
     .update({
       status: 'sent',
@@ -324,14 +366,15 @@ async function markSent(
     })
     .eq('id', reminderId)
     .eq('status', 'scheduled')
+  return error ? error.message : null
 }
 
 async function markFailed(
   supabase: ReturnType<typeof createClient>,
   reminderId: string,
   reason: string,
-): Promise<void> {
-  await supabase
+): Promise<string | null> {
+  const { error } = await supabase
     .from('appointment_reminders')
     .update({
       status: 'failed',
@@ -340,6 +383,29 @@ async function markFailed(
     })
     .eq('id', reminderId)
     .eq('status', 'scheduled')
+  return error ? error.message : null
+}
+
+// Terminal-fail with the send-bound fallback: if the failed write itself
+// fails, bump retry_count (trigger-safe — status unchanged) so the pre-send
+// ceiling eventually stops selecting… and stops re-sending.
+async function recordTerminal(
+  supabase: ReturnType<typeof createClient>,
+  row: ReminderRow,
+  reason: string,
+): Promise<void> {
+  const err = await markFailed(supabase, row.id, reason)
+  if (err) {
+    console.error(
+      `reminder ${row.id}: markFailed failed (${err}) — bumping retry_count so the send bound applies`,
+    )
+    await markRetry(
+      supabase,
+      row.id,
+      Math.min(row.retry_count + 1, MAX_RETRIES),
+      `terminal write failed: ${err.slice(0, 300)}`,
+    )
+  }
 }
 
 // P2-6: a transient failure leaves status='scheduled' so the next tick retries;
@@ -351,7 +417,7 @@ async function markRetry(
   retryCount: number,
   reason: string,
 ): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('appointment_reminders')
     .update({
       retry_count: retryCount,
@@ -359,6 +425,9 @@ async function markRetry(
     })
     .eq('id', reminderId)
     .eq('status', 'scheduled')
+  if (error) {
+    console.error(`reminder ${reminderId}: markRetry failed: ${error.message}`)
+  }
 }
 
 // P2-5: the practice has email off — the reminder won't fire, so retire it
@@ -368,7 +437,7 @@ async function markCancelled(
   reminderId: string,
   reason: string,
 ): Promise<void> {
-  await supabase
+  const { error } = await supabase
     .from('appointment_reminders')
     .update({
       status: 'cancelled',
@@ -376,6 +445,11 @@ async function markCancelled(
     })
     .eq('id', reminderId)
     .eq('status', 'scheduled')
+  if (error) {
+    console.error(
+      `reminder ${reminderId}: markCancelled failed: ${error.message}`,
+    )
+  }
 }
 
 function jsonResponse(status: number, body: unknown): Response {

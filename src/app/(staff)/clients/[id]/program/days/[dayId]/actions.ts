@@ -475,6 +475,12 @@ export async function publishProgramDayAction(
 /**
  * Unpublish — yanks portal visibility. Useful if the EP published by
  * accident; client stops seeing the day until it's re-published.
+ *
+ * Routed through the unassign_program_day RPC (migration 20260723140000):
+ * a raw published_at → NULL UPDATE on a day with a completed live session is
+ * now DB-refused (the RPC-only completed-session hard gate) — the RPC is the
+ * sanctioned unlock, org/role-guarded, and stays the single unassign path
+ * for uncompleted days too so there is exactly one way to unassign.
  */
 export async function unpublishProgramDayAction(
   clientId: string,
@@ -483,10 +489,9 @@ export async function unpublishProgramDayAction(
   await requireRole(['owner', 'staff'])
   const supabase = await createSupabaseServerClient()
 
-  const { error } = await supabase
-    .from('program_days')
-    .update({ published_at: null })
-    .eq('id', dayId)
+  const { error } = await supabase.rpc('unassign_program_day', {
+    p_day_id: dayId,
+  })
 
   if (error) return { error: `Unpublish failed: ${error.message}` }
   revalidatePath(`/clients/${clientId}/program/days/${dayId}`)

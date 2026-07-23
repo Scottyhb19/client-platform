@@ -364,30 +364,36 @@ export type Database = {
       }
       auth_events: {
         Row: {
+          client_ip: unknown
           detail: Json
           email: string | null
           event: string
           id: string
           occurred_at: string
           organization_id: string | null
+          organization_id_snapshot: string | null
           user_id: string | null
         }
         Insert: {
+          client_ip?: unknown
           detail?: Json
           email?: string | null
           event: string
           id?: string
           occurred_at?: string
           organization_id?: string | null
+          organization_id_snapshot?: string | null
           user_id?: string | null
         }
         Update: {
+          client_ip?: unknown
           detail?: Json
           email?: string | null
           event?: string
           id?: string
           occurred_at?: string
           organization_id?: string | null
+          organization_id_snapshot?: string | null
           user_id?: string | null
         }
         Relationships: [
@@ -4018,6 +4024,7 @@ export type Database = {
         Returns: string
       }
       audit_trim_row: { Args: { p_row: Json; p_table: string }; Returns: Json }
+      auth_events_threshold_scan: { Args: { p_window?: string }; Returns: Json }
       battery_in_clients_published_session: {
         Args: { p_battery_id: string }
         Returns: boolean
@@ -4506,6 +4513,7 @@ export type Database = {
         Args: { p_session_id: string; p_test_id: string }
         Returns: boolean
       }
+      unassign_program_day: { Args: { p_day_id: string }; Returns: undefined }
       user_organization_id: { Args: never; Returns: string }
       user_role: { Args: never; Returns: string }
     }

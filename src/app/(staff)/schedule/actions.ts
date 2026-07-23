@@ -7,6 +7,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { sendBookingConfirmationEmail } from '@/lib/email/send-booking-confirmation'
 import { sendRescheduleNotificationEmail } from '@/lib/email/send-reschedule-notification'
 import { EmailConfigError } from '@/lib/email/client'
+import { getPublicOrigin, EnvConfigError } from '@/lib/env/site-url'
 import { captureException } from '@/lib/observability/sentry'
 import { PRACTICE_TIMEZONE } from '@/lib/constants'
 import {
@@ -129,11 +130,10 @@ async function sendStaffBookingConfirmation(
     .maybeSingle()
 
   const tz = appt.organization.timezone ?? PRACTICE_TIMEZONE
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
-  const bookingUrl = baseUrl
-    ? `${baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`}/portal/book`
-    : 'https://app.example.com/portal/book'
+  // Canonical origin, fail-loud (§8 origin-idiom consolidation, 2026-07-23) —
+  // was the silent NEXT_PUBLIC_APP_URL ?? VERCEL_URL ?? '' chain. An
+  // EnvConfigError throw is rethrown by the caller's config-error guard.
+  const bookingUrl = `${getPublicOrigin()}/portal/book`
   const practitionerName =
     `${staffProfile?.first_name ?? ''} ${staffProfile?.last_name ?? ''}`.trim() ||
     'your EP'
@@ -194,11 +194,8 @@ async function sendStaffRescheduleNotification(
     .maybeSingle()
 
   const tz = appt.organization.timezone ?? PRACTICE_TIMEZONE
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL ?? ''
-  const bookingUrl = baseUrl
-    ? `${baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`}/portal/book`
-    : 'https://app.example.com/portal/book'
+  // Canonical origin, fail-loud (§8 origin-idiom consolidation, 2026-07-23).
+  const bookingUrl = `${getPublicOrigin()}/portal/book`
   const practitionerName =
     `${staffProfile?.first_name ?? ''} ${staffProfile?.last_name ?? ''}`.trim() ||
     'your EP'
@@ -326,7 +323,7 @@ export async function createAppointmentAction(
   // already saved). Appointment-kind only — unavailable blocks have no client.
   if (kind === 'appointment') {
     await sendStaffBookingConfirmation(data.id).catch((e) => {
-      if (e instanceof EmailConfigError) throw e
+      if (e instanceof EmailConfigError || e instanceof EnvConfigError) throw e
       // P1-3: surface an unexpected confirmation-send throw (booking is saved).
       captureException(e, { where: 'booking-confirm:staff' })
       return null
@@ -691,7 +688,7 @@ export async function updateAppointmentTimeAction(
       previous?.start_at ?? null,
       previous?.end_at ?? null,
     ).catch((e) => {
-      if (e instanceof EmailConfigError) throw e
+      if (e instanceof EmailConfigError || e instanceof EnvConfigError) throw e
       captureException(e, { where: 'reschedule-notify:staff' })
       return null
     })

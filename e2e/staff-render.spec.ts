@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { loadEnv, stagingAdmin } from './helpers'
+import { loadEnv, stagingAdmin, ensureArchivedThreadFixture } from './helpers'
 
 /**
  * §5b render-tier assertions over the seeded staging data — the browser
@@ -153,6 +153,26 @@ test('Comms tab renders for an ARCHIVED client — the record outlives the archi
   await row.click()
   await expect(
     page.getByText('Synthetic archived-client comms (seed data).'),
+  ).toBeVisible()
+})
+
+test('archived Comms tab renders the in-app message history (FM-8)', async ({
+  page,
+}) => {
+  // Fixture: Avery's archived thread + at least one message (create-if-
+  // absent; the archived-arm policy 20260723160000 is what makes the page
+  // able to read it back).
+  await ensureArchivedThreadFixture(averyId)
+
+  await page.goto(`/clients/${averyId}?tab=comms`)
+  await expect(page.getByText('In-app messages')).toBeVisible()
+  await expect(
+    page.getByText(/Read-only — part of the retained record/),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Pre-archive check-in — how was the last block?', {
+      exact: false,
+    }),
   ).toBeVisible()
 })
 

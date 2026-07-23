@@ -241,3 +241,21 @@ Reviewed and approved for close. Architecture (additive OR-policy, fail-closed c
 5. **P2-3 — archived client's portal end-state** (auth succeeds, clients-dependent reads empty; no designed "access ended" screen). *Re-trigger: the first real archived f&f user.*
 
 **With this sign-off, CN-7 (archived-client record access) is CLOSED.** The deferred items carry to `go-live-checklist.md` §8 as CN-7 residuals for the paying-client gate; none gates the friends-and-family beta.
+
+---
+
+## FM-8 + P2-3 closures - 2026-07-23 parity pass (appended per the single-ledger exception)
+
+Sign-off deferred items 4 and 5 are **CLOSED** (items 1-3, the write-immutability trio, closed 2026-07-23 at the prod-apply sitting via `20260721120000` - see `polish/db-write-immutability.md`).
+
+**FM-8 - message history on the archived profile (compliance boundary: AHPRA/APP record production).**
+- Root cause was RLS-layer, not UI: archiving cascades `deleted_at` onto the thread and BOTH staff SELECT policies bake in `deleted_at IS NULL`, so the in-app message record became unreachable everywhere the moment a client archived.
+- Fix: migration `20260723160000` adds the additive archived-arm policy `"staff select archived threads in own org"` on `message_threads` - the exact `20260702190000` clients-table pattern (own-org, staff-only, `deleted_at IS NOT NULL`). Client-role policies deliberately unchanged (the archived portal stays a closed door); write paths untouched (the thread stays frozen).
+- Surface: the client profile's Comms tab now renders an "In-app messages" read-only transcript for ARCHIVED clients (oldest-first, sender + timestamp + body + attachment count; loaded in `page.tsx` only when the profile is read-only). Live clients keep using /messages - no duplicate surface.
+- Verified: pgTAP `63_archived_thread_read.sql` (6/6 - archived-arm read, child messages producible, live control, cross-org zero, client-role zero, anon 42501; the fixture archives through the REAL clients-UPDATE cascade, not a hand-set column) + a render-harness test (archived Comms tab paints the transcript).
+
+**P2-3 - archived client portal end-state.**
+- The portal layout now distinguishes "archived" from "never onboarded": when the live-row lookup misses, a service-role probe keyed strictly on the authenticated user id checks for an archived row; if found, the designed closed door renders (`AccessEnded` - quiet copy, practice name, records-retained line, sign-out via the standard logout action; no portal nav) instead of the `/welcome` onboarding funnel. Never-onboarded users keep the existing redirect.
+- Verified: e2e (`parity-pass.spec.ts`) - a synthetic archived portal user logs in through the real form and lands on the closed door, not /welcome.
+
+Checklist S8 CN-7 entry updated in the same commit. With these, every CN-7 residual is closed.

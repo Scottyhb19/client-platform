@@ -5,6 +5,7 @@ import { todayIsoInPracticeTz } from '@/lib/dates'
 import { resolveCurrentBlock } from '@/lib/programs/current-block'
 import { statusFor } from '../_lib/client-helpers'
 import type { ClientFile } from './_components/FilesTab'
+import type { ArchivedThreadMessage } from './_components/CommsTab'
 import {
   ClientProfile,
   type ProfileAppointment,
@@ -310,6 +311,52 @@ export default async function ClientProfilePage({
   // profile; every mutating affordance withdrawn (and server-guarded).
   const readOnly = statusKind === 'archived'
 
+  // FM-8 (2026-07-23): an archived client's in-app message history renders
+  // on the Comms tab (read-only transcript) — the retained record must stay
+  // producible in-app. The archived-arm thread policy (20260723160000) makes
+  // the archived thread readable to staff; the child messages rows were
+  // policy-visible all along, just unreachable without the thread. Loaded
+  // only for archived clients — a live client's thread lives in /messages.
+  let archivedMessages: ArchivedThreadMessage[] | null = null
+  if (readOnly) {
+    const { data: thread } = await supabase
+      .from('message_threads')
+      .select('id')
+      .eq('client_id', id)
+      .maybeSingle()
+    if (thread) {
+      const [{ data: msgRows }, { data: attRows }] = await Promise.all([
+        supabase
+          .from('messages')
+          .select('id, created_at, sender_role, body')
+          .eq('thread_id', thread.id)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: true })
+          .limit(500),
+        supabase
+          .from('message_attachments')
+          .select('message_id')
+          .eq('thread_id', thread.id),
+      ])
+      const attachmentCounts = new Map<string, number>()
+      for (const a of attRows ?? []) {
+        attachmentCounts.set(
+          a.message_id,
+          (attachmentCounts.get(a.message_id) ?? 0) + 1,
+        )
+      }
+      archivedMessages = (msgRows ?? []).map((m) => ({
+        id: m.id,
+        created_at: m.created_at,
+        sender_role: m.sender_role as 'staff' | 'client',
+        body: m.body,
+        attachment_count: attachmentCounts.get(m.id) ?? 0,
+      }))
+    } else {
+      archivedMessages = []
+    }
+  }
+
   // Resolve which active block the Program tab summarises: the one
   // containing today, else the most recent past one (shared rule with the
   // calendar toolbar), else the earliest upcoming one.
@@ -539,6 +586,7 @@ export default async function ClientProfilePage({
       noteTemplates={noteTemplates}
       appointments={appointments}
       comms={commRows ?? []}
+      archivedMessages={archivedMessages}
       reports={reports}
       files={files}
       lastTemplateId={lastTemplateId}
