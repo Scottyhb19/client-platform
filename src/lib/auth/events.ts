@@ -28,16 +28,28 @@ export type AuthEventName =
 
 /**
  * Requesting client IP, best-effort (G-6 register F-2b — feeds the auth.md
- * §11 per-IP login-failure threshold). Vercel sets x-forwarded-for with the
- * client as the first hop; x-real-ip is the fallback. Returns null outside
- * request scope (scripts) or when no header is present (localhost may still
- * yield ::1 via the dev server). Never throws.
+ * §11 per-IP login-failure threshold, so provenance matters: a
+ * caller-controlled value would let an attacker spread failures across
+ * forged IPs or frame a victim's IP).
+ *
+ * x-vercel-forwarded-for is the platform-attested value: Vercel stamps it
+ * and it is NOT affected by a proxy placed in front of Vercel, unlike
+ * x-forwarded-for (vercel.com/docs/headers/request-headers, verified
+ * 2026-07-23). The fallbacks matter only off-Vercel (local dev): Vercel
+ * overwrites x-forwarded-for and "do[es] not forward external IPs" (only
+ * the Enterprise Trusted Proxy add-on changes that), so on this deployment
+ * the first hop is Vercel-attested too — but the platform header is
+ * preferred so a future proxy-in-front change cannot silently poison the
+ * threshold. Returns null outside request scope (scripts) or when no header
+ * is present (localhost may still yield ::1 via the dev server). Never
+ * throws.
  */
 async function requestClientIp(): Promise<string | null> {
   try {
     const h = await headers()
-    const forwarded = h.get('x-forwarded-for')
-    const first = forwarded?.split(',')[0]?.trim()
+    const attested = h.get('x-vercel-forwarded-for')?.trim()
+    if (attested) return attested
+    const first = h.get('x-forwarded-for')?.split(',')[0]?.trim()
     return first || h.get('x-real-ip') || null
   } catch {
     return null

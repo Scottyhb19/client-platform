@@ -2393,3 +2393,53 @@ preserves, and it would not survive client restore.
   in that thread only. (An archived client cannot reach the portal layout at
   all — AccessEnded — so the archived mirror is unreachable by design; the
   thread-id scope is the guard if a thread-level archive path ever lands.)
+
+
+## Sign-off review revision — G-6 F-2 hardening + B-4/G-15 verification (2026-07-23)
+
+Context: the sign-off review of the parity-pass package returned F-2 and
+conditioned B-4/G-15. The revision: client-IP capture prefers the
+platform-attested x-vercel-forwarded-for header (Vercel overwrites XFF and
+does not forward external IPs, so neither is spoofable on this deployment;
+the platform header additionally survives a future proxy-in-front change);
+the alert scan cadence moved to every 15 minutes over the unchanged 60-minute
+window (an hourly scan let a boundary-straddling burst evade the >50/hr/IP
+threshold); the alerter's unauthenticated surface was negatively asserted;
+B-4's failure routing gained executed vitest coverage; and the G-15
+middleware/route-directory coupling became a machine check.
+
+### AUTH-IP-1 — client_ip provenance prefers the platform-attested header
+- **Setup:** logAuthEvent runs in a request carrying x-vercel-forwarded-for,
+  a multi-hop x-forwarded-for, and x-real-ip (vitest: src/lib/auth/events.test.ts).
+- **Pass:** the inserted client_ip equals x-vercel-forwarded-for; with it
+  absent, the XFF first hop; then x-real-ip; else NULL. Never throws.
+
+### AUTH-ALERT-1 — threshold scan cadence beats the window seam
+- **Setup:** cron.job row auth-events-alerts-hourly (staging or prod).
+- **Pass:** schedule is `7,22,37,52 * * * *` (4x the 60-minute scan window,
+  so any burst of <=45 minutes' duration is wholly inside at least one scan).
+  A sustained breach re-alerts up to 4x/hour — accepted pager behaviour,
+  dedupe-free by design.
+
+### AUTH-ALERT-2 — the alerter leaks nothing unauthenticated
+- **Setup:** POST the deployed auth-events-alerts URL with no bearer, then a
+  wrong bearer, then GET it.
+- **Pass:** 401, 401 with bare "unauthorized" (no scan counts/IPs in the
+  body), 405. With CRON_SHARED_SECRET unset the function returns 500 (fails
+  closed), never a silent 200.
+
+### B4-SEAM-1 — audit-write failures route through the observability seam
+- **Setup:** logAuthEvent with (a) the insert returning a DB error, (b) the
+  service client constructor throwing (vitest, captureException mocked).
+- **Pass:** both paths call captureException exactly once with
+  `{ where: 'auth-events:insert', event }`; the success path never calls it;
+  logAuthEvent resolves (never rethrows) in all three. Residual (disclosed):
+  captureException is still the console stub — routing is closed,
+  prod alerting on audit misses waits on the Sentry SDK.
+
+### G15-COUPLE-1 — staff route prefixes are machine-coupled to the directory set
+- **Setup:** add (or remove) a top-level route directory under
+  src/app/(staff)/ without touching STAFF_ROUTE_PREFIXES.
+- **Pass:** `npm test` fails (protected-routes.test.ts asserts list ==
+  directory set in both directions; a nested route group under (staff) also
+  fails loudly rather than being silently skipped).

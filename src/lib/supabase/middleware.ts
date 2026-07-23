@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import type { User } from '@supabase/supabase-js'
 import type { Database } from '@/types/database'
 
+import { isProtectedPath } from './protected-routes'
+
 /**
  * Strict base64url → UTF-8 decode mirroring @supabase/ssr's cookie decoding.
  * Returns null instead of throwing on malformed input. Runtime-agnostic
@@ -162,30 +164,19 @@ export async function updateSession(request: NextRequest) {
 
   // Route protection (kept minimal — Server Components do role-level gating).
   //
-  // G-15 (2026-07-23): the staff route prefixes are listed here so a
+  // G-15 (2026-07-23): the gated prefixes live in ./protected-routes so a
   // logged-out deep link to any of them redirects with ?next=<path> and
   // SURVIVES login — previously only /dashboard did, and every other staff
   // route silently landed on /dashboard after login (requireRole redirects
   // to bare /login). The middleware only checks user PRESENCE; requireRole
   // stays the sole authority for the claimless (/onboarding/org) and
-  // wrong-role (/unauthorized) branches. Maintenance coupling, named at the
-  // G-15 sign-off: a NEW top-level staff route must join this list or its
-  // deep-links silently drop — see the pointer comment in
-  // src/app/(staff)/layout.tsx.
+  // wrong-role (/unauthorized) branches. The maintenance coupling named at
+  // the G-15 sign-off (a NEW top-level staff route must join the list) is
+  // machine-checked: protected-routes.test.ts diffs STAFF_ROUTE_PREFIXES
+  // against the src/app/(staff)/ directory set on every `npm test`.
   const path = request.nextUrl.pathname
-  const isProtected =
-    path.startsWith('/dashboard') ||
-    path.startsWith('/portal') ||
-    path.startsWith('/onboarding') ||
-    path.startsWith('/analytics') ||
-    path.startsWith('/clients') ||
-    path.startsWith('/contacts') ||
-    path.startsWith('/library') ||
-    path.startsWith('/messages') ||
-    path.startsWith('/schedule') ||
-    path.startsWith('/settings')
 
-  if (isProtected && !user) {
+  if (isProtectedPath(path) && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', path)
