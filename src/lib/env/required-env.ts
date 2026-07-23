@@ -17,9 +17,12 @@
  * - CRON_SHARED_SECRET and VERIFY_EMAIL_DOMAIN are consumed by the
  *   Supabase Edge Function and operator scripts respectively, not by the
  *   Next.js runtime, so they are not asserted here.
- * - NEXT_PUBLIC_SITE_URL and NEXT_PUBLIC_APP_URL are the same logical
- *   value under two keys (Flag E, runbook README backlog); both are
- *   required until reconciled.
+ * - NEXT_PUBLIC_APP_URL was RETIRED from this list 2026-07-23 (Flag E
+ *   resolved): the origin-idiom consolidation made NEXT_PUBLIC_SITE_URL
+ *   canonical and removed every app-side reader; the operator then removed
+ *   the Vercel copy. The only surviving reader is the reminder Edge
+ *   Function's own secret-store copy, which this Next.js check cannot and
+ *   should not assert.
  */
 const REQUIRED_ENV_VARS = [
   'NEXT_PUBLIC_SUPABASE_URL',
@@ -28,7 +31,6 @@ const REQUIRED_ENV_VARS = [
   'RESEND_API_KEY',
   'EMAIL_FROM',
   'NEXT_PUBLIC_SITE_URL',
-  'NEXT_PUBLIC_APP_URL',
 ] as const
 
 /** Names of required env vars that are unset or blank. Empty = healthy. */
