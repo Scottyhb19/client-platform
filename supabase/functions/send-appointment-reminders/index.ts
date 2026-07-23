@@ -155,8 +155,12 @@ Deno.serve(async (req) => {
     // row got one final 6th send attempt; the bound deliberately tightens
     // total send attempts to MAX_RETRIES; (b) a terminal status write failed
     // after a send and the fallback bump below recorded the attempt.
-    // Either way: no reminder row can ever produce more than MAX_RETRIES
-    // real emails, even if every terminal write keeps failing.
+    // The bound's honest scope: it holds whenever the retry_count bump can
+    // land when a terminal write fails. Under CORRELATED failure — DB
+    // unreachable, or this process dies between send and write — neither
+    // write lands, retry_count stays put, and the next tick re-sends
+    // (unbounded on that rare path; see the closure record in
+    // docs/polish/email-and-sms.md and reminder-logic-verify.mjs #17).
     if (row.retry_count >= MAX_RETRIES) {
       const err = await markFailed(
         supabase,
@@ -239,9 +243,11 @@ Deno.serve(async (req) => {
         const sentErr = await markSent(supabase, row.id, messageId)
         if (sentErr) {
           // A failed terminal write is exactly how the unbounded-resend class
-          // starts (the email went out; the row is still 'scheduled'). Be
-          // loud, then bump retry_count in a trigger-safe statement so the
-          // pre-send ceiling above bounds total real sends at MAX_RETRIES.
+          // starts (the email went out; the row is still 'scheduled'). Log it
+          // (console.error → EF logs; nothing alerts), then bump retry_count
+          // in a trigger-safe statement so the pre-send ceiling above bounds
+          // total real sends — a bound that holds only when THIS bump lands;
+          // if the same failure kills the bump too, the row re-sends next tick.
           console.error(
             `reminder ${row.id}: SENT but markSent failed (${sentErr}) — bumping retry_count so the send bound applies`,
           )
