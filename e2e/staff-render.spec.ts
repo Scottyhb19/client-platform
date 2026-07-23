@@ -156,6 +156,54 @@ test('Comms tab renders for an ARCHIVED client — the record outlives the archi
   ).toBeVisible()
 })
 
+test('Unassign → re-assign round trip drives the RPC path (hard gate, UNASSIGN-2)', async ({
+  page,
+}) => {
+  // The app's only unassign path is now unassign_program_day() (migration
+  // 20260723140000). This drives the REAL control: Unassign on a locked day
+  // lifts the lock (via the RPC — a raw UPDATE would be DB-refused for this
+  // completed+assigned day), then re-assigning restores the lock. Restores
+  // seed state in finally even if an assertion fails mid-flight.
+  const admin = stagingAdmin()
+  try {
+    await page.goto(`/clients/${jordanId}/program/days/${lockedDayId}`)
+    await expect(
+      page.getByText('This session is locked', { exact: false }),
+    ).toBeVisible({ timeout: 15_000 })
+
+    await page.getByRole('button', { name: 'Unassign' }).first().click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText('Unassign this session?')).toBeVisible()
+    await dialog.getByRole('button', { name: 'Unassign' }).click()
+
+    // Lock lifts; the day is a draft again (the "Assign to …" CTA renders).
+    await expect(
+      page.getByRole('button', { name: /^Assign to/ }),
+    ).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('This session is locked')).toHaveCount(0)
+
+    // Re-assign through the UI; the lock returns (completed session exists).
+    await page.getByRole('button', { name: /^Assign to/ }).click()
+    await expect(
+      page.getByText('This session is locked', { exact: false }),
+    ).toBeVisible({ timeout: 15_000 })
+  } finally {
+    // Seed-state safety net: the locked day must stay completed+ASSIGNED for
+    // the LOCK-banner test on future runs. Publish direction is unrestricted.
+    const { data: day } = await admin
+      .from('program_days')
+      .select('published_at')
+      .eq('id', lockedDayId)
+      .single()
+    if (!day?.published_at) {
+      await admin
+        .from('program_days')
+        .update({ published_at: new Date().toISOString() })
+        .eq('id', lockedDayId)
+    }
+  }
+})
+
 test('archived Comms tab renders the in-app message history (FM-8)', async ({
   page,
 }) => {
