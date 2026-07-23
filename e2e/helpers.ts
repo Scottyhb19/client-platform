@@ -199,18 +199,19 @@ export async function ensureArchivedThreadFixture(averyId: string): Promise<stri
       .eq('id', thread.id)
   }
 
+  const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
+  const owner = users!.users.find((x) => x.email === env.STAGING_DEV_LOGIN_EMAIL)!
+  const { data: threadRow } = await admin
+    .from('message_threads')
+    .select('organization_id')
+    .eq('id', thread!.id)
+    .single()
+
   const { count } = await admin
     .from('messages')
     .select('id', { count: 'exact', head: true })
     .eq('thread_id', thread!.id)
   if (!count) {
-    const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 })
-    const owner = users!.users.find((x) => x.email === env.STAGING_DEV_LOGIN_EMAIL)!
-    const { data: threadRow } = await admin
-      .from('message_threads')
-      .select('organization_id')
-      .eq('id', thread!.id)
-      .single()
     const { error } = await admin.from('messages').insert([
       {
         thread_id: thread!.id,
@@ -221,6 +222,53 @@ export async function ensureArchivedThreadFixture(averyId: string): Promise<stri
       },
     ])
     if (error) throw new Error(`fixture message: ${error.message}`)
+  }
+
+  // FM-8 reviewer follow-up (2026-07-23): the transcript must PRODUCE
+  // attachments, not just count them — so the standing fixture carries one
+  // attachment-bearing message with a real blob (create-if-absent, same
+  // amended posture as the rest of this module).
+  const { count: attCount } = await admin
+    .from('message_attachments')
+    .select('id', { count: 'exact', head: true })
+    .eq('thread_id', thread!.id)
+  if (!attCount) {
+    const attachmentId = crypto.randomUUID()
+    const storagePath = `${threadRow!.organization_id}/${thread!.id}/${attachmentId}.txt`
+    const bytes = new TextEncoder().encode(
+      'Synthetic archived-thread attachment (e2e seed fixture).',
+    )
+    const { error: upErr } = await admin.storage
+      .from('message-attachments')
+      .upload(storagePath, bytes, { contentType: 'text/plain', upsert: true })
+    if (upErr) throw new Error(`fixture blob: ${upErr.message}`)
+
+    const { data: attMsg, error: msgErr } = await admin
+      .from('messages')
+      .insert({
+        thread_id: thread!.id,
+        organization_id: threadRow!.organization_id,
+        sender_user_id: owner.id,
+        sender_role: 'staff',
+        body: 'Exercise notes attached. (seed fixture)',
+        has_attachments: true,
+      })
+      .select('id')
+      .single()
+    if (msgErr) throw new Error(`fixture attachment message: ${msgErr.message}`)
+
+    const { error: attErr } = await admin.from('message_attachments').insert({
+      id: attachmentId,
+      message_id: attMsg!.id,
+      thread_id: thread!.id,
+      organization_id: threadRow!.organization_id,
+      storage_path: storagePath,
+      file_name: 'exercise-notes.txt',
+      mime_type: 'text/plain',
+      byte_size: bytes.length,
+      kind: 'file',
+    })
+    if (attErr) throw new Error(`fixture attachment row: ${attErr.message}`)
   }
   return thread!.id
 }

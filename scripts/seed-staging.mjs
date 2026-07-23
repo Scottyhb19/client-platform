@@ -399,11 +399,15 @@ const morgan = await insertOne('clients', {
   invited_at: daysAgoISO(45), onboarded_at: daysAgoISO(44), last_activity_at: daysAgoISO(12),
 }, 'client Morgan (overdue)')
 
+// Archive state is TWO lockstep columns in production (soft_delete_client
+// sets archived_at AND deleted_at together; RLS + the thread cascade key on
+// deleted_at). Seeding only archived_at creates a state the app cannot
+// produce — caught 2026-07-23 by the profile's divergence assertion.
 const avery = await insertOne('clients', {
   organization_id: odysseyOrgId, first_name: 'Avery', last_name: 'Archived',
   email: 'delivered+avery-archived@resend.dev', phone: '0400 000 005', dob: '1990-09-09',
   category_id: cat('Golf'), invited_at: daysAgoISO(60), onboarded_at: daysAgoISO(58),
-  last_activity_at: daysAgoISO(30), archived_at: daysAgoISO(14),
+  last_activity_at: daysAgoISO(30), archived_at: daysAgoISO(14), deleted_at: daysAgoISO(14),
 }, 'client Avery (archived)')
 
 await insertOne('clients', {

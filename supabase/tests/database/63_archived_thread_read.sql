@@ -10,7 +10,7 @@ SET search_path TO public, extensions, pg_temp;
 -- stays producible (AHPRA/APP record production; CN-7 residual closed by the
 -- 2026-07-23 parity pass).
 --
--- Assertions (6):
+-- Assertions (9):
 --   1. staff sees the ARCHIVED client's thread (the new policy arm)
 --   2. staff sees that archived thread's messages (child rows were always
 --      policy-visible; the thread was the missing link)
@@ -19,16 +19,27 @@ SET search_path TO public, extensions, pg_temp;
 --   5. the archived client's own session sees ZERO threads (no client arm —
 --      the portal stays a closed door)
 --   6. anon SELECT on message_threads raises 42501
+--   7. staff reads the archived thread's ATTACHMENT metadata (reviewer
+--      blocking item 1, 2026-07-23: the staff message_attachments SELECT
+--      policy carries no thread-liveness predicate, so attachment rows stay
+--      producible post-archive — record production is not just the bodies).
+--      Byte-level retrieval (storage policy + signed URL) is verified by the
+--      staging probe scripts/verify-archived-attachment-retrieval.mjs.
+--   8. cross-org staff sees ZERO of those attachment rows
+--   9. the archived client's own session sees ZERO attachment rows (its
+--      policy DOES predicate on liveness — the closed door holds)
 --
 -- Fixture: client archived via the real clients UPDATE so the REAL cascade
 -- (client_cascade_thread_archive) sets the thread's deleted_at — the test
--- exercises the production archive path, not a hand-set column.
+-- exercises the production archive path, not a hand-set column. One message
+-- carries a message_attachments row (metadata only; no blob needed at this
+-- layer).
 -- Style: _tap buffer; BEGIN/ROLLBACK.
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(6);
+SELECT plan(9);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated, anon;
@@ -44,6 +55,8 @@ DECLARE
   cl_live  uuid := '00000000-0000-0000-0000-0000000063b2'::uuid;
   thr_arch uuid := '00000000-0000-0000-0000-0000000063c1'::uuid;
   thr_live uuid := '00000000-0000-0000-0000-0000000063c2'::uuid;
+  msg_att  uuid := '00000000-0000-0000-0000-0000000063d1'::uuid;
+  att_a    uuid := '00000000-0000-0000-0000-0000000063e1'::uuid;
 BEGIN
   INSERT INTO organizations (id, name, slug) VALUES
     (org_a, 'Test Org X — archived thread 63', 'test-org-x-thr63'),
@@ -67,6 +80,19 @@ BEGIN
   VALUES (thr_arch, org_a, staff_a,  'staff',  'How did the knee pull up after Tuesday?'),
          (thr_arch, org_a, client_u, 'client', 'A bit tight but no sharp pain.');
 
+  -- An attachment-bearing message + its metadata row (assertions 7–9).
+  -- Fixture inserts run as the table owner (RLS not FORCEd on messaging
+  -- tables), matching how the definer RPC writes these rows in production.
+  INSERT INTO messages (id, thread_id, organization_id, sender_user_id, sender_role, body, has_attachments)
+  VALUES (msg_att, thr_arch, org_a, client_u, 'client', 'Photo of the swelling attached.', true);
+
+  INSERT INTO message_attachments
+    (id, message_id, thread_id, organization_id, storage_path, file_name, mime_type, byte_size, kind)
+  VALUES
+    (att_a, msg_att, thr_arch, org_a,
+     org_a::text || '/' || thr_arch::text || '/' || att_a::text || '.jpg',
+     'swelling.jpg', 'image/jpeg', 204800, 'image');
+
   -- Archive through the REAL path: the clients UPDATE fires
   -- client_cascade_thread_archive, which stamps the thread''s deleted_at.
   UPDATE clients SET deleted_at = now(), archived_at = now()
@@ -78,7 +104,8 @@ BEGIN
   END IF;
 
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
-    org_a, org_b, staff_a, staff_b, client_u, cl_arch, cl_live, thr_arch, thr_live;
+    org_a, org_b, staff_a, staff_b, client_u, cl_arch, cl_live, thr_arch, thr_live,
+    msg_att, att_a;
   GRANT SELECT ON _ids TO authenticated;
 END $$;
 
@@ -101,8 +128,17 @@ INSERT INTO _tap (n, line) VALUES (2, (
   SELECT string_agg(l, E'\n') FROM is(
     (SELECT count(*)::int FROM messages
       WHERE thread_id = (SELECT thr_arch FROM _ids)),
-    2,
+    3,
     'staff reads the archived thread''s messages (the record is producible)'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (7, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM message_attachments
+      WHERE thread_id = (SELECT thr_arch FROM _ids)),
+    1,
+    'staff reads the archived thread''s attachment metadata (no liveness predicate on the staff arm)'
   ) AS l
 ));
 
@@ -129,6 +165,15 @@ INSERT INTO _tap (n, line) VALUES (4, (
     'cross-org staff sees ZERO archived threads (tenant isolation holds)'
   ) AS l
 ));
+
+INSERT INTO _tap (n, line) VALUES (8, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM message_attachments
+      WHERE thread_id = (SELECT thr_arch FROM _ids)),
+    0,
+    'cross-org staff sees ZERO of the archived thread''s attachment rows'
+  ) AS l
+));
 RESET ROLE;
 
 -- 5. The archived client's own session.
@@ -141,6 +186,14 @@ INSERT INTO _tap (n, line) VALUES (5, (
     (SELECT count(*)::int FROM message_threads),
     0,
     'the archived client''s own session sees ZERO threads (no client arm)'
+  ) AS l
+));
+
+INSERT INTO _tap (n, line) VALUES (9, (
+  SELECT string_agg(l, E'\n') FROM is(
+    (SELECT count(*)::int FROM message_attachments),
+    0,
+    'the archived client''s own session sees ZERO attachment rows (client arm predicates on liveness)'
   ) AS l
 ));
 RESET ROLE;

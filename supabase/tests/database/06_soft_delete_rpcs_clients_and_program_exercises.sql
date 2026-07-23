@@ -22,14 +22,21 @@ SET search_path TO public, extensions, pg_temp;
 --                          clause to gate cross-org attempts. No
 --                          unique-active index, so no conflict path.
 --
--- Test count: 13
---   clients              — 6 base + 1 email-conflict = 7
---   program_exercises    — 6 base + 0 conflict       = 6
+-- Test count: 15
+--   clients              — 6 base + 2 lockstep-column + 1 email-conflict = 9
+--   program_exercises    — 6 base + 0 conflict                           = 6
+--
+-- The two lockstep-column assertions (2026-07-23, FM-8 sign-off nit): the
+-- client-profile fail-closed invariant (archived_at IS NULL  <=>  deleted_at
+-- IS NULL, asserted at render via captureException) is only sound if the
+-- write RPCs keep the pair in lockstep. These assert the source of truth —
+-- soft_delete_client sets BOTH, restore_client clears BOTH — so the render
+-- guard covers the residual and this covers the regression.
 -- ============================================================================
 
 BEGIN;
 
-SELECT plan(13);
+SELECT plan(15);
 
 
 -- ----------------------------------------------------------------------------
@@ -152,6 +159,16 @@ SELECT lives_ok(
   'staff_a soft_delete_client in own org succeeds'
 );
 
+-- Lockstep column assertion (still staff_a). Read via the archived-arm staff
+-- SELECT policy (20260702190000) — which doubles as a check that staff can
+-- see the archived row at all.
+SELECT is(
+  (SELECT (deleted_at IS NOT NULL AND archived_at IS NOT NULL)
+     FROM clients WHERE id = (SELECT client_row FROM _ids)),
+  true,
+  'soft_delete_client sets BOTH deleted_at and archived_at'
+);
+
 SELECT public._test_set_jwt(
   (SELECT staff_b FROM _ids), (SELECT org_b FROM _ids), 'staff'
 );
@@ -187,6 +204,15 @@ SELECT lives_ok(
     (SELECT client_row FROM _ids)
   ),
   'staff_a restore_client in own org succeeds'
+);
+
+-- Lockstep companion: restore clears BOTH columns (row is live again, read
+-- via the base staff SELECT policy).
+SELECT is(
+  (SELECT (deleted_at IS NULL AND archived_at IS NULL)
+     FROM clients WHERE id = (SELECT client_row FROM _ids)),
+  true,
+  'restore_client clears BOTH deleted_at and archived_at'
 );
 
 SELECT public._test_set_jwt(

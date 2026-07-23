@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth/require-role'
+import { captureException } from '@/lib/observability/sentry'
+import { loadAttachmentViews } from '@/lib/messages/attachments-server'
 import { todayIsoInPracticeTz } from '@/lib/dates'
 import { resolveCurrentBlock } from '@/lib/programs/current-block'
 import { statusFor } from '../_lib/client-helpers'
@@ -89,7 +91,7 @@ export default async function ClientProfilePage({
         `id, first_name, last_name, email, phone, dob, sex, address,
          referral_source, referred_by, emergency_contact_name,
          emergency_contact_phone, goals, created_at, user_id, version,
-         invited_at, onboarded_at, archived_at, category_id,
+         invited_at, onboarded_at, archived_at, deleted_at, category_id,
          category:client_categories(name)`,
       )
       .eq('id', id)
@@ -309,7 +311,24 @@ export default async function ClientProfilePage({
 
   // CN-7: an archived record renders read-only — banner + Restore in the
   // profile; every mutating affordance withdrawn (and server-guarded).
-  const readOnly = statusKind === 'archived'
+  //
+  // Archive state lives in TWO columns kept in lockstep by
+  // soft_delete_client/restore_client: archived_at (what statusFor and the
+  // UI key on) and deleted_at (what RLS, the thread cascade, and the child
+  // filters key on). Nothing in the app writes one without the other, so
+  // divergence means a raw-SQL or future-code bug — assert it, and fail
+  // CLOSED (either column set ⇒ read-only) rather than render a
+  // soft-deleted record as editable.
+  const isDeleted = client.deleted_at !== null
+  if ((client.archived_at !== null) !== isDeleted) {
+    captureException(
+      new Error(
+        `client ${client.id}: archived_at/deleted_at diverged (archived_at=${client.archived_at}, deleted_at=${client.deleted_at})`,
+      ),
+      { where: 'client-profile:archive-state-divergence' },
+    )
+  }
+  const readOnly = statusKind === 'archived' || isDeleted
 
   // FM-8 (2026-07-23): an archived client's in-app message history renders
   // on the Comms tab (read-only transcript) — the retained record must stay
@@ -317,15 +336,20 @@ export default async function ClientProfilePage({
   // the archived thread readable to staff; the child messages rows were
   // policy-visible all along, just unreachable without the thread. Loaded
   // only for archived clients — a live client's thread lives in /messages.
+  //
+  // Gated on isDeleted, NOT readOnly: the archived-arm policy and the
+  // thread cascade both key on deleted_at, so this is the exact condition
+  // under which the archived thread is readable — the render predicate and
+  // the RLS predicate cannot drift apart.
   let archivedMessages: ArchivedThreadMessage[] | null = null
-  if (readOnly) {
+  if (isDeleted) {
     const { data: thread } = await supabase
       .from('message_threads')
       .select('id')
       .eq('client_id', id)
       .maybeSingle()
     if (thread) {
-      const [{ data: msgRows }, { data: attRows }] = await Promise.all([
+      const [{ data: msgRows }, attachmentsByMsg] = await Promise.all([
         supabase
           .from('messages')
           .select('id, created_at, sender_role, body')
@@ -333,24 +357,18 @@ export default async function ClientProfilePage({
           .is('deleted_at', null)
           .order('created_at', { ascending: true })
           .limit(500),
-        supabase
-          .from('message_attachments')
-          .select('message_id')
-          .eq('thread_id', thread.id),
+        // Full attachment views (metadata + signed image URLs), not a bare
+        // count — record production includes the attachment bytes. The
+        // staff RLS arms on message_attachments and storage.objects carry
+        // no thread-liveness predicate, so both work on an archived thread.
+        loadAttachmentViews(supabase, { threadId: thread.id }),
       ])
-      const attachmentCounts = new Map<string, number>()
-      for (const a of attRows ?? []) {
-        attachmentCounts.set(
-          a.message_id,
-          (attachmentCounts.get(a.message_id) ?? 0) + 1,
-        )
-      }
       archivedMessages = (msgRows ?? []).map((m) => ({
         id: m.id,
         created_at: m.created_at,
         sender_role: m.sender_role as 'staff' | 'client',
         body: m.body,
-        attachment_count: attachmentCounts.get(m.id) ?? 0,
+        attachments: attachmentsByMsg[m.id] ?? [],
       }))
     } else {
       archivedMessages = []

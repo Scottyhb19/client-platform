@@ -3,6 +3,9 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import { PRACTICE_TIMEZONE } from '@/lib/constants'
+import { MessageAttachments } from '@/components/messages/MessageAttachments'
+import { getStaffAttachmentDownloadUrlAction } from '@/app/(staff)/messages/actions'
+import type { AttachmentView } from '@/lib/messages/types'
 
 /**
  * §12 Part B (logging half) — the client-profile Comms tab (brief §6.7:
@@ -30,7 +33,10 @@ export interface ArchivedThreadMessage {
   created_at: string
   sender_role: 'staff' | 'client'
   body: string
-  attachment_count: number
+  // Full views, not a count — record production includes the attachment
+  // bytes (images render inline off signed URLs; files download via the
+  // staff download action, RLS-authorised with no liveness predicate).
+  attachments: AttachmentView[]
 }
 
 export interface ProfileCommunication {
@@ -363,17 +369,16 @@ function ArchivedMessagesSection({
               >
                 {m.body}
               </div>
-              {m.attachment_count > 0 && (
-                <div
-                  style={{
-                    fontSize: '.74rem',
-                    color: 'var(--color-text-light)',
-                    marginTop: 3,
-                  }}
-                >
-                  {m.attachment_count}{' '}
-                  {m.attachment_count === 1 ? 'attachment' : 'attachments'}{' '}
-                  (stored)
+              {m.attachments.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <MessageAttachments
+                    attachments={m.attachments}
+                    onDownload={async (attachmentId) => {
+                      const r =
+                        await getStaffAttachmentDownloadUrlAction(attachmentId)
+                      return { url: r.data?.url ?? null, error: r.error }
+                    }}
+                  />
                 </div>
               )}
             </div>

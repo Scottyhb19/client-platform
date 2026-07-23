@@ -2317,10 +2317,13 @@ client email lands on the profile's Comms tab; failed sends surface there.
 - **Setup:** archive a client who has a message thread; open their profile ->
   Comms tab.
 - **Pass:** an "In-app messages" read-only transcript renders (sender,
-  timestamp, body, attachment count); the staff inbox still excludes the
+  timestamp, body, attachments in full — images inline, files as download
+  chips that mint a working signed URL); the staff inbox still excludes the
   archived thread; the client role still sees nothing.
-- **Automated:** pgTAP `63` (6/6) + `e2e/staff-render.spec.ts` -> "archived
-  Comms tab renders the in-app message history (FM-8)".
+- **Automated:** pgTAP `63` (9/9, incl. the attachment metadata triad) +
+  `e2e/staff-render.spec.ts` -> "archived Comms tab renders the in-app
+  message history (FM-8)" (asserts the attachment chip) + byte-level
+  retrieval via `scripts/verify-archived-attachment-retrieval.mjs` (staging).
 
 ### PORTAL-END-1 - Archived client gets the closed door, not /welcome
 - **Setup:** log into the portal as a client whose record is archived.

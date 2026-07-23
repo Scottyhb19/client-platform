@@ -207,9 +207,9 @@ test('Unassign → re-assign round trip drives the RPC path (hard gate, UNASSIGN
 test('archived Comms tab renders the in-app message history (FM-8)', async ({
   page,
 }) => {
-  // Fixture: Avery's archived thread + at least one message (create-if-
-  // absent; the archived-arm policy 20260723160000 is what makes the page
-  // able to read it back).
+  // Fixture: Avery's archived thread + at least one message and one
+  // attachment-bearing message (create-if-absent; the archived-arm policy
+  // 20260723160000 is what makes the page able to read it back).
   await ensureArchivedThreadFixture(averyId)
 
   await page.goto(`/clients/${averyId}?tab=comms`)
@@ -221,6 +221,13 @@ test('archived Comms tab renders the in-app message history (FM-8)', async ({
     page.getByText('Pre-archive check-in — how was the last block?', {
       exact: false,
     }),
+  ).toBeVisible()
+  // Reviewer blocking item 1 (2026-07-23): the attachment must be
+  // PRODUCIBLE, not just counted — the shared MessageAttachments renderer
+  // paints the download chip (file name) inside the transcript. Byte-level
+  // retrieval is proven by scripts/verify-archived-attachment-retrieval.mjs.
+  await expect(
+    page.getByRole('button', { name: /exercise-notes\.txt/ }),
   ).toBeVisible()
 })
 

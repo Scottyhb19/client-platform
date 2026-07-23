@@ -1066,7 +1066,7 @@ This prevents even the service role from writing synthetic audit log entries via
 
 **SQL:** migration `20260425100000_messages.sql` (policies) + `20260426110000` (archive cascade) + `20260723160000` (archived arm).
 
-**Tests:** `34_message_rls.sql` — cross-tenant thread isolation (test 1), client sees own thread (test 3), within-org client isolation (test 5), staff control (test 10). `63_archived_thread_read.sql` (6/6) — the archived arm: staff read of the archived thread + its messages, live control, cross-org zero, client-role zero, anon 42501; fixture archives through the real cascade.
+**Tests:** `34_message_rls.sql` — cross-tenant thread isolation (test 1), client sees own thread (test 3), within-org client isolation (test 5), staff control (test 10). `63_archived_thread_read.sql` (9/9) — the archived arm: staff read of the archived thread + its messages + its `message_attachments` metadata (the staff attachment and storage policies carry no liveness predicate, so the record's attachments stay producible post-archive), live control, cross-org zero (threads and attachments), client-role zero (both), anon 42501; fixture archives through the real cascade. Byte-level attachment retrieval (storage RLS → signed URL → blob) is proven by the staging probe `scripts/verify-archived-attachment-retrieval.mjs`.
 
 ---
 

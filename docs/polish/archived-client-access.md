@@ -249,13 +249,88 @@ Reviewed and approved for close. Architecture (additive OR-policy, fail-closed c
 Sign-off deferred items 4 and 5 are **CLOSED** (items 1-3, the write-immutability trio, closed 2026-07-23 at the prod-apply sitting via `20260721120000` - see `polish/db-write-immutability.md`).
 
 **FM-8 - message history on the archived profile (compliance boundary: AHPRA/APP record production).**
-- Root cause was RLS-layer, not UI: archiving cascades `deleted_at` onto the thread and BOTH staff SELECT policies bake in `deleted_at IS NULL`, so the in-app message record became unreachable everywhere the moment a client archived.
+- Root cause was RLS-layer reachability, scoped to the THREAD row (corrected at review round 2 — see FU-9): archiving cascades `deleted_at` onto the thread and the staff `message_threads` SELECT policy was live-only. The child `messages` rows were policy-visible all along (their staff policy is org-scoped with no thread-state predicate — the same fact the phantom unread badge independently proved), but without the thread row the record had no addressable surface: the inbox lists threads, and no other staff surface read messages. One thread row, not the whole record, was unreachable — and one additive thread policy is why the fix is small.
 - Fix: migration `20260723160000` adds the additive archived-arm policy `"staff select archived threads in own org"` on `message_threads` - the exact `20260702190000` clients-table pattern (own-org, staff-only, `deleted_at IS NOT NULL`). Client-role policies deliberately unchanged (the archived portal stays a closed door); write paths untouched (the thread stays frozen).
-- Surface: the client profile's Comms tab now renders an "In-app messages" read-only transcript for ARCHIVED clients (oldest-first, sender + timestamp + body + attachment count; loaded in `page.tsx` only when the profile is read-only). Live clients keep using /messages - no duplicate surface.
-- Verified: pgTAP `63_archived_thread_read.sql` (6/6 - archived-arm read, child messages producible, live control, cross-org zero, client-role zero, anon 42501; the fixture archives through the REAL clients-UPDATE cascade, not a hand-set column) + a render-harness test (archived Comms tab paints the transcript).
+- Surface: the client profile's Comms tab now renders an "In-app messages" read-only transcript for ARCHIVED clients (oldest-first, sender + timestamp + body + attachments; loaded in `page.tsx` only for archived clients). Attachments render in full via the shared `MessageAttachments` component — images inline off signed URLs, files as download chips through the existing staff download action (FU-7; the original count-only marker was rejected at review round 2). Live clients keep using /messages - no duplicate surface.
+- Verified: pgTAP `63_archived_thread_read.sql` (9/9 - archived-arm read, child messages producible, live control, cross-org zero, client-role zero, anon 42501, plus the FU-7 attachment triad: staff reads archived-thread attachment metadata, cross-org zero, client-role zero; the fixture archives through the REAL clients-UPDATE cascade, not a hand-set column) + the byte-level staging probe `scripts/verify-archived-attachment-retrieval.mjs` (3/3 — staff session retrieves the exact blob bytes on an archived thread under RLS) + the render-harness test (archived Comms tab paints the transcript AND the attachment chip).
 
 **P2-3 - archived client portal end-state.**
 - The portal layout now distinguishes "archived" from "never onboarded": when the live-row lookup misses, a service-role probe keyed strictly on the authenticated user id checks for an archived row; if found, the designed closed door renders (`AccessEnded` - quiet copy, practice name, records-retained line, sign-out via the standard logout action; no portal nav) instead of the `/welcome` onboarding funnel. Never-onboarded users keep the existing redirect.
 - Verified: e2e (`parity-pass.spec.ts`) - a synthetic archived portal user logs in through the real form and lands on the closed door, not /welcome.
 
 Checklist S8 CN-7 entry updated in the same commit. With these, every CN-7 residual is closed.
+
+---
+
+## Review round 2 (2026-07-23) — FM-8/P2-3 closure package: four findings, all resolved
+
+The reviewer returned the closure package with two blocking items (attachment production unverified; a staging/production contradiction) and two record fixes (a falsified root-cause narrative; a render/RLS predicate mismatch). All four are resolved below; FU-10's fix immediately caught a real fixture bug, which is recorded rather than smoothed over.
+
+### FU-7 — Attachment production: built and verified, not downgraded (blocking item 1)
+
+The reviewer was right that a count is not a record. Resolution took the strong arm of the either/or — the transcript now PRODUCES attachments, and production is verified at all three layers:
+
+- **Policy fact (the reviewer's feared failure mode does not exist for staff):** the staff `message_attachments` SELECT policy (`20260713130000`) is org + role only, and the storage `"staff read message-attachments in own org"` policy is bucket + org-folder + role only. Neither carries a thread- or client-liveness predicate — only the CLIENT-role arms do. Staff retrieval on an archived thread is authorised by construction; no policy change was needed.
+- **Surface:** `ArchivedThreadMessage` now carries full `AttachmentView[]` (loaded via the shared `loadAttachmentViews`, which also mints the 1-hour image signed URLs); `CommsTab` renders them through the shared `MessageAttachments` component wired to the existing `getStaffAttachmentDownloadUrlAction` — the identical affordance the live inbox uses (images inline + lightbox, files as named download chips minting 60-second signed URLs on click).
+- **Verified, three layers:** (i) pgTAP `63` extended 6→9 — staff reads the archived thread's attachment metadata; cross-org staff and the archived client's own session read zero (9/9 on staging); (ii) the new staging probe `scripts/verify-archived-attachment-retrieval.mjs` — a REAL staff session (`signInWithPassword`, RLS in force) selects the attachment row on the archived thread, mints a signed URL through storage RLS, fetches it, and byte-compares the blob (3/3; fixture torn down attachment-row → message → blob); (iii) the render harness asserts the download chip paints in the archived transcript (e2e 14/14).
+- Note: the 6-assertion version of pgTAP 63 was run directly on PROD (BEGIN/ROLLBACK) at the original sitting. The three added assertions cover policies deployed since 2026-07-13 and ran 9/9 on staging; a prod re-run of the extended file via the prod workdir is a one-command operator option at the next prod sitting, not a gate (no policy changed in this follow-up).
+
+### FU-8 — "Staging" is a real, separate project, and its existence is already logged (blocking item 2)
+
+The contradiction is between the package's wording and a **stale standing position**, not between the package and reality. The no-non-prod-target liability closed on **2026-07-21**, when environment separation went operative: `odyssey-staging` is a real second Supabase project, the default target for all database work, seeded synthetic-only (`scripts/seed-staging.mjs` — every client fake, every email a `@resend.dev` sink). That change is logged as its own material event in CLAUDE.md ("Environment separation", including the historical record of the pre-flip practice) and `runbooks/use-the-staging-project.md` — this closure package should have cited it instead of using "staging" as an unexplained label; that citation gap is what the reviewer correctly flagged. Consequences for the two named worries:
+
+- The e2e suite does NOT write synthetic rows into production. The harness hard-refuses any non-staging target (`e2e/helpers.ts` `loadEnv()` throws unless the `.env.local` default keys resolve to `STAGING_PROJECT_REF`), and the same guard is replicated in the new probe script. The standing create-if-absent fixtures — including the delete-refused archived portal user — live on staging's synthetic seed only. Production carries zero e2e fixtures.
+- The one prod touch in the package (pgTAP 63 direct run) was transient by construction (BEGIN/ROLLBACK), per the §6-style rule for a new RLS surface.
+
+### FU-9 — Root-cause narrative corrected (record fix 3)
+
+The reviewer's falsification is accepted: "the in-app message record became unreachable everywhere" was wrong, and the phantom unread badge (which counts `messages` rows in archived threads) proves it — `messages` SELECT was never gated on thread state. The accurate mechanics (which the migration file's own header already stated): the THREAD row was staff-unreachable; the child messages stayed policy-visible but had no addressable surface without it. The closure narrative above is rewritten to match, and the badge bug is the same underlying fact's other face — messages visible without their thread — owned by the sibling badge-fix session, not this closure.
+
+### FU-10 — Render/RLS predicate aligned — and the assertion immediately caught a real bug (record fix 4)
+
+Archive state is two columns kept in lockstep by `soft_delete_client`/`restore_client`: `archived_at` (what `statusFor` and the UI key on) and `deleted_at` (what RLS, the thread cascade, and the child filters key on). The render gated read-only on `archived_at` while the new policy gates on `deleted_at` — two predicates for one surface, exactly as flagged. Fixed in `page.tsx`:
+
+- The lockstep invariant is now **asserted**: divergence routes through `captureException` (`client-profile:archive-state-divergence`) and the page **fails closed** — either column set ⇒ read-only.
+- The transcript load is now gated on `deleted_at IS NOT NULL` — the exact fact the archived-arm policy and the cascade key on — so the empty-tab/unintended-surface drift the reviewer described cannot occur.
+- **The assertion found a live specimen within minutes:** staging's seeded Avery was half-archived (`archived_at` set, `deleted_at` NULL) — a state the app cannot produce, because `soft_delete_client` sets both. Under the old `archived_at` gate the e2e evidence had partially ridden on that impossible state. Fixed both ends: `seed-staging.mjs` now archives Avery with both columns (with a comment naming the invariant), and the standing staging row was repaired (`deleted_at = archived_at`, firing the real thread cascade). The full suite re-ran green afterwards — the render-tier FM-8 evidence now rests on a production-shaped fixture.
+
+**Evidence roll-up after this round:** pgTAP 63 → 9/9 on staging; byte-retrieval probe 3/3 on staging; `tsc` clean; scoped eslint exit 0; e2e 14/14 (FM-8 test now asserts the attachment chip). `rls-policies.md` §4.27 and `test_scenarios_template.md` ARCH-MSG-1 updated in the same change.
+
+### Conditional sign-off — the two close conditions, discharged (2026-07-23)
+
+The reviewer signed off **conditional on two read-only prod checks**, correctly noting my "no policy changed" reasoning was true-but-irrelevant: the risk is not drift-since-deploy, it's unverified **staging↔prod parity** for the exact two policies the AHPRA claim rests on — and one of them is a `storage.objects` policy, which in Supabase is often dashboard-created and therefore invisible to migration-hash parity. Both checks ran read-only against production through the `scripts/prod-workdir.sh` channel (`PROD_PROJECT_REF`, never the repo's staging linkage):
+
+- **Condition 1 — policy parity, verified by reading prod, not assuming.** Dumped `pg_policies` on prod for the two staff arms and compared to staging:
+  - `public.message_attachments` staff SELECT — prod qual: `((organization_id = user_organization_id()) AND (user_role() = ANY (ARRAY['owner','staff'])))`
+  - `storage.objects` "staff read message-attachments in own org" — prod qual: `((bucket_id = 'message-attachments') AND ((storage.foldername(name))[1] = (user_organization_id())::text) AND (user_role() = ANY (ARRAY['owner','staff'])))`
+
+  Both are present on prod, **byte-for-byte identical to staging**, and both are the migration's exact definition (so the storage policy is migration-managed, not a dashboard divergence — the specific thing the reviewer said to verify rather than assume). Neither staff arm carries a thread- or client-liveness predicate; only the client-role arms do. Since staging carries the identical policies and staging demonstrably permits byte retrieval (the 3/3 probe), a prod staff member can produce the bytes on an archived thread by the same authorised path. Condition met.
+- **Condition 2 — half-archived hunt on prod (same defect class the render assertion caught on staging).** `SELECT ... FROM clients WHERE (archived_at IS NULL) <> (deleted_at IS NULL)` on production returned **zero rows**. No divergent specimen exists in prod. Condition met.
+
+### Sign-off nits addressed
+
+- **Nit 1 (regression coverage for the lockstep invariant) — CLOSED.** The render-layer fail-closed guard covers the *risk*; the reviewer asked for a *regression* test at the source. pgTAP `06_soft_delete_rpcs_clients_and_program_exercises.sql` now asserts, at the RPC layer, that `soft_delete_client` sets **both** `deleted_at` and `archived_at` and `restore_client` clears **both** (plan 13→15; the soft-delete read also exercises the archived-arm staff policy). 15/15 on staging (`num_failed()=0`, no finish diagnostics).
+- **Nit 2 (divergent-state failure mode) — ACCEPTED and named, no code change.** In a hypothetical divergent state the profile goes read-only (fail-closed) but the transcript, gated on `deleted_at`, does **not** load — so the compliance surface would be *silently absent* rather than *loudly broken*, with `captureException` doing all the alerting. This is the deliberate cost of aligning the render predicate to the RLS predicate (FU-10), and it is acceptable at f&f scale: the state is app-unproducible (only raw SQL creates it), the invariant is now asserted at both render and RPC layers, and any occurrence fires an exception. Recorded here as the known failure mode per the reviewer's "just know that's the failure mode."
+
+### The larger milestone this package sits on (surfaced per the reviewer's note)
+
+The reviewer flagged that the biggest thing here was buried inside Blocking 2: **environment separation going operative (2026-07-21) retires the standing "no non-prod target" liability** — a named blocker for identifiable client health data entering the project. This closure package rests on that milestone (its entire verification story runs on a real, synthetic-only staging project the harness hard-refuses to run off), so it is called out here as a first-class fact, not an aside. It is recorded canonically in CLAUDE.md ("Environment separation"), `go-live-checklist.md` §5 (the "no non-prod target" line, CLOSED 2026-07-03 for existence; defaults flipped operative 2026-07-21), and the standing staging↔prod parity entry at §8.
+
+---
+
+## Sign-off — FM-8 + P2-3 closure (parity pass, 2026-07-23)
+
+**Date signed off:** 2026-07-23
+**Reviewer:** claude.ai project chat (Claude Opus 4.8) — sign-off review 4 of 4
+**Decision:** Closed with deferred items — conditional sign-off, both conditions discharged.
+
+Reviewed and signed off conditional on two read-only prod checks; both discharged the same sitting (see "Conditional sign-off" above). The reviewer's assessment: the revision is strong work — the attachment-retrieval verification is "the real article" (real staff session, RLS in force, signed URL minted, bytes compared — not a policy-reading argument), and the predicate-alignment assertion finding a live half-archived specimen within minutes is the best evidence the fix was correctly shaped.
+
+- **Condition 1 (staging↔prod policy parity for the two AHPRA-load-bearing arms) — MET.** Both staff policies, incl. the `storage.objects` arm, present on prod and byte-for-byte identical to staging; migration-managed, not dashboard-diverged.
+- **Condition 2 (no half-archived row in prod) — MET.** Zero divergent rows.
+
+**Deferred / accepted (f&f scope):**
+1. **Divergent-state failure mode (nit 2)** — an app-unproducible `archived_at`/`deleted_at` divergence renders the profile read-only but the transcript silently absent; `captureException` + the render/RPC lockstep assertions are the controls. *Re-trigger: any fired `client-profile:archive-state-divergence` exception, or before the first paying clinical client.*
+2. **Attachment transcript** renders through the shared `MessageAttachments` renderer (images inline, files as download chips); the extended 9-assertion pgTAP 63 ran 9/9 on staging — a prod re-run of the added 3 assertions is an available operator option, not a gate (no policy changed; parity independently verified above).
+
+**With this, CN-7 sign-off deferred items 4 (FM-8) and 5 (P2-3) are CLOSED — every CN-7 residual is now closed.** The five original residuals (three write-immutability, FM-8, P2-3) all resolved and prod-applied across the 2026-07-23 parity pass; none ever gated the f&f beta.
