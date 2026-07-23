@@ -2266,6 +2266,33 @@ client email lands on the profile's Comms tab; failed sends surface there.
 - **Automated:** pgTAP `60` #20-22 (RPC success, unassigned verify, client-role
   refusal). Browser: unchanged LOCK-1..5 flow.
 
+### UNASSIGN-3 - The RPC's GUC never outlives its own UPDATE (disarm)
+- **Context:** sign-off blocker B1 (migration 20260723190000). v1 armed the
+  transaction-local `odyssey.day_unassign` GUC and never disarmed it, so any
+  later raw unassign IN THE SAME TRANSACTION would slip past guard branch (c)
+  - and the idempotent RPC was a free arming primitive. PostgREST's
+  one-request-one-transaction shape made the practical window nil; the disarm
+  removes the dependence on that deployment detail.
+- **Setup:** in one transaction: call `unassign_program_day()` successfully on
+  a locked day, then issue a raw `published_at -> NULL` UPDATE on a SECOND
+  locked day.
+- **Pass:** the second, raw unassign is refused with the branch (c) copy. (The
+  successful RPC beforehand proves arming worked; the refusal after proves
+  disarming did.) The **idempotent no-op** path is proven the same way: an RPC
+  call on an ALREADY-unassigned day (the specific free-arming primitive) also
+  disarms — a raw unassign of a locked day right after is still refused.
+- **Automated:** pgTAP `60` #23 (successful-unassign path, with #20 as the
+  arming proof) + #25 (idempotent no-op path).
+
+### UNASSIGN-4 - Cross-org staff cannot unassign via the definer RPC
+- **Context:** sign-off blocker B2 - `unassign_program_day` is SECURITY
+  DEFINER, so its own-org check is the only tenant boundary on this path; it
+  was asserted in prose only.
+- **Setup:** staff session in org X calls the RPC on an org-W locked day.
+- **Pass:** refused with "program day ... not found in your organization"
+  (no_data_found); the day stays assigned.
+- **Automated:** pgTAP `60` #24.
+
 ### REMIND-NONFATAL-1 - A failing derived-log INSERT never re-sends mail
 - **Context:** the unbounded-resend latent (checklist S8): any exception in
   reminder_log_communication aborted the EF's terminal status write, so the

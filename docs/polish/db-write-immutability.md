@@ -208,3 +208,38 @@ The accepted day-row unassign bypass (reviewer 2026-07-22, blocker 1; re-trigger
 **Verified:** pgTAP `60` extended 17 -> 22 (#18 control: raw unassign of a published NOT-completed day still succeeds; #19 hard gate: raw unassign of the completed+assigned day refused with the exact copy; #20 the RPC succeeds as the same staff session; #21 the day is really unassigned; #22 a claimless session gets 42501). Suite green on staging; prod apply at this pass's deploy sitting with the standing light-smoke pattern.
 
 **Deploy-skew accepted:** between DB apply and frontend deploy, the OLD frontend's raw unassign of a LOCKED day fails with the guard's clear message (refusal, not corruption); untouched for non-completed days; window is minutes.
+
+### Sign-off review round 1 (2026-07-23) — blockers B1/B2 closed
+
+The reviewer returned "not sound to close" with two blockers; both are now closed in code.
+
+**B1 — GUC lifetime after the RPC returns. CLOSED (migration `20260723190000_unassign_guc_disarm.sql`).** Confirmed real: v1 of `unassign_program_day` armed `odyssey.day_unassign` and never disarmed it, so the GUC stayed armed for the remainder of the calling transaction, and the idempotent RPC was a free arming primitive (a no-op call on any own-org day). The practical window through PostgREST was nil — each request is its own transaction — but the fix removes the dependence on that deployment detail. v2 disarms (`set_config('odyssey.day_unassign','',true)`) immediately after the guarded UPDATE. Error paths cannot leak the arm either: an exception aborts the (sub)transaction, and GUC writes are transactional, so a failed RPC leaves the GUC unarmed. Tripwire: pgTAP `60` **#23** — after #20's successful RPC, in the same transaction, a raw unassign of a SECOND locked day is still refused with the branch (c) copy. The #20+#23 pair is the arm→disarm proof: #20 succeeding on a locked day requires the arm; #23 refusing proves the disarm. **#25** (added at the round-1 verdict, reviewer carry condition 2) closes the specific primitive B1 named — the *idempotent no-op*: an `unassign_program_day` call on an ALREADY-unassigned own-org day (the day check passes, so the GUC is still armed before the 0-effect UPDATE) also disarms, proven by a raw unassign of a still-locked day being refused immediately after. The no-op call is unwrapped so any error aborts the suite rather than passing #25 spuriously.
+
+**B2 — cross-org negative on the SECURITY DEFINER RPC. CLOSED (pgTAP `60` #24).** A staff session in a second fixture org calling `unassign_program_day` on the first org's locked day is refused by the in-body own-org check ("program day … not found in your organization", `no_data_found`). The tenant axis is now asserted in code, not prose.
+
+Suite `60` is now **plan 24, 24/24 green on staging** (fixture gains org X + staff X + a second locked day `…60c5`).
+
+**Reviewer Q1 — is branch (c) NULL-only, and what about DELETE?** Branch (c) is deliberately NULL-only; the other axes are held elsewhere:
+- **Hard DELETE of `program_days`:** unreachable via the API — the `"deny delete program_days"` RLS policy (`FOR DELETE TO authenticated USING (false)`, created `20260420102600`, retained through the `20260503100000` policy rework which dropped/recreated only select/insert/update) refuses it for every authenticated role. Belt: `sessions.program_day_id` is `ON DELETE SET NULL` (`20260420101900`), so even a privileged/maintenance DELETE cannot destroy the completed session row — though it would CASCADE the prescription rows, which is why the RLS deny stays the load-bearing control.
+- **`published_at` rewritten to a different non-null value:** does not breach the property. Branch (b) keys the content lock on `published_at IS NOT NULL` + completed live session, so a non-null→non-null rewrite changes assignment metadata but never unlocks the prescription; the only unlocking transition is → NULL, which is exactly what branch (c) gates.
+- **Soft-delete (`deleted_at`) of a locked day:** also does not unlock — branch (b) ignores `pd.deleted_at`, so the prescription rows under a soft-deleted locked day stay refused; a soft-delete round-trip cannot be used as an edit hatch (concealment would be visible in the audit log; the sets stay immutable throughout).
+
+**Reviewer Q2 — hash-parity scope.** Settled from evidence: the recorded parity hash `abe4dae2…` **was `program_write_guard` v2 itself** — today's staging read-back returns `abe4dae269b451864c5722d0ca89330c` for the guard, matching the recorded value, and the guard is untouched by `20260723190000` (hash unchanged). The RPC v1 was verified on prod by catalog presence + grants only. Going forward the parity check names both objects: staging now holds guard `abe4dae2…` + RPC v2 `2ddf66903061d6130ad1e6ad9d07a481`; the prod read-back of **both** hashes runs at the deploy sitting that pushes `20260723190000`.
+
+**Deploy-ordering constraint (reviewer minor, now recorded):** **DB first, always.** New-frontend/old-DB would `42883` on `unassign_program_day`; old-frontend/new-DB degrades to a clear guard refusal on locked days only. `20260723190000` itself is body-only (same signature) and carries no skew.
+
+**Scenarios:** UNASSIGN-3 (GUC disarm) + UNASSIGN-4 (cross-org) added to `test_scenarios_template.md` per the maintenance rule.
+
+**Prod state at time of writing:** staging carries the v2 RPC and the 25-assertion suite; prod still holds the v1 RPC (arm-without-disarm) pending the operator's next deploy sitting (`supabase db push` via the prod workdir, then the both-hashes parity read-back). This is **reviewer carry condition 1** — the sign-off does not hold until prod is on RPC v2 with both hashes (guard `abe4dae2…`, RPC v2 `2ddf6690…`) confirmed on prod.
+
+### Sign-off (completed-lock HARD GATE closure)
+
+- **Date signed off:** 2026-07-23
+- **Reviewer:** claude.ai project chat (challenger role — sign-off review 3 of 4, parity pass)
+- **Decision:** Closed with deferred items
+
+**Carry conditions (this deploy sitting, no new review):**
+1. Prod goes to RPC v2 with the both-hashes read-back. Prod currently holds the arm-without-disarm version; if parity fails the sign-off does not hold. *(Operator-run at the prod-apply sitting per environment separation — production is touched only on explicit instruction.)*
+2. pgTAP `60` #25 — the idempotent-no-op disarm path. **DONE** at this revision (suite `60` now plan 25, 25/25 on staging).
+
+**Deferred item (named residual, out of this gate's scope):** a `published_at` **non-null → non-null** rewrite on a completed day is permitted and unasserted. It does not unlock the prescription (branch (b) keys on `IS NOT NULL`, so the content lock is unaffected — the reviewer confirmed this reasoning), but it *does* mutate the record of *when* the prescription was published — a clinical audit-trail property, not merely assignment metadata. **Re-trigger:** before identifiable client health data enters the project. Shape when picked up: extend branch (c) (or a sibling branch) to also refuse a `program_days` `published_at` change on a completed-live-session day when it is not a → NULL transition through the RPC, plus a pgTAP tripwire.

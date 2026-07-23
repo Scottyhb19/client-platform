@@ -18,7 +18,7 @@ SET search_path TO public, extensions, pg_temp;
 -- assertion, so a policy change can never fake a guard pass. Controls assert
 -- 'rows:1' so they also catch silent no-ops.
 --
--- Assertions (17):
+-- Assertions (25 — 1–17 original, 18–25 the 2026-07-23 extensions below):
 --    1. archived: clinical_notes INSERT refused by the guard
 --    2. archived: client_medical_history UPDATE refused
 --    3. archived: appointments INSERT (the force-book residual) refused
@@ -45,12 +45,24 @@ SET search_path TO public, extensions, pg_temp;
 --       GUC lets the un-archive UPDATE past clients_row_write_guard)
 --   17. cascade: the client is live again (deleted_at cleared)
 --
--- Extended 2026-07-23 (migration 20260723140000 — RPC-only unassign hard gate):
+-- Extended 2026-07-23 (migration 20260723140000 — RPC-only unassign hard gate;
+-- 20260723190000 — GUC disarm, sign-off blockers B1/B2):
 --   18. control: raw unassign of a published, NOT-completed day still succeeds
 --   19. hard gate: raw unassign of the completed+assigned day REFUSED
 --   20. sanctioned path: unassign_program_day() succeeds as staff
 --   21. …and the day really is unassigned (published_at IS NULL)
 --   22. unauthorized: the RPC refuses a client-role session (42501)
+--   23. GUC disarm (B1): AFTER the successful RPC at #20 — same transaction —
+--       a raw unassign of a SECOND locked day is STILL refused. This is the
+--       assertion that proves the gate: if the RPC's odyssey.day_unassign
+--       arming outlived its own UPDATE, this raw write would sail through.
+--   24. cross-org (B2): a staff session in a DIFFERENT org calling the
+--       SECURITY DEFINER RPC on that locked day is refused (not-found copy —
+--       the own-org check, previously asserted in prose only)
+--   25. GUC disarm, no-op path (sign-off round 1): an idempotent RPC call on
+--       an ALREADY-unassigned day (B1's named free-arming primitive) still
+--       disarms — a raw unassign of a locked day in the same transaction is
+--       refused afterwards
 --
 -- Style: buffered into _tap (mirrors 56); BEGIN/ROLLBACK for live-run safety.
 -- ORDER: 1–12 run as the authenticated staff role; 13 runs as postgres (a
@@ -63,7 +75,7 @@ SET search_path TO public, extensions, pg_temp;
 
 BEGIN;
 
-SELECT plan(22);
+SELECT plan(25);
 
 CREATE TEMP TABLE _tap (n int PRIMARY KEY, line text NOT NULL) ON COMMIT DROP;
 GRANT INSERT, SELECT ON _tap TO authenticated;
@@ -87,7 +99,9 @@ END $$;
 DO $$
 DECLARE
   org_w        uuid := '00000000-0000-0000-0000-0000000060a1'::uuid;
+  org_x        uuid := '00000000-0000-0000-0000-0000000060a5'::uuid;
   staff_w      uuid;
+  staff_x      uuid;
   arch_client  uuid := '00000000-0000-0000-0000-0000000060a2'::uuid;
   live_client  uuid := '00000000-0000-0000-0000-0000000060a3'::uuid;
   casc_client  uuid := '00000000-0000-0000-0000-0000000060a4'::uuid;
@@ -97,24 +111,30 @@ DECLARE
   day_locked   uuid := '00000000-0000-0000-0000-0000000060c2'::uuid;
   day_open     uuid := '00000000-0000-0000-0000-0000000060c3'::uuid;
   day_unassign uuid := '00000000-0000-0000-0000-0000000060c4'::uuid;
+  day_locked2  uuid := '00000000-0000-0000-0000-0000000060c5'::uuid;
   arch_ex      uuid;
   arch_pe      uuid := '00000000-0000-0000-0000-0000000060d1'::uuid;
   pe_locked    uuid := '00000000-0000-0000-0000-0000000060d2'::uuid;
   pe_open      uuid := '00000000-0000-0000-0000-0000000060d3'::uuid;
   pe_unassign  uuid := '00000000-0000-0000-0000-0000000060d4'::uuid;
+  pe_locked2   uuid := '00000000-0000-0000-0000-0000000060d5'::uuid;
   set_arch     uuid := '00000000-0000-0000-0000-0000000060e1'::uuid;
   set_locked   uuid := '00000000-0000-0000-0000-0000000060e2'::uuid;
   set_open     uuid := '00000000-0000-0000-0000-0000000060e3'::uuid;
   set_unassign uuid := '00000000-0000-0000-0000-0000000060e4'::uuid;
+  set_locked2  uuid := '00000000-0000-0000-0000-0000000060e5'::uuid;
   cmh_arch     uuid := '00000000-0000-0000-0000-0000000060f1'::uuid;
   casc_appt    uuid := '00000000-0000-0000-0000-0000000060f2'::uuid;
   v_start      timestamptz;
 BEGIN
   INSERT INTO organizations (id, name, slug)
-  VALUES (org_w, 'Test Org W — write immutability 60', 'test-org-w-immut-60');
+  VALUES (org_w, 'Test Org W — write immutability 60', 'test-org-w-immut-60'),
+         (org_x, 'Test Org X — cross-org negative 60', 'test-org-x-immut-60');
 
   staff_w := public._test_make_user('staff-w-immut60@test.local');
   PERFORM public._test_grant_membership(staff_w, org_w, 'staff'::user_role);
+  staff_x := public._test_make_user('staff-x-immut60@test.local');
+  PERFORM public._test_grant_membership(staff_x, org_x, 'staff'::user_role);
 
   INSERT INTO clients (id, organization_id, first_name, last_name, email,
                        deleted_at, archived_at)
@@ -150,19 +170,23 @@ BEGIN
   INSERT INTO program_days (id, program_id, day_label, scheduled_date, published_at) VALUES
     (day_locked,   live_prog, 'Day L', current_date - 2, now() - interval '10 days'),
     (day_open,     live_prog, 'Day O', current_date + 2, now() - interval '10 days'),
-    (day_unassign, live_prog, 'Day U', current_date - 4, NULL);
+    (day_unassign, live_prog, 'Day U', current_date - 4, NULL),
+    (day_locked2,  live_prog, 'Day L2', current_date - 3, now() - interval '10 days');
   INSERT INTO program_exercises (id, program_day_id, exercise_id, sort_order) VALUES
     (pe_locked,   day_locked,   arch_ex, 0),
     (pe_open,     day_open,     arch_ex, 0),
-    (pe_unassign, day_unassign, arch_ex, 0);
+    (pe_unassign, day_unassign, arch_ex, 0),
+    (pe_locked2,  day_locked2,  arch_ex, 0);
   INSERT INTO program_exercise_sets (id, program_exercise_id, set_number, reps) VALUES
     (set_locked,   pe_locked,   1, '8'),
     (set_open,     pe_open,     1, '8'),
-    (set_unassign, pe_unassign, 1, '8');
+    (set_unassign, pe_unassign, 1, '8'),
+    (set_locked2,  pe_locked2,  1, '8');
 
-  -- completed sessions: on the locked day AND the unassigned day
+  -- completed sessions: on BOTH locked days AND the unassigned day
   INSERT INTO sessions (organization_id, client_id, program_day_id, started_at, completed_at)
   VALUES (org_w, live_client, day_locked,   now() - interval '2 days', now() - interval '2 days'),
+         (org_w, live_client, day_locked2,  now() - interval '3 days', now() - interval '3 days'),
          (org_w, live_client, day_unassign, now() - interval '4 days', now() - interval '4 days');
 
   -- cascade client's future confirmed appointment (15-min aligned)
@@ -175,10 +199,10 @@ BEGIN
           'Session', 'appointment');
 
   CREATE TEMP TABLE _ids ON COMMIT DROP AS SELECT
-    org_w, staff_w, arch_client, live_client, casc_client,
+    org_w, staff_w, org_x, staff_x, arch_client, live_client, casc_client,
     arch_prog, arch_day, arch_pe, set_arch, cmh_arch,
     day_locked, pe_locked, set_locked, day_open, set_open,
-    day_unassign, set_unassign, casc_appt, arch_ex;
+    day_unassign, set_unassign, day_locked2, casc_appt, arch_ex;
   GRANT SELECT ON _ids TO authenticated;
 END $$;
 
@@ -473,6 +497,63 @@ INSERT INTO _tap (n, line) VALUES (22, (
       'SELECT public.unassign_program_day(%L)', (SELECT day_unassign FROM _ids)
     )) = 'error:Unauthorized',
     'unauthorized: unassign_program_day refuses a client-role session (42501)'
+  ) AS l
+));
+
+-- 23. GUC disarm (B1). We are still inside the transaction in which #20's RPC
+-- succeeded (the only successful RPC so far — #22 raised before arming). If
+-- unassign_program_day left odyssey.day_unassign = '1' armed, this raw
+-- unassign of a SECOND locked day would slip past guard branch (c). The
+-- 20260723190000 disarm makes it refuse — the assertion that proves the gate.
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'staff'
+);
+INSERT INTO _tap (n, line) VALUES (23, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_days SET published_at = NULL WHERE id = %L',
+      (SELECT day_locked2 FROM _ids)
+    )) = 'error:Completed sessions are unassigned through the app — use the Unassign action.',
+    'GUC disarm: raw unassign of a second locked day still refused AFTER a successful RPC (same txn)'
+  ) AS l
+));
+
+-- 24. cross-org (B2): a staff session in org X calling the SECURITY DEFINER
+-- RPC on an org-W locked day is refused by the in-body own-org check.
+SELECT public._test_set_jwt(
+  (SELECT staff_x FROM _ids), (SELECT org_x FROM _ids), 'staff'
+);
+INSERT INTO _tap (n, line) VALUES (24, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'SELECT public.unassign_program_day(%L)', (SELECT day_locked2 FROM _ids)
+    )) = format(
+      'error:program day %s not found in your organization',
+      (SELECT day_locked2 FROM _ids)
+    ),
+    'cross-org: unassign_program_day refuses a staff session from another org (definer own-org check)'
+  ) AS l
+));
+
+-- 25. GUC disarm on the IDEMPOTENT NO-OP path (sign-off B1's named primitive).
+-- Calling unassign_program_day on an ALREADY-unassigned own-org day is the
+-- exact free-arming primitive B1 flagged — the day check passes, so the GUC is
+-- still armed before the (0-effect) UPDATE. Back on the staff-w session, make
+-- that no-op call UNWRAPPED (any error aborts the suite, so #25 cannot pass for
+-- the wrong reason), then prove a raw unassign of a STILL-locked day
+-- (day_locked2, untouched by #23/#24) is refused: the disarm fired on the
+-- no-op path. With the pre-19000 body (arm, no disarm) this would slip through.
+SELECT public._test_set_jwt(
+  (SELECT staff_w FROM _ids), (SELECT org_w FROM _ids), 'staff'
+);
+SELECT public.unassign_program_day((SELECT day_unassign FROM _ids));
+INSERT INTO _tap (n, line) VALUES (25, (
+  SELECT string_agg(l, E'\n') FROM ok(
+    pg_temp._try(format(
+      'UPDATE program_days SET published_at = NULL WHERE id = %L',
+      (SELECT day_locked2 FROM _ids)
+    )) = 'error:Completed sessions are unassigned through the app — use the Unassign action.',
+    'GUC disarm (no-op path): after an idempotent RPC call on an already-unassigned day, a raw unassign of a locked day is still refused'
   ) AS l
 ));
 
